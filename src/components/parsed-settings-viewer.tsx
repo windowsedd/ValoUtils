@@ -106,10 +106,6 @@ function SectionHeader({ label }: { label: string }) {
     );
 }
 
-function Divider() {
-    return <div className="mx-3 border-t border-white/5" />;
-}
-
 function ToggleRow({ label, value, note }: { label: string; value: boolean | undefined; note?: string }) {
     if (value === undefined) return null;
     return (
@@ -177,18 +173,6 @@ function SelectRow({ label, value }: { label: string; value: string | undefined 
         <div className="flex items-center justify-between px-3 py-2 hover:bg-white/[0.03] rounded-sm">
             <span className="text-sm text-gray-200">{label}</span>
             <span className="text-sm text-white bg-white/8 border border-white/15 px-3 py-0.5 rounded-sm">
-                {value}
-            </span>
-        </div>
-    );
-}
-
-function IntValueRow({ label, value }: { label: string; value: number | undefined }) {
-    if (value === undefined) return null;
-    return (
-        <div className="flex items-center justify-between px-3 py-2 hover:bg-white/[0.03] rounded-sm">
-            <span className="text-sm text-gray-200">{label}</span>
-            <span className="text-sm font-mono text-white bg-white/8 border border-white/15 px-3 py-0.5 rounded-sm min-w-10 text-center">
                 {value}
             </span>
         </div>
