@@ -1,0 +1,197 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Rajdhani:wght@500;600;700&display=swap');
+@import "tailwindcss";
+@import "@heroui/styles";
+
+:root {
+	--valo-red: #ff4655;
+	--valo-dark-red: #bd3944;
+	--valo-black: #0f1923;
+	--valo-dark: #1c252e;
+	--valo-darker: #111820;
+	--valo-blue: #00d4ff;
+	--valo-cyan: #00e5ff;
+	--valo-gold: #f4b93e;
+	--valo-purple: #9d4dff;
+}
+
+* {
+	font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+body {
+	background: linear-gradient(135deg, var(--valo-darker) 0%, var(--valo-black) 100%);
+	color: #ffffff;
+	overflow-x: hidden;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+	font-family: 'Rajdhani', 'Inter', sans-serif;
+	font-weight: 700;
+	letter-spacing: 0.5px;
+}
+
+/* Animations */
+@keyframes slideIn {
+	0% {
+		transform: translateX(-100%);
+		opacity: 0;
+	}
+
+	100% {
+		transform: translateX(0);
+		opacity: 1;
+	}
+}
+
+@keyframes slideOut {
+	0% {
+		transform: translateX(0);
+		opacity: 1;
+	}
+
+	100% {
+		transform: translateX(-100%);
+		opacity: 0;
+	}
+}
+
+@keyframes fadeIn {
+	from {
+		opacity: 0;
+		transform: translateY(10px);
+	}
+
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+@keyframes glow {
+
+	0%,
+	100% {
+		box-shadow: 0 0 20px rgba(255, 70, 85, 0.3);
+	}
+
+	50% {
+		box-shadow: 0 0 30px rgba(255, 70, 85, 0.6);
+	}
+}
+
+@keyframes shimmer {
+	0% {
+		background-position: -1000px 0;
+	}
+
+	100% {
+		background-position: 1000px 0;
+	}
+}
+
+.animate-slide-in {
+	animation: slideIn 0.3s ease-out;
+}
+
+.animate-slide-out {
+	animation: slideOut 0.3s ease-out;
+}
+
+.animate-fade-in {
+	animation: fadeIn 0.5s ease-out forwards;
+}
+
+.animate-glow {
+	animation: glow 2s ease-in-out infinite;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+	width: 8px;
+	height: 8px;
+}
+
+::-webkit-scrollbar-track {
+	background: var(--valo-darker);
+}
+
+::-webkit-scrollbar-thumb {
+	background: var(--valo-red);
+	border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+	background: var(--valo-dark-red);
+}
+
+/* Glassmorphism effect */
+.glass {
+	background: rgba(255, 255, 255, 0.05);
+	backdrop-filter: blur(10px);
+	border: 1px solid rgba(255, 255, 255, 0.1);
+	border-radius: 12px;
+}
+
+.glass-strong {
+	background: rgba(255, 255, 255, 0.08);
+	backdrop-filter: blur(20px);
+	border: 1px solid rgba(255, 255, 255, 0.15);
+	border-radius: 16px;
+}
+
+/* Gradient text */
+.gradient-text {
+	background: linear-gradient(135deg, var(--valo-red) 0%, var(--valo-purple) 100%);
+	-webkit-background-clip: text;
+	-webkit-text-fill-color: transparent;
+	background-clip: text;
+}
+
+.gradient-text-blue {
+	background: linear-gradient(135deg, var(--valo-cyan) 0%, var(--valo-blue) 100%);
+	-webkit-background-clip: text;
+	-webkit-text-fill-color: transparent;
+	background-clip: text;
+}
+
+/* Card hover effects */
+.card-hover {
+	transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.card-hover:hover {
+	transform: translateY(-4px);
+	box-shadow: 0 20px 40px rgba(255, 70, 85, 0.2);
+}
+
+/* Button glow effect */
+.btn-glow {
+	position: relative;
+	overflow: hidden;
+}
+
+.btn-glow::before {
+	content: '';
+	position: absolute;
+	top: 0;
+	left: -100%;
+	width: 100%;
+	height: 100%;
+	background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+	transition: left 0.5s;
+}
+
+.btn-glow:hover::before {
+	left: 100%;
+}
+
+/* Divider with gradient */
+.divider-gradient {
+	height: 2px;
+	background: linear-gradient(90deg, transparent 0%, var(--valo-red) 50%, transparent 100%);
+}
