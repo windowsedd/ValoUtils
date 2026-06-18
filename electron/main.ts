@@ -1,7 +1,7 @@
 import { app, shell, BrowserWindow, clipboard, dialog, ipcMain, IpcMainEvent } from 'electron'
 import { writeFileSync } from 'node:fs'
 import path from 'node:path'
-import { getRiotClientInfo, getTokens, getUserInfo } from "./util/riot-client.ts";
+import { getRiotClientInfo, getTokens } from "./util/riot-client.ts";
 import { initSettingsIpc } from "./modules/profiles";
 import { autoUpdater } from "electron-updater"
 import { initialize, trackEvent } from "@aptabase/electron/main";
@@ -173,18 +173,6 @@ ipcMain.on("update:check", async () => {
 });
 
 initSettingsIpc();
-let firstDisconnect = false;
-setInterval(async () => {
-    try {
-        await getUserInfo();
-    } catch (error) {
-        if (firstDisconnect) {
-            trackEvent("riot_client_disconnect", { error: (error as any).toString() });
-            firstDisconnect = true;
-        }
-        win?.webContents.send("riot_client:disconnect", (error as any).toString());
-    }
-}, 5000)
 if (config.get("autoUpdate")) {
     setInterval(async () => {
         try {
