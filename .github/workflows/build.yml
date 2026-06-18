@@ -22,23 +22,27 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: '22'
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
 
       - name: Install dependencies
-        run: npm ci
+        run: bun install
 
       # On a version tag → build + publish to GitHub Releases
       - name: Build & Publish
         if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npm run release
+        run: bun run release
 
       # On every other push/PR → just build, upload artifact
       - name: Build
         if: "!startsWith(github.ref, 'refs/tags/v')"
-        run: npm run build
+        run: bun run build
 
       - name: Upload artifact
         if: "!startsWith(github.ref, 'refs/tags/v')"
