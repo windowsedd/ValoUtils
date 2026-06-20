@@ -36,7 +36,13 @@ export function isAlreadyProcessed(outDir: string): boolean {
         const positions = JSON.parse(fs.readFileSync(path.join(outDir, 'positions.json'), 'utf8')) as {
             samples?: unknown[];
         };
-        return Array.isArray(positions.samples) && positions.samples.length > 0;
+        const meta = JSON.parse(fs.readFileSync(path.join(outDir, 'meta.json'), 'utf8')) as {
+            mapUrl?: unknown;
+        };
+        return Array.isArray(positions.samples)
+            && positions.samples.length > 0
+            && typeof meta.mapUrl === 'string'
+            && meta.mapUrl.length > 0;
     } catch {
         return false;
     }

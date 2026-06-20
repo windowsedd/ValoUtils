@@ -68,14 +68,18 @@ async function readOrFetchMatchDetails(vrfPath: string, outDir: string) {
 function runParser(vrfPath: string, channelsDestPath: string): {
     records: { ch: number; type: string; fields: { Name: string; Value: unknown }[] }[];
     hasChannels: boolean;
+    mapUrl: string;
+    mapName: string;
 } {
     const bytes = fs.readFileSync(vrfPath);
     const result = parseReplayForApp(new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength));
+    const mapUrl = result.replay.Header.LevelNamesAndTimes.find(([level]) => level.startsWith('/Game/Maps/'))?.[0] ?? '';
+    const mapName = mapUrl.split('/').filter(Boolean).pop() ?? '';
 
     const channelLines = result.channelOpens.map(o => JSON.stringify(o)).join('\n');
     fs.writeFileSync(channelsDestPath, channelLines);
 
-    return { records: result.exportRecords, hasChannels: result.channelOpens.length > 0 };
+    return { records: result.exportRecords, hasChannels: result.channelOpens.length > 0, mapUrl, mapName };
 }
 
 export const initReplaysIpc = () => {
@@ -174,10 +178,10 @@ export const initReplaysIpc = () => {
                 const paths = prepareOutputDir(vrfPath);
 
                 sendProgress(event, vrfPath, 'parsing', 'Parsing replay...');
-                const { records, hasChannels } = runParser(vrfPath, paths.channelsPath);
+                const { records, hasChannels, mapUrl, mapName } = runParser(vrfPath, paths.channelsPath);
 
                 sendProgress(event, vrfPath, 'extracting', 'Extracting positions...');
-                extractRecords(records, paths.outDir, path.basename(vrfPath));
+                extractRecords(records, paths.outDir, path.basename(vrfPath), mapName, mapUrl);
 
                 if (hasChannels) {
                     sendProgress(event, vrfPath, 'abilities', 'Building abilities...');

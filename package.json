@@ -5,6 +5,7 @@
 	"description": "A app that provides extra tools for Valorant",
 	"scripts": {
 		"dev": "vite",
+		"debug:replay": "bun scripts/debug-replay.mjs",
 		"build": "tsc && vite build && electron-builder",
 		"release": "tsc && vite build && electron-builder -p onTag",
 		"lint": "eslint src --ext ts,tsx --report-unused-disable-directives --max-warnings 0",

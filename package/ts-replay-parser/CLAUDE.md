@@ -50,10 +50,12 @@ descriptor** into the shared `registry` (`src/unreal/registry.ts`) at module loa
 
 ## Commands
 
+Use **Bun** for this package too.
+
 ```bash
-npm test          # vitest run — all parity + unit tests (should stay green)
-npm run typecheck # tsc --noEmit
-npm run build     # tsc -> dist/
+bun test          # vitest run — all parity + unit tests (should stay green)
+bun run typecheck # tsc --noEmit
+bun run build     # tsc -> dist/
 ```
 
 ## Public API (src/index.ts)

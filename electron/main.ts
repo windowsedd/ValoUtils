@@ -1,5 +1,5 @@
 import { app, shell, BrowserWindow, clipboard, dialog, ipcMain, IpcMainEvent } from 'electron'
-import { writeFileSync } from 'node:fs'
+import { mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { getRiotClientInfo, getTokens, getUserInfo } from "./util/riot-client.ts";
 import { initSettingsIpc } from "./modules/profiles";
@@ -20,6 +20,30 @@ import Store from "./util/store.ts";
 // │
 process.env.DIST = path.join(__dirname, '../dist')
 process.env.PUBLIC = app.isPackaged ? process.env.DIST : path.join(process.env.DIST, '../public')
+
+function configureWritableSessionData() {
+    const basePath = app.isPackaged
+        ? process.env.LOCALAPPDATA || app.getPath('temp')
+        : path.join(process.cwd(), '.tmp', 'electron-runtime');
+    const sessionDataPath = path.join(basePath, 'ValoUtils', 'session-data');
+    const diskCachePath = path.join(sessionDataPath, 'Cache');
+    const crashDumpsPath = path.join(basePath, 'ValoUtils', 'crash-dumps');
+
+    try {
+        mkdirSync(diskCachePath, { recursive: true });
+        mkdirSync(crashDumpsPath, { recursive: true });
+        app.setPath('sessionData', sessionDataPath);
+        app.setPath('crashDumps', crashDumpsPath);
+        app.commandLine.appendSwitch('disk-cache-dir', diskCachePath);
+        app.commandLine.appendSwitch('disable-http-cache');
+        app.commandLine.appendSwitch('disable-gpu-shader-disk-cache');
+        app.commandLine.appendSwitch('disable-crash-reporter');
+    } catch (error) {
+        console.warn('Unable to configure Electron session cache path:', error);
+    }
+}
+
+configureWritableSessionData();
 
 initialize("A-US-3830100076");
 

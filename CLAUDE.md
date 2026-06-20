@@ -102,11 +102,16 @@ Always call `removeAllListeners` after handling a response to avoid listener lea
 
 ## Development Commands
 
+Use **Bun** for package management and script execution in this repo. Prefer
+`bun install` and `bun run ...`; avoid npm-only commands unless the user explicitly
+asks for them.
+
 ```bash
-npm run dev      # Vite dev server + Electron with hot-reload
-npm run build    # tsc + vite build + electron-builder (local, no publish)
-npm run release  # build + publish to GitHub Releases (needs GH_TOKEN)
-npm run lint     # ESLint, zero warnings allowed
+bun run dev          # Vite dev server + Electron with hot-reload
+bun run build        # tsc + vite build + electron-builder (local, no publish)
+bun run release      # build + publish to GitHub Releases (needs GH_TOKEN)
+bun run lint         # ESLint, zero warnings allowed
+bun run debug:replay -- <path-to-replay.vrf>  # inspect replay parser output
 ```
 
 ## Build / Release

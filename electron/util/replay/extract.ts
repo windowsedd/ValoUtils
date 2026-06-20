@@ -130,12 +130,12 @@ interface ExtractState {
     movementMoves: number;
 }
 
-function newExtractState(): ExtractState {
+function newExtractState(initialMapUrl = ''): ExtractState {
     return {
         samples: [],
         playerStateByCh: {},
         teamByCh: {},
-        mapUrl: '',
+        mapUrl: initialMapUrl,
         phaseEvents: [],
         bombStates: [],
         guidsSeen: new Set<string>(),
@@ -299,8 +299,9 @@ export function extractRecords(
     outDir: string,
     sourceLabel: string,
     mapHint = '',
+    initialMapUrl = '',
 ): void {
-    const state = newExtractState();
+    const state = newExtractState(initialMapUrl);
     for (const r of records) processRecord(state, r);
     finalize(state, outDir, sourceLabel, mapHint);
 }

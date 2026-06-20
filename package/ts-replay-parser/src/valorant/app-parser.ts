@@ -67,7 +67,6 @@ class AppReader extends ValorantReplayReader {
       const updates = (exportGroup as { RemoteCharacterUpdates?: RemoteCharacterUpdate[] })
         .RemoteCharacterUpdates;
       for (const u of updates ?? []) this.collectMovement(u);
-      return;
     }
 
     const fields: { Name: string; Value: unknown }[] = [];

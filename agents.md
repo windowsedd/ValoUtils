@@ -70,10 +70,18 @@ Forgetting `removeAllListeners` causes duplicate callbacks. All error payloads i
 
 ## Testing
 
-There is no test suite. To test:
-1. `npm run dev` — starts Electron with hot-reload
+This repo uses **Bun** as the package/script runner. Prefer `bun install` and
+`bun run ...` commands; do not introduce npm-only workflows unless the user asks.
+
+There is no full app test suite. To test:
+1. `bun run dev` — starts Electron with hot-reload
 2. Riot Client must be running for profile save/load; it can be closed to test UI-only flows
 3. `config.openDevTools: true` in the app data `config.json` opens DevTools on launch
+
+Replay parser/debug helpers:
+- `bun run debug:replay -- <path-to-replay.vrf>` — print replay header, map, movement, and export stats
+- `bun --cwd package/ts-replay-parser test` — run parser parity/unit tests
+- `bun --cwd package/ts-replay-parser run build` — rebuild parser `dist/`
 
 ## Valorant API Reference
 
