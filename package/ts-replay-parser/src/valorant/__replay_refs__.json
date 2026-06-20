@@ -1,0 +1,55 @@
+[
+  {
+    "file": "5c673443-5bdc-4576-b416-aab3f62471a5.vrf",
+    "version": "12.11",
+    "lengthInMs": 23540,
+    "friendlyName": "5c673443-5bdc-4576-b416-aab3f62471a5",
+    "branch": "\u002B\u002BAres-Core\u002Brelease-12.11",
+    "engineNetworkVersion": 32,
+    "networkVersion": 19,
+    "totalExports": 693,
+    "typeCounts": {
+      "AbilityTrackingDelegateComponent": 6,
+      "AresAbilitySystemComponent": 4,
+      "AresAttributeSet": 9,
+      "AresWorldSettings": 2,
+      "BaseReplayController": 1,
+      "BaseReplayPlayerState": 2,
+      "BombGameState": 470,
+      "BombPlayerState": 20,
+      "EquipmentChargeComponent": 2,
+      "EquippableStateMachineComponent": 131,
+      "MulticastPlayContinuousEffectFromClient": 7,
+      "OwnerExclusivePlayerInfo": 16,
+      "PurchasedItemComponent": 9,
+      "ReplayPlayContinuousEffectAtLocation": 1,
+      "UsableComponent": 13
+    }
+  },
+  {
+    "file": "9f8b32c5-c243-41ec-bbbb-832582edf652.vrf",
+    "version": "12.10",
+    "lengthInMs": 69698,
+    "friendlyName": "9f8b32c5-c243-41ec-bbbb-832582edf652",
+    "branch": "\u002B\u002BAres-Core\u002Brelease-12.10",
+    "engineNetworkVersion": 32,
+    "networkVersion": 19,
+    "totalExports": 1680,
+    "typeCounts": {
+      "AresAbilitySystemComponent": 4,
+      "AresAttributeSet": 9,
+      "AresWorldSettings": 2,
+      "BaseReplayController": 1,
+      "BaseReplayPlayerState": 2,
+      "BombGameState": 1393,
+      "BombPlayerState": 88,
+      "EquipmentChargeComponent": 2,
+      "EquippableStateMachineComponent": 120,
+      "MulticastPlayContinuousEffectFromClient": 7,
+      "OwnerExclusivePlayerInfo": 18,
+      "PurchasedItemComponent": 9,
+      "ReplayPlayContinuousEffectAtLocation": 1,
+      "UsableComponent": 24
+    }
+  }
+]

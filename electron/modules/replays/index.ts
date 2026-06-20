@@ -1,11 +1,11 @@
 import { ipcMain, IpcMainEvent, dialog } from 'electron';
 import { API, local } from '@windowsed1225/valorant-api';
-import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { extractStream } from '../../util/replay/extract.ts';
+import { parseReplayForApp } from '@valoutils/ts-replay-parser';
+import { extractRecords } from '../../util/replay/extract.ts';
 import { buildAbilities } from '../../util/replay/abilities.ts';
-import { getParserExePath, validateParser, prepareOutputDir, isAlreadyProcessed, getOutputDir } from '../../util/replay/setup.ts';
+import { prepareOutputDir, isAlreadyProcessed, getOutputDir } from '../../util/replay/setup.ts';
 import { getRegionLocale } from '../../util/riot-client.ts';
 
 const { LocalRiotClientAPI } = local;
@@ -62,49 +62,20 @@ async function readOrFetchMatchDetails(vrfPath: string, outDir: string) {
     }
 }
 
-function runParser(vrfPath: string, decodePath: string, channelsDestPath: string): Promise<boolean> {
-    return new Promise((resolve, reject) => {
-        const parserPath = getParserExePath();
-        const parserDir = path.dirname(parserPath);
-        const parserChannelsPath = path.join(parserDir, 'channels.jsonl');
-        const vrfDir = path.dirname(vrfPath);
+// Parse a .vrf fully in-process with the bundled TypeScript parser, writing the
+// channels.jsonl the abilities builder expects and returning the export records
+// the position/event extractor consumes. Replaces the old external .exe.
+function runParser(vrfPath: string, channelsDestPath: string): {
+    records: { ch: number; type: string; fields: { Name: string; Value: unknown }[] }[];
+    hasChannels: boolean;
+} {
+    const bytes = fs.readFileSync(vrfPath);
+    const result = parseReplayForApp(new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength));
 
-        try { fs.unlinkSync(parserChannelsPath); } catch { /* best effort */ }
+    const channelLines = result.channelOpens.map(o => JSON.stringify(o)).join('\n');
+    fs.writeFileSync(channelsDestPath, channelLines);
 
-        const proc = spawn(parserPath, [vrfPath, '--verbose', '--full'], { cwd: parserDir });
-
-        const decodeStream = fs.createWriteStream(decodePath);
-        const stderrChunks: Buffer[] = [];
-
-        proc.stdout.pipe(decodeStream);
-        proc.stderr.on('data', (chunk: Buffer) => stderrChunks.push(chunk));
-
-        proc.on('close', (code) => {
-            decodeStream.close(() => {
-                const stderrText = Buffer.concat(stderrChunks).toString().trim();
-                if (code !== 0 && code !== null) {
-                    const detail = stderrText ? `\n\nParser stderr:\n${stderrText}` : '';
-                    reject(new Error(`Parser exited with code ${code}${detail}`)); return;
-                }
-                // Check all candidate locations for channels.jsonl
-                const candidates = [
-                    path.join(vrfDir, 'channels.jsonl'),
-                    parserChannelsPath,
-                ];
-                const found = candidates.find(p => fs.existsSync(p));
-                if (found) {
-                    fs.copyFileSync(found, channelsDestPath);
-                    try { fs.unlinkSync(found); } catch { /* best effort */ }
-                } else {
-                    resolve(false);
-                    return;
-                }
-                resolve(true);
-            });
-        });
-
-        proc.on('error', (err) => reject(new Error(`Failed to start parser: ${err.message}`)));
-    });
+    return { records: result.exportRecords, hasChannels: result.channelOpens.length > 0 };
 }
 
 export const initReplaysIpc = () => {
@@ -200,19 +171,13 @@ export const initReplaysIpc = () => {
             const outDir = getOutputDir(vrfPath);
 
             if (!isAlreadyProcessed(outDir)) {
-                const check = validateParser();
-                if (!check.ok) {
-                    event.sender.send('replay:process', JSON.stringify({ success: false, path: vrfPath, error: check.error }));
-                    return;
-                }
-
                 const paths = prepareOutputDir(vrfPath);
 
-                sendProgress(event, vrfPath, 'parsing', 'Parsing replay (this may take a minute)...');
-                const hasChannels = await runParser(vrfPath, paths.decodePath, paths.channelsPath);
+                sendProgress(event, vrfPath, 'parsing', 'Parsing replay...');
+                const { records, hasChannels } = runParser(vrfPath, paths.channelsPath);
 
                 sendProgress(event, vrfPath, 'extracting', 'Extracting positions...');
-                await extractStream(paths.decodePath, paths.outDir);
+                extractRecords(records, paths.outDir, path.basename(vrfPath));
 
                 if (hasChannels) {
                     sendProgress(event, vrfPath, 'abilities', 'Building abilities...');
@@ -220,8 +185,6 @@ export const initReplaysIpc = () => {
                 } else {
                     fs.writeFileSync(paths.abilitiesPath, '[]');
                 }
-
-                try { fs.unlinkSync(paths.decodePath); } catch { /* best effort */ }
             }
 
             const positions = JSON.parse(fs.readFileSync(path.join(outDir, 'positions.json'), 'utf8'));

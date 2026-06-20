@@ -1,0 +1,65 @@
+/**
+ * Enums from Unreal.Core/Models/Enums — only the values the IO layer needs.
+ * Ported from the C# `EngineNetworkVersionHistory`, `VectorQuantization`,
+ * `RotatorQuantization`, and `UniqueIdEncodingFlags`.
+ */
+
+export enum EngineNetworkVersionHistory {
+  HISTORY_INITIAL = 1,
+  HISTORY_REPLAY_BACKWARDS_COMPAT = 2,
+  HISTORY_MAX_ACTOR_CHANNELS_CUSTOMIZATION = 3,
+  HISTORY_REPCMD_CHECKSUM_REMOVE_PRINTF = 4,
+  HISTORY_NEW_ACTOR_OVERRIDE_LEVEL = 5,
+  HISTORY_CHANNEL_NAMES = 6,
+  HISTORY_CHANNEL_CLOSE_REASON = 7,
+  HISTORY_ACKS_INCLUDED_IN_HEADER = 8,
+  HISTORY_NETEXPORT_SERIALIZATION = 9,
+  HISTORY_NETEXPORT_SERIALIZE_FIX = 10,
+  HISTORY_FAST_ARRAY_DELTA_STRUCT = 11,
+  HISTORY_FIX_ENUM_SERIALIZATION = 12,
+  HISTORY_OPTIONALLY_QUANTIZE_SPAWN_INFO = 13,
+  HISTORY_JITTER_IN_HEADER = 14,
+  HISTORY_CLASSNETCACHE_FULLNAME = 15,
+  HISTORY_REPLAY_DORMANCY = 16,
+  HISTORY_ENUM_SERIALIZATION_COMPAT = 17,
+  HISTORY_SUBOBJECT_OUTER_CHAIN = 18,
+  HISTORY_HITRESULT_INSTANCEHANDLE = 19,
+  HISTORY_INTERFACE_PROPERTY_SERIALIZATION = 20,
+  HISTORY_MONTAGE_PLAY_INST_ID_SERIALIZATION = 21,
+  HISTORY_SERIALIZE_DOUBLE_VECTORS_AS_DOUBLES = 22,
+  HISTORY_PACKED_VECTOR_LWC_SUPPORT = 23,
+  HISTORY_PAWN_REMOTEVIEWPITCH = 24,
+  HISTORY_REPMOVE_SERVERFRAME_AND_HANDLE = 25,
+  HISTORY_21_AND_VIEWPITCH_ONLY_DO_NOT_USE = 26,
+  HISTORY_PLACEHOLDER = 27,
+  HISTORY_RUNTIME_FEATURES_COMPATIBILITY = 28,
+  HISTORY_SOFTOBJECTPTR_NETGUIDS = 29,
+  HISTORY_SUBOBJECT_DESTROY_FLAG = 30,
+  HISTORY_GAMESTATE_REPLCIATED_TIME_AS_DOUBLE = 31,
+  HISTORY_CUSTOMVERION = 32,
+  DynamicMontageSerialization = 33,
+  PredictionKeyBaseNotReplicated = 34,
+  RepMoveOptionalAcceleration = 35,
+  CustomExports = 36,
+}
+
+export enum VectorQuantization {
+  RoundWholeNumber = 0,
+  RoundOneDecimal = 1,
+  RoundTwoDecimals = 2,
+}
+
+export enum RotatorQuantization {
+  ByteComponents = 0,
+  ShortComponents = 1,
+}
+
+export enum UniqueIdEncodingFlags {
+  NotEncoded = 0,
+  IsEncoded = 1 << 0,
+  IsEmpty = 1 << 1,
+  Unused1 = 1 << 2,
+  Reserved1 = 1 << 3,
+  FlagsMask = (1 << 3) - 1,
+  TypeMask = 255 ^ ((1 << 3) - 1),
+}

@@ -117,20 +117,153 @@ function getMoves(update: unknown): unknown[] {
     return toArray(moves);
 }
 
+// Mutable accumulator shared by the file-stream and in-process record paths.
+interface ExtractState {
+    samples: [number, string, number, number, number][];
+    playerStateByCh: Record<number, Record<string, unknown>>;
+    teamByCh: Record<number, number>;
+    mapUrl: string;
+    phaseEvents: { phase: number; sampleIdx: number }[];
+    bombStates: { t: number; sampleIdx: number }[];
+    guidsSeen: Set<string>;
+    movementLines: number;
+    movementMoves: number;
+}
+
+function newExtractState(): ExtractState {
+    return {
+        samples: [],
+        playerStateByCh: {},
+        teamByCh: {},
+        mapUrl: '',
+        phaseEvents: [],
+        bombStates: [],
+        guidsSeen: new Set<string>(),
+        movementLines: 0,
+        movementMoves: 0,
+    };
+}
+
+// Fold a single parsed export record into the accumulator.
+function processRecord(state: ExtractState, parsed: ParsedLine): void {
+    const { ch, type, fields } = parsed;
+    const foundMapUrl = getField(fields, 'MapUrl', 'MapURL', 'MapAssetPath', 'MapName');
+    if (!state.mapUrl && typeof foundMapUrl === 'string') state.mapUrl = foundMapUrl;
+
+    if (type === MOVEMENT_TYPE || type.includes('RemoteCharacterUpdates')) {
+        state.movementLines++;
+        const updates = getMovementUpdates(fields);
+        for (const u of updates) {
+            const guid = getGuid(u);
+            if (!guid) continue;
+            const moves = getMoves(u);
+            if (moves.length === 0) continue;
+            state.guidsSeen.add(guid);
+            for (const mv of moves) {
+                const position = toPosition(getProp(mv, 'Position', 'position'));
+                if (!position) continue;
+                const timestamp = toNumber(getProp(mv, 'Timestamp', 'timestamp')) ?? 0;
+                const rotationZ = toRotationZ(getProp(mv, 'RotationInput', 'rotationInput', 'Rotation', 'rotation'));
+                state.movementMoves++;
+                state.samples.push([
+                    timestamp | 0,
+                    guid,
+                    +position.X.toFixed(1),
+                    +position.Y.toFixed(1),
+                    +rotationZ.toFixed(2),
+                ]);
+            }
+        }
+    } else if (type === 'BombPlayerState') {
+        const obj = state.playerStateByCh[ch] ?? {};
+        for (const f of fields) obj[f.Name] = f.Value;
+        state.playerStateByCh[ch] = obj;
+    } else if (type === 'BombTeamComponent') {
+        const tf = fields.find(f => f.Name === 'Team');
+        if (tf) state.teamByCh[ch] = tf.Value as number;
+    } else if (type === 'ClientGamePhaseEnded') {
+        const of_ = fields.find(f => f.Name === 'OldPhase');
+        if (of_) state.phaseEvents.push({ phase: of_.Value as number, sampleIdx: state.samples.length });
+    } else if (type === 'BombGameState') {
+        const tf = fields.find(f => f.Name === 'ReplicatedWorldTimeSecondsDouble');
+        if (tf) state.bombStates.push({ t: +(tf.Value as number).toFixed(3), sampleIdx: state.samples.length });
+    }
+}
+
+// Build and write positions.json / events.json / meta.json from the accumulator.
+function finalize(state: ExtractState, outDir: string, sourceLabel: string, mapHint: string): void {
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const s of state.samples) {
+        if (s[2] < minX) minX = s[2]; if (s[2] > maxX) maxX = s[2];
+        if (s[3] < minY) minY = s[3]; if (s[3] > maxY) maxY = s[3];
+    }
+
+    const players: Record<number, Record<string, unknown> & { team?: number }> = {};
+    for (const ch in state.playerStateByCh) {
+        players[+ch] = { ...state.playerStateByCh[+ch], team: state.teamByCh[+ch] };
+    }
+
+    const positions = {
+        meta: {
+            source: sourceLabel,
+            generatedAt: new Date().toISOString(),
+            movementLines: state.movementLines, movementMoves: state.movementMoves,
+            uniqueGuids: [...state.guidsSeen],
+            bounds: { minX, maxX, minY, maxY },
+            sampleCount: state.samples.length,
+            phaseEventCount: state.phaseEvents.length,
+            bombStateCount: state.bombStates.length,
+        },
+        players,
+        phaseEvents: state.phaseEvents,
+        bombStates: state.bombStates,
+        samples: state.samples,
+    };
+    fs.writeFileSync(path.join(outDir, 'positions.json'), JSON.stringify(positions));
+
+    if (state.samples.length === 0) {
+        throw new Error(`No replay movement samples were extracted from ${sourceLabel}. Found ${state.movementLines} movement lines and ${state.movementMoves} moves.`);
+    }
+
+    // events.json: round starts via OldPhase=2 (buy phase ended = combat start)
+    const events: { g: string; t: number }[] = [];
+    if (state.bombStates.length > 0) {
+        const sampleToWallMs = (sIdx: number) => {
+            let lo = 0, hi = state.bombStates.length - 1;
+            while (lo < hi) {
+                const mid = (lo + hi) >> 1;
+                if (state.bombStates[mid].sampleIdx < sIdx) lo = mid + 1; else hi = mid;
+            }
+            const next = state.bombStates[lo];
+            const prev = lo > 0 ? state.bombStates[lo - 1] : null;
+            if (!prev) return next.t * 1000;
+            const span = next.sampleIdx - prev.sampleIdx;
+            const a = span > 0 ? (sIdx - prev.sampleIdx) / span : 0;
+            return (prev.t + (next.t - prev.t) * a) * 1000;
+        };
+        const wallZero = sampleToWallMs(0);
+        const seenStarts = new Set<number>();
+        for (const pe of state.phaseEvents) {
+            if (pe.phase !== 2) continue;
+            if (seenStarts.has(pe.sampleIdx)) continue;
+            seenStarts.add(pe.sampleIdx);
+            events.push({ g: 'roundStarted', t: Math.round(sampleToWallMs(pe.sampleIdx) - wallZero) });
+        }
+        if (events.length === 0) events.push({ g: 'roundStarted', t: 0 });
+    }
+    fs.writeFileSync(path.join(outDir, 'events.json'), JSON.stringify(events));
+
+    const meta = { mapUrl: state.mapUrl || '', mapName: mapHint, generatedAt: new Date().toISOString() };
+    fs.writeFileSync(path.join(outDir, 'meta.json'), JSON.stringify(meta));
+
+    console.log(`[replay] extract: ${state.samples.length} samples, ${state.guidsSeen.size} guids, ${events.length} rounds`);
+}
+
 // TypeScript port of extract-stream.mjs from ValorantWebReplayer
-// Reads decode-full.txt (parser stdout) and writes positions.json, events.json, meta.json
+// Reads decode-full.txt (external-parser stdout) and writes positions.json, events.json, meta.json
 export function extractStream(decodePath: string, outDir: string, mapHint = ''): Promise<void> {
     return new Promise((resolve, reject) => {
-        const samples: [number, string, number, number, number][] = [];
-        const playerStateByCh: Record<number, Record<string, unknown>> = {};
-        const teamByCh: Record<number, number> = {};
-        let mapUrl = '';
-        const phaseEvents: { phase: number; sampleIdx: number }[] = [];
-        const bombStates: { t: number; sampleIdx: number }[] = [];
-        const guidsSeen = new Set<string>();
-        let movementLines = 0;
-        let movementMoves = 0;
-
+        const state = newExtractState();
         const rl = readline.createInterface({
             input: fs.createReadStream(decodePath, { encoding: 'utf8' }),
             crlfDelay: Infinity,
@@ -140,123 +273,34 @@ export function extractStream(decodePath: string, outDir: string, mapHint = ''):
             const parsed = parseLine(line);
             if (!parsed) {
                 const mu = line.match(/^MapUrl=(.+)$/);
-                if (mu) mapUrl = mu[1].trim();
+                if (mu) state.mapUrl = mu[1].trim();
                 return;
             }
-            const { ch, type, fields } = parsed;
-            const foundMapUrl = getField(fields, 'MapUrl', 'MapURL', 'MapAssetPath', 'MapName');
-            if (!mapUrl && typeof foundMapUrl === 'string') mapUrl = foundMapUrl;
-
-            if (type === MOVEMENT_TYPE || type.includes('RemoteCharacterUpdates')) {
-                movementLines++;
-                const updates = getMovementUpdates(fields);
-                for (const u of updates) {
-                    const guid = getGuid(u);
-                    if (!guid) continue;
-                    const moves = getMoves(u);
-                    if (moves.length === 0) continue;
-                    guidsSeen.add(guid);
-                    for (const mv of moves) {
-                        const position = toPosition(getProp(mv, 'Position', 'position'));
-                        if (!position) continue;
-                        const timestamp = toNumber(getProp(mv, 'Timestamp', 'timestamp')) ?? 0;
-                        const rotationZ = toRotationZ(getProp(mv, 'RotationInput', 'rotationInput', 'Rotation', 'rotation'));
-                        movementMoves++;
-                        samples.push([
-                            timestamp | 0,
-                            guid,
-                            +position.X.toFixed(1),
-                            +position.Y.toFixed(1),
-                            +rotationZ.toFixed(2),
-                        ]);
-                    }
-                }
-            } else if (type === 'BombPlayerState') {
-                const obj = playerStateByCh[ch] ?? {};
-                for (const f of fields) obj[f.Name] = f.Value;
-                playerStateByCh[ch] = obj;
-            } else if (type === 'BombTeamComponent') {
-                const tf = fields.find(f => f.Name === 'Team');
-                if (tf) teamByCh[ch] = tf.Value as number;
-            } else if (type === 'ClientGamePhaseEnded') {
-                const of_ = fields.find(f => f.Name === 'OldPhase');
-                if (of_) phaseEvents.push({ phase: of_.Value as number, sampleIdx: samples.length });
-            } else if (type === 'BombGameState') {
-                const tf = fields.find(f => f.Name === 'ReplicatedWorldTimeSecondsDouble');
-                if (tf) bombStates.push({ t: +(tf.Value as number).toFixed(3), sampleIdx: samples.length });
-            }
+            processRecord(state, parsed);
         });
 
         rl.on('close', () => {
-            let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-            for (const s of samples) {
-                if (s[2] < minX) minX = s[2]; if (s[2] > maxX) maxX = s[2];
-                if (s[3] < minY) minY = s[3]; if (s[3] > maxY) maxY = s[3];
+            try {
+                finalize(state, outDir, path.basename(decodePath), mapHint);
+                resolve();
+            } catch (error) {
+                reject(error);
             }
-
-            const players: Record<number, Record<string, unknown> & { team?: number }> = {};
-            for (const ch in playerStateByCh) {
-                players[+ch] = { ...playerStateByCh[+ch], team: teamByCh[+ch] };
-            }
-
-            const positions = {
-                meta: {
-                    source: path.basename(decodePath),
-                    generatedAt: new Date().toISOString(),
-                    movementLines, movementMoves,
-                    uniqueGuids: [...guidsSeen],
-                    bounds: { minX, maxX, minY, maxY },
-                    sampleCount: samples.length,
-                    phaseEventCount: phaseEvents.length,
-                    bombStateCount: bombStates.length,
-                },
-                players,
-                phaseEvents,
-                bombStates,
-                samples,
-            };
-            fs.writeFileSync(path.join(outDir, 'positions.json'), JSON.stringify(positions));
-
-            if (samples.length === 0) {
-                reject(new Error(`No replay movement samples were extracted from ${path.basename(decodePath)}. Found ${movementLines} movement lines and ${movementMoves} moves.`));
-                return;
-            }
-
-            // events.json: round starts via OldPhase=2 (buy phase ended = combat start)
-            const events: { g: string; t: number }[] = [];
-            if (bombStates.length > 0) {
-                const sampleToWallMs = (sIdx: number) => {
-                    let lo = 0, hi = bombStates.length - 1;
-                    while (lo < hi) {
-                        const mid = (lo + hi) >> 1;
-                        if (bombStates[mid].sampleIdx < sIdx) lo = mid + 1; else hi = mid;
-                    }
-                    const next = bombStates[lo];
-                    const prev = lo > 0 ? bombStates[lo - 1] : null;
-                    if (!prev) return next.t * 1000;
-                    const span = next.sampleIdx - prev.sampleIdx;
-                    const a = span > 0 ? (sIdx - prev.sampleIdx) / span : 0;
-                    return (prev.t + (next.t - prev.t) * a) * 1000;
-                };
-                const wallZero = sampleToWallMs(0);
-                const seenStarts = new Set<number>();
-                for (const pe of phaseEvents) {
-                    if (pe.phase !== 2) continue;
-                    if (seenStarts.has(pe.sampleIdx)) continue;
-                    seenStarts.add(pe.sampleIdx);
-                    events.push({ g: 'roundStarted', t: Math.round(sampleToWallMs(pe.sampleIdx) - wallZero) });
-                }
-                if (events.length === 0) events.push({ g: 'roundStarted', t: 0 });
-            }
-            fs.writeFileSync(path.join(outDir, 'events.json'), JSON.stringify(events));
-
-            const meta = { mapUrl: mapUrl || '', mapName: mapHint, generatedAt: new Date().toISOString() };
-            fs.writeFileSync(path.join(outDir, 'meta.json'), JSON.stringify(meta));
-
-            console.log(`[replay] extract: ${samples.length} samples, ${guidsSeen.size} guids, ${events.length} rounds`);
-            resolve();
         });
 
         rl.on('error', reject);
     });
+}
+
+// In-process variant: consume export records straight from the bundled TS parser
+// (no external .exe, no decode-full.txt intermediate file).
+export function extractRecords(
+    records: { ch: number; type: string; fields: { Name: string; Value: unknown }[] }[],
+    outDir: string,
+    sourceLabel: string,
+    mapHint = '',
+): void {
+    const state = newExtractState();
+    for (const r of records) processRecord(state, r);
+    finalize(state, outDir, sourceLabel, mapHint);
 }
