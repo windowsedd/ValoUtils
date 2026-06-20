@@ -1,6 +1,8 @@
 import React, { createContext, Key, useContext, useEffect, useState } from "react";
 import { Tabs } from "@heroui/react";
 import { Route } from "@/types/router";
+import RiotStatusBar from "@/components/riot-status-bar";
+import { useTranslation } from "react-i18next";
 
 type RouterProps = {
 	routes: Route[];
@@ -58,16 +60,17 @@ const RouterProvider: React.FC<
 const Router = () => {
 	const { routes } = useContext(RouterContext);
 	const { selectedId, body, goTo } = useRouter();
+	const { t } = useTranslation();
 
 	return (
 		<>
-			<div className="flex w-full flex-col px-4 shrink-0">
+			<div className="flex items-stretch w-full px-4 shrink-0 border-b border-divider">
 				<Tabs
 					variant="secondary"
 					selectedKey={selectedId}
 					onSelectionChange={(key: Key) => {
 						const routeId = key as string;
-						goTo(routeId); // Use the goTo function to change the selected tab
+						goTo(routeId);
 						window.Main.send(
 							"analytics:track",
 							"tab_change",
@@ -80,20 +83,23 @@ const Router = () => {
 					<Tabs.ListContainer>
 						<Tabs.List
 							aria-label="Options"
-							className="gap-6 w-full relative rounded-none p-0 border-b border-divider"
+							className="gap-6 relative rounded-none p-0 border-b-0"
 						>
 							{routes.map((route) => (
 								<Tabs.Tab key={route.id} id={route.id} className="max-w-fit px-0 h-12">
 									<div className="flex items-center space-x-2">
 										{route.icon}
-										<span>{route.title}</span>
+										<span>{t(route.title)}</span>
 									</div>
-									<Tabs.Indicator className="w-full bg-[#22d3ee]" />
+									<Tabs.Indicator className="w-full bg-[#22d3ee]!" />
 								</Tabs.Tab>
 							))}
 						</Tabs.List>
 					</Tabs.ListContainer>
 				</Tabs>
+				<div className="ml-auto flex items-center">
+					<RiotStatusBar />
+				</div>
 			</div>
 			<div className="flex-1 overflow-y-auto">{body}</div>
 		</>

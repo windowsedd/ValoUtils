@@ -1,8 +1,10 @@
 import { app, shell, BrowserWindow, clipboard, dialog, ipcMain, IpcMainEvent } from 'electron'
 import { writeFileSync } from 'node:fs'
 import path from 'node:path'
-import { getRiotClientInfo, getTokens } from "./util/riot-client.ts";
+import { getRiotClientInfo, getTokens, getUserInfo } from "./util/riot-client.ts";
 import { initSettingsIpc } from "./modules/profiles";
+import { initCareerIpc } from "./modules/career";
+import { initReplaysIpc } from "./modules/replays";
 import { autoUpdater } from "electron-updater"
 import { initialize, trackEvent } from "@aptabase/electron/main";
 import Store from "./util/store.ts";
@@ -138,6 +140,14 @@ ipcMain.on("tokens:refresh", async (event: IpcMainEvent) => {
     event.sender.send("tokens:refresh", JSON.stringify(await getTokens(true)));
 });
 
+ipcMain.on("userinfo:get", async (event: IpcMainEvent) => {
+    try {
+        event.sender.send("userinfo:get", JSON.stringify(await getUserInfo()));
+    } catch (error) {
+        event.sender.send("userinfo:get", JSON.stringify({ error: (error as any).toString() }));
+    }
+});
+
 ipcMain.on("clipboard:get", async (event: IpcMainEvent) => {
     event.sender.send("clipboard:get", JSON.stringify({
         text: clipboard.readText(),
@@ -172,7 +182,21 @@ ipcMain.on("update:check", async () => {
     await checkUpdate();
 });
 
+ipcMain.on("config:get-all", (event: IpcMainEvent) => {
+    event.sender.send("config:get-all", JSON.stringify({
+        autoUpdate: config.get("autoUpdate") ?? true,
+        openDevTools: config.get("openDevTools") ?? false,
+    }));
+});
+
+ipcMain.on("config:set", (event: IpcMainEvent, key: string, value: any) => {
+    config.set(key, value);
+    event.sender.send("config:set", JSON.stringify({ success: true, key }));
+});
+
 initSettingsIpc();
+initCareerIpc();
+initReplaysIpc();
 if (config.get("autoUpdate")) {
     setInterval(async () => {
         try {

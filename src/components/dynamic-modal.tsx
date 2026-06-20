@@ -59,12 +59,12 @@ export const DynamicModalProvider: React.FC<{ children: ReactNode }> = ({ childr
                 <Modal state={state}>
                     <Modal.Backdrop>
                         <Modal.Container>
-                            <Modal.Dialog className="w-170 max-w-[92vw]">
-                                <Modal.Header className="flex flex-col gap-1">
+                            <Modal.Dialog className="w-170 max-w-[92vw] max-h-[85vh] flex flex-col">
+                                <Modal.Header className="flex flex-col gap-1 shrink-0">
                                     <Modal.Heading>{modalContent.title}</Modal.Heading>
                                 </Modal.Header>
-                                <Modal.Body>{modalContent.body}</Modal.Body>
-                                <Modal.Footer>{modalContent.footer}</Modal.Footer>
+                                <Modal.Body className="overflow-y-auto flex-1">{modalContent.body}</Modal.Body>
+                                <Modal.Footer className="shrink-0">{modalContent.footer}</Modal.Footer>
                             </Modal.Dialog>
                         </Modal.Container>
                     </Modal.Backdrop>

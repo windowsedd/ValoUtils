@@ -79,4 +79,8 @@ export const getTokens = async (skipCache = false): Promise<TokensResponse> => {
 
 export const getUserInfo = async (): Promise<UserInfoResponse> => {
     return sendInternalRequest("/riot-client-auth/v1/userinfo", "GET");
-}
+};
+
+export const getRegionLocale = async (): Promise<{ locale: string; region: string }> => {
+    return sendInternalRequest("/riotclient/region-locale", "GET");
+};

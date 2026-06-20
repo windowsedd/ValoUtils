@@ -194,6 +194,23 @@ export const initSettingsIpc = () => {
             }));
         }
     });
+    ipcMain.on("settings:current:view", async (event: IpcMainEvent) => {
+        try {
+            const prefs = await getPreferences();
+            const settings = decodeProfileData(prefs.data);
+            const crosshairs = extractCrosshairProfiles(settings);
+            event.sender.send("settings:current:view", JSON.stringify({
+                success: true,
+                settings,
+                crosshairs
+            }));
+        } catch (error) {
+            event.sender.send("settings:current:view", JSON.stringify({
+                error: (error as any).toString(),
+                success: false
+            }));
+        }
+    });
     ipcMain.on("settings:profile:share", async (event: IpcMainEvent, profileName: string) => {
         const profile = getProfiles().find((p) => p.name === profileName);
         if (!profile) {
