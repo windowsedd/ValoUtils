@@ -137,6 +137,7 @@ export const initReplaysIpc = () => {
                 const p = path.join(outDir, name);
                 return fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, 'utf8')) : fallback;
             };
+            const baseName = path.basename(vrfPath, path.extname(vrfPath));
             const data = {
                 id: baseName,
                 meta: read('meta.json'),
@@ -145,7 +146,6 @@ export const initReplaysIpc = () => {
                 abilities: read('abilities.json', []),
                 matchDetails: read('match-details.json'),
             };
-            const baseName = path.basename(vrfPath, path.extname(vrfPath));
             const result = await dialog.showSaveDialog({
                 title: 'Export Replay JSON',
                 defaultPath: `${baseName}.json`,
