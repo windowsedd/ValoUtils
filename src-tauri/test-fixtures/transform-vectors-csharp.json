@@ -1,0 +1,387 @@
+[
+ {
+  "branch": "++Ares-Core+release-12.10",
+  "seed": 2,
+  "bits": 0,
+  "input": "",
+  "output": ""
+ },
+ {
+  "branch": "++Ares-Core+release-12.10",
+  "seed": 3,
+  "bits": 1,
+  "input": "01",
+  "output": "01"
+ },
+ {
+  "branch": "++Ares-Core+release-12.10",
+  "seed": 5,
+  "bits": 7,
+  "input": "3F",
+  "output": "5F"
+ },
+ {
+  "branch": "++Ares-Core+release-12.10",
+  "seed": 10,
+  "bits": 8,
+  "input": "BF",
+  "output": "50"
+ },
+ {
+  "branch": "++Ares-Core+release-12.10",
+  "seed": 29,
+  "bits": 31,
+  "input": "BFDF6F1E",
+  "output": "49629D71"
+ },
+ {
+  "branch": "++Ares-Core+release-12.10",
+  "seed": 34,
+  "bits": 32,
+  "input": "BFDF6F9E",
+  "output": "A8FC7EF3"
+ },
+ {
+  "branch": "++Ares-Core+release-12.10",
+  "seed": 61,
+  "bits": 63,
+  "input": "BFDF6F9EA1F27B20",
+  "output": "47D3ED3F73178739"
+ },
+ {
+  "branch": "++Ares-Core+release-12.10",
+  "seed": 66,
+  "bits": 64,
+  "input": "BFDF6F9EA1F27BA0",
+  "output": "10AC2E70AD1212C0"
+ },
+ {
+  "branch": "++Ares-Core+release-12.10",
+  "seed": 67,
+  "bits": 65,
+  "input": "BFDF6F9EA1F27BA000",
+  "output": "7721410F808044D200"
+ },
+ {
+  "branch": "++Ares-Core+release-12.10",
+  "seed": 285,
+  "bits": 287,
+  "input": "BFDF6F9EA1F27BA00000C66EAFAF2E0000339C0DD34B0C45C48063038003562A43C0C949",
+  "output": "100CA461300F080493400100000040394E5120000000B0792C626000000080FE7F3C2000"
+ },
+ {
+  "branch": "++Ares-Core+release-12.10",
+  "seed": 290,
+  "bits": 288,
+  "input": "BFDF6F9EA1F27BA00000C66EAFAF2E0000339C0DD34B0C45C48063038003562A43C0C949",
+  "output": "398140967937107E4FA28FEB1FD75CAED71D618B1940D9C6092174B47BA199FD5E2F8393"
+ },
+ {
+  "branch": "++Ares-Core+release-12.11",
+  "seed": 2,
+  "bits": 0,
+  "input": "",
+  "output": ""
+ },
+ {
+  "branch": "++Ares-Core+release-12.11",
+  "seed": 3,
+  "bits": 1,
+  "input": "01",
+  "output": "01"
+ },
+ {
+  "branch": "++Ares-Core+release-12.11",
+  "seed": 5,
+  "bits": 7,
+  "input": "3F",
+  "output": "19"
+ },
+ {
+  "branch": "++Ares-Core+release-12.11",
+  "seed": 10,
+  "bits": 8,
+  "input": "BF",
+  "output": "F4"
+ },
+ {
+  "branch": "++Ares-Core+release-12.11",
+  "seed": 29,
+  "bits": 31,
+  "input": "BFDF6F1E",
+  "output": "3C77997B"
+ },
+ {
+  "branch": "++Ares-Core+release-12.11",
+  "seed": 34,
+  "bits": 32,
+  "input": "BFDF6F9E",
+  "output": "18F42FF1"
+ },
+ {
+  "branch": "++Ares-Core+release-12.11",
+  "seed": 61,
+  "bits": 63,
+  "input": "BFDF6F9EA1F27B20",
+  "output": "8EF2B27ADAE67472"
+ },
+ {
+  "branch": "++Ares-Core+release-12.11",
+  "seed": 66,
+  "bits": 64,
+  "input": "BFDF6F9EA1F27BA0",
+  "output": "D1545FF0BD2FB867"
+ },
+ {
+  "branch": "++Ares-Core+release-12.11",
+  "seed": 67,
+  "bits": 65,
+  "input": "BFDF6F9EA1F27BA000",
+  "output": "E7A9BFB07CFF24CF01"
+ },
+ {
+  "branch": "++Ares-Core+release-12.11",
+  "seed": 285,
+  "bits": 287,
+  "input": "BFDF6F9EA1F27BA00000C66EAFAF2E0000339C0DD34B0C45C48063038003562A43C0C949",
+  "output": "43FE3C8BA5D21FEFBFA741CE0E0071A3F279A1C6E817075ACF20662447D9E50F75F1481D"
+ },
+ {
+  "branch": "++Ares-Core+release-12.11",
+  "seed": 290,
+  "bits": 288,
+  "input": "BFDF6F9EA1F27BA00000C66EAFAF2E0000339C0DD34B0C45C48063038003562A43C0C949",
+  "output": "022F9877FE647DE0F27D5FE813C5FC03BA3EA8C3D7C7BB79B8E1C7755F405825611C0C99"
+ },
+ {
+  "branch": "++Ares-Core+release-13.00",
+  "seed": 2,
+  "bits": 0,
+  "input": "",
+  "output": ""
+ },
+ {
+  "branch": "++Ares-Core+release-13.00",
+  "seed": 3,
+  "bits": 1,
+  "input": "01",
+  "output": "01"
+ },
+ {
+  "branch": "++Ares-Core+release-13.00",
+  "seed": 5,
+  "bits": 7,
+  "input": "3F",
+  "output": "55"
+ },
+ {
+  "branch": "++Ares-Core+release-13.00",
+  "seed": 10,
+  "bits": 8,
+  "input": "BF",
+  "output": "88"
+ },
+ {
+  "branch": "++Ares-Core+release-13.00",
+  "seed": 29,
+  "bits": 31,
+  "input": "BFDF6F1E",
+  "output": "01B0DD66"
+ },
+ {
+  "branch": "++Ares-Core+release-13.00",
+  "seed": 34,
+  "bits": 32,
+  "input": "BFDF6F9E",
+  "output": "901B662B"
+ },
+ {
+  "branch": "++Ares-Core+release-13.00",
+  "seed": 61,
+  "bits": 63,
+  "input": "BFDF6F9EA1F27B20",
+  "output": "029693CD8ADFD510"
+ },
+ {
+  "branch": "++Ares-Core+release-13.00",
+  "seed": 66,
+  "bits": 64,
+  "input": "BFDF6F9EA1F27BA0",
+  "output": "224FB261A44ADF65"
+ },
+ {
+  "branch": "++Ares-Core+release-13.00",
+  "seed": 67,
+  "bits": 65,
+  "input": "BFDF6F9EA1F27BA000",
+  "output": "C8336218A9D2979001"
+ },
+ {
+  "branch": "++Ares-Core+release-13.00",
+  "seed": 285,
+  "bits": 287,
+  "input": "BFDF6F9EA1F27BA00000C66EAFAF2E0000339C0DD34B0C45C48063038003562A43C0C949",
+  "output": "4FE8F025C0F05BA5DBDD798E8A23E32372F1B49C61C270104E7BD61458C2A433218A1A77"
+ },
+ {
+  "branch": "++Ares-Core+release-13.00",
+  "seed": 290,
+  "bits": 288,
+  "input": "BFDF6F9EA1F27BA00000C66EAFAF2E0000339C0DD34B0C45C48063038003562A43C0C949",
+  "output": "8772F8F262B8A7D2A6703E5E961BA7D703AC43D56EE0CC82F4BE1987FC7847365E6B7C32"
+ },
+ {
+  "branch": "++Ares-Core+release-13.01",
+  "seed": 2,
+  "bits": 0,
+  "input": "",
+  "output": ""
+ },
+ {
+  "branch": "++Ares-Core+release-13.01",
+  "seed": 3,
+  "bits": 1,
+  "input": "01",
+  "output": "00"
+ },
+ {
+  "branch": "++Ares-Core+release-13.01",
+  "seed": 5,
+  "bits": 7,
+  "input": "3F",
+  "output": "66"
+ },
+ {
+  "branch": "++Ares-Core+release-13.01",
+  "seed": 10,
+  "bits": 8,
+  "input": "BF",
+  "output": "33"
+ },
+ {
+  "branch": "++Ares-Core+release-13.01",
+  "seed": 29,
+  "bits": 31,
+  "input": "BFDF6F1E",
+  "output": "C2B2EA65"
+ },
+ {
+  "branch": "++Ares-Core+release-13.01",
+  "seed": 34,
+  "bits": 32,
+  "input": "BFDF6F9E",
+  "output": "ABDBCFFA"
+ },
+ {
+  "branch": "++Ares-Core+release-13.01",
+  "seed": 61,
+  "bits": 63,
+  "input": "BFDF6F9EA1F27B20",
+  "output": "196EDFE8D117154D"
+ },
+ {
+  "branch": "++Ares-Core+release-13.01",
+  "seed": 66,
+  "bits": 64,
+  "input": "BFDF6F9EA1F27BA0",
+  "output": "96407A158400136C"
+ },
+ {
+  "branch": "++Ares-Core+release-13.01",
+  "seed": 67,
+  "bits": 65,
+  "input": "BFDF6F9EA1F27BA000",
+  "output": "9B158480536C754001"
+ },
+ {
+  "branch": "++Ares-Core+release-13.01",
+  "seed": 285,
+  "bits": 287,
+  "input": "BFDF6F9EA1F27BA00000C66EAFAF2E0000339C0DD34B0C45C48063038003562A43C0C949",
+  "output": "03417AC58400D36B853918CF2FD40E14D17390D76FBE6E2343D7236F626CA9FF9163B932"
+ },
+ {
+  "branch": "++Ares-Core+release-13.01",
+  "seed": 290,
+  "bits": 288,
+  "input": "BFDF6F9EA1F27BA00000C66EAFAF2E0000339C0DD34B0C45C48063038003562A43C0C949",
+  "output": "7A3611024CB0D5010F95CEE80D1454FC9BFA0206B31864A0621CF3DAE6B7524FDEFA05A3"
+ },
+ {
+  "branch": "++Ares-Core+release-13.02",
+  "seed": 2,
+  "bits": 0,
+  "input": "",
+  "output": ""
+ },
+ {
+  "branch": "++Ares-Core+release-13.02",
+  "seed": 3,
+  "bits": 1,
+  "input": "01",
+  "output": "00"
+ },
+ {
+  "branch": "++Ares-Core+release-13.02",
+  "seed": 5,
+  "bits": 7,
+  "input": "3F",
+  "output": "46"
+ },
+ {
+  "branch": "++Ares-Core+release-13.02",
+  "seed": 10,
+  "bits": 8,
+  "input": "BF",
+  "output": "B3"
+ },
+ {
+  "branch": "++Ares-Core+release-13.02",
+  "seed": 29,
+  "bits": 31,
+  "input": "BFDF6F1E",
+  "output": "919A9E63"
+ },
+ {
+  "branch": "++Ares-Core+release-13.02",
+  "seed": 34,
+  "bits": 32,
+  "input": "BFDF6F9E",
+  "output": "9F2ADA1D"
+ },
+ {
+  "branch": "++Ares-Core+release-13.02",
+  "seed": 61,
+  "bits": 63,
+  "input": "BFDF6F9EA1F27B20",
+  "output": "DA9DA62A9993DA4E"
+ },
+ {
+  "branch": "++Ares-Core+release-13.02",
+  "seed": 66,
+  "bits": 64,
+  "input": "BFDF6F9EA1F27BA0",
+  "output": "5A50DFF6BED22CC7"
+ },
+ {
+  "branch": "++Ares-Core+release-13.02",
+  "seed": 67,
+  "bits": 65,
+  "input": "BFDF6F9EA1F27BA000",
+  "output": "5F6596632DA86F7B01"
+ },
+ {
+  "branch": "++Ares-Core+release-13.02",
+  "seed": 285,
+  "bits": 287,
+  "input": "BFDF6F9EA1F27BA00000C66EAFAF2E0000339C0DD34B0C45C48063038003562A43C0C949",
+  "output": "B10ED4B77D1031CB749931F80C11719110B1AC15F65AAB929706868895077F43AF407273"
+ },
+ {
+  "branch": "++Ares-Core+release-13.02",
+  "seed": 290,
+  "bits": 288,
+  "input": "BFDF6F9EA1F27BA00000C66EAFAF2E0000339C0DD34B0C45C48063038003562A43C0C949",
+  "output": "0F926639D681FAB6D03122E222E923CCC987DA22625B2BFC077F432F912DBD96F2368E1E"
+ }
+]
