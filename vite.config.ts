@@ -1,7 +1,7 @@
 import {defineConfig} from 'vite'
-import electron from 'vite-plugin-electron'
-import renderer from 'vite-plugin-electron-renderer'
 import react from '@vitejs/plugin-react'
+
+const host = process.env.TAURI_DEV_HOST
 
 // https://vitejs.dev/config/
 export default defineConfig({
@@ -12,22 +12,16 @@ export default defineConfig({
     },
     plugins: [
         react(),
-        electron([
-            {
-                // Main-Process entry file of the Electron App.
-                entry: 'electron/main.ts',
-
-            },
-            {
-                entry: 'electron/preload.ts',
-                onstart(options) {
-                    // Notify the Renderer-Process to reload the page when the Preload-Scripts build is complete,
-                    // instead of restarting the entire Electron App.
-                    options.reload()
-                },
-
-            },
-        ]),
-        renderer(),
     ],
+    // Tauri expects a fixed port, fails if that port is not available.
+    clearScreen: false,
+    server: {
+        port: 5173,
+        strictPort: true,
+        host: host || false,
+        watch: {
+            // Tell Vite to ignore watching `src-tauri`.
+            ignored: ['**/src-tauri/**'],
+        },
+    },
 })

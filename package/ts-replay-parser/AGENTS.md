@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Guidance for AI agents working in `@valoutils/ts-replay-parser`.
+Guidance for AI agents working in `@windowsedd/ts-replay-parser`.
 
 The full guide lives in [CLAUDE.md](./CLAUDE.md) — read it first. Quick summary:
 

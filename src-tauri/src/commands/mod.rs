@@ -1,7 +1,9 @@
 pub mod app;
 pub mod career;
 pub mod chat;
+pub mod friends;
 pub mod live;
+pub mod matches;
 pub mod profiles;
 pub mod replays;
 pub mod riot;

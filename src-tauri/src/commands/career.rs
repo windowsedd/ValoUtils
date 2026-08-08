@@ -5,21 +5,23 @@ use tauri::State;
 
 #[tauri::command]
 pub async fn career_get(riot: State<'_, RiotState>) -> Result<String, ()> {
-    let api = match api::create_api(&riot).await {
-        Ok(api) => api,
-        Err(_) => return Ok(json!({ "success": false, "code": "loginRequired" }).to_string()),
-    };
+    // `with_api` retries once with fresh tokens if the cached one has been
+    // invalidated (expired, or the player switched accounts).
+    let result = api::with_api(&riot, |api| async move {
+        let mmr = api.get_mmr(&api.puuid).await?;
+        let competitive_updates = api.get_competitive_history(&api.puuid, 0, 15).await?;
+        Ok((mmr, competitive_updates))
+    })
+    .await;
 
-    let mmr = api.get_mmr(&api.puuid).await;
-    let competitive_updates = api.get_competitive_history(&api.puuid, 0, 15).await;
-
-    match (mmr, competitive_updates) {
-        (Ok(mmr), Ok(competitive_updates)) => Ok(json!({
+    Ok(match result {
+        Ok((mmr, competitive_updates)) => json!({
             "success": true,
             "mmr": mmr,
             "competitiveUpdates": competitive_updates,
         })
-        .to_string()),
-        (Err(e), _) | (_, Err(e)) => Ok(json!({ "success": false, "error": e }).to_string()),
-    }
+        .to_string(),
+        Err(e) if e.contains("lockfile") => json!({ "success": false, "code": "loginRequired" }).to_string(),
+        Err(e) => json!({ "success": false, "error": e }).to_string(),
+    })
 }

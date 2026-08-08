@@ -103,11 +103,48 @@ fn base64_encode(input: &str) -> String {
     base64::engine::general_purpose::STANDARD.encode(input.as_bytes())
 }
 
+/// Seconds left on an RSO access token, read from the JWT's `exp` claim.
+/// `None` when the token can't be parsed, which is treated as "don't trust it".
+fn access_token_ttl(tokens: &Value) -> Option<i64> {
+    use base64::Engine;
+    let jwt = tokens.get("accessToken").and_then(|v| v.as_str())?;
+    let payload = jwt.split('.').nth(1)?;
+    // Spec says base64url unpadded, but accept the padded and standard-alphabet
+    // spellings too — a decode failure here would silently disable the cache.
+    let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(payload)
+        .or_else(|_| base64::engine::general_purpose::URL_SAFE.decode(payload))
+        .or_else(|_| base64::engine::general_purpose::STANDARD_NO_PAD.decode(payload))
+        .or_else(|_| base64::engine::general_purpose::STANDARD.decode(payload))
+        .ok()?;
+    let claims: Value = serde_json::from_slice(&bytes).ok()?;
+    let exp = claims.get("exp").and_then(|v| v.as_i64())?;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?
+        .as_secs() as i64;
+    Some(exp - now)
+}
+
+/// Tokens for the signed-in player.
+///
+/// The cache is deliberately conservative: an entry is only reused while the
+/// underlying access token still has real life left in it. A plain time-based
+/// cache isn't enough — switching Riot accounts issues a brand new token
+/// without touching the lockfile, and the previous one starts failing remote
+/// calls with `BAD_CLAIMS` immediately.
 pub async fn get_tokens(state: &RiotState, skip_cache: bool) -> Result<Value, String> {
+    const CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(60);
+    /// Refresh early so a request can't be issued against a token that expires
+    /// while it's in flight.
+    const MIN_REMAINING_SECS: i64 = 120;
+
     if !skip_cache {
         let cache = state.tokens_cache.lock().unwrap();
         if let Some((tokens, cached_at)) = cache.as_ref() {
-            if cached_at.elapsed() < std::time::Duration::from_secs(5 * 60) {
+            let fresh_enough = cached_at.elapsed() < CACHE_TTL;
+            let still_valid = access_token_ttl(tokens).map(|ttl| ttl > MIN_REMAINING_SECS).unwrap_or(false);
+            if fresh_enough && still_valid {
                 return Ok(tokens.clone());
             }
         }
@@ -115,6 +152,11 @@ pub async fn get_tokens(state: &RiotState, skip_cache: bool) -> Result<Value, St
     let tokens = send_internal_request(state, "/entitlements/v1/token", reqwest::Method::GET, None).await?;
     *state.tokens_cache.lock().unwrap() = Some((tokens.clone(), std::time::Instant::now()));
     Ok(tokens)
+}
+
+/// Drop cached tokens so the next call re-reads them from the Riot Client.
+pub fn invalidate_tokens(state: &RiotState) {
+    *state.tokens_cache.lock().unwrap() = None;
 }
 
 pub async fn get_user_info(state: &RiotState) -> Result<Value, String> {
@@ -129,6 +171,10 @@ pub async fn get_region_locale(state: &RiotState) -> Result<Value, String> {
     send_internal_request(state, "/riotclient/region-locale", reqwest::Method::GET, None).await
 }
 
+/// NOTE: the `version` field here is a build hash (e.g. `0127606AA79E4164`), not
+/// the `release-13.02-shipping-10-5229475` string Riot's game APIs want in
+/// `X-Riot-ClientVersion`. Callers must validate it — see
+/// `riot::api::looks_like_client_version`.
 pub async fn get_valorant_client_version(state: &RiotState) -> Result<String, String> {
     let sessions = send_internal_request(state, "/product-session/v1/external-sessions", reqwest::Method::GET, None).await?;
     let version = sessions
@@ -156,6 +202,14 @@ pub async fn get_presences(state: &RiotState) -> Result<Vec<Value>, String> {
 pub async fn get_friends(state: &RiotState) -> Result<Vec<Value>, String> {
     let data = send_internal_request(state, "/chat/v4/friends", reqwest::Method::GET, None).await?;
     Ok(data.get("friends").and_then(|v| v.as_array()).cloned().unwrap_or_default())
+}
+
+/// Pending friend invites in both directions. Each entry carries a
+/// `subscription` of `pending_in` (they invited us) or `pending_out` (we
+/// invited them).
+pub async fn get_friend_requests(state: &RiotState) -> Result<Vec<Value>, String> {
+    let data = send_internal_request(state, "/chat/v4/friendrequests", reqwest::Method::GET, None).await?;
+    Ok(data.get("requests").and_then(|v| v.as_array()).cloned().unwrap_or_default())
 }
 
 pub async fn get_chat_messages(state: &RiotState, conversation_id: Option<&str>) -> Result<Value, String> {

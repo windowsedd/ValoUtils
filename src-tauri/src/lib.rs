@@ -58,16 +58,17 @@ pub fn run() {
             app.manage(ProfilesStore(profiles_store));
             app.manage(RiotState::default());
             app.manage(commands::live::LiveCache::default());
+            app.manage(commands::matches::MatchCache::default());
 
             if auto_update {
                 let app_handle = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
-                    updater::check_for_updates(&app_handle).await;
+                    updater::check_for_updates(&app_handle, true).await;
                     let mut interval = tokio::time::interval(std::time::Duration::from_secs(60 * 60));
                     interval.tick().await; // first tick fires immediately; already checked above
                     loop {
                         interval.tick().await;
-                        updater::check_for_updates(&app_handle).await;
+                        updater::check_for_updates(&app_handle, true).await;
                     }
                 });
             }
@@ -108,6 +109,10 @@ pub fn run() {
             commands::replays::replay_export_json,
             commands::replays::replay_export_raw,
             commands::replays::replay_process,
+            commands::friends::friends_get,
+            commands::matches::match_list,
+            commands::matches::match_details,
+            commands::matches::match_summaries,
             commands::chat::chat_get,
             commands::chat::chat_translate,
             commands::chat::chat_send,

@@ -48,6 +48,7 @@ const Replays = () => {
     const [error, setError] = useState<string | null>(null);
     const [demosDir, setDemosDir] = useState("");
     const [processing, setProcessing] = useState<Record<string, ProcessStatus>>({});
+    const [selected, setSelected] = useState<Set<string>>(new Set());
     const [activeReplay, setActiveReplay] = useState<ReplayData | null>(null);
     const { t } = useTranslation();
     const { showModal, closeModal } = useDynamicModal();
@@ -114,6 +115,66 @@ const Replays = () => {
         });
         window.Main.send("replay:export-raw", file.path);
     }, []);
+
+    const toggleSelect = (path: string) => {
+        setSelected(prev => {
+            const n = new Set(prev);
+            if (n.has(path)) n.delete(path); else n.add(path);
+            return n;
+        });
+    };
+
+    const deleteOne = (path: string) =>
+        new Promise<void>((resolve, reject) => {
+            window.Main.removeAllListeners("replay:delete");
+            window.Main.on("replay:delete", (msg: string) => {
+                window.Main.removeAllListeners("replay:delete");
+                const res = JSON.parse(msg);
+                if (!res.success) { reject(res.error); return; }
+                resolve();
+            });
+            window.Main.send("replay:delete", path);
+        });
+
+    const confirmDeleteSelected = () => {
+        const paths = Array.from(selected);
+        showModal({
+            title: t("replays.deleteSelected"),
+            body: (
+                <div className="flex flex-col gap-2 pt-1">
+                    <p className="text-white text-sm">{t("replays.deleteSelectedConfirm", { count: paths.length })}</p>
+                    <p className="text-gray-400 text-xs">{t("replays.deleteReplayDesc")}</p>
+                </div>
+            ),
+            footer: (
+                <div className="flex gap-3 w-full">
+                    <CustomButton
+                        className="flex-1"
+                        color="danger"
+                        onClickLoading={async () => {
+                            for (const path of paths) {
+                                await deleteOne(path);
+                                setFiles(prev => prev.filter(f => f.path !== path));
+                                setProcessing(prev => {
+                                    const n = { ...prev };
+                                    delete n[path];
+                                    return n;
+                                });
+                            }
+                            setSelected(new Set());
+                            closeModal();
+                        }}
+                    >
+                        {t("replays.delete")}
+                    </CustomButton>
+                    <CustomButton className="flex-1" onPress={closeModal}>
+                        {t("common.cancel")}
+                    </CustomButton>
+                </div>
+            ),
+            onClose: () => {},
+        });
+    };
 
     const confirmDelete = (file: ReplayFile) => {
         showModal({
@@ -199,6 +260,14 @@ const Replays = () => {
                     <span className="text-gray-500 text-sm">{t("replays.vrfFiles")}</span>
                 </div>
                 <div className="flex items-center gap-3">
+                    {selected.size > 0 && (
+                        <button
+                            onClick={confirmDeleteSelected}
+                            className="flex items-center gap-1.5 text-xs text-red-400 hover:text-red-300 transition-colors"
+                        >
+                            <FaTrash /> {t("replays.removeSelected", { count: selected.size })}
+                        </button>
+                    )}
                     <button
                         onClick={() => {
                             setLoading(true);
@@ -233,7 +302,14 @@ const Replays = () => {
                         const progress = ps ? (PROGRESS[ps.status] ?? 0) : 0;
 
                         return (
-                            <div key={file.path} className="flex items-center gap-3 bg-white/5 rounded-lg px-4 py-3 hover:bg-white/8 transition-colors">
+                            <div key={file.path} className={`flex items-center gap-3 rounded-lg px-4 py-3 transition-colors ${selected.has(file.path) ? "bg-cyan-500/10 hover:bg-cyan-500/15" : "bg-white/5 hover:bg-white/8"}`}>
+                                <input
+                                    type="checkbox"
+                                    checked={selected.has(file.path)}
+                                    onChange={() => toggleSelect(file.path)}
+                                    disabled={isActive}
+                                    className="shrink-0 w-4 h-4 accent-cyan-500 cursor-pointer disabled:cursor-not-allowed disabled:opacity-30"
+                                />
                                 <FaFilm className="text-lg shrink-0 text-gray-600" />
                                 <div className="flex-1 min-w-0">
                                     <div className="text-sm text-white truncate font-medium">{file.name}</div>

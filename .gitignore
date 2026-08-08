@@ -31,6 +31,14 @@ dist-electron
 release
 *.local
 
+# Tauri build output + updater signing key (never commit the private key)
+src-tauri/target
+src-tauri/gen
+src-tauri/*.key
+
+# Compiled sidecar binary (rebuilt via `bun build --compile`, see sidecar/)
+src-tauri/binaries/*.exe
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

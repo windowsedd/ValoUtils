@@ -1,5 +1,29 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FaArrowLeft, FaBug, FaDownload, FaMagic, FaPause, FaPlay, FaStepBackward, FaStepForward } from "react-icons/fa";
+import { useTranslation } from "react-i18next";
+import { FaArrowLeft, FaBomb, FaBug, FaDownload, FaEraser, FaMagic, FaMapMarkerAlt, FaPause, FaPencilAlt, FaPlay, FaStepBackward, FaStepForward, FaTrash } from "react-icons/fa";
+
+// valorant-api.com localization: map the app UI language to a supported API code.
+const VAPI_LANG: Record<string, string> = {
+    en: "en-US",
+    ko: "ko-KR",
+    "zh-TW": "zh-TW",
+};
+const SPIKE_ICON = "/valorant/spike.png";
+
+// Round-end outcome icons (local assets). Tinted teal for a Blue-team win, red for
+// a Red-team win. Filenames are intentionally inconsistent — map them explicitly.
+const ROUND_RESULT_ICON: Record<string, { Blue: string; Red: string }> = {
+    Elimination: { Blue: "/valorant/eliminationloss1_blue.png", Red: "/valorant/eliminationloss_red.png" },
+    Detonate: { Blue: "/valorant/explosionloss1_blue.png", Red: "/valorant/explosionloss1_red.png" },
+    Defuse: { Blue: "/valorant/diffuseloss_blue.png", Red: "/valorant/diffuseloss_red.png" },
+    "": { Blue: "/valorant/timeloss1_blue.png", Red: "/valorant/timeloss1_red.png" },
+};
+
+function roundResultIcon(code: string | undefined, winningTeam: string | undefined): string | null {
+    const team = winningTeam === "Red" ? "Red" : "Blue";
+    const family = ROUND_RESULT_ICON[code ?? ""] ?? ROUND_RESULT_ICON["Elimination"];
+    return family[team] ?? null;
+}
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -35,20 +59,54 @@ interface MatchDetailsPlayer {
     teamId: string;
 }
 interface MatchDetailsKill {
-    gameTime: number;
+    gameTime?: number;
+    timeSinceGameStartMillis?: number;
+    roundTime?: number;
+    timeSinceRoundStartMillis?: number;
+    round?: number;
+    killer?: string;
     victim?: string;
+    assistants?: string[];
+    finishingDamage?: {
+        damageType?: string;
+        damageItem?: string;
+        isSecondaryFireMode?: boolean;
+    };
     playerLocations?: {
         subject?: string;
         location?: { x: number; y: number };
     }[];
 }
+interface MatchDetailsRoundResult {
+    roundNum: number;
+    roundResultCode?: string;   // "Elimination" | "Detonate" | "Defuse" | "" | "Surrendered"
+    winningTeam?: string;       // "Blue" | "Red"
+    bombPlanter?: string | null;
+    plantRoundTime?: number;    // ms since round start (0 if never planted)
+    plantSite?: string;         // "A" | "B" | "C"
+    plantLocation?: { x: number; y: number } | null;
+    defuseRoundTime?: number;   // ms since round start (0 if never defused)
+}
+interface MatchDetailsTeam {
+    teamId: string;             // "Blue" | "Red"
+    won?: boolean;
+    roundsWon?: number;
+    numPoints?: number;
+}
 interface MatchDetailsData {
     players?: MatchDetailsPlayer[];
     kills?: MatchDetailsKill[];
+    roundResults?: MatchDetailsRoundResult[];
+    teams?: MatchDetailsTeam[];
 }
 interface AgentMeta {
     name: string;
     icon: string | null;
+}
+interface MapCallout {
+    regionName: string;
+    superRegionName: string;
+    location: { x: number; y: number };
 }
 interface MapInfo {
     mapUrl: string;
@@ -58,6 +116,11 @@ interface MapInfo {
     yMultiplier: number;
     xScalarToAdd: number;
     yScalarToAdd: number;
+    callouts?: MapCallout[] | null;
+}
+interface WeaponMeta {
+    name: string;
+    icon: string | null;
 }
 interface ImageBounds {
     left: number;
@@ -247,6 +310,15 @@ function buildClockBySample(posData: PositionsData) {
     return clockBySample;
 }
 
+// Riot's raw match-details uses `gameTime`/`roundTime`; the typed npm wrapper
+// exposes `timeSinceGameStartMillis`/`timeSinceRoundStartMillis`. Read either.
+function killGameTimeMs(kill: MatchDetailsKill): number {
+    return kill.gameTime ?? kill.timeSinceGameStartMillis ?? 0;
+}
+function killRoundTimeMs(kill: MatchDetailsKill): number {
+    return kill.roundTime ?? kill.timeSinceRoundStartMillis ?? 0;
+}
+
 function sampleIdxForBombSec(clockBySample: Float64Array, targetBombSec: number) {
     if (clockBySample.length === 0) return 0;
     let lo = 0, hi = clockBySample.length - 1;
@@ -260,7 +332,7 @@ function sampleIdxForBombSec(clockBySample: Float64Array, targetBombSec: number)
 function bridgeMatchPlayers(matchDetails: MatchDetailsData | null | undefined, idx: ActorIndex, clockBySample: Float64Array) {
     const voteByPuuid: Record<string, Record<number, number>> = {};
     for (const kill of matchDetails?.kills ?? []) {
-        const sIdx = sampleIdxForBombSec(clockBySample, kill.gameTime / 1000);
+        const sIdx = sampleIdxForBombSec(clockBySample, killGameTimeMs(kill) / 1000);
         const snap = idx.playerIdxs
             .map(ai => {
                 const pos = getPosAt(ai, sIdx, idx);
@@ -447,6 +519,8 @@ function teamColor(team: number, alpha: number) {
 }
 
 export default function ReplayViewer({ replayId, positions, events, meta, abilities, matchDetails, onClose }: ReplayViewerProps) {
+    const { t, i18n } = useTranslation();
+    const langCode = VAPI_LANG[i18n.language] ?? 'en-US';
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [mapInfo, setMapInfo] = useState<MapInfo | null>(null);
     const [mapImg, setMapImg] = useState<HTMLImageElement | null>(null);
@@ -456,6 +530,8 @@ export default function ReplayViewer({ replayId, positions, events, meta, abilit
     const [playing, setPlaying] = useState(false);
     const [debug, setDebug] = useState(false);
     const [showAbilities, setShowAbilities] = useState(true);
+    const [showCallouts, setShowCallouts] = useState(false);
+    const [weaponByUuid, setWeaponByUuid] = useState<Record<string, WeaponMeta>>({});
     const [speed, setSpeed] = useState(1);
     const speedRef = useRef(1);
 
@@ -488,6 +564,19 @@ export default function ReplayViewer({ replayId, positions, events, meta, abilit
     const dragStartRef = useRef({ x: 0, y: 0, panX: 0, panY: 0 });
     const [zoom, setZoom] = useState(1);
 
+    // Telestrator: freehand annotations drawn onto an offscreen layer that the
+    // render loop composites on top of the map each frame (screen-anchored, so it
+    // doesn't move with pan/zoom). `tool` gates whether canvas drags draw or pan.
+    const [tool, setTool] = useState<'none' | 'draw' | 'erase'>('none');
+    const annotationRef = useRef<HTMLCanvasElement | null>(null);
+    const isDrawingRef = useRef(false);
+    const lastDrawPointRef = useRef<{ x: number; y: number } | null>(null);
+    const DRAW_COLOR = '#fef08a';   // amber stroke, stands out over both team colors
+    // Undo/redo history: ImageData snapshots taken before each mutation (stroke or clear).
+    const undoStackRef = useRef<ImageData[]>([]);
+    const redoStackRef = useRef<ImageData[]>([]);
+    const UNDO_LIMIT = 40;
+
     const roundStarts = useMemo(() => events.filter(e => e.g === 'roundStarted').map(e => e.t), [events]);
     const roundCount = roundStarts.length;
     const wallZeroMs = positions.bombStates.length > 0 ? positions.bombStates[0].t * 1000 : 0;
@@ -506,7 +595,7 @@ export default function ReplayViewer({ replayId, positions, events, meta, abilit
                 if (puuid === kill.victim) { actorAi = ai; break; }
             }
             if (actorAi === -1) continue;
-            const sIdx = sampleIdxForBombSec(clockBySample, kill.gameTime / 1000);
+            const sIdx = sampleIdxForBombSec(clockBySample, killGameTimeMs(kill) / 1000);
             if (!map.has(actorAi)) map.set(actorAi, []);
             map.get(actorAi)!.push(sIdx);
         }
@@ -519,17 +608,90 @@ export default function ReplayViewer({ replayId, positions, events, meta, abilit
         return next !== undefined ? Math.min(next - cur, 130_000) : 130_000;
     })();
 
+    // Kill feed: all kills mapped to a global sample index (same timing path as the
+    // death markers), resolved to agent icon/name + team for both killer and victim.
+    const allKills = useMemo(() => {
+        return (matchDetails?.kills ?? [])
+            .filter(k => k.killer && k.victim)
+            .map(k => ({
+                killSampleIdx: sampleIdxForBombSec(clockBySample, killGameTimeMs(k) / 1000),
+                roundTimeMs: killRoundTimeMs(k),
+                killer: k.killer!,
+                victim: k.victim!,
+                assistants: (k.assistants ?? []).filter(a => a && a !== k.killer),
+                weaponUuid: (k.finishingDamage?.damageItem ?? '').toLowerCase(),
+                damageType: (k.finishingDamage?.damageType ?? '').toLowerCase(),
+            }))
+            .sort((a, b) => a.killSampleIdx - b.killSampleIdx);
+    }, [matchDetails, clockBySample]);
+
+    const currentSampleIdx = useMemo(
+        () => wallMsToSampleIdx((roundStarts[round] ?? 0) + timeMs, positions.bombStates, wallZeroMs),
+        [round, timeMs, roundStarts, positions.bombStates, wallZeroMs]
+    );
+
+    // Per-round outcome (winner-colored icon), aligned to the replay's round index.
+    const roundOutcomes = useMemo(() => {
+        const byNum = new Map<number, MatchDetailsRoundResult>();
+        for (const rr of matchDetails?.roundResults ?? []) byNum.set(rr.roundNum, rr);
+        return byNum;
+    }, [matchDetails]);
+
+    // Team rosters + scores (Blue = team A / 0, Red = team B / 1).
+    const rosters = useMemo(() => {
+        const make = (teamId: string) => (matchDetails?.players ?? [])
+            .filter(p => p.teamId === teamId)
+            .map(p => agentByUuid[p.characterId.toLowerCase()] ?? null);
+        return { blue: make('Blue'), red: make('Red') };
+    }, [matchDetails, agentByUuid]);
+
+    const scores = useMemo(() => {
+        const team = (id: string) => (matchDetails?.teams ?? []).find(t => t.teamId === id);
+        return { blue: team('Blue')?.roundsWon, red: team('Red')?.roundsWon };
+    }, [matchDetails]);
+
+    const killPlayerInfo = useCallback((puuid: string) => {
+        const player = playerByPuuid.get(puuid);
+        const agent = player ? agentByUuid[player.characterId.toLowerCase()] : null;
+        const team = player ? (player.teamId === 'Blue' ? 0 : player.teamId === 'Red' ? 1 : -1) : -1;
+        return { name: agent?.name ?? '', icon: agent?.icon ?? null, team };
+    }, [playerByPuuid, agentByUuid]);
+
+    const weaponIconFor = useCallback((weaponUuid: string) => {
+        return weaponByUuid[weaponUuid]?.icon ?? null;
+    }, [weaponByUuid]);
+
+    // Feed visible right now: kills + the spike plant, within the current round
+    // window, up to playback time (newest first, capped).
+    const visibleFeed = useMemo(() => {
+        const roundStartSample = roundStartSamples[round] ?? 0;
+        const nextRoundSample = roundStartSamples[round + 1] ?? Infinity;
+        const inWindow = (s: number) => s >= roundStartSample && s < nextRoundSample && s <= currentSampleIdx;
+        type Item =
+            | ({ kind: 'kill' } & typeof allKills[number])
+            | { kind: 'plant'; killSampleIdx: number; roundTimeMs: number; planter: string };
+        const items: Item[] = [];
+        for (const k of allKills) if (inWindow(k.killSampleIdx)) items.push({ kind: 'kill', ...k });
+        const rr = roundOutcomes.get(round);
+        if (rr?.bombPlanter && (rr.plantRoundTime ?? 0) > 0) {
+            const s = wallMsToSampleIdx((roundStarts[round] ?? 0) + (rr.plantRoundTime ?? 0), positions.bombStates, wallZeroMs);
+            if (inWindow(s)) items.push({ kind: 'plant', killSampleIdx: s, roundTimeMs: rr.plantRoundTime ?? 0, planter: rr.bombPlanter });
+        }
+        return items.sort((a, b) => a.killSampleIdx - b.killSampleIdx).slice(-6).reverse();
+    }, [allKills, roundStartSamples, round, currentSampleIdx, roundOutcomes, roundStarts, positions.bombStates, wallZeroMs]);
+
     const abilityIconCache = useImageCache(abilities.map(ab => ab.icon ?? ''));
     const agentIconCache = useImageCache(
         [...new Set((matchDetails?.players ?? []).map(p => p.characterId))]
             .map(characterId => agentByUuid[characterId.toLowerCase()]?.icon ?? '')
     );
+    const spikeImg = useImageCache([SPIKE_ICON])[SPIKE_ICON];
 
-    // Fetch map info from valorant-api.com
+    // Fetch map info from valorant-api.com (localized display + callout names)
     useEffect(() => {
         (async () => {
             try {
-                const res = await fetch('https://valorant-api.com/v1/maps');
+                const res = await fetch(`https://valorant-api.com/v1/maps?language=${langCode}`);
                 if (!res.ok) return;
                 const data = await res.json() as { data: MapInfo[] };
                 const mapUrlLower = meta.mapUrl?.toLowerCase() ?? '';
@@ -568,12 +730,12 @@ export default function ReplayViewer({ replayId, positions, events, meta, abilit
                 if (match) setMapInfo(match);
             } catch { /* offline or blocked */ }
         })();
-    }, [meta, positions, actorIdx]);
+    }, [meta, positions, actorIdx, langCode]);
 
     useEffect(() => {
         (async () => {
             try {
-                const res = await fetch('https://valorant-api.com/v1/agents?isPlayableCharacter=true');
+                const res = await fetch(`https://valorant-api.com/v1/agents?isPlayableCharacter=true&language=${langCode}`);
                 if (!res.ok) return;
                 const json = await res.json() as { data: { uuid: string; displayName: string; displayIcon: string }[] };
                 const next: Record<string, AgentMeta> = {};
@@ -583,7 +745,26 @@ export default function ReplayViewer({ replayId, positions, events, meta, abilit
                 setAgentByUuid(next);
             } catch { /* offline or blocked */ }
         })();
-    }, []);
+    }, [langCode]);
+
+    // Fetch weapon names + kill-feed icons from valorant-api.com (localized)
+    useEffect(() => {
+        (async () => {
+            try {
+                const res = await fetch(`https://valorant-api.com/v1/weapons?language=${langCode}`);
+                if (!res.ok) return;
+                const json = await res.json() as { data: { uuid: string; displayName: string; killStreamIcon: string | null; displayIcon: string | null }[] };
+                const next: Record<string, WeaponMeta> = {};
+                for (const weapon of json.data ?? []) {
+                    next[weapon.uuid.toLowerCase()] = {
+                        name: weapon.displayName,
+                        icon: weapon.killStreamIcon ?? weapon.displayIcon ?? null,
+                    };
+                }
+                setWeaponByUuid(next);
+            } catch { /* offline or blocked */ }
+        })();
+    }, [langCode]);
 
     // Load minimap image
     useEffect(() => {
@@ -620,6 +801,24 @@ export default function ReplayViewer({ replayId, positions, events, meta, abilit
             ctx.drawImage(mapImg, 0, 0, W, H);
             ctx.fillStyle = 'rgba(0,0,0,0.3)';
             ctx.fillRect(0, 0, W, H);
+        }
+
+        // Region/callout names (localized) — only when a real map transform matched.
+        if (showCallouts && mapInfo && hasMapTransform(mapInfo) && mapInfo.callouts) {
+            ctx.save();
+            ctx.font = '600 9px Inter, system-ui, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            for (const callout of mapInfo.callouts) {
+                if (!callout.location) continue;
+                const cp = worldToCanvas(callout.location.x, callout.location.y, mapInfo, W, H);
+                ctx.lineWidth = 2.5;
+                ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+                ctx.fillStyle = 'rgba(235,238,245,0.92)';
+                ctx.strokeText(callout.regionName, cp.x, cp.y);
+                ctx.fillText(callout.regionName, cp.x, cp.y);
+            }
+            ctx.restore();
         }
 
         const sampleIdx = wallMsToSampleIdx(renderWallMs, positions.bombStates, wallZeroMs);
@@ -796,7 +995,45 @@ export default function ReplayViewer({ replayId, positions, events, meta, abilit
             }
         }
 
+        // Planted spike marker (objective) at its world location, drawn over players.
+        {
+            const rr = roundOutcomes.get(round);
+            if (rr?.plantLocation && (rr.plantRoundTime ?? 0) > 0) {
+                const plantSample = wallMsToSampleIdx((roundStarts[round] ?? 0) + (rr.plantRoundTime ?? 0), positions.bombStates, wallZeroMs);
+                const defuseSample = (rr.defuseRoundTime ?? 0) > 0
+                    ? wallMsToSampleIdx((roundStarts[round] ?? 0) + (rr.defuseRoundTime ?? 0), positions.bombStates, wallZeroMs)
+                    : Infinity;
+                if (sampleIdx >= plantSample && sampleIdx < defuseSample) {
+                    const sp = worldToCanvasSafe(rr.plantLocation.x, rr.plantLocation.y, mapInfo, bounds, W, H, mapImgBounds);
+                    const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 250);
+                    ctx.save();
+                    // Pulsing red glow so the planted spike stands out.
+                    ctx.beginPath();
+                    ctx.arc(sp.x, sp.y, 11 + pulse * 4, 0, Math.PI * 2);
+                    ctx.fillStyle = `rgba(255,70,85,${0.3 * pulse})`;
+                    ctx.fill();
+                    const sz = 18;
+                    if (spikeImg && spikeImg.complete && spikeImg.naturalWidth > 0) {
+                        ctx.drawImage(spikeImg, sp.x - sz / 2, sp.y - sz / 2, sz, sz);
+                    } else {
+                        // Fallback marker until the sprite loads.
+                        ctx.beginPath();
+                        ctx.arc(sp.x, sp.y, 6, 0, Math.PI * 2);
+                        ctx.fillStyle = '#ff4655';
+                        ctx.fill();
+                        ctx.lineWidth = 1.5;
+                        ctx.strokeStyle = '#fff';
+                        ctx.stroke();
+                    }
+                    ctx.restore();
+                }
+            }
+        }
+
         ctx.restore();
+
+        // Composite freehand annotations on top (screen-space, outside the pan/zoom transform).
+        if (annotationRef.current) ctx.drawImage(annotationRef.current, 0, 0, W, H);
 
         if (debug) {
             ctx.fillStyle = 'rgba(0,0,0,0.55)';
@@ -815,7 +1052,7 @@ export default function ReplayViewer({ replayId, positions, events, meta, abilit
             ctx.fillText(`s[0]:[${sample0?.[0]},${sample0?.[1]?.slice(0,8)},${sample0?.[2]},${sample0?.[3]}]`, 10, 100);
             ctx.fillText(`player0: ${fp ? `${fp.x.toFixed(0)},${fp.y.toFixed(0)}` : 'null'} canvas:${fpc ? `${fpc.x.toFixed(0)},${fpc.y.toFixed(0)}` : 'null'}`, 10, 116);
         }
-    }, [abilityIconCache, actorToPuuid, agentByUuid, agentIconCache, debug, deathsByActor, mapImg, mapImgBounds, mapInfo, playerByPuuid, positions, abilities, round, roundStartSamples, roundStarts, showAbilities, teamOfActor, wallZeroMs]);
+    }, [abilityIconCache, actorToPuuid, agentByUuid, agentIconCache, debug, deathsByActor, mapImg, mapImgBounds, mapInfo, playerByPuuid, positions, abilities, round, roundOutcomes, roundStartSamples, roundStarts, showAbilities, showCallouts, spikeImg, teamOfActor, wallZeroMs]);
 
     useEffect(() => { render(); }, [render]);
 
@@ -849,7 +1086,103 @@ export default function ReplayViewer({ replayId, positions, events, meta, abilit
         return () => canvas.removeEventListener('wheel', onWheel);
     }, [render]);
 
+    // Map a mouse event to intrinsic canvas coordinates (the annotation layer
+    // shares the main canvas's pixel dimensions, so these map 1:1).
+    const getCanvasPoint = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+        const canvas = canvasRef.current;
+        if (!canvas) return { x: 0, y: 0 };
+        const rect = canvas.getBoundingClientRect();
+        return {
+            x: (e.clientX - rect.left) * (canvas.width / rect.width),
+            y: (e.clientY - rect.top) * (canvas.height / rect.height),
+        };
+    }, []);
+
+    // Lazily create the offscreen annotation layer, sized to the main canvas.
+    const getAnnotationCanvas = useCallback(() => {
+        const canvas = canvasRef.current;
+        let layer = annotationRef.current;
+        if (!layer) {
+            layer = document.createElement('canvas');
+            annotationRef.current = layer;
+        }
+        const w = canvas?.width ?? 600;
+        const h = canvas?.height ?? 600;
+        if (layer.width !== w || layer.height !== h) { layer.width = w; layer.height = h; }
+        return layer;
+    }, []);
+
+    // Snapshot the current annotation layer onto the undo stack (invalidating redo).
+    // Call before any mutation so it can be reverted as a single step.
+    const pushUndo = useCallback(() => {
+        const layer = getAnnotationCanvas();
+        const lctx = layer.getContext('2d');
+        if (!lctx) return;
+        undoStackRef.current.push(lctx.getImageData(0, 0, layer.width, layer.height));
+        if (undoStackRef.current.length > UNDO_LIMIT) undoStackRef.current.shift();
+        redoStackRef.current = [];
+    }, [getAnnotationCanvas]);
+
+    const undo = useCallback(() => {
+        if (undoStackRef.current.length === 0) return;
+        const layer = getAnnotationCanvas();
+        const lctx = layer.getContext('2d');
+        if (!lctx) return;
+        redoStackRef.current.push(lctx.getImageData(0, 0, layer.width, layer.height));
+        lctx.putImageData(undoStackRef.current.pop()!, 0, 0);
+        render();
+    }, [getAnnotationCanvas, render]);
+
+    const redo = useCallback(() => {
+        if (redoStackRef.current.length === 0) return;
+        const layer = getAnnotationCanvas();
+        const lctx = layer.getContext('2d');
+        if (!lctx) return;
+        undoStackRef.current.push(lctx.getImageData(0, 0, layer.width, layer.height));
+        lctx.putImageData(redoStackRef.current.pop()!, 0, 0);
+        render();
+    }, [getAnnotationCanvas, render]);
+
+    // Draw or erase a segment on the annotation layer, then recomposite.
+    const drawSegment = useCallback((from: { x: number; y: number }, to: { x: number; y: number }, mode: 'draw' | 'erase') => {
+        const lctx = getAnnotationCanvas().getContext('2d');
+        if (!lctx) return;
+        lctx.lineCap = 'round';
+        lctx.lineJoin = 'round';
+        if (mode === 'erase') {
+            lctx.globalCompositeOperation = 'destination-out';
+            lctx.lineWidth = 22;
+            lctx.strokeStyle = 'rgba(0,0,0,1)';
+        } else {
+            lctx.globalCompositeOperation = 'source-over';
+            lctx.lineWidth = 3;
+            lctx.strokeStyle = DRAW_COLOR;
+        }
+        lctx.beginPath();
+        lctx.moveTo(from.x, from.y);
+        lctx.lineTo(to.x, to.y);
+        lctx.stroke();
+        render();
+    }, [getAnnotationCanvas, render]);
+
+    // Wipe every annotation (undoable).
+    const clearDrawing = useCallback(() => {
+        const layer = annotationRef.current;
+        if (!layer) return;
+        pushUndo();
+        layer.getContext('2d')?.clearRect(0, 0, layer.width, layer.height);
+        render();
+    }, [pushUndo, render]);
+
     const handleMouseDown = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+        if (tool !== 'none') {
+            isDrawingRef.current = true;
+            pushUndo();   // one history step per stroke
+            const p = getCanvasPoint(e);
+            lastDrawPointRef.current = p;
+            drawSegment(p, p, tool === 'erase' ? 'erase' : 'draw');   // dot on a plain click
+            return;
+        }
         if (zoomRef.current <= 1) return;
         isDraggingRef.current = true;
         const canvas = canvasRef.current;
@@ -860,9 +1193,15 @@ export default function ReplayViewer({ replayId, positions, events, meta, abilit
             x: e.clientX * scaleX, y: e.clientY * scaleY,
             panX: panRef.current.x, panY: panRef.current.y,
         };
-    }, []);
+    }, [tool, getCanvasPoint, drawSegment, pushUndo]);
 
     const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+        if (isDrawingRef.current) {
+            const p = getCanvasPoint(e);
+            drawSegment(lastDrawPointRef.current ?? p, p, tool === 'erase' ? 'erase' : 'draw');
+            lastDrawPointRef.current = p;
+            return;
+        }
         if (!isDraggingRef.current) return;
         const canvas = canvasRef.current;
         const rect = canvas?.getBoundingClientRect();
@@ -873,9 +1212,27 @@ export default function ReplayViewer({ replayId, positions, events, meta, abilit
             y: dragStartRef.current.panY + (e.clientY * scaleY - dragStartRef.current.y),
         };
         render();
-    }, [render]);
+    }, [tool, getCanvasPoint, drawSegment, render]);
 
-    const handleMouseUp = useCallback(() => { isDraggingRef.current = false; }, []);
+    const handleMouseUp = useCallback(() => {
+        isDraggingRef.current = false;
+        isDrawingRef.current = false;
+        lastDrawPointRef.current = null;
+    }, []);
+
+    // Ctrl/Cmd+Z = undo, Ctrl/Cmd+Y (or Ctrl/Cmd+Shift+Z) = redo for annotations.
+    useEffect(() => {
+        const onKey = (e: KeyboardEvent) => {
+            if (!(e.ctrlKey || e.metaKey)) return;
+            const target = e.target as HTMLElement | null;
+            if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
+            const key = e.key.toLowerCase();
+            if (key === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
+            else if (key === 'y' || (key === 'z' && e.shiftKey)) { e.preventDefault(); redo(); }
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [undo, redo]);
 
     const resetZoom = useCallback(() => {
         zoomRef.current = 1;
@@ -931,30 +1288,30 @@ export default function ReplayViewer({ replayId, positions, events, meta, abilit
             {/* Header */}
             <div className="flex items-center gap-3 px-4 py-2 border-b border-white/10 shrink-0">
                 <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors flex items-center gap-1.5 text-sm">
-                    <FaArrowLeft /> Back
+                    <FaArrowLeft /> {t('replayViewer.back')}
                 </button>
                 <span className="text-white font-medium text-sm">
-                    {mapInfo?.displayName ?? meta.mapName ?? 'Replay Viewer'}
+                    {mapInfo?.displayName ?? meta.mapName ?? t('replayViewer.fallbackTitle')}
                 </span>
-                {!mapInfo && <span className="text-xs text-gray-600">(no map — using fallback projection)</span>}
+                {!mapInfo && <span className="text-xs text-gray-600">{t('replayViewer.noMapFallback')}</span>}
                 <div className="ml-auto flex items-center gap-3">
                     {zoom !== 1 && (
                         <button onClick={resetZoom} className="text-xs text-gray-400 hover:text-white transition-colors">
-                            {Math.round(zoom * 100)}% · Reset
+                            {Math.round(zoom * 100)}% · {t('replayViewer.reset')}
                         </button>
                     )}
                     <button
                         onClick={exportJson}
                         className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-cyan-300 transition-colors"
-                        title="Export replay data as JSON"
+                        title={t('replayViewer.exportJsonTitle')}
                     >
-                        <FaDownload /> Export JSON
+                        <FaDownload /> {t('replayViewer.exportJson')}
                     </button>
                     <button
                         onClick={() => setDebug(v => !v)}
                         className={`flex items-center gap-1.5 text-xs transition-colors ${debug ? 'text-cyan-300' : 'text-gray-500 hover:text-gray-300'}`}
                     >
-                        <FaBug /> Debug
+                        <FaBug /> {t('replayViewer.debug')}
                     </button>
                 </div>
             </div>
@@ -966,7 +1323,7 @@ export default function ReplayViewer({ replayId, positions, events, meta, abilit
                     width={600}
                     height={600}
                     className="max-w-full max-h-full"
-                    style={{ imageRendering: 'pixelated', cursor: isDraggingRef.current ? 'grabbing' : zoom > 1 ? 'grab' : 'default' }}
+                    style={{ imageRendering: 'pixelated', cursor: tool !== 'none' ? 'crosshair' : isDraggingRef.current ? 'grabbing' : zoom > 1 ? 'grab' : 'default' }}
                     onMouseDown={handleMouseDown}
                     onMouseMove={handleMouseMove}
                     onMouseUp={handleMouseUp}
@@ -976,32 +1333,158 @@ export default function ReplayViewer({ replayId, positions, events, meta, abilit
                     {TEAM_COLORS.map((c, i) => (
                         <div key={i} className="flex items-center gap-1.5">
                             <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: c }} />
-                            <span className="text-gray-300">Team {i === 0 ? 'A' : 'B'}</span>
+                            <span className="text-gray-300">{i === 0 ? t('replayViewer.teamA') : t('replayViewer.teamB')}</span>
                         </div>
                     ))}
                 </div>
+
+                {/* Kill feed — bottom-right, newest on top */}
+                {visibleFeed.length > 0 && (
+                    <div className="absolute bottom-2 right-2 flex flex-col gap-1 pointer-events-none">
+                        {visibleFeed.map((ev, i) => {
+                            const opacity = i === 0 ? 1 : Math.max(0.45, 1 - i * 0.14);
+                            if (ev.kind === 'plant') {
+                                const planter = killPlayerInfo(ev.planter);
+                                return (
+                                    <div
+                                        key={`plant-${ev.killSampleIdx}-${i}`}
+                                        className="flex items-stretch rounded overflow-hidden text-xs shadow-md self-end"
+                                        style={{ opacity }}
+                                    >
+                                        <div
+                                            className="flex items-center gap-1.5 pl-1.5 pr-2 py-1"
+                                            style={{ background: teamColor(planter.team, 0.85) }}
+                                        >
+                                            {planter.icon && <img src={planter.icon} alt="" className="w-5 h-5 rounded-sm" />}
+                                            <span className="text-white font-medium drop-shadow">{planter.name}</span>
+                                        </div>
+                                        <div className="flex items-center gap-1 px-2 py-1 bg-red-600/90 text-white">
+                                            <FaBomb className="text-[11px]" />
+                                            <span className="font-semibold">{t('replayViewer.spikePlanted')}</span>
+                                        </div>
+                                        <div className="flex items-center px-1.5 bg-black/70 text-gray-400 font-mono">
+                                            {fmt(ev.roundTimeMs)}
+                                        </div>
+                                    </div>
+                                );
+                            }
+                            const kill = ev;
+                            const killer = killPlayerInfo(kill.killer);
+                            const victim = killPlayerInfo(kill.victim);
+                            const weaponIcon = weaponIconFor(kill.weaponUuid);
+                            return (
+                                <div
+                                    key={`${kill.killSampleIdx}-${kill.victim}-${i}`}
+                                    className="flex items-stretch rounded overflow-hidden text-xs shadow-md self-end"
+                                    style={{ opacity }}
+                                >
+                                    <div
+                                        className="flex items-center gap-1.5 pl-1.5 pr-2 py-1"
+                                        style={{ background: teamColor(killer.team, 0.85) }}
+                                    >
+                                        {kill.assistants.length > 0 && (
+                                            <span className="flex items-center gap-0.5 mr-0.5">
+                                                {kill.assistants.map((puuid, ai) => {
+                                                    const assist = killPlayerInfo(puuid);
+                                                    return assist.icon
+                                                        ? <img key={ai} src={assist.icon} alt={assist.name} title={assist.name} className="w-4 h-4 rounded-sm opacity-70 ring-1 ring-white/40" />
+                                                        : null;
+                                                })}
+                                            </span>
+                                        )}
+                                        {killer.icon && <img src={killer.icon} alt="" className="w-5 h-5 rounded-sm" />}
+                                        <span className="text-white font-medium drop-shadow">{killer.name}</span>
+                                    </div>
+                                    <div className="flex items-center px-1.5 bg-black/70">
+                                        {weaponIcon
+                                            ? <img src={weaponIcon} alt="" className="h-4 w-auto max-w-16 object-contain" />
+                                            : <span className="text-gray-300 px-1">×</span>}
+                                    </div>
+                                    <div
+                                        className="flex items-center gap-1.5 pl-2 pr-1.5 py-1"
+                                        style={{ background: teamColor(victim.team, 0.85) }}
+                                    >
+                                        <span className="text-white font-medium drop-shadow">{victim.name}</span>
+                                        {victim.icon && <img src={victim.icon} alt="" className="w-5 h-5 rounded-sm" />}
+                                    </div>
+                                    <div className="flex items-center px-1.5 bg-black/70 text-gray-400 font-mono">
+                                        {fmt(kill.roundTimeMs)}
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
             </div>
 
             {/* Controls */}
             <div className="shrink-0 px-4 pb-3 pt-2 border-t border-white/10 flex flex-col gap-2">
-                {/* Round tabs */}
-                {roundCount > 1 && (
-                    <div className="flex gap-1 overflow-x-auto pb-0.5">
-                        {Array.from({ length: roundCount }, (_, i) => (
-                            <button
-                                key={i}
-                                onClick={() => { timeMsRef.current = 0; setRound(i); setTimeMs(0); setPlaying(false); render(roundStarts[i] ?? 0); }}
-                                className={`shrink-0 px-2 py-0.5 rounded text-xs font-mono transition-colors ${
-                                    round === i ? 'bg-cyan-500 text-black font-bold' : 'bg-white/10 text-gray-400 hover:bg-white/20'
-                                }`}
-                            >
-                                R{i + 1}
-                            </button>
-                        ))}
-                    </div>
-                )}
+                {/* Round bar: two-row outcome timeline (Team A wins on top, Team B on
+                    bottom, round numbers in the middle), flanked by team rosters. */}
+                {roundCount > 1 && (() => {
+                    const hasResults = (matchDetails?.roundResults?.length ?? 0) > 0;
+                    const RosterStrip = ({ team, letter }: { team: (AgentMeta | null)[]; letter: string }) => (
+                        <div className="hidden md:flex items-center gap-1 shrink-0">
+                            {letter === 'A' && <span className="text-xs font-bold text-gray-500">{letter}</span>}
+                            {team.map((a, i) => a?.icon
+                                ? <img key={i} src={a.icon} alt={a.name} title={a.name} className="w-6 h-6 rounded-sm bg-white/5" />
+                                : <span key={i} className="w-6 h-6 rounded-sm bg-white/5" />)}
+                            {letter === 'B' && <span className="text-xs font-bold text-gray-500">{letter}</span>}
+                        </div>
+                    );
 
-                {/* Scrubber */}
+                    return (
+                        <div className="flex items-center gap-2">
+                            <RosterStrip team={rosters.blue} letter="A" />
+                            {scores.blue !== undefined && (
+                                <span className="shrink-0 text-base font-bold font-mono" style={{ color: TEAM_COLORS[0] }}>{scores.blue}</span>
+                            )}
+
+                            {/* Per-round columns: Team A cell + number + Team B cell.
+                                Inner w-max + mx-auto centers when it fits, scrolls from
+                                the start (no clipping) when it overflows. */}
+                            <div className="overflow-x-auto pb-0.5 flex-1">
+                              <div className="flex gap-0.5 w-max mx-auto">
+                                {Array.from({ length: roundCount }, (_, i) => {
+                                    const outcome = roundOutcomes.get(i);
+                                    const blueWon = outcome?.winningTeam === 'Blue';
+                                    const redWon = outcome?.winningTeam === 'Red';
+                                    const blueIcon = blueWon ? roundResultIcon(outcome?.roundResultCode, 'Blue') : null;
+                                    const redIcon = redWon ? roundResultIcon(outcome?.roundResultCode, 'Red') : null;
+                                    const cell = (icon: string | null) => (
+                                        <span className="h-6 flex items-center justify-center">
+                                            {icon
+                                                ? <img src={icon} alt="" className="w-5 h-5" />
+                                                : <span className="w-1 h-1 rounded-full bg-white/15" />}
+                                        </span>
+                                    );
+                                    return (
+                                        <button
+                                            key={i}
+                                            title={`R${i + 1}`}
+                                            onClick={() => { timeMsRef.current = 0; setRound(i); setTimeMs(0); setPlaying(false); render(roundStarts[i] ?? 0); }}
+                                            className={`shrink-0 flex flex-col items-center rounded transition-colors ${
+                                                round === i ? 'bg-cyan-500/90 text-black' : 'text-gray-400 hover:bg-white/10'
+                                            }`}
+                                        >
+                                            {hasResults ? cell(blueIcon) : <span className="h-6" />}
+                                            <span className={`h-3.5 px-1.5 flex items-center text-[10px] font-mono ${round === i ? 'font-bold' : ''}`}>{i + 1}</span>
+                                            {hasResults ? cell(redIcon) : <span className="h-0" />}
+                                        </button>
+                                    );
+                                })}
+                              </div>
+                            </div>
+
+                            {scores.red !== undefined && (
+                                <span className="shrink-0 text-base font-bold font-mono" style={{ color: TEAM_COLORS[1] }}>{scores.red}</span>
+                            )}
+                            <RosterStrip team={rosters.red} letter="B" />
+                        </div>
+                    );
+                })()}
+
+                {/* Scrubber (team scores flank the slider) */}
                 <div className="flex items-center gap-2">
                     <span className="text-xs font-mono text-gray-400 w-10 shrink-0">{fmt(timeMs)}</span>
                     <input
@@ -1056,10 +1539,44 @@ export default function ReplayViewer({ replayId, positions, events, meta, abilit
                         }`}
                     >
                         <FaMagic />
-                        Abilities
+                        {t('replayViewer.abilities')}
+                    </button>
+                    <button
+                        onClick={() => setShowCallouts(v => !v)}
+                        className={`flex items-center gap-1.5 rounded px-2 py-1 transition-colors ${
+                            showCallouts ? 'bg-cyan-500/20 text-cyan-300' : 'bg-white/10 text-gray-500'
+                        }`}
+                    >
+                        <FaMapMarkerAlt />
+                        {t('replayViewer.regionNames')}
+                    </button>
+                    <button
+                        onClick={() => setTool(tl => tl === 'draw' ? 'none' : 'draw')}
+                        className={`flex items-center gap-1.5 rounded px-2 py-1 transition-colors ${
+                            tool === 'draw' ? 'bg-cyan-500/20 text-cyan-300' : 'bg-white/10 text-gray-500'
+                        }`}
+                    >
+                        <FaPencilAlt />
+                        {t('replayViewer.draw')}
+                    </button>
+                    <button
+                        onClick={() => setTool(tl => tl === 'erase' ? 'none' : 'erase')}
+                        className={`flex items-center gap-1.5 rounded px-2 py-1 transition-colors ${
+                            tool === 'erase' ? 'bg-cyan-500/20 text-cyan-300' : 'bg-white/10 text-gray-500'
+                        }`}
+                    >
+                        <FaEraser />
+                        {t('replayViewer.erase')}
+                    </button>
+                    <button
+                        onClick={clearDrawing}
+                        className="flex items-center gap-1.5 rounded px-2 py-1 bg-white/10 text-gray-500 hover:text-gray-300 transition-colors"
+                    >
+                        <FaTrash />
+                        {t('replayViewer.clearDrawing')}
                     </button>
                     <span className="text-gray-500">
-                        {abilities.length > 0 ? `${abilities.length} loaded` : 'none loaded'}
+                        {abilities.length > 0 ? t('replayViewer.loaded', { count: abilities.length }) : t('replayViewer.noneLoaded')}
                     </span>
                     <span className="text-gray-700 select-none">|</span>
                     {([0.5, 1, 2, 4] as const).map(s => (

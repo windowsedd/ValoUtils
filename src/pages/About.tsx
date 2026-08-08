@@ -1,9 +1,16 @@
 import CustomButton from "@/components/button.tsx";
+import { PageHeader, SectionCard, SectionRow } from "@/components/section-card";
 import { openUrl } from "@/util";
 import { useEffect, useState } from "react";
 import { FaDiscord, FaGithub, FaHeart, FaTwitter } from "react-icons/fa6";
 import { FaSync } from "react-icons/fa";
 import { useTranslation } from "react-i18next";
+
+const LINKS = [
+	{ icon: FaGithub, url: "https://github.com/windowsedd/ValoUtils", label: "GitHub" },
+	{ icon: FaTwitter, url: "https://x.com/windowsedd/", label: "X" },
+	{ icon: FaDiscord, url: "https://discord.gg/valoutils", label: "Discord" },
+];
 
 const About = () => {
 	const [version, setVersion] = useState<string | null>(null);
@@ -18,81 +25,68 @@ const About = () => {
 	}, []);
 
 	return (
-		<div className="h-full flex flex-col px-6 py-6 animate-fade-in gap-4">
+		<div className="h-full flex flex-col animate-fade-in">
+			<PageHeader
+				icon={<FaHeart className="text-[#ff4655] text-lg" />}
+				title={t("nav.about")}
+				subtitle={version ? `v${version}` : undefined}
+			/>
 
-			{/* Hero */}
-			<div className="glass-strong relative overflow-hidden rounded-2xl flex-1 flex flex-col items-center justify-center gap-3 px-8 py-10">
-				<div className="absolute -top-16 -left-16 w-64 h-64 rounded-full bg-[#ff4655]/10 blur-3xl pointer-events-none" />
-				<div className="absolute -bottom-16 -right-16 w-64 h-64 rounded-full bg-[#9d4dff]/10 blur-3xl pointer-events-none" />
+			<div className="flex-1 min-h-0 overflow-y-auto px-6 pb-6 flex flex-col gap-4">
+				{/* Wordmark — the one place on this page that gets to be loud */}
+				<section className="glass rounded-2xl relative overflow-hidden flex flex-col items-center justify-center gap-2 px-8 py-10">
+					<div className="absolute -top-16 -left-16 w-64 h-64 rounded-full bg-[#ff4655]/10 blur-3xl pointer-events-none" />
+					<div className="absolute -bottom-16 -right-16 w-64 h-64 rounded-full bg-[#9d4dff]/10 blur-3xl pointer-events-none" />
 
-				<p className="text-xs uppercase tracking-[0.35em] text-gray-500 z-10">{t("about.rebuildVersion")}</p>
-				<h1 className="text-8xl font-bold gradient-text leading-none z-10">ValoUtils</h1>
-				<p className="text-gray-400 text-base z-10">{t("about.tagline")}</p>
+					<p className="text-[10px] uppercase tracking-[0.35em] text-gray-600 z-10">{t("about.rebuildVersion")}</p>
+					<h1 className="text-6xl font-bold gradient-text leading-none z-10">ValoUtils</h1>
+					<p className="text-gray-500 text-sm z-10">{t("about.tagline")}</p>
 
-				<div className="divider-gradient w-32 my-2 z-10" />
-
-				<div className="flex items-center gap-3 z-10">
-					<button
-						onClick={() => openUrl("https://github.com/windowsedd/ValoUtils")}
-						className="w-11 h-11 rounded-full glass flex items-center justify-center text-gray-300 hover:text-white hover:bg-white/10 transition-all duration-200"
-					>
-						<FaGithub className="text-xl" />
-					</button>
-					<button
-						onClick={() => openUrl("https://x.com/windowsedd/")}
-						className="w-11 h-11 rounded-full glass flex items-center justify-center text-gray-300 hover:text-white hover:bg-white/10 transition-all duration-200"
-					>
-						<FaTwitter className="text-xl" />
-					</button>
-					<button
-						onClick={() => openUrl("https://discord.gg/valoutils")}
-						className="w-11 h-11 rounded-full glass flex items-center justify-center text-gray-300 hover:text-white hover:bg-white/10 transition-all duration-200"
-					>
-						<FaDiscord className="text-xl" />
-					</button>
-				</div>
-			</div>
-
-			{/* Stats row */}
-			<div className="grid grid-cols-2 gap-4 shrink-0">
-				<div className="glass-strong rounded-xl px-5 py-4 flex items-center gap-3">
-					<FaHeart className="text-[#ff4655] text-lg shrink-0" />
-					<div>
-						<p className="text-xs text-gray-500 uppercase tracking-wider">{t("about.madeBy")}</p>
-						<button
-							onClick={() => openUrl("https://github.com/windowsedd")}
-							className="font-bold gradient-text-blue hover:opacity-80 transition-opacity"
-						>
-							windowsed
-						</button>
+					<div className="flex items-center gap-2 z-10 mt-3">
+						{LINKS.map(({ icon: Icon, url, label }) => (
+							<button
+								key={url}
+								onClick={() => openUrl(url)}
+								aria-label={label}
+								title={label}
+								className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
+							>
+								<Icon className="text-lg" />
+							</button>
+						))}
 					</div>
-				</div>
-				<div className="glass-strong rounded-xl px-5 py-4 flex items-center gap-3">
-					<div className="w-2 h-2 rounded-full bg-green-400" />
-					<div>
-						<p className="text-xs text-gray-500 uppercase tracking-wider">{t("about.version")}</p>
-						<p className="font-bold text-white">{version ?? "—"}</p>
-					</div>
-				</div>
-			</div>
+				</section>
 
-			{/* Update CTA */}
-			<div className="shrink-0">
-				<CustomButton
-					className="w-full h-12"
-					color="danger"
-					showStatusColor={false}
-					onPress={() => window.Main.send("update:check")}
-				>
-					<FaSync className="mr-2" />
-					<span className="font-semibold">{t("about.checkForUpdates")}</span>
-				</CustomButton>
-			</div>
+				<SectionCard title={t("about.sectionApp")} accent="#ff4655">
+					<SectionRow>
+						<FaHeart className="text-[#ff4655] shrink-0 ml-1" />
+						<div className="min-w-0 flex-1">
+							<p className="text-sm font-semibold text-white">{t("about.madeBy")}</p>
+							<button
+								onClick={() => openUrl("https://github.com/windowsedd")}
+								className="text-xs text-gray-500 hover:text-[#22d3ee] transition-colors"
+							>
+								windowsed
+							</button>
+						</div>
+					</SectionRow>
+					<SectionRow>
+						<span className="w-2 h-2 rounded-full bg-green-400 shrink-0 ml-2 mr-1" />
+						<div className="min-w-0 flex-1">
+							<p className="text-sm font-semibold text-white">{t("about.version")}</p>
+							<p className="text-xs text-gray-500 tabular-nums">{version ?? "—"}</p>
+						</div>
+						<CustomButton size="sm" onPress={() => window.Main.send("update:check")}>
+							<FaSync className="mr-1.5" />
+							{t("about.checkForUpdates")}
+						</CustomButton>
+					</SectionRow>
+				</SectionCard>
 
-			{/* Disclaimer */}
-			<p className="text-center text-gray-600 text-xs shrink-0">
-				{t("about.disclaimer")}
-			</p>
+				<SectionCard title={t("about.sectionLegal")} accent="#6b7280">
+					<p className="px-3 py-1 text-xs text-gray-500 leading-relaxed">{t("about.disclaimer")}</p>
+				</SectionCard>
+			</div>
 		</div>
 	);
 };

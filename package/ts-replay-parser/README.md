@@ -1,4 +1,4 @@
-# @valoutils/ts-replay-parser
+# @windowsedd/ts-replay-parser
 
 A **TypeScript port** of [michel-giehl/ValorantReplayParserPlayground](https://github.com/michel-giehl/ValorantReplayParserPlayground), which is itself a fork of [FortniteReplayDecompressor](https://github.com/Shiqan/FortniteReplayDecompressor).
 
@@ -15,7 +15,7 @@ layer-by-layer status and correctness anchors.
 
 ```ts
 import { readFileSync } from "node:fs";
-import { ValorantReplayReader, ParseMode } from "@valoutils/ts-replay-parser";
+import { ValorantReplayReader, ParseMode } from "@windowsedd/ts-replay-parser";
 
 const bytes = new Uint8Array(readFileSync("match.vrf"));
 
@@ -39,7 +39,7 @@ for (const e of replay.exports) {
 into a ready-to-use `movement` array:
 
 ```ts
-import { parseReplayForApp } from "@valoutils/ts-replay-parser";
+import { parseReplayForApp } from "@windowsedd/ts-replay-parser";
 
 const { replay, movement } = parseReplayForApp(bytes);
 

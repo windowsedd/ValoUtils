@@ -28,11 +28,42 @@ fn read_json(path: &Path) -> Option<Value> {
     std::fs::read_to_string(path).ok().and_then(|s| serde_json::from_str(&s).ok())
 }
 
+const CACHE_FILES: [&str; 4] = ["positions.json", "events.json", "meta.json", "abilities.json"];
+
+/// A degenerate `positions.json` (zero samples) is a few hundred bytes; a real
+/// one is tens of MB. The cheap check below uses this as a stand-in for "has
+/// samples" so it doesn't have to parse the file just to render the list.
+const MIN_POSITIONS_BYTES: u64 = 4096;
+
+fn cache_files_exist(out_dir: &Path) -> bool {
+    CACHE_FILES.iter().all(|name| out_dir.join(name).exists())
+}
+
+/// Cheap "is this cached?" check for `replay_list`.
+///
+/// The strict check below parses `positions.json`, which is routinely 70+ MB —
+/// far too expensive to run for every replay just to draw a "cached" badge.
+/// This one only stats `positions.json` and parses the ~100-byte `meta.json`.
+/// A false positive is self-correcting: `replay_process` re-runs the strict
+/// check and reprocesses the replay if the cache turns out to be unusable.
+fn is_processed_quick(out_dir: &Path) -> bool {
+    if !cache_files_exist(out_dir) {
+        return false;
+    }
+    let big_enough = std::fs::metadata(out_dir.join("positions.json"))
+        .map(|m| m.len() >= MIN_POSITIONS_BYTES)
+        .unwrap_or(false);
+    let has_map_url = read_json(&out_dir.join("meta.json"))
+        .and_then(|meta| meta.get("mapUrl").and_then(|v| v.as_str()).map(|s| !s.is_empty()))
+        .unwrap_or(false);
+    big_enough && has_map_url
+}
+
+/// Strict check — parses `positions.json`. Only call this when about to read the
+/// cache anyway (`replay_process`, `replay_export_raw`), never in a loop.
 fn is_already_processed(out_dir: &Path) -> bool {
-    for name in ["positions.json", "events.json", "meta.json", "abilities.json"] {
-        if !out_dir.join(name).exists() {
-            return false;
-        }
+    if !cache_files_exist(out_dir) {
+        return false;
     }
     let Some(positions) = read_json(&out_dir.join("positions.json")) else { return false };
     let Some(meta) = read_json(&out_dir.join("meta.json")) else { return false };
@@ -41,8 +72,17 @@ fn is_already_processed(out_dir: &Path) -> bool {
     has_samples && has_map_url
 }
 
+/// Async so Tauri runs it on the async runtime instead of the main (UI) thread,
+/// and the directory walk itself goes to the blocking pool — scanning the demos
+/// folder plus stat-ing each replay's cache is enough I/O to stutter the WebView.
 #[tauri::command]
-pub fn replay_list() -> String {
+pub async fn replay_list() -> String {
+    tokio::task::spawn_blocking(list_replays_blocking)
+        .await
+        .unwrap_or_else(|e| json!({ "success": false, "error": e.to_string() }).to_string())
+}
+
+fn list_replays_blocking() -> String {
     let dir = demos_dir();
     if !dir.exists() {
         return json!({ "success": true, "files": [], "demosDir": dir.to_string_lossy() }).to_string();
@@ -64,7 +104,7 @@ pub fn replay_list() -> String {
                 "path": path.to_string_lossy(),
                 "size": metadata.len(),
                 "modified": modified,
-                "processed": is_already_processed(&output_dir(&path.to_string_lossy())),
+                "processed": is_processed_quick(&output_dir(&path.to_string_lossy())),
             }))
         })
         .collect();
@@ -73,8 +113,16 @@ pub fn replay_list() -> String {
     json!({ "success": true, "files": files, "demosDir": dir.to_string_lossy() }).to_string()
 }
 
+/// Async for the same reason as `replay_list`: deleting a replay also removes its
+/// cache directory, which can be 70+ MB and stalls the UI thread if done inline.
 #[tauri::command]
-pub fn replay_delete(args: Vec<Value>) -> String {
+pub async fn replay_delete(args: Vec<Value>) -> String {
+    tokio::task::spawn_blocking(move || delete_replay_blocking(args))
+        .await
+        .unwrap_or_else(|e| json!({ "success": false, "error": e.to_string() }).to_string())
+}
+
+fn delete_replay_blocking(args: Vec<Value>) -> String {
     let Some(vrf_path) = arg(&args, 0) else { return json!({ "success": false }).to_string() };
     if let Err(e) = std::fs::remove_file(&vrf_path) {
         if e.kind() != std::io::ErrorKind::NotFound {

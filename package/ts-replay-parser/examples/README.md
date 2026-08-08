@@ -1,6 +1,6 @@
 # Examples
 
-Runnable usage examples for `@valoutils/ts-replay-parser`.
+Runnable usage examples for `@windowsedd/ts-replay-parser`.
 
 Each example reads a `.vrf` file you pass on the command line. Two sample replays
 ship with the package under `../src/valorant/__fixtures__/`.
@@ -25,4 +25,4 @@ node --experimental-strip-types examples/basic.ts <path-to.vrf>
 | [low-level.ts](./low-level.ts) | Use the transform and Oodle decompressor directly |
 
 > Examples import from `../src/index.js` so they run against the source. In your own
-> project you'd `import { ValorantReplayReader } from "@valoutils/ts-replay-parser"`.
+> project you'd `import { ValorantReplayReader } from "@windowsedd/ts-replay-parser"`.

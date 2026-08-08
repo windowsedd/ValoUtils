@@ -78,7 +78,7 @@ pub fn analytics_track(args: Vec<Value>, app: AppHandle) -> String {
 
 #[tauri::command]
 pub async fn update_check(app: AppHandle) -> String {
-    crate::updater::check_for_updates(&app).await;
+    crate::updater::check_for_updates(&app, false).await;
     String::new()
 }
 

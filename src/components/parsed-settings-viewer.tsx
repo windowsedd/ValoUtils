@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { parseGameSettings } from "@/util/settings-parser";
 import { BoolSetting, FloatSetting, IntSetting, RawGameSettings } from "@/types/valorant-settings";
 import { CrosshairSVG, generateCrosshair, SniperCrosshairSVG } from "@/components/crosshair-svg-generator";
@@ -8,45 +9,7 @@ import CustomButton from "@/components/button";
 // ---------------------------------------------------------------------------
 // Label maps
 // ---------------------------------------------------------------------------
-
-const COLOR_BLIND_LABELS: Record<number, string> = {
-    0: "No (Default Red)",
-    1: "Yellow (Deuteranopia)",
-    2: "Blue (Tritanopia)",
-    3: "Purple (Protanopia)",
-};
-
-const PERF_DISPLAY_LABELS: Record<number, string> = {
-    0: "Off",
-    1: "Text",
-    2: "Graph",
-    3: "Text + Graph",
-};
-
-const ACTION_LABELS: Record<string, string> = {
-    Activate_Primary: "Equip Primary",
-    Activate_Secondary: "Equip Secondary",
-    Activate_Melee: "Equip Melee",
-    Activate_Ability1: "Ability 1",
-    Activate_Ability2: "Ability 2",
-    Activate_Ability3: "Ability 3",
-    Activate_Ultimate: "Ultimate",
-    Jump: "Jump",
-    Crouch: "Crouch",
-    Walk: "Walk",
-    Dash: "Dash",
-    PrevWeapon: "Previous Weapon",
-    NextWeapon: "Next Weapon",
-    Ghost: "Ghost / Spectate",
-    OpenBuyMenu: "Buy Menu",
-    VOICE_TeamPTTAction: "Team Voice (PTT)",
-    VOICE_PartyPTTAction: "Party Voice (PTT)",
-    Interact: "Interact / Plant",
-    Reload: "Reload",
-    Inspect: "Inspect Weapon",
-    Map: "Open Map",
-    Scoreboard: "Scoreboard",
-};
+// Keyboard key glyphs/abbreviations are universal — kept untranslated.
 
 const KEY_LABELS: Record<string, string> = {
     None: "—",
@@ -89,14 +52,7 @@ function fmtKey(key: string): string {
 
 type TabId = "general" | "controls" | "crosshair" | "audio" | "video" | "raw";
 
-const TABS: { id: TabId; label: string }[] = [
-    { id: "general", label: "GENERAL" },
-    { id: "controls", label: "CONTROLS" },
-    { id: "crosshair", label: "CROSSHAIR" },
-    { id: "audio", label: "AUDIO" },
-    { id: "video", label: "VIDEO" },
-    { id: "raw", label: "RAW JSON" },
-];
+const TAB_IDS: TabId[] = ["general", "controls", "crosshair", "audio", "video", "raw"];
 
 function SectionHeader({ label }: { label: string }) {
     return (
@@ -107,6 +63,7 @@ function SectionHeader({ label }: { label: string }) {
 }
 
 function ToggleRow({ label, value, note }: { label: string; value: boolean | undefined; note?: string }) {
+    const { t } = useTranslation();
     if (value === undefined) return null;
     return (
         <div className="flex items-center justify-between px-3 py-2 hover:bg-white/[0.03] rounded-sm">
@@ -122,7 +79,7 @@ function ToggleRow({ label, value, note }: { label: string; value: boolean | und
                             : "bg-white/5 text-gray-600 border-white/10"
                     }`}
                 >
-                    ON
+                    {t("settingsViewer.on")}
                 </span>
                 <span
                     className={`text-[11px] font-bold px-3 py-1 rounded-sm border tracking-wider ${
@@ -131,7 +88,7 @@ function ToggleRow({ label, value, note }: { label: string; value: boolean | und
                             : "bg-white/5 text-gray-600 border-white/10"
                     }`}
                 >
-                    OFF
+                    {t("settingsViewer.off")}
                 </span>
             </div>
         </div>
@@ -184,6 +141,7 @@ function SelectRow({ label, value }: { label: string; value: string | undefined 
 // ---------------------------------------------------------------------------
 
 function GeneralTab({ settings }: { settings: ReturnType<typeof parseGameSettings> }) {
+    const { t } = useTranslation();
     const colorBlindMode = settings.ints[IntSetting.ColorBlindMode];
     const mouseSensitivity = settings.floats[FloatSetting.MouseSensitivity];
     const minimapSize = settings.floats[FloatSetting.MinimapSize];
@@ -191,27 +149,30 @@ function GeneralTab({ settings }: { settings: ReturnType<typeof parseGameSetting
     const minimapRotates = settings.bools[BoolSetting.MinimapRotates];
     const minimapTranslates = settings.bools[BoolSetting.MinimapTranslates];
 
+    const colorBlindLabel = colorBlindMode === undefined
+        ? undefined
+        : colorBlindMode >= 0 && colorBlindMode <= 3
+            ? t(`settingsViewer.colorBlind.${colorBlindMode}`)
+            : t("settingsViewer.colorBlind.fallback", { mode: colorBlindMode });
+
     return (
         <div>
-            <SectionHeader label="Accessibility" />
-            <SelectRow
-                label="Enemy Highlight Color"
-                value={colorBlindMode !== undefined ? COLOR_BLIND_LABELS[colorBlindMode] ?? `Mode ${colorBlindMode}` : undefined}
-            />
+            <SectionHeader label={t("settingsViewer.general.accessibility")} />
+            <SelectRow label={t("settingsViewer.general.enemyHighlightColor")} value={colorBlindLabel} />
 
-            <SectionHeader label="Mouse" />
-            <SliderRow label="Sensitivity: Aim" value={mouseSensitivity} min={0} max={2} decimals={2} />
+            <SectionHeader label={t("settingsViewer.general.mouse")} />
+            <SliderRow label={t("settingsViewer.general.sensitivityAim")} value={mouseSensitivity} min={0} max={2} decimals={2} />
 
-            <SectionHeader label="Map" />
+            <SectionHeader label={t("settingsViewer.general.map")} />
             {minimapRotates !== undefined && (
                 <div className="flex items-center justify-between px-3 py-2 hover:bg-white/[0.03] rounded-sm">
-                    <span className="text-sm text-gray-200">Rotate</span>
+                    <span className="text-sm text-gray-200">{t("settingsViewer.general.rotate")}</span>
                     <div className="flex gap-1">
-                        {(["ROTATE", "FIXED"] as const).map((opt) => {
-                            const active = opt === "ROTATE" ? minimapRotates : !minimapRotates;
+                        {([["rotate", "settingsViewer.general.optRotate"], ["fixed", "settingsViewer.general.optFixed"]] as const).map(([key, labelKey]) => {
+                            const active = key === "rotate" ? minimapRotates : !minimapRotates;
                             return (
-                                <span key={opt} className={`text-[11px] font-bold px-3 py-1 rounded-sm border tracking-wider ${active ? "bg-white/10 text-white border-white/25" : "bg-white/5 text-gray-600 border-white/10"}`}>
-                                    {opt}
+                                <span key={key} className={`text-[11px] font-bold px-3 py-1 rounded-sm border tracking-wider ${active ? "bg-white/10 text-white border-white/25" : "bg-white/5 text-gray-600 border-white/10"}`}>
+                                    {t(labelKey)}
                                 </span>
                             );
                         })}
@@ -220,35 +181,35 @@ function GeneralTab({ settings }: { settings: ReturnType<typeof parseGameSetting
             )}
             {minimapTranslates !== undefined && (
                 <div className="flex items-center justify-between px-3 py-2 hover:bg-white/[0.03] rounded-sm">
-                    <span className="text-sm text-gray-200">Fixed Orientation</span>
+                    <span className="text-sm text-gray-200">{t("settingsViewer.general.fixedOrientation")}</span>
                     <div className="flex gap-1">
-                        {["ALWAYS THE SAME", "BASED ON SIDE"].map((opt, i) => {
-                            const active = i === 0 ? !minimapTranslates : minimapTranslates;
+                        {([["alwaysSame", "settingsViewer.general.optAlwaysSame"], ["basedOnSide", "settingsViewer.general.optBasedOnSide"]] as const).map(([key, labelKey]) => {
+                            const active = key === "alwaysSame" ? !minimapTranslates : minimapTranslates;
                             return (
-                                <span key={opt} className={`text-[11px] font-bold px-3 py-1 rounded-sm border tracking-wider ${active ? "bg-white/10 text-white border-white/25" : "bg-white/5 text-gray-600 border-white/10"}`}>
-                                    {opt}
+                                <span key={key} className={`text-[11px] font-bold px-3 py-1 rounded-sm border tracking-wider ${active ? "bg-white/10 text-white border-white/25" : "bg-white/5 text-gray-600 border-white/10"}`}>
+                                    {t(labelKey)}
                                 </span>
                             );
                         })}
                     </div>
                 </div>
             )}
-            <SliderRow label="Minimap Size" value={minimapSize} min={0.6} max={2} decimals={2} />
-            <SliderRow label="Minimap Zoom" value={minimapZoom} min={0.6} max={1.1} decimals={2} />
+            <SliderRow label={t("settingsViewer.general.minimapSize")} value={minimapSize} min={0.6} max={2} decimals={2} />
+            <SliderRow label={t("settingsViewer.general.minimapZoom")} value={minimapZoom} min={0.6} max={1.1} decimals={2} />
 
-            <SectionHeader label="Gameplay" />
-            <ToggleRow label="Show Corpses" value={settings.bools[BoolSetting.ShowCorpses]} />
-            <ToggleRow label="Auto-Equip Strongest Weapon" value={settings.bools[BoolSetting.AutoEquipPrioritizeStrongest]} />
-            <ToggleRow label="Auto-Equip Skips Melee" value={settings.bools[BoolSetting.AutoEquipSkipsMelee]} />
-            <ToggleRow label="Show Final Stats in Scoreboard" value={settings.bools[BoolSetting.ShowFinalStatsInScoreboard]} />
-            <ToggleRow label="Spectator Count Widget" value={settings.bools[BoolSetting.SpectatorCountWidgetVisible]} />
-            <ToggleRow label="Show Keyboard Shortcuts" value={settings.bools[BoolSetting.ShowKeyboardShortcutsOnButtons]} />
+            <SectionHeader label={t("settingsViewer.general.gameplay")} />
+            <ToggleRow label={t("settingsViewer.general.showCorpses")} value={settings.bools[BoolSetting.ShowCorpses]} />
+            <ToggleRow label={t("settingsViewer.general.autoEquipStrongest")} value={settings.bools[BoolSetting.AutoEquipPrioritizeStrongest]} />
+            <ToggleRow label={t("settingsViewer.general.autoEquipSkipsMelee")} value={settings.bools[BoolSetting.AutoEquipSkipsMelee]} />
+            <ToggleRow label={t("settingsViewer.general.showFinalStats")} value={settings.bools[BoolSetting.ShowFinalStatsInScoreboard]} />
+            <ToggleRow label={t("settingsViewer.general.spectatorCount")} value={settings.bools[BoolSetting.SpectatorCountWidgetVisible]} />
+            <ToggleRow label={t("settingsViewer.general.showKeyboardShortcuts")} value={settings.bools[BoolSetting.ShowKeyboardShortcutsOnButtons]} />
 
             {settings.profileNames.length > 0 && (
                 <>
-                    <SectionHeader label="Settings Profiles" />
+                    <SectionHeader label={t("settingsViewer.general.settingsProfiles")} />
                     {settings.profileData.map((p, i) => (
-                        <SelectRow key={i} label={`Slot ${p.presetIndex}`} value={p.profileName} />
+                        <SelectRow key={i} label={t("settingsViewer.general.slot", { index: p.presetIndex })} value={p.profileName} />
                     ))}
                 </>
             )}
@@ -261,6 +222,7 @@ function GeneralTab({ settings }: { settings: ReturnType<typeof parseGameSetting
 // ---------------------------------------------------------------------------
 
 function ControlsTab({ settings }: { settings: ReturnType<typeof parseGameSettings> }) {
+    const { t } = useTranslation();
     // Separate global (None) bindings from character-specific
     const globalBindings: Record<string, { primary?: string; secondary?: string }> = {};
     const agentBindings: Record<string, Record<string, { primary?: string; secondary?: string }>> = {};
@@ -282,7 +244,7 @@ function ControlsTab({ settings }: { settings: ReturnType<typeof parseGameSettin
 
     const BindingRow = ({ action, binds }: { action: string; binds: { primary?: string; secondary?: string } }) => (
         <div className="flex items-center justify-between px-3 py-2 hover:bg-white/[0.03] rounded-sm">
-            <span className="text-sm text-gray-200">{ACTION_LABELS[action] ?? action}</span>
+            <span className="text-sm text-gray-200">{t(`settingsViewer.actions.${action}`, action)}</span>
             <div className="flex gap-2">
                 {[binds.primary, binds.secondary].map((k, i) => (
                     <span
@@ -302,13 +264,13 @@ function ControlsTab({ settings }: { settings: ReturnType<typeof parseGameSettin
 
     return (
         <div>
-            <SectionHeader label="Global Keybinds" />
+            <SectionHeader label={t("settingsViewer.controls.globalKeybinds")} />
             <div className="flex justify-end gap-2 px-3 pb-1">
-                <span className="text-[10px] text-gray-500 w-12 text-center">KEY 1</span>
-                <span className="text-[10px] text-gray-500 w-12 text-center">KEY 2</span>
+                <span className="text-[10px] text-gray-500 w-12 text-center">{t("settingsViewer.controls.key1")}</span>
+                <span className="text-[10px] text-gray-500 w-12 text-center">{t("settingsViewer.controls.key2")}</span>
             </div>
             {Object.keys(globalBindings).length === 0 ? (
-                <p className="text-sm text-gray-500 text-center py-4">No global bindings found.</p>
+                <p className="text-sm text-gray-500 text-center py-4">{t("settingsViewer.controls.noGlobalBindings")}</p>
             ) : (
                 Object.entries(globalBindings).map(([action, binds]) => (
                     <BindingRow key={action} action={action} binds={binds} />
@@ -317,7 +279,7 @@ function ControlsTab({ settings }: { settings: ReturnType<typeof parseGameSettin
 
             {Object.entries(agentBindings).map(([agent, bindings]) => (
                 <div key={agent}>
-                    <SectionHeader label={`${agent} (Agent Overrides)`} />
+                    <SectionHeader label={t("settingsViewer.controls.agentOverrides", { agent })} />
                     {Object.entries(bindings).map(([action, binds]) => (
                         <BindingRow key={action} action={action} binds={binds} />
                     ))}
@@ -336,20 +298,21 @@ function CrosshairTab({
 }: {
     crosshairData: { currentProfile: number; profiles: any[] } | null;
 }) {
+    const { t } = useTranslation();
     const [selectedIndex, setSelectedIndex] = useState(crosshairData?.currentProfile ?? 0);
     const profiles = crosshairData?.profiles ?? [];
     const selectedProfile = profiles[selectedIndex];
     const mapped = selectedProfile ? mapRiotCrosshairProfile(selectedProfile) : null;
 
     if (profiles.length === 0) {
-        return <p className="text-center text-gray-400 py-8">No crosshair profiles found.</p>;
+        return <p className="text-center text-gray-400 py-8">{t("settingsViewer.crosshair.noProfiles")}</p>;
     }
 
     return (
         <div className="flex flex-col gap-4">
             <div className="flex items-center justify-center gap-2">
                 <label htmlFor="ch-profile-select" className="text-sm text-gray-400">
-                    Profile
+                    {t("settingsViewer.crosshair.profile")}
                 </label>
                 <select
                     id="ch-profile-select"
@@ -359,8 +322,8 @@ function CrosshairTab({
                 >
                     {profiles.map((p, i) => (
                         <option key={i} value={i} className="bg-black">
-                            {p.profileName || `Profile ${i + 1}`}
-                            {i === crosshairData?.currentProfile ? " (active)" : ""}
+                            {p.profileName || t("settingsViewer.crosshair.profileFallback", { index: i + 1 })}
+                            {i === crosshairData?.currentProfile ? ` ${t("settingsViewer.crosshair.active")}` : ""}
                         </option>
                     ))}
                 </select>
@@ -371,11 +334,11 @@ function CrosshairTab({
                     <h3 className="text-base font-semibold text-center gradient-text">{mapped.name}</h3>
                     <div className="grid grid-cols-2 gap-3">
                         <div className="glass p-3 flex flex-col items-center gap-2">
-                            <span className="text-xs text-gray-400">Primary</span>
+                            <span className="text-xs text-gray-400">{t("settingsViewer.crosshair.primary")}</span>
                             <CrosshairSVG settings={mapped.primary} width={120} height={120} backgroundColor="#00000066" />
                         </div>
                         <div className="glass p-3 flex flex-col items-center gap-2">
-                            <span className="text-xs text-gray-400">Sniper</span>
+                            <span className="text-xs text-gray-400">{t("settingsViewer.crosshair.sniper")}</span>
                             <SniperCrosshairSVG settings={mapped.sniper} width={120} height={120} backgroundColor="#00000066" />
                         </div>
                     </div>
@@ -391,7 +354,7 @@ function CrosshairTab({
                             })
                         }
                     >
-                        Copy Crosshair Code
+                        {t("settingsViewer.crosshair.copyCode")}
                     </CustomButton>
                 </>
             )}
@@ -404,37 +367,38 @@ function CrosshairTab({
 // ---------------------------------------------------------------------------
 
 function AudioTab({ settings }: { settings: ReturnType<typeof parseGameSettings> }) {
+    const { t } = useTranslation();
     const micVolume = settings.ints[IntSetting.MicVolume];
     const voiceVolume = settings.ints[IntSetting.VoiceVolume];
     const micSensitivity = settings.ints[IntSetting.MicSensitivityThreshold];
 
     return (
         <div>
-            <SectionHeader label="Master" />
-            <SliderRow label="Overall Volume" value={settings.floats[FloatSetting.OverallVolume]} min={0} max={1} decimals={2} />
+            <SectionHeader label={t("settingsViewer.audio.master")} />
+            <SliderRow label={t("settingsViewer.audio.overallVolume")} value={settings.floats[FloatSetting.OverallVolume]} min={0} max={1} decimals={2} />
 
-            <SectionHeader label="Music" />
-            <SliderRow label="Music Volume" value={settings.floats[FloatSetting.AllMusicOverallVolume]} min={0} max={1} decimals={2} />
-            <ToggleRow label="Mute Music When Game Unfocused" value={settings.bools[BoolSetting.MuteMusicOnAppWindowDeactivate]} />
+            <SectionHeader label={t("settingsViewer.audio.music")} />
+            <SliderRow label={t("settingsViewer.audio.musicVolume")} value={settings.floats[FloatSetting.AllMusicOverallVolume]} min={0} max={1} decimals={2} />
+            <ToggleRow label={t("settingsViewer.audio.muteMusicUnfocused")} value={settings.bools[BoolSetting.MuteMusicOnAppWindowDeactivate]} />
 
-            <SectionHeader label="Voice-Over" />
-            <SliderRow label="Voice-Over Volume" value={settings.floats[FloatSetting.VoiceOverVolume]} min={0} max={1} decimals={2} />
+            <SectionHeader label={t("settingsViewer.audio.voiceOver")} />
+            <SliderRow label={t("settingsViewer.audio.voiceOverVolume")} value={settings.floats[FloatSetting.VoiceOverVolume]} min={0} max={1} decimals={2} />
 
-            <SectionHeader label="Voice Chat" />
-            <ToggleRow label="Push To Talk" value={settings.bools[BoolSetting.PushToTalkEnabled]} />
-            <ToggleRow label="Custom Party Voice Chat" value={settings.bools[BoolSetting.CustomPartyVoiceChatEnabled]} />
-            <ToggleRow label="Enable HRTF (Spatial Audio)" value={settings.bools[BoolSetting.EnableHRTF]} />
-            <ToggleRow label="Voice Chat Ducks Music" value={settings.bools[BoolSetting.VoipDucksMusicVolume]} />
+            <SectionHeader label={t("settingsViewer.audio.voiceChat")} />
+            <ToggleRow label={t("settingsViewer.audio.pushToTalk")} value={settings.bools[BoolSetting.PushToTalkEnabled]} />
+            <ToggleRow label={t("settingsViewer.audio.customPartyVoice")} value={settings.bools[BoolSetting.CustomPartyVoiceChatEnabled]} />
+            <ToggleRow label={t("settingsViewer.audio.enableHRTF")} value={settings.bools[BoolSetting.EnableHRTF]} />
+            <ToggleRow label={t("settingsViewer.audio.voiceDucksMusic")} value={settings.bools[BoolSetting.VoipDucksMusicVolume]} />
             {voiceVolume !== undefined && (
-                <SliderRow label="Incoming Volume" value={voiceVolume} min={0} max={100} decimals={0} />
+                <SliderRow label={t("settingsViewer.audio.incomingVolume")} value={voiceVolume} min={0} max={100} decimals={0} />
             )}
 
-            <SectionHeader label="Microphone" />
+            <SectionHeader label={t("settingsViewer.audio.microphone")} />
             {micVolume !== undefined && (
-                <SliderRow label="Mic Volume" value={micVolume} min={0} max={100} decimals={0} />
+                <SliderRow label={t("settingsViewer.audio.micVolume")} value={micVolume} min={0} max={100} decimals={0} />
             )}
             {micSensitivity !== undefined && (
-                <SliderRow label="Mic Sensitivity Threshold" value={micSensitivity} min={0} max={100} decimals={0} />
+                <SliderRow label={t("settingsViewer.audio.micSensitivity")} value={micSensitivity} min={0} max={100} decimals={0} />
             )}
         </div>
     );
@@ -445,6 +409,7 @@ function AudioTab({ settings }: { settings: ReturnType<typeof parseGameSettings>
 // ---------------------------------------------------------------------------
 
 function VideoTab({ settings }: { settings: ReturnType<typeof parseGameSettings> }) {
+    const { t } = useTranslation();
     const fpsMode = settings.ints[IntSetting.PlayerPerfShowFrameRate];
     const serverFpsMode = settings.ints[IntSetting.PlayerPerfShowServerFrameRate];
     const packetLossMode = settings.ints[IntSetting.PlayerPerfShowPacketLossPercentage];
@@ -452,20 +417,23 @@ function VideoTab({ settings }: { settings: ReturnType<typeof parseGameSettings>
     const rhiMode = settings.ints[IntSetting.PlayerPerfShowRHIPresentTime];
     const firingErrorsMode = settings.ints[IntSetting.PlayerPerfShowFiringErrors];
 
+    const perfLabel = (mode: number | undefined) =>
+        mode !== undefined ? t(`settingsViewer.perfDisplay.${mode}`) : undefined;
+
     return (
         <div>
-            <SectionHeader label="Performance Stats" />
-            <p className="text-xs text-gray-500 px-3 pb-2">Controls which stats are shown as text, graph, or both.</p>
-            <SelectRow label="Client FPS" value={fpsMode !== undefined ? PERF_DISPLAY_LABELS[fpsMode] : undefined} />
-            <SelectRow label="Server Frame Rate" value={serverFpsMode !== undefined ? PERF_DISPLAY_LABELS[serverFpsMode] : undefined} />
-            <SelectRow label="Packet Loss %" value={packetLossMode !== undefined ? PERF_DISPLAY_LABELS[packetLossMode] : undefined} />
-            <SelectRow label="Input Latency (CPU)" value={cpuMode !== undefined ? PERF_DISPLAY_LABELS[cpuMode] : undefined} />
-            <SelectRow label="RHI Present Time" value={rhiMode !== undefined ? PERF_DISPLAY_LABELS[rhiMode] : undefined} />
-            <SelectRow label="Shooting Errors" value={firingErrorsMode !== undefined ? PERF_DISPLAY_LABELS[firingErrorsMode] : undefined} />
+            <SectionHeader label={t("settingsViewer.video.performanceStats")} />
+            <p className="text-xs text-gray-500 px-3 pb-2">{t("settingsViewer.video.performanceStatsDesc")}</p>
+            <SelectRow label={t("settingsViewer.video.clientFps")} value={perfLabel(fpsMode)} />
+            <SelectRow label={t("settingsViewer.video.serverFrameRate")} value={perfLabel(serverFpsMode)} />
+            <SelectRow label={t("settingsViewer.video.packetLoss")} value={perfLabel(packetLossMode)} />
+            <SelectRow label={t("settingsViewer.video.inputLatencyCpu")} value={perfLabel(cpuMode)} />
+            <SelectRow label={t("settingsViewer.video.rhiPresentTime")} value={perfLabel(rhiMode)} />
+            <SelectRow label={t("settingsViewer.video.shootingErrors")} value={perfLabel(firingErrorsMode)} />
 
             {settings.unknown.ints.length > 0 && (
                 <>
-                    <SectionHeader label="Other (unrecognized)" />
+                    <SectionHeader label={t("settingsViewer.video.otherUnrecognized")} />
                     {settings.unknown.ints.map((s, i) => (
                         <SelectRow key={i} label={s.settingEnum.split("::")[1] ?? s.settingEnum} value={String(s.value)} />
                     ))}
@@ -493,6 +461,7 @@ export interface ParsedSettingsViewerProps {
 }
 
 export function ParsedSettingsViewer({ rawSettings, crosshairData }: ParsedSettingsViewerProps) {
+    const { t } = useTranslation();
     const [activeTab, setActiveTab] = useState<TabId>("general");
     const settings = useMemo(() => parseGameSettings(rawSettings), [rawSettings]);
 
@@ -500,18 +469,18 @@ export function ParsedSettingsViewer({ rawSettings, crosshairData }: ParsedSetti
         <div className="flex flex-col min-h-0">
             {/* Tab bar */}
             <div className="flex border-b border-white/10 mb-1 gap-0 shrink-0">
-                {TABS.map((tab) => (
+                {TAB_IDS.map((id) => (
                     <button
-                        key={tab.id}
-                        onClick={() => setActiveTab(tab.id)}
+                        key={id}
+                        onClick={() => setActiveTab(id)}
                         className={`relative px-4 py-2.5 text-xs font-bold tracking-[0.12em] transition-colors cursor-pointer ${
-                            activeTab === tab.id
+                            activeTab === id
                                 ? "text-white"
                                 : "text-gray-500 hover:text-gray-300"
                         }`}
                     >
-                        {tab.label}
-                        {activeTab === tab.id && (
+                        {t(`settingsViewer.tabs.${id}`)}
+                        {activeTab === id && (
                             <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-[#ff4655]" />
                         )}
                     </button>

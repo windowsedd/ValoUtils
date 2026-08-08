@@ -7,9 +7,17 @@ use tauri_plugin_updater::UpdaterExt;
 /// re-emitted as the same `update:*` channel names plus `alert:info` toasts
 /// so the existing renderer code (About.tsx, alert-container.tsx) needs no
 /// changes.
-pub async fn check_for_updates(app: &AppHandle) {
+/// `silent` suppresses the progress chatter ("Checking for updates…", "No
+/// updates available.") for the automatic startup + hourly checks — those fire
+/// regardless of what the user is doing, and a toast that pops over the UI to
+/// report that nothing happened is pure noise. The manual check from About
+/// passes `false`, since there the user asked and expects feedback.
+/// Toasts about an update actually being found are always shown.
+pub async fn check_for_updates(app: &AppHandle, silent: bool) {
     let _ = app.emit("update:checking", ());
-    let _ = app.emit("alert:info", "Checking for updates...");
+    if !silent {
+        let _ = app.emit("alert:info", "Checking for updates...");
+    }
 
     let updater = match app.updater() {
         Ok(u) => u,
@@ -48,7 +56,9 @@ pub async fn check_for_updates(app: &AppHandle) {
         }
         Ok(None) => {
             let _ = app.emit("update:not-available", ());
-            let _ = app.emit("alert:info", "No updates available.");
+            if !silent {
+                let _ = app.emit("alert:info", "No updates available.");
+            }
         }
         Err(e) => {
             let _ = app.emit("update:error", e.to_string());

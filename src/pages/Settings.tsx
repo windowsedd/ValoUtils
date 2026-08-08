@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { FaGlobe, FaRocket, FaCode, FaChartBar } from "react-icons/fa6";
+import { FaGlobe, FaRocket, FaCode, FaChartBar, FaLanguage, FaKey, FaArrowUpRightFromSquare, FaCopy, FaCheck, FaGear, FaEye, FaEyeSlash } from "react-icons/fa6";
+import { PageHeader, SectionCard } from "@/components/section-card";
 
 const LANGUAGES = [
 	{ code: "en", label: "EN", name: "English" },
@@ -8,7 +9,13 @@ const LANGUAGES = [
 	{ code: "zh-TW", label: "繁中", name: "Traditional Chinese" },
 ];
 
-type AppConfig = { autoUpdate: boolean; openDevTools: boolean };
+type AppConfig = {
+	autoUpdate: boolean;
+	openDevTools: boolean;
+	translatorProvider: "google" | "deepl";
+	translatorTargetLanguage: string;
+	deeplApiKey: string;
+};
 
 const Toggle = ({
 	checked,
@@ -42,7 +49,7 @@ type SettingRowProps = {
 };
 
 const SettingRow = ({ icon, label, description, badge, right }: SettingRowProps) => (
-	<div className="flex items-center justify-between gap-4 py-4 border-b border-white/5 last:border-0">
+	<div className="flex items-center justify-between gap-4 py-3 border-b border-white/5 last:border-0">
 		<div className="flex items-start gap-3 min-w-0">
 			<div className="text-gray-400 mt-0.5 shrink-0">{icon}</div>
 			<div className="min-w-0">
@@ -61,16 +68,20 @@ const SettingRow = ({ icon, label, description, badge, right }: SettingRowProps)
 	</div>
 );
 
-const SectionHeader = ({ title }: { title: string }) => (
-	<p className="text-xs font-semibold uppercase tracking-widest text-gray-500 mb-1 mt-2 first:mt-0">
-		{title}
-	</p>
-);
-
 const Settings = () => {
 	const { t, i18n } = useTranslation();
 	const [currentLang, setCurrentLang] = useState(i18n.language);
-	const [appConfig, setAppConfig] = useState<AppConfig>({ autoUpdate: true, openDevTools: false });
+	const [clientPort, setClientPort] = useState<number | null>(null);
+	const [clientPassword, setClientPassword] = useState<string | null>(null);
+	const [copied, setCopied] = useState<string | null>(null);
+	const [revealPassword, setRevealPassword] = useState(false);
+	const [appConfig, setAppConfig] = useState<AppConfig>({
+		autoUpdate: true,
+		openDevTools: false,
+		translatorProvider: "google",
+		translatorTargetLanguage: "en",
+		deeplApiKey: "",
+	});
 	const [analytics, setAnalytics] = useState(() => localStorage.getItem("valoutils-analytics") !== "false");
 
 	useEffect(() => {
@@ -83,13 +94,27 @@ const Settings = () => {
 		return () => { window.Main.removeAllListeners("config:get-all"); };
 	}, []);
 
+	useEffect(() => {
+		if (!window.Main) return;
+		window.Main.on("client_info:get", (msg: string) => {
+			window.Main.removeAllListeners("client_info:get");
+			try {
+				const info = JSON.parse(msg);
+				if (info?.port) setClientPort(info.port);
+				if (info?.password) setClientPassword(info.password);
+			} catch { /* ignore */ }
+		});
+		window.Main.send("client_info:get");
+		return () => { window.Main.removeAllListeners("client_info:get"); };
+	}, []);
+
 	const changeLang = (code: string) => {
 		i18n.changeLanguage(code);
 		localStorage.setItem("valoutils-lang", code);
 		setCurrentLang(code);
 	};
 
-	const setConfig = (key: string, value: boolean) => {
+	const setConfig = (key: string, value: boolean | string) => {
 		window.Main.send("config:set", key, value);
 		setAppConfig((prev) => ({ ...prev, [key]: value }));
 	};
@@ -100,14 +125,13 @@ const Settings = () => {
 	};
 
 	return (
-		<div className="px-6 py-8 h-full flex flex-col gap-5 animate-fade-in overflow-y-auto">
-			<div className="glass-strong p-6 shrink-0">
-				<h1 className="text-5xl font-bold gradient-text">{t("settings.title")}</h1>
-			</div>
+		<div className="h-full flex flex-col animate-fade-in">
+			<PageHeader icon={<FaGear className="text-[#ff4655] text-lg" />} title={t("settings.title")} />
 
-			<div className="glass-strong p-6 flex flex-col gap-0">
-				<SectionHeader title={t("settings.sectionGeneral")} />
+			<div className="flex-1 min-h-0 overflow-y-auto px-6 pb-6 flex flex-col gap-4">
 
+			<SectionCard title={t("settings.sectionGeneral")} accent="#ff4655">
+					<div className="flex flex-col px-1">
 				{/* Language */}
 				<SettingRow
 					icon={<FaGlobe />}
@@ -132,11 +156,67 @@ const Settings = () => {
 						</div>
 					}
 				/>
-			</div>
+					</div>
+				</SectionCard>
 
-			<div className="glass-strong p-6 flex flex-col gap-0">
-				<SectionHeader title={t("settings.sectionApp")} />
+				<SectionCard title={t("settings.sectionTranslation")} accent="#22d3ee">
+					<div className="flex flex-col px-1">
+				<SettingRow
+					icon={<FaLanguage />}
+					label={t("settings.translatorProvider")}
+					description={t("settings.translatorProviderDesc")}
+					right={
+						<div className="flex gap-2">
+							{(["google", "deepl"] as const).map((provider) => (
+								<button
+									key={provider}
+									onClick={() => setConfig("translatorProvider", provider)}
+									className={`px-2.5 py-1 rounded text-xs font-semibold uppercase transition-all ${
+										appConfig.translatorProvider === provider
+											? "bg-[#22d3ee]/20 text-[#22d3ee] border border-[#22d3ee]/40"
+											: "text-gray-400 hover:text-gray-200 border border-white/10 hover:border-white/25"
+									}`}
+								>
+									{provider}
+								</button>
+							))}
+						</div>
+					}
+				/>
 
+				<SettingRow
+					icon={<FaGlobe />}
+					label={t("settings.translationTarget")}
+					description={t("settings.translationTargetDesc")}
+					right={
+						<input
+							value={appConfig.translatorTargetLanguage}
+							onChange={(event) => setConfig("translatorTargetLanguage", event.target.value)}
+							className="w-20 px-2 py-1 rounded border border-white/10 bg-black/30 text-sm text-white outline-none focus:border-[#22d3ee]/50"
+							placeholder="en"
+						/>
+					}
+				/>
+
+				<SettingRow
+					icon={<FaKey />}
+					label={t("settings.deeplApiKey")}
+					description={t("settings.deeplApiKeyDesc")}
+					right={
+						<input
+							type="password"
+							value={appConfig.deeplApiKey}
+							onChange={(event) => setConfig("deeplApiKey", event.target.value)}
+							className="w-56 px-2 py-1 rounded border border-white/10 bg-black/30 text-sm text-white outline-none focus:border-[#22d3ee]/50"
+							placeholder="DeepL key"
+						/>
+					}
+				/>
+					</div>
+				</SectionCard>
+
+				<SectionCard title={t("settings.sectionApp")} accent="#a78bfa">
+					<div className="flex flex-col px-1">
 				<SettingRow
 					icon={<FaRocket />}
 					label={t("settings.autoUpdate")}
@@ -161,11 +241,11 @@ const Settings = () => {
 						/>
 					}
 				/>
-			</div>
+					</div>
+				</SectionCard>
 
-			<div className="glass-strong p-6 flex flex-col gap-0">
-				<SectionHeader title={t("settings.sectionAnalytics")} />
-
+				<SectionCard title={t("settings.sectionAnalytics")} accent="#4ade80">
+					<div className="flex flex-col px-1">
 				<SettingRow
 					icon={<FaChartBar />}
 					label={t("settings.analyticsToggle")}
@@ -174,6 +254,85 @@ const Settings = () => {
 						<Toggle checked={analytics} onChange={setAnalyticsOpt} />
 					}
 				/>
+					</div>
+				</SectionCard>
+
+				<SectionCard title={t("settings.sectionDeveloper")} accent="#6b7280">
+					<div className="flex flex-col px-1">
+				<SettingRow
+					icon={<FaCode />}
+					label={t("settings.swaggerLabel")}
+					description={
+						clientPort
+							? `https://127.0.0.1:${clientPort}/swagger/v3/openapi.json`
+							: t("settings.clientNotRunning")
+					}
+					right={
+						<div className="flex gap-2">
+							<button
+								onClick={() => {
+									if (!clientPort) return;
+									window.Main.send("open_url", `https://127.0.0.1:${clientPort}/swagger/v3/openapi.json`);
+								}}
+								disabled={!clientPort}
+								className="flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold border border-white/10 text-gray-400 hover:text-gray-200 hover:border-white/25 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+							>
+								<FaArrowUpRightFromSquare className="w-3 h-3" />
+								{t("settings.open")}
+							</button>
+							<button
+								onClick={() => {
+									if (!clientPort) return;
+									const url = `https://127.0.0.1:${clientPort}/swagger/v3/openapi.json`;
+									window.Main.send("clipboard:set", url);
+									setCopied("url");
+									setTimeout(() => setCopied(null), 2000);
+								}}
+								disabled={!clientPort}
+								className="flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold border border-white/10 text-gray-400 hover:text-gray-200 hover:border-white/25 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+							>
+								{copied === "url" ? <FaCheck className="w-3 h-3 text-green-400" /> : <FaCopy className="w-3 h-3" />}
+								{copied === "url" ? t("settings.copied") : t("common.copy")}
+							</button>
+						</div>
+					}
+				/>
+
+				<SettingRow
+					icon={<FaKey />}
+					label={t("settings.clientPasswordLabel")}
+					description={clientPassword ? t("settings.clientPasswordDesc") : t("settings.clientNotRunningShort")}
+					right={
+						<div className="flex gap-2 items-center">
+							<code className="text-xs text-gray-300 bg-black/30 border border-white/10 px-2 py-1 rounded max-w-50 truncate">
+								{clientPassword ? (revealPassword ? clientPassword : "•".repeat(12)) : "—"}
+							</code>
+							<button
+								onClick={() => setRevealPassword((v) => !v)}
+								disabled={!clientPassword}
+								aria-label={revealPassword ? t("settings.hide") : t("settings.reveal")}
+								className="flex items-center px-2 py-1 rounded text-xs border border-white/10 text-gray-400 hover:text-gray-200 hover:border-white/25 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+							>
+								{revealPassword ? <FaEyeSlash className="w-3 h-3" /> : <FaEye className="w-3 h-3" />}
+							</button>
+							<button
+								onClick={() => {
+									if (!clientPassword) return;
+									window.Main.send("clipboard:set", clientPassword);
+									setCopied("pwd");
+									setTimeout(() => setCopied(null), 2000);
+								}}
+								disabled={!clientPassword}
+								className="flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold border border-white/10 text-gray-400 hover:text-gray-200 hover:border-white/25 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+							>
+								{copied === "pwd" ? <FaCheck className="w-3 h-3 text-green-400" /> : <FaCopy className="w-3 h-3" />}
+								{copied === "pwd" ? t("settings.copied") : t("common.copy")}
+							</button>
+						</div>
+					}
+				/>
+				</div>
+				</SectionCard>
 			</div>
 		</div>
 	);
