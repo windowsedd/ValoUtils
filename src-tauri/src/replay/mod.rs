@@ -12,7 +12,7 @@ pub use abilities::build_abilities;
 pub use extract::extract_records;
 pub use transform::apply_transform;
 pub use unreal::ParseMode;
-pub use valorant::{parse_replay_for_app, AppChannelOpen, AppExportRecord, AppParseResult, MovementSample};
+pub use valorant::{parse_replay_for_app, AppChannelOpen, AppExportRecord, MovementSample};
 
 use std::path::Path;
 
