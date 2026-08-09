@@ -372,6 +372,7 @@
     "enabled": "사용",
     "disabled": "사용 안 함",
     "launchWithRelay": "XMPP 릴레이로 실행",
+    "launchNormal": "일반 실행",
     "launch": "실행",
     "launchFailed": "실행하지 못했습니다.",
     "conversationTitle": "실제 게임 내 대화",

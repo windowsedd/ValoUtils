@@ -418,6 +418,7 @@
     "enabled": "Enabled",
     "disabled": "Disabled",
     "launchWithRelay": "Launch with XMPP relay",
+    "launchNormal": "Normal startup",
     "launch": "Launch",
     "launchFailed": "Launch failed.",
     "conversationTitle": "Real in-game conversation",

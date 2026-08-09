@@ -372,6 +372,7 @@
     "enabled": "已啟用",
     "disabled": "已停用",
     "launchWithRelay": "使用 XMPP 轉送啟動",
+    "launchNormal": "正常啟動",
     "launch": "啟動",
     "launchFailed": "啟動失敗。",
     "conversationTitle": "真實遊戲內對話",

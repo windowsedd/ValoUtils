@@ -35,6 +35,7 @@ const DummyBot = () => {
 		window.Main.on("fake_player:state", applyState);
 		window.Main.on("client:config-status", applyLaunch);
 		window.Main.on("riot:launch-with-config", launched);
+		window.Main.on("riot:launch-normal", launched);
 		const poll = () => { window.Main.send("fake_player:state"); window.Main.send("client:config-status"); };
 		poll();
 		const timer = setInterval(poll, 2000);
@@ -43,6 +44,7 @@ const DummyBot = () => {
 			window.Main.removeAllListeners("fake_player:state");
 			window.Main.removeAllListeners("client:config-status");
 			window.Main.removeAllListeners("riot:launch-with-config");
+			window.Main.removeAllListeners("riot:launch-normal");
 		};
 	}, [t]);
 
@@ -60,7 +62,10 @@ const DummyBot = () => {
 				<SectionRow><span className="flex-1 text-sm text-gray-400">{t("dummyBot.lobbyForwarding")}</span><span className="text-sm text-white">{t(state?.presence.connectToMuc ? "dummyBot.enabled" : "dummyBot.disabled")}</span></SectionRow>
 				<SectionRow>
 					<div className="min-w-0 flex-1"><p className="text-sm text-gray-300">{t("dummyBot.launchWithRelay")}</p><p className="truncate font-mono text-[11px] text-gray-600">--client-config-url={launch?.url ?? "http://127.0.0.1:8000"}</p></div>
-					<button onClick={() => { setLaunchBusy(true); setLaunchError(null); window.Main.send("riot:launch-with-config", "valorant", "live"); }} disabled={launchBusy || launch?.riotClientRunning !== false} className="flex items-center gap-1.5 rounded-lg border border-cyan-400/30 bg-cyan-400/15 px-3 py-2 text-xs font-semibold text-cyan-200 disabled:opacity-40"><FaPlay className="h-3 w-3" />{t("dummyBot.launch")}</button>
+					<div className="flex shrink-0 items-center gap-2">
+						<button onClick={() => { setLaunchBusy(true); setLaunchError(null); window.Main.send("riot:launch-normal", "valorant", "live"); }} disabled={launchBusy || launch?.riotClientRunning !== false} className="flex items-center gap-1.5 rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs font-semibold text-gray-200 disabled:opacity-40"><FaPlay className="h-3 w-3" />{t("dummyBot.launchNormal")}</button>
+						<button onClick={() => { setLaunchBusy(true); setLaunchError(null); window.Main.send("riot:launch-with-config", "valorant", "live"); }} disabled={launchBusy || launch?.riotClientRunning !== false} className="flex items-center gap-1.5 rounded-lg border border-cyan-400/30 bg-cyan-400/15 px-3 py-2 text-xs font-semibold text-cyan-200 disabled:opacity-40"><FaPlay className="h-3 w-3" />{t("dummyBot.launch")}</button>
+					</div>
 				</SectionRow>
 				{launchError && <p className="px-3 text-xs text-red-400">{launchError}</p>}
 				{launch?.lastWarning && <p className="px-3 text-xs text-red-400">{launch.lastWarning}</p>}
