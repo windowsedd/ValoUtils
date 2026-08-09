@@ -40,7 +40,7 @@ xmltree = "0.12"
 native-tls = "0.2"
 tokio-native-tls = "0.3"
 x509-parser = "0.18"
-valorant-api = { version = "0.1.0", path = "D:/Developing/Mine/@ts/package/valorant-api/rust-api" }
+windowsedd-valorant-api = "0.1"
 
 [target.'cfg(windows)'.dependencies]
 schannel = "0.1"
