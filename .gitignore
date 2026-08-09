@@ -51,3 +51,6 @@ src-tauri/binaries/*.exe
 *.njsproj
 *.sln
 *.sw?
+
+# Local isolated development worktrees
+.worktrees/
