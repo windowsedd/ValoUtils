@@ -40,14 +40,27 @@ async fn login_xmpp(riot: &RiotState, inner: &mut Inner) -> Result<Arc<XmppHandl
     }
 
     let tokens = crate::riot::client::get_tokens(riot, false).await?;
-    let access_token = tokens.get("accessToken").and_then(|v| v.as_str()).unwrap_or_default();
-    let entitlement_token = tokens.get("token").and_then(|v| v.as_str()).unwrap_or_default();
-    let puuid = tokens.get("subject").and_then(|v| v.as_str()).unwrap_or_default();
+    let access_token = tokens
+        .get("accessToken")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default();
+    let entitlement_token = tokens
+        .get("token")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default();
+    let puuid = tokens
+        .get("subject")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default();
     inner.own_puuid = puuid.to_string();
 
     let result = client::login(access_token, entitlement_token, puuid).await?;
     if let Some((name, tagline)) = &result.display_name {
-        inner.own_display_name = if tagline.is_empty() { name.clone() } else { format!("{name}#{tagline}") };
+        inner.own_display_name = if tagline.is_empty() {
+            name.clone()
+        } else {
+            format!("{name}#{tagline}")
+        };
     }
     inner.handle = Some(result.handle.clone());
     Ok(result.handle)
@@ -67,17 +80,27 @@ pub async fn disconnect_match_xmpp_chat() {
 
 /// Ensures the client is in the current match's team/all MUC rooms. Returns
 /// (teamRoom, allRoom). Mirrors ensureMatchXmppChat in xmpp-chat.ts.
-pub async fn ensure_match_xmpp_chat(riot: &RiotState) -> Result<(Option<String>, Option<String>), String> {
+pub async fn ensure_match_xmpp_chat(
+    riot: &RiotState,
+) -> Result<(Option<String>, Option<String>), String> {
     let api = api::create_api(riot).await?;
     let mut state_guard = STATE.get_or_init(Default::default).inner.lock().await;
 
     let core_player = api.coregame_get_player(&api.puuid).await.ok();
-    let match_id = core_player.as_ref().and_then(|p| p.get("MatchID")).and_then(|v| v.as_str()).map(|s| s.to_string());
+    let match_id = core_player
+        .as_ref()
+        .and_then(|p| p.get("MatchID"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
 
     let Some(match_id) = match_id else {
         // Left the match — leave match rooms but keep party connection alive.
         if let Some(handle) = state_guard.handle.clone() {
-            let to_leave: Vec<String> = state_guard.joined_rooms.difference(&state_guard.party_rooms).cloned().collect();
+            let to_leave: Vec<String> = state_guard
+                .joined_rooms
+                .difference(&state_guard.party_rooms)
+                .cloned()
+                .collect();
             for room in to_leave {
                 let _ = handle.leave_match_muc(&room).await;
                 state_guard.joined_rooms.remove(&room);
@@ -91,7 +114,11 @@ pub async fn ensure_match_xmpp_chat(riot: &RiotState) -> Result<(Option<String>,
 
     if !state_guard.match_id.is_empty() && state_guard.match_id != match_id {
         if let Some(handle) = state_guard.handle.clone() {
-            let to_leave: Vec<String> = state_guard.joined_rooms.difference(&state_guard.party_rooms).cloned().collect();
+            let to_leave: Vec<String> = state_guard
+                .joined_rooms
+                .difference(&state_guard.party_rooms)
+                .cloned()
+                .collect();
             for room in to_leave {
                 let _ = handle.leave_match_muc(&room).await;
                 state_guard.joined_rooms.remove(&room);
@@ -102,8 +129,14 @@ pub async fn ensure_match_xmpp_chat(riot: &RiotState) -> Result<(Option<String>,
     }
 
     let match_data = api.coregame_get_match(&match_id).await?;
-    let team_room = match_data.get("TeamMUCName").and_then(|v| v.as_str()).map(|s| s.to_string());
-    let all_room = match_data.get("AllMUCName").and_then(|v| v.as_str()).map(|s| s.to_string());
+    let team_room = match_data
+        .get("TeamMUCName")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+    let all_room = match_data
+        .get("AllMUCName")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
     let token = match_data.get("TeamMatchToken").and_then(|v| v.as_str());
 
     state_guard.match_id = match_id;
@@ -153,14 +186,26 @@ pub async fn ensure_party_xmpp_chat(riot: &RiotState) -> (String, Value) {
         return (String::new(), Value::Object(debug));
     }
 
-    if state_guard.party_id == party_id && !state_guard.party_room.is_empty() && state_guard.joined_rooms.contains(&state_guard.party_room) {
+    if state_guard.party_id == party_id
+        && !state_guard.party_room.is_empty()
+        && state_guard.joined_rooms.contains(&state_guard.party_room)
+    {
         debug.insert("cached".into(), json!(true));
         return (state_guard.party_room.clone(), Value::Object(debug));
     }
 
     let chat_token = api.party_get_chat_token(&party_id).await.ok();
-    let room = chat_token.as_ref().and_then(|c| c.get("Room").or_else(|| c.get("room"))).and_then(|v| v.as_str()).unwrap_or_default().to_string();
-    let token = chat_token.as_ref().and_then(|c| c.get("Token").or_else(|| c.get("token"))).and_then(|v| v.as_str()).map(|s| s.to_string());
+    let room = chat_token
+        .as_ref()
+        .and_then(|c| c.get("Room").or_else(|| c.get("room")))
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string();
+    let token = chat_token
+        .as_ref()
+        .and_then(|c| c.get("Token").or_else(|| c.get("token")))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
 
     if room.is_empty() {
         state_guard.party_id = party_id;
@@ -196,14 +241,20 @@ pub async fn ensure_party_xmpp_chat(riot: &RiotState) -> (String, Value) {
 /// logged-in puuid (the background reader doesn't know it).
 pub async fn get_xmpp_messages() -> Vec<ChatMessage> {
     let state_guard = STATE.get_or_init(Default::default).inner.lock().await;
-    let Some(handle) = &state_guard.handle else { return Vec::new() };
+    let Some(handle) = &state_guard.handle else {
+        return Vec::new();
+    };
     let own_puuid = state_guard.own_puuid.clone();
     let own_display_name = state_guard.own_display_name.clone();
     let mut messages = handle.messages.lock().unwrap().clone();
     for m in messages.iter_mut() {
         m.is_self = m.sender == own_puuid;
         if m.is_self {
-            m.sender_name = if own_display_name.is_empty() { m.sender.clone() } else { own_display_name.clone() };
+            m.sender_name = if own_display_name.is_empty() {
+                m.sender.clone()
+            } else {
+                own_display_name.clone()
+            };
         }
     }
     messages.into()
@@ -217,7 +268,11 @@ async fn push_own_message(state_guard: &mut Inner, room: &str, message: &str, sc
             id: format!("{room}:{}:{}", state_guard.own_puuid, chrono_millis()),
             conversation_id: room.to_string(),
             sender: state_guard.own_puuid.clone(),
-            sender_name: if state_guard.own_display_name.is_empty() { state_guard.own_puuid.clone() } else { state_guard.own_display_name.clone() },
+            sender_name: if state_guard.own_display_name.is_empty() {
+                state_guard.own_puuid.clone()
+            } else {
+                state_guard.own_display_name.clone()
+            },
             body: message.to_string(),
             timestamp: chrono_iso_now(),
             msg_type: "groupchat".into(),
@@ -227,7 +282,11 @@ async fn push_own_message(state_guard: &mut Inner, room: &str, message: &str, sc
     }
 }
 
-pub async fn send_match_xmpp_message(riot: &RiotState, room: &str, message: &str) -> Result<(), String> {
+pub async fn send_match_xmpp_message(
+    riot: &RiotState,
+    room: &str,
+    message: &str,
+) -> Result<(), String> {
     let mut state_guard = STATE.get_or_init(Default::default).inner.lock().await;
     let handle = login_xmpp(riot, &mut state_guard).await?;
     if !state_guard.joined_rooms.contains(room) {
@@ -236,11 +295,25 @@ pub async fn send_match_xmpp_message(riot: &RiotState, room: &str, message: &str
         state_guard = STATE.get_or_init(Default::default).inner.lock().await;
     }
     handle.send_muc_message(room, message).await?;
-    push_own_message(&mut state_guard, room, message, if room.to_lowercase().contains(PARTY_ROOM_MARKER) { "party" } else { "match" }).await;
+    push_own_message(
+        &mut state_guard,
+        room,
+        message,
+        if room.to_lowercase().contains(PARTY_ROOM_MARKER) {
+            "party"
+        } else {
+            "match"
+        },
+    )
+    .await;
     Ok(())
 }
 
-pub async fn send_party_xmpp_message(riot: &RiotState, room: &str, message: &str) -> Result<(), String> {
+pub async fn send_party_xmpp_message(
+    riot: &RiotState,
+    room: &str,
+    message: &str,
+) -> Result<(), String> {
     let mut state_guard = STATE.get_or_init(Default::default).inner.lock().await;
     let handle = login_xmpp(riot, &mut state_guard).await?;
     if !state_guard.joined_rooms.contains(room) {
@@ -254,7 +327,10 @@ pub async fn send_party_xmpp_message(riot: &RiotState, room: &str, message: &str
 }
 
 fn chrono_millis() -> i64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0)
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
 }
 
 fn chrono_iso_now() -> String {

@@ -93,12 +93,19 @@ impl NetGuidCache {
     pub fn network_gameplay_tag_node_index(&mut self) -> Option<&NetFieldExportGroup> {
         if self.network_gameplay_tag_node_index.is_none() {
             if self.group_map.contains_key("NetworkGameplayTagNodeIndex") {
-                self.network_gameplay_tag_node_index = Some("NetworkGameplayTagNodeIndex".to_string());
-            } else if self.group_map.contains_key("NetworkGameplayTagDynamicIndex") {
-                self.network_gameplay_tag_node_index = Some("NetworkGameplayTagDynamicIndex".to_string());
+                self.network_gameplay_tag_node_index =
+                    Some("NetworkGameplayTagNodeIndex".to_string());
+            } else if self
+                .group_map
+                .contains_key("NetworkGameplayTagDynamicIndex")
+            {
+                self.network_gameplay_tag_node_index =
+                    Some("NetworkGameplayTagDynamicIndex".to_string());
             }
         }
-        self.network_gameplay_tag_node_index.as_ref().and_then(|k| self.group_map.get(k))
+        self.network_gameplay_tag_node_index
+            .as_ref()
+            .and_then(|k| self.group_map.get(k))
     }
 
     pub fn add_to_export_group_map(&mut self, group: &str, mut export_group: NetFieldExportGroup) {
@@ -113,7 +120,10 @@ impl NetGuidCache {
         self.group_map.insert(group.to_string(), export_group);
     }
 
-    pub fn get_net_field_export_group_from_index(&self, index: Option<u32>) -> Option<&NetFieldExportGroup> {
+    pub fn get_net_field_export_group_from_index(
+        &self,
+        index: Option<u32>,
+    ) -> Option<&NetFieldExportGroup> {
         let index = index?;
         let group = self.net_field_export_group_index_to_group.get(&index)?;
         self.group_map.get(group)
@@ -141,7 +151,10 @@ impl NetGuidCache {
 
     /// Resolve an actor/archetype netguid to its export group (fuzzy path
     /// matching — see module docs for the exact tie-break rule).
-    pub fn get_net_field_export_group_by_guid(&mut self, netguid: Option<u32>) -> Option<&NetFieldExportGroup> {
+    pub fn get_net_field_export_group_by_guid(
+        &mut self,
+        netguid: Option<u32>,
+    ) -> Option<&NetFieldExportGroup> {
         let netguid = netguid?;
 
         if let Some(path) = self.arch_type_to_export_group.get(&netguid) {
@@ -156,7 +169,8 @@ impl NetGuidCache {
 
         if let Some(fixed) = self.net_field_export_group_map_path_fixed.get(&netguid) {
             let fixed = fixed.clone();
-            self.arch_type_to_export_group.insert(netguid, fixed.clone());
+            self.arch_type_to_export_group
+                .insert(netguid, fixed.clone());
             return self.group_map.get(&fixed);
         }
 
@@ -178,7 +192,8 @@ impl NetGuidCache {
             if path.contains(&group_path_fixed) {
                 self.net_field_export_group_map_path_fixed
                     .insert(netguid, group_path.clone());
-                self.arch_type_to_export_group.insert(netguid, group_path.clone());
+                self.arch_type_to_export_group
+                    .insert(netguid, group_path.clone());
                 return self.group_map.get(&group_path);
             }
         }
@@ -194,7 +209,8 @@ impl NetGuidCache {
                 if group_path_fixed.contains(&cleaned_path) {
                     self.net_field_export_group_map_path_fixed
                         .insert(netguid, group_path.clone());
-                    self.arch_type_to_export_group.insert(netguid, group_path.clone());
+                    self.arch_type_to_export_group
+                        .insert(netguid, group_path.clone());
                     return self.group_map.get(&group_path);
                 }
             }
@@ -204,7 +220,11 @@ impl NetGuidCache {
         None
     }
 
-    pub fn try_get_class_net_cache(&mut self, group: Option<&str>, use_full_name: bool) -> Option<&NetFieldExportGroup> {
+    pub fn try_get_class_net_cache(
+        &mut self,
+        group: Option<&str>,
+        use_full_name: bool,
+    ) -> Option<&NetFieldExportGroup> {
         let group = group?;
         if group.is_empty() {
             return None;
@@ -217,7 +237,8 @@ impl NetGuidCache {
                 } else {
                     format!("{}_ClassNetCache", remove_all_path_prefixes(group))
                 };
-                self.cleaned_class_net_cache.insert(group.to_string(), computed.clone());
+                self.cleaned_class_net_cache
+                    .insert(group.to_string(), computed.clone());
                 computed
             }
         };
@@ -277,7 +298,10 @@ mod tests {
     fn fuzzy_match_is_first_registered_substring_wins_not_longest() {
         let mut cache = NetGuidCache::new();
         cache.add_to_export_group_map("/Game/Weapon.Weapon_C", group("/Game/Weapon.Weapon_C", 1));
-        cache.add_to_export_group_map("/Game/Weapon.Weapon_C_Big", group("/Game/Weapon.Weapon_C_Big", 2));
+        cache.add_to_export_group_map(
+            "/Game/Weapon.Weapon_C_Big",
+            group("/Game/Weapon.Weapon_C_Big", 2),
+        );
 
         let netguid = 42u32;
         cache
@@ -294,7 +318,10 @@ mod tests {
     #[test]
     fn fuzzy_match_order_reversed_flips_the_winner() {
         let mut cache = NetGuidCache::new();
-        cache.add_to_export_group_map("/Game/Weapon.Weapon_C_Big", group("/Game/Weapon.Weapon_C_Big", 1));
+        cache.add_to_export_group_map(
+            "/Game/Weapon.Weapon_C_Big",
+            group("/Game/Weapon.Weapon_C_Big", 1),
+        );
         cache.add_to_export_group_map("/Game/Weapon.Weapon_C", group("/Game/Weapon.Weapon_C", 2));
 
         let netguid = 43u32;
@@ -311,7 +338,11 @@ mod tests {
         let mut cache = NetGuidCache::new();
         cache.add_to_export_group_map("/Game/Foo.Foo_C", group("/Game/Foo.Foo_C", 1));
         let netguid = 99u32;
-        cache.net_guid_to_path_name.insert(netguid, "PersistentLevel.Unrelated_1".to_string());
-        assert!(cache.get_net_field_export_group_by_guid(Some(netguid)).is_none());
+        cache
+            .net_guid_to_path_name
+            .insert(netguid, "PersistentLevel.Unrelated_1".to_string());
+        assert!(cache
+            .get_net_field_export_group_by_guid(Some(netguid))
+            .is_none());
     }
 }

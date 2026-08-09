@@ -29,9 +29,16 @@ pub async fn check_for_updates(app: &AppHandle, silent: bool) {
 
     match updater.check().await {
         Ok(Some(update)) => {
-            let _ = app.emit("update:available", json!({ "version": update.version }).to_string());
+            let _ = app.emit(
+                "update:available",
+                json!({ "version": update.version }).to_string(),
+            );
             let _ = app.emit("alert:info", "Update available, downloading...");
-            crate::aptabase::track_event("update_downloading".into(), json!({}), app.package_info().version.to_string());
+            crate::aptabase::track_event(
+                "update_downloading".into(),
+                json!({}),
+                app.package_info().version.to_string(),
+            );
 
             let app_progress = app.clone();
             let result = update
@@ -46,7 +53,10 @@ pub async fn check_for_updates(app: &AppHandle, silent: bool) {
             match result {
                 Ok(_) => {
                     let _ = app.emit("update:downloaded", ());
-                    let _ = app.emit("alert:info", "Successfully downloaded update. Restarting...");
+                    let _ = app.emit(
+                        "alert:info",
+                        "Successfully downloaded update. Restarting...",
+                    );
                     app.request_restart();
                 }
                 Err(e) => {

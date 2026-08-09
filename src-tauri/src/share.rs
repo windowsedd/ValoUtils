@@ -7,7 +7,10 @@ fn client() -> &'static reqwest::Client {
 
 pub async fn get_data(id: &str) -> Result<String, String> {
     let response = client()
-        .get(format!("{BASE_URL}{}", crate::riot::client::urlencoding_encode(id)))
+        .get(format!(
+            "{BASE_URL}{}",
+            crate::riot::client::urlencoding_encode(id)
+        ))
         .send()
         .await
         .map_err(|e| e.to_string())?;

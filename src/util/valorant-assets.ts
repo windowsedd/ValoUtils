@@ -1,5 +1,6 @@
 import i18n from "@/i18n/config";
 import type { WeaponSkin } from "@/types/live-game";
+import { formatSeasonActLabel } from "@/util/season-label";
 
 // Cached lookups against the public valorant-api.com CDN. Used by the Live Game
 // tab to turn raw Riot UUIDs (agents, weapon skins, competitive tiers/seasons)
@@ -200,7 +201,7 @@ export const getWeaponSkin = (weapon: WeaponSkin): Promise<SkinAsset | null> => 
 export const weaponSkinKey = (weapon: WeaponSkin): string | null =>
 	weapon?.skinId ? variantKey(weapon) : null;
 
-// --- Competitive seasons -> "E5:A3" / "V26:A3" ------------------------------
+// --- Competitive seasons -> "E5A3" / "V26A3" ------------------------------
 const romanToNum = (s: string): number => {
 	const map: Record<string, number> = { I: 1, V: 5, X: 10 };
 	let total = 0;
@@ -260,7 +261,8 @@ export const getSeasonLabels = (): Promise<Map<string, string>> => {
 					if (s.type === "EAresSeasonType::Act") {
 						const start = Date.parse(s.startTime) || 0;
 						const ep = byUuid.get(s.parentUuid) || byTime(start);
-						labels.set((s.uuid as string).toLowerCase(), `${ep}:A${actNumber(enName(s.displayName))}`);
+						const label = formatSeasonActLabel(ep, actNumber(enName(s.displayName)));
+						if (label) labels.set((s.uuid as string).toLowerCase(), label);
 					}
 				}
 				return labels;

@@ -12,7 +12,10 @@ use serde_json::Value;
 /// `valorant::replay_reader`'s own tests use).
 pub fn fixture_bytes(name: &str) -> Vec<u8> {
     let path = format!(
-        concat!(env!("CARGO_MANIFEST_DIR"), "/../package/ts-replay-parser/src/valorant/__fixtures__/{}"),
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../package/ts-replay-parser/src/valorant/__fixtures__/{}"
+        ),
         name
     );
     std::fs::read(&path).unwrap_or_else(|e| panic!("failed to read fixture {path}: {e}"))
@@ -26,8 +29,10 @@ pub fn golden_dir(uuid: &str) -> PathBuf {
 }
 
 pub fn read_json(path: &Path) -> Value {
-    let raw = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("failed to read {}: {e}", path.display()));
-    serde_json::from_str(&raw).unwrap_or_else(|e| panic!("failed to parse {} as JSON: {e}", path.display()))
+    let raw = std::fs::read_to_string(path)
+        .unwrap_or_else(|e| panic!("failed to read {}: {e}", path.display()));
+    serde_json::from_str(&raw)
+        .unwrap_or_else(|e| panic!("failed to parse {} as JSON: {e}", path.display()))
 }
 
 /// Deep-equality assertion between two JSON values that:
@@ -57,7 +62,11 @@ pub fn assert_json_eq(actual: &Value, expected: &Value, path: &str) {
         }
         (Value::Null, Value::Null) => {}
         (Value::Array(a), Value::Array(b)) => {
-            assert_eq!(a.len(), b.len(), "array length mismatch at {path}: actual={a:?} expected={b:?}");
+            assert_eq!(
+                a.len(),
+                b.len(),
+                "array length mismatch at {path}: actual={a:?} expected={b:?}"
+            );
             for (i, (av, bv)) in a.iter().zip(b.iter()).enumerate() {
                 assert_json_eq(av, bv, &format!("{path}[{i}]"));
             }

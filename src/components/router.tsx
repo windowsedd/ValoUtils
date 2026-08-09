@@ -3,6 +3,7 @@ import { Tabs } from "@heroui/react";
 import { Route } from "@/types/router";
 import RiotStatusBar from "@/components/riot-status-bar";
 import { useTranslation } from "react-i18next";
+import { navbarLayout } from "@/components/navbar-layout";
 
 type RouterProps = {
 	routes: Route[];
@@ -64,7 +65,8 @@ const Router = () => {
 
 	return (
 		<>
-			<div className="flex items-stretch w-full px-4 shrink-0 border-b border-divider">
+			<div className={navbarLayout.root}>
+				<div className={navbarLayout.tabsViewport}>
 				<Tabs
 					variant="secondary"
 					selectedKey={selectedId}
@@ -83,10 +85,10 @@ const Router = () => {
 					<Tabs.ListContainer>
 						<Tabs.List
 							aria-label="Options"
-							className="gap-6 relative rounded-none p-0 border-b-0"
+							className={navbarLayout.tabsList}
 						>
 							{routes.map((route) => (
-								<Tabs.Tab key={route.id} id={route.id} className="max-w-fit px-0 h-12">
+								<Tabs.Tab key={route.id} id={route.id} className={navbarLayout.tab}>
 									<div className="flex items-center space-x-2">
 										{route.icon}
 										<span>{t(route.title)}</span>
@@ -97,7 +99,8 @@ const Router = () => {
 						</Tabs.List>
 					</Tabs.ListContainer>
 				</Tabs>
-				<div className="ml-auto flex items-center">
+				</div>
+				<div className={navbarLayout.status}>
 					<RiotStatusBar />
 				</div>
 			</div>

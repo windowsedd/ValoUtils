@@ -9,10 +9,12 @@ import Replays from "@/pages/Replays.tsx";
 import Settings from "@/pages/Settings.tsx";
 import { fetcher } from "@/util/swr";
 import { Toast } from "@heroui/react";
-import React, { Suspense } from "react";
+import React from "react";
 import ReactDOM from "react-dom/client";
-import { FaCogs, FaQuestion, FaTrophy, FaFilm, FaBook } from "react-icons/fa";
-import { FaGear, FaUserGroup, FaClockRotateLeft } from "react-icons/fa6";
+import { FaCogs, FaQuestion, FaTrophy, FaFilm } from "react-icons/fa";
+import { FaGear, FaUserGroup, FaClockRotateLeft, FaRobot, FaCrosshairs } from "react-icons/fa6";
+import DummyBotPage from "@/pages/DummyBot.tsx";
+import LiveGame from "@/pages/LiveGame.tsx";
 import { SWRConfig } from "swr";
 import { DynamicModalProvider } from "./components/dynamic-modal";
 import "./index.css";
@@ -30,38 +32,16 @@ window.addEventListener("contextmenu", (event) => {
 	event.preventDefault();
 });
 
-const SwaggerPage = React.lazy(() => import("@/pages/SwaggerPage.tsx"));
-
-class SwaggerErrorBoundary extends React.Component<{ children: React.ReactNode }, { error: string | null }> {
-	constructor(props: { children: React.ReactNode }) {
-		super(props);
-		this.state = { error: null };
-	}
-	static getDerivedStateFromError(error: Error) {
-		return { error: error.message };
-	}
-	render() {
-		if (this.state.error) {
-			return (
-				<div className="flex flex-col items-center justify-center h-full gap-2">
-					<p className="text-red-400 text-sm font-medium">Failed to load Swagger UI</p>
-					<p className="text-gray-500 text-xs">{this.state.error}</p>
-				</div>
-			);
-		}
-		return this.props.children;
-	}
-}
-
-ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-	<React.StrictMode>
-		<SWRConfig
-			value={{
-				fetcher,
-				refreshInterval: 10000,
-			}}
-		>
-			<DynamicModalProvider>
+const AppShell = () => {
+	return (
+		<React.StrictMode>
+			<SWRConfig
+				value={{
+					fetcher,
+					refreshInterval: 10000,
+				}}
+			>
+				<DynamicModalProvider>
 				{/* Corner placement — the default ("bottom") centres a 460px-wide
 				    toast, which lands squarely on top of the full-width
 				    "Check for Updates" button at the bottom of the About page. */}
@@ -88,6 +68,12 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
 								component: <Matches />,
 							},
 							{
+								title: "nav.liveGame",
+								id: "live-game",
+								icon: <FaCrosshairs />,
+								component: <LiveGame />,
+							},
+							{
 								title: "nav.friends",
 								id: "friends",
 								icon: <FaUserGroup />,
@@ -112,10 +98,10 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
 								component: <About />,
 							},
 							{
-								title: "nav.apiReference",
-								id: "swagger",
-								icon: <FaBook />,
-								component: <SwaggerErrorBoundary><Suspense fallback={<div className="flex items-center justify-center h-full text-gray-400 text-sm">Loading…</div>}><SwaggerPage /></Suspense></SwaggerErrorBoundary>,
+								title: "nav.dummyBot",
+								id: "fake-player",
+								icon: <FaRobot />,
+								component: <DummyBotPage />,
 							},
 						]}
 					>
@@ -126,9 +112,12 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
 						</RiotClientWatcher>
 					</RouterProvider>
 				</AlertContainer>
-			</DynamicModalProvider>
-		</SWRConfig>
-	</React.StrictMode>
-);
+				</DynamicModalProvider>
+			</SWRConfig>
+		</React.StrictMode>
+	);
+};
+
+ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(<AppShell />);
 
 postMessage({ payload: "removeLoading" }, "*");

@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { FaGlobe, FaRocket, FaCode, FaChartBar, FaLanguage, FaKey, FaArrowUpRightFromSquare, FaCopy, FaCheck, FaGear, FaEye, FaEyeSlash } from "react-icons/fa6";
+import { FaGlobe, FaRocket, FaCode, FaChartBar, FaLanguage, FaKey, FaArrowUpRightFromSquare, FaCopy, FaCheck, FaGear, FaEye, FaEyeSlash, FaRobot, FaBook } from "react-icons/fa6";
 import { PageHeader, SectionCard } from "@/components/section-card";
+import SwaggerPage from "@/pages/SwaggerPage";
 
 const LANGUAGES = [
 	{ code: "en", label: "EN", name: "English" },
@@ -12,6 +13,10 @@ const LANGUAGES = [
 type AppConfig = {
 	autoUpdate: boolean;
 	openDevTools: boolean;
+	presenceEnabled: boolean;
+	presenceMode: "online" | "offline" | "mobile";
+	presenceStartup: "online" | "offline" | "mobile" | "last";
+	presenceMucEnabled: boolean;
 	translatorProvider: "google" | "deepl";
 	translatorTargetLanguage: string;
 	deeplApiKey: string;
@@ -75,9 +80,14 @@ const Settings = () => {
 	const [clientPassword, setClientPassword] = useState<string | null>(null);
 	const [copied, setCopied] = useState<string | null>(null);
 	const [revealPassword, setRevealPassword] = useState(false);
+	const [view, setView] = useState<"settings" | "api-reference">("settings");
 	const [appConfig, setAppConfig] = useState<AppConfig>({
 		autoUpdate: true,
 		openDevTools: false,
+		presenceEnabled: true,
+		presenceMode: "offline",
+		presenceStartup: "last",
+		presenceMucEnabled: true,
 		translatorProvider: "google",
 		translatorTargetLanguage: "en",
 		deeplApiKey: "",
@@ -117,12 +127,29 @@ const Settings = () => {
 	const setConfig = (key: string, value: boolean | string) => {
 		window.Main.send("config:set", key, value);
 		setAppConfig((prev) => ({ ...prev, [key]: value }));
+		// `config:set` has no push event behind it, so tell the nav directly —
+		// this is what makes the Dummy Bot tab appear without a restart.
+		window.dispatchEvent(new CustomEvent("valoutils:config-changed"));
 	};
 
 	const setAnalyticsOpt = (enabled: boolean) => {
 		localStorage.setItem("valoutils-analytics", String(enabled));
 		setAnalytics(enabled);
 	};
+
+	const setPresence = (action: string, value?: boolean | string) => {
+		window.Main.send("presence:status-set", action, ...(value === undefined ? [] : [value]));
+		setAppConfig(prev => ({
+			...prev,
+			...(action === "enable" ? { presenceEnabled: true } : {}),
+			...(action === "disable" ? { presenceEnabled: false } : {}),
+			...(action === "muc" ? { presenceMucEnabled: Boolean(value) } : {}),
+			...(action === "startup" ? { presenceStartup: value as AppConfig["presenceStartup"] } : {}),
+			...(["online", "offline", "mobile"].includes(action) ? { presenceEnabled: true, presenceMode: action as AppConfig["presenceMode"] } : {}),
+		}));
+	};
+
+	if (view === "api-reference") return <SwaggerPage onBack={() => setView("settings")} />;
 
 	return (
 		<div className="h-full flex flex-col animate-fade-in">
@@ -183,7 +210,6 @@ const Settings = () => {
 						</div>
 					}
 				/>
-
 				<SettingRow
 					icon={<FaGlobe />}
 					label={t("settings.translationTarget")}
@@ -259,6 +285,16 @@ const Settings = () => {
 
 				<SectionCard title={t("settings.sectionDeveloper")} accent="#6b7280">
 					<div className="flex flex-col px-1">
+				<SettingRow icon={<FaRobot />} label="Presence masking" description="Allow Bot commands to rewrite your Riot presence." right={<Toggle checked={appConfig.presenceEnabled} onChange={v => setPresence(v ? "enable" : "disable")} />} />
+				<SettingRow icon={<FaRobot />} label="Lobby / MUC forwarding" description="Forward lobby presence while masking is active." right={<Toggle checked={appConfig.presenceMucEnabled} onChange={v => setPresence("muc", v)} />} />
+				<SettingRow icon={<FaRobot />} label="Startup presence" description="Choose the status used when the relay starts." right={<select value={appConfig.presenceStartup} onChange={event => setPresence("startup", event.target.value)} className="rounded border border-white/10 bg-[#111] px-2 py-1 text-xs text-gray-200"><option value="last">Remember last</option><option value="online">Online</option><option value="offline">Offline</option><option value="mobile">Mobile</option></select>} />
+				<SettingRow
+					icon={<FaBook />}
+					label={t("nav.apiReference")}
+					description={t("apiReference.subtitle")}
+					right={<button onClick={() => setView("api-reference")} className="rounded border border-cyan-400/30 bg-cyan-400/10 px-3 py-1.5 text-xs font-semibold text-cyan-300 hover:bg-cyan-400/20">{t("settings.open")}</button>}
+				/>
+
 				<SettingRow
 					icon={<FaCode />}
 					label={t("settings.swaggerLabel")}

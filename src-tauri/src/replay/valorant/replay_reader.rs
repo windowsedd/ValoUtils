@@ -23,7 +23,9 @@ use crate::replay::transform::apply_transform;
 use crate::replay::unreal::enums::ParseMode;
 use crate::replay::unreal::models::{FieldValue, ReplayHeader, ReplayInfo};
 use crate::replay::unreal::registry::NetFieldRegistry;
-use crate::replay::unreal::replay_reader::{ExportedValue, ReplayLike, ReplayReader, ReplayReaderHooks};
+use crate::replay::unreal::replay_reader::{
+    ExportedValue, ReplayLike, ReplayReader, ReplayReaderHooks,
+};
 
 use super::models::register_all;
 
@@ -65,7 +67,8 @@ impl ReplayLike for ValorantReplay {
 /// The RPC export-group type name skipped from the collected exports — its
 /// movement payload is collected separately by `AppReader` in `app_parser.rs`
 /// (mirrors the TS `onExportRead`'s early-return guard).
-pub(super) const REMOTE_CHARACTER_UPDATES_RPC_TYPE: &str = "ReplaysClientReceiveRemoteCharacterUpdatesSingleArrayNoAutonomous";
+pub(super) const REMOTE_CHARACTER_UPDATES_RPC_TYPE: &str =
+    "ReplaysClientReceiveRemoteCharacterUpdatesSingleArrayNoAutonomous";
 
 /// TS `resolveBranch()`: explicit version override wins, else falls back to
 /// the replay header's branch string (`++Ares-Core+release-12.11`), else
@@ -91,15 +94,21 @@ pub(super) fn do_decompress(mut archive: BinaryReader) -> BinaryReader {
     let decompressed_size = archive.read_int32();
     let compressed_size = archive.read_int32();
     let compressed = archive.read_bytes(compressed_size.max(0) as usize);
-    let output =
-        decompress_replay_data(&compressed, decompressed_size.max(0) as usize).expect("replay chunk failed to decompress");
+    let output = decompress_replay_data(&compressed, decompressed_size.max(0) as usize)
+        .expect("replay chunk failed to decompress");
     BinaryReader::new(output)
 }
 
 /// TS `ValorantReplayReader.receivedReplicatorBunch`'s payload transform:
 /// seed = payloadBits, XORed with the owning actor's netguid if present, then
 /// the seeded de-obfuscation cipher keyed off the resolved branch string.
-pub(super) fn do_transform(version: &Option<String>, actor_guid: Option<u32>, payload: Vec<u8>, payload_bits: u32, header_branch: &str) -> Vec<u8> {
+pub(super) fn do_transform(
+    version: &Option<String>,
+    actor_guid: Option<u32>,
+    payload: Vec<u8>,
+    payload_bits: u32,
+    header_branch: &str,
+) -> Vec<u8> {
     let mut seed = payload_bits;
     if let Some(guid) = actor_guid {
         seed ^= guid;
@@ -111,7 +120,11 @@ pub(super) fn do_transform(version: &Option<String>, actor_guid: Option<u32>, pa
 /// TS `ValorantReplayReader.onExportRead`: skip `null`/non-`Model` exports and
 /// the `RemoteCharacterUpdates` RPC carrier type (collected separately by
 /// `AppReader`), otherwise collect `{ channelIndex, type, fields }`.
-pub(super) fn push_export(exports: &mut Vec<ExportRecord>, channel_index: u32, export_group: Option<ExportedValue>) {
+pub(super) fn push_export(
+    exports: &mut Vec<ExportRecord>,
+    channel_index: u32,
+    export_group: Option<ExportedValue>,
+) {
     let model = match export_group {
         Some(ExportedValue::Model(m)) => m,
         // `receiveCustomProperty`'s raw `IProperty` exports aren't
@@ -140,7 +153,10 @@ pub struct ValorantHooks {
 
 impl ValorantHooks {
     pub fn new(version: Option<String>) -> Self {
-        ValorantHooks { version, exports: Vec::new() }
+        ValorantHooks {
+            version,
+            exports: Vec::new(),
+        }
     }
 }
 
@@ -157,8 +173,20 @@ impl ReplayReaderHooks<ValorantReplay> for ValorantHooks {
         push_export(&mut self.exports, channel_index, export_group);
     }
 
-    fn transform_bunch_payload(&mut self, actor_guid: Option<u32>, payload: Vec<u8>, payload_bits: u32, header_branch: &str) -> Vec<u8> {
-        do_transform(&self.version, actor_guid, payload, payload_bits, header_branch)
+    fn transform_bunch_payload(
+        &mut self,
+        actor_guid: Option<u32>,
+        payload: Vec<u8>,
+        payload_bits: u32,
+        header_branch: &str,
+    ) -> Vec<u8> {
+        do_transform(
+            &self.version,
+            actor_guid,
+            payload,
+            payload_bits,
+            header_branch,
+        )
     }
 }
 
@@ -202,7 +230,11 @@ impl ValorantReplayReader {
         // `replay`'s borrow of `self.inner` ends at its last use above, so
         // this is a fresh, non-conflicting borrow of a different field.
         let exports = std::mem::take(&mut self.inner.hooks.exports);
-        ValorantReplayResult { info, header, exports }
+        ValorantReplayResult {
+            info,
+            header,
+            exports,
+        }
     }
 }
 
@@ -214,18 +246,34 @@ mod tests {
 
     use super::*;
     use crate::replay::unreal::replay_reader::ExportedValue;
-    use crate::replay::valorant::models::{ComponentDataStream, RemoteCharacterUpdate, ReplaysClientReceiveRemoteCharacterUpdatesSingleArrayNoAutonomous};
+    use crate::replay::valorant::models::{
+        ComponentDataStream, RemoteCharacterUpdate,
+        ReplaysClientReceiveRemoteCharacterUpdatesSingleArrayNoAutonomous,
+    };
     use serde::Deserialize;
     use std::collections::HashMap;
 
     fn fixture(name: &str) -> Vec<u8> {
-        let path = format!(concat!(env!("CARGO_MANIFEST_DIR"), "/../package/ts-replay-parser/src/valorant/__fixtures__/{}"), name);
+        let path = format!(
+            concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../package/ts-replay-parser/src/valorant/__fixtures__/{}"
+            ),
+            name
+        );
         std::fs::read(&path).unwrap_or_else(|e| panic!("failed to read fixture {path}: {e}"))
     }
 
     fn load_json<T: for<'de> Deserialize<'de>>(name: &str) -> T {
-        let path = format!(concat!(env!("CARGO_MANIFEST_DIR"), "/../package/ts-replay-parser/src/valorant/{}"), name);
-        let raw = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("failed to read {path}: {e}"));
+        let path = format!(
+            concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../package/ts-replay-parser/src/valorant/{}"
+            ),
+            name
+        );
+        let raw =
+            std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("failed to read {path}: {e}"));
         let raw = raw.trim_start_matches('\u{feff}');
         serde_json::from_str(raw).unwrap_or_else(|e| panic!("failed to parse {path}: {e}"))
     }
@@ -286,7 +334,10 @@ mod tests {
 
     impl MovementCollectorHooks {
         fn new(version: Option<String>) -> Self {
-            MovementCollectorHooks { version, streams: Vec::new() }
+            MovementCollectorHooks {
+                version,
+                streams: Vec::new(),
+            }
         }
 
         fn collect(&mut self, update: &RemoteCharacterUpdate) {
@@ -320,8 +371,20 @@ mod tests {
                 }
             }
         }
-        fn transform_bunch_payload(&mut self, actor_guid: Option<u32>, payload: Vec<u8>, payload_bits: u32, header_branch: &str) -> Vec<u8> {
-            do_transform(&self.version, actor_guid, payload, payload_bits, header_branch)
+        fn transform_bunch_payload(
+            &mut self,
+            actor_guid: Option<u32>,
+            payload: Vec<u8>,
+            payload_bits: u32,
+            header_branch: &str,
+        ) -> Vec<u8> {
+            do_transform(
+                &self.version,
+                actor_guid,
+                payload,
+                payload_bits,
+                header_branch,
+            )
         }
     }
 
@@ -334,7 +397,8 @@ mod tests {
             let mut registry = NetFieldRegistry::new();
             register_all(&mut registry);
             let hooks = MovementCollectorHooks::new(Some(r.version.clone()));
-            let mut reader: ReplayReader<ValorantReplay, MovementCollectorHooks> = ReplayReader::new(ParseMode::Full, hooks, registry);
+            let mut reader: ReplayReader<ValorantReplay, MovementCollectorHooks> =
+                ReplayReader::new(ParseMode::Full, hooks, registry);
             let mut archive = BinaryReader::new(bytes);
             reader.read_replay_from_archive(&mut archive);
 
@@ -354,13 +418,39 @@ mod tests {
             }
             let with_pos = moves.iter().filter(|m| m.Position.is_some()).count();
 
-            assert_eq!(has_section, r.has_section, "hasSection mismatch for {}", r.file);
-            assert_eq!(valid_magic, r.valid_magic, "validMagic mismatch for {}", r.file);
-            assert_eq!(moves.len(), r.total_moves, "totalMoves mismatch for {}", r.file);
-            assert_eq!(with_pos, r.moves_with_position, "movesWithPosition mismatch for {}", r.file);
+            assert_eq!(
+                has_section, r.has_section,
+                "hasSection mismatch for {}",
+                r.file
+            );
+            assert_eq!(
+                valid_magic, r.valid_magic,
+                "validMagic mismatch for {}",
+                r.file
+            );
+            assert_eq!(
+                moves.len(),
+                r.total_moves,
+                "totalMoves mismatch for {}",
+                r.file
+            );
+            assert_eq!(
+                with_pos, r.moves_with_position,
+                "movesWithPosition mismatch for {}",
+                r.file
+            );
 
-            let first_with_pos: Vec<_> = moves.iter().filter(|m| m.Position.is_some()).take(r.first_positions.len()).collect();
-            assert_eq!(first_with_pos.len(), r.first_positions.len(), "not enough positioned moves for {}", r.file);
+            let first_with_pos: Vec<_> = moves
+                .iter()
+                .filter(|m| m.Position.is_some())
+                .take(r.first_positions.len())
+                .collect();
+            assert_eq!(
+                first_with_pos.len(),
+                r.first_positions.len(),
+                "not enough positioned moves for {}",
+                r.file
+            );
             for (got, want) in first_with_pos.iter().zip(r.first_positions.iter()) {
                 let pos = got.Position.unwrap();
                 let gx = (pos.X * 10.0).round() / 10.0;
@@ -381,22 +471,43 @@ mod tests {
             let mut reader = ValorantReplayReader::new(Some(r.version.clone()), ParseMode::Normal);
             let result = reader.read_replay(&bytes);
 
-            assert_eq!(result.info.LengthInMs, r.length_in_ms, "lengthInMs mismatch for {}", r.file);
-            assert_eq!(result.info.FriendlyName, r.friendly_name, "friendlyName mismatch for {}", r.file);
-            assert_eq!(result.header.Branch, r.branch, "branch mismatch for {}", r.file);
+            assert_eq!(
+                result.info.LengthInMs, r.length_in_ms,
+                "lengthInMs mismatch for {}",
+                r.file
+            );
+            assert_eq!(
+                result.info.FriendlyName, r.friendly_name,
+                "friendlyName mismatch for {}",
+                r.file
+            );
+            assert_eq!(
+                result.header.Branch, r.branch,
+                "branch mismatch for {}",
+                r.file
+            );
             assert_eq!(
                 result.header.EngineNetworkVersion as u32, r.engine_network_version,
                 "engineNetworkVersion mismatch for {}",
                 r.file
             );
-            assert_eq!(result.header.NetworkVersion as u32, r.network_version, "networkVersion mismatch for {}", r.file);
+            assert_eq!(
+                result.header.NetworkVersion as u32, r.network_version,
+                "networkVersion mismatch for {}",
+                r.file
+            );
 
             let mut counts: HashMap<String, u32> = HashMap::new();
             for e in &result.exports {
                 *counts.entry(e.type_name.to_string()).or_insert(0) += 1;
             }
             assert_eq!(counts, r.type_counts, "typeCounts mismatch for {}", r.file);
-            assert_eq!(result.exports.len() as u32, r.total_exports, "totalExports mismatch for {}", r.file);
+            assert_eq!(
+                result.exports.len() as u32,
+                r.total_exports,
+                "totalExports mismatch for {}",
+                r.file
+            );
         }
     }
 }

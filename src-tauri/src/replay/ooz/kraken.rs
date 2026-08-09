@@ -233,7 +233,9 @@ fn decode_step(
 
     if quantum_header.compressed_size == 0 {
         if quantum_header.whole_match_distance != 0 {
-            return Err(DecoderException::new("Kraken_CopyWholeMatch not implemented"));
+            return Err(DecoderException::new(
+                "Kraken_CopyWholeMatch not implemented",
+            ));
         }
         let fill = (quantum_header.checksum & 0xff) as u8;
         for b in
@@ -247,7 +249,9 @@ fn decode_step(
     }
 
     if state.header.use_checksums {
-        return Err(DecoderException::new("Checksum verification not implemented"));
+        return Err(DecoderException::new(
+            "Checksum verification not implemented",
+        ));
     }
 
     if quantum_header.compressed_size as usize == destination_bytes_left {
@@ -312,8 +316,8 @@ fn decode_bytes(
     if chunk_type == 0 {
         let source_size: usize;
         if source_buf[source] >= 0x80 {
-            source_size = (((source_buf[source] as usize) << 8) | source_buf[source + 1] as usize)
-                & 0xfff;
+            source_size =
+                (((source_buf[source] as usize) << 8) | source_buf[source + 1] as usize) & 0xfff;
             source += 2;
         } else {
             if source_end - source < 3 {
@@ -637,7 +641,9 @@ fn mermaid_read_lz_table(
         offset32_stream1 = o32s1;
         offset32_stream2 = o32s2;
 
-        source += mermaid_decode_far_offsets(source_buf, source, source_end, scratch, o32s1, size1, offset)?;
+        source += mermaid_decode_far_offsets(
+            source_buf, source, source_end, scratch, o32s1, size1, offset,
+        )?;
         source += mermaid_decode_far_offsets(
             source_buf,
             source,

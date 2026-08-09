@@ -70,28 +70,108 @@ struct AgentEntry {
 }
 
 /// `(keywords, slotOrder, type, life, radius, outerRadius)` — TS `ABILITY_CLASSES`.
-type AbilityClass = (&'static [&'static str], &'static [&'static str], &'static str, i32, i32, Option<i32>);
+type AbilityClass = (
+    &'static [&'static str],
+    &'static [&'static str],
+    &'static str,
+    i32,
+    i32,
+    Option<i32>,
+);
 
 const ABILITY_CLASSES: &[AbilityClass] = &[
-    (&["FlameWall_ThroughWall"], &["Grenade"], "wall-cast", 3, 80, None),
     (
-        &["Phoenix_E_FlareCurve_Synced_Right", "FlareCurve_Synced_Right"],
+        &["FlameWall_ThroughWall"],
+        &["Grenade"],
+        "wall-cast",
+        3,
+        80,
+        None,
+    ),
+    (
+        &[
+            "Phoenix_E_FlareCurve_Synced_Right",
+            "FlareCurve_Synced_Right",
+        ],
         &["Ability2"],
         "flash-proj-right",
         2,
         400,
         None,
     ),
-    (&["Phoenix_E_FlareCurve", "FlareCurve"], &["Ability2"], "flash-proj-left", 2, 400, None),
-    (&["Projectile_Phoenix_4_Molotov"], &["Ability1"], "grenade", 3, 100, None),
-    (&["Patch_Phoenix_MolotovFire", "MolotovFire"], &["Ability1"], "molly", 6, 280, None),
-    (&["Smoke", "NewSmoke", "DarkCover", "Ruse"], &["Ability2", "Grenade"], "smoke", 19, 600, Some(750)),
-    (&["Wall_Fortifying"], &["Grenade", "Ability2"], "wall", 30, 100, None),
-    (&["Wall_Segment"], &["Grenade", "Ability2"], "wall-seg", 30, 75, None),
+    (
+        &["Phoenix_E_FlareCurve", "FlareCurve"],
+        &["Ability2"],
+        "flash-proj-left",
+        2,
+        400,
+        None,
+    ),
+    (
+        &["Projectile_Phoenix_4_Molotov"],
+        &["Ability1"],
+        "grenade",
+        3,
+        100,
+        None,
+    ),
+    (
+        &["Patch_Phoenix_MolotovFire", "MolotovFire"],
+        &["Ability1"],
+        "molly",
+        6,
+        280,
+        None,
+    ),
+    (
+        &["Smoke", "NewSmoke", "DarkCover", "Ruse"],
+        &["Ability2", "Grenade"],
+        "smoke",
+        19,
+        600,
+        Some(750),
+    ),
+    (
+        &["Wall_Fortifying"],
+        &["Grenade", "Ability2"],
+        "wall",
+        30,
+        100,
+        None,
+    ),
+    (
+        &["Wall_Segment"],
+        &["Grenade", "Ability2"],
+        "wall-seg",
+        30,
+        75,
+        None,
+    ),
     (&["SlowField", "Slow"], &["Ability1"], "slow", 7, 270, None),
-    (&["Molly", "Burn", "Incendiary"], &["Ability1", "Grenade"], "molly", 7, 320, None),
-    (&["Satchel_Arming", "Satchel_Production"], &["Ability1"], "satchel", 5, 50, None),
-    (&["Satchel_Explosion", "Q_Explosion"], &["Ability1"], "satchel-boom", 1, 350, Some(700)),
+    (
+        &["Molly", "Burn", "Incendiary"],
+        &["Ability1", "Grenade"],
+        "molly",
+        7,
+        320,
+        None,
+    ),
+    (
+        &["Satchel_Arming", "Satchel_Production"],
+        &["Ability1"],
+        "satchel",
+        5,
+        50,
+        None,
+    ),
+    (
+        &["Satchel_Explosion", "Q_Explosion"],
+        &["Ability1"],
+        "satchel-boom",
+        1,
+        350,
+        Some(700),
+    ),
     (
         &["BoomBot", "Projectile_Secondary", "PaintShells"],
         &["Ability2", "Grenade"],
@@ -109,7 +189,14 @@ const ABILITY_CLASSES: &[AbilityClass] = &[
         None,
     ),
     (&["Drone", "OwlDrone"], &["Grenade"], "drone", 10, 50, None),
-    (&["HawkFlash_FlashSource", "FlashSource"], &["Ability2", "Ability1"], "flash-src", 3, 1500, None),
+    (
+        &["HawkFlash_FlashSource", "FlashSource"],
+        &["Ability2", "Ability1"],
+        "flash-src",
+        3,
+        1500,
+        None,
+    ),
     (
         &["HawkFlash_C", "Projectile_Guide_E_HawkFlash"],
         &["Ability2", "Ability1"],
@@ -120,14 +207,53 @@ const ABILITY_CLASSES: &[AbilityClass] = &[
     ),
     (&["GuidingLight"], &["Ability2"], "flash-src", 3, 1500, None),
     (&["Flash"], &["Ability2", "Ability1"], "flash", 2, 600, None),
-    (&["LoSReveal", "Reveal", "Haunt", "Spycam"], &["Ability2"], "reveal", 5, 600, None),
-    (&["NearsightAOE", "Leer"], &["Grenade"], "leer", 4, 200, None),
-    (&["CyberCage"], &["Ability1"], "smoke", 12, 250, None),
-    (&["Phoenix_Q_FireballWall", "FireballWall", "FlameWall"], &["Grenade"], "wall", 8, 80, None),
-    (&["Phoenix_X_SelfRes", "SelfRes", "ResTarget"], &["Ultimate"], "postdeath", 3, 100, None),
-    (&["Heal_HealPool", "HealPool"], &["Ability1"], "heal-pool", 6, 150, None),
     (
-        &["PostDeath_PC", "PostDeath_ReactiveResStart", "ReactiveResStart"],
+        &["LoSReveal", "Reveal", "Haunt", "Spycam"],
+        &["Ability2"],
+        "reveal",
+        5,
+        600,
+        None,
+    ),
+    (
+        &["NearsightAOE", "Leer"],
+        &["Grenade"],
+        "leer",
+        4,
+        200,
+        None,
+    ),
+    (&["CyberCage"], &["Ability1"], "smoke", 12, 250, None),
+    (
+        &["Phoenix_Q_FireballWall", "FireballWall", "FlameWall"],
+        &["Grenade"],
+        "wall",
+        8,
+        80,
+        None,
+    ),
+    (
+        &["Phoenix_X_SelfRes", "SelfRes", "ResTarget"],
+        &["Ultimate"],
+        "postdeath",
+        3,
+        100,
+        None,
+    ),
+    (
+        &["Heal_HealPool", "HealPool"],
+        &["Ability1"],
+        "heal-pool",
+        6,
+        150,
+        None,
+    ),
+    (
+        &[
+            "PostDeath_PC",
+            "PostDeath_ReactiveResStart",
+            "ReactiveResStart",
+        ],
         &["Grenade", "Ultimate"],
         "postdeath",
         3,
@@ -162,7 +288,9 @@ fn classify_ability(cls: &str, agent: &AgentEntry) -> Option<Classified> {
             life: *life,
             radius: *radius,
             outer_radius: *outer_radius,
-            ability: info.map(|i| i.display_name.clone()).unwrap_or_else(|| type_.to_string()),
+            ability: info
+                .map(|i| i.display_name.clone())
+                .unwrap_or_else(|| type_.to_string()),
             icon: info.map(|i| i.icon.clone()).unwrap_or_default(),
         });
     }
@@ -173,10 +301,18 @@ const CLASS_PREFIXES: &[&str] = &["GameObject_", "Projectile_", "Ability_", "Pat
 
 /// TS: `cls.match(/^(?:GameObject|Projectile|Ability|Patch|FXC)_(\w+?)_/)`.
 /// See module doc comment for how the lazy group is reproduced exactly.
-fn parse_class<'a>(cls: &str, agent_by_dev: &'a HashMap<String, AgentEntry>) -> Option<(String, &'a AgentEntry)> {
+fn parse_class<'a>(
+    cls: &str,
+    agent_by_dev: &'a HashMap<String, AgentEntry>,
+) -> Option<(String, &'a AgentEntry)> {
     let rest = CLASS_PREFIXES.iter().find_map(|p| cls.strip_prefix(p))?;
     let bytes = rest.as_bytes();
-    let end = bytes.iter().enumerate().skip(1).find(|(_, &b)| b == b'_').map(|(i, _)| i)?;
+    let end = bytes
+        .iter()
+        .enumerate()
+        .skip(1)
+        .find(|(_, &b)| b == b'_')
+        .map(|(i, _)| i)?;
     let dev_name = rest[..end].to_lowercase();
     let agent = agent_by_dev.get(&dev_name)?;
     Some((dev_name, agent))
@@ -206,7 +342,11 @@ struct PositionsData {
 /// Port of TS `buildAbilities(channelsPath, positionsPath, abilitiesPath)`.
 /// Performs a blocking network call to `valorant-api.com` — the same public,
 /// unauthenticated endpoint the TS sidecar hits.
-pub fn build_abilities(channels_path: &Path, positions_path: &Path, abilities_path: &Path) -> Result<(), String> {
+pub fn build_abilities(
+    channels_path: &Path,
+    positions_path: &Path,
+    abilities_path: &Path,
+) -> Result<(), String> {
     let client = reqwest::blocking::Client::new();
     let resp: AgentsResponse = client
         .get("https://valorant-api.com/v1/agents?isPlayableCharacter=true")
@@ -253,8 +393,16 @@ pub fn build_abilities(channels_path: &Path, positions_path: &Path, abilities_pa
             while bsi < bomb_states.len() && bomb_states[bsi].sample_idx <= s {
                 bsi += 1;
             }
-            let prev = if bsi > 0 { Some(bomb_states[bsi - 1]) } else { None };
-            let next = if bsi < bomb_states.len() { Some(bomb_states[bsi]) } else { None };
+            let prev = if bsi > 0 {
+                Some(bomb_states[bsi - 1])
+            } else {
+                None
+            };
+            let next = if bsi < bomb_states.len() {
+                Some(bomb_states[bsi])
+            } else {
+                None
+            };
             *slot = match (prev, next) {
                 (Some(p), Some(nx)) => {
                     let span = nx.sample_idx as i64 - p.sample_idx as i64;
@@ -415,7 +563,11 @@ pub fn build_abilities(channels_path: &Path, positions_path: &Path, abilities_pa
             continue;
         };
         let owner_actor = nearest_player_actor(x, y, t);
-        let team = if owner_actor != -1 { team_of_actor[owner_actor as usize] } else { -1 };
+        let team = if owner_actor != -1 {
+            team_of_actor[owner_actor as usize]
+        } else {
+            -1
+        };
         out.push(json!({
             "t": obj.get("t").cloned().unwrap_or(Value::Null),
             "x": obj.get("x").cloned().unwrap_or(Value::Null),
@@ -434,7 +586,11 @@ pub fn build_abilities(channels_path: &Path, positions_path: &Path, abilities_pa
     }
     let _ = (skipped, unknown_agent, unknown_cls); // parity with TS's log-only counters
 
-    fs::write(abilities_path, serde_json::to_string(&out).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+    fs::write(
+        abilities_path,
+        serde_json::to_string(&out).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -460,13 +616,21 @@ mod tests {
             .find(|(level, _)| level.starts_with("/Game/Maps/"))
             .map(|(level, _)| level.clone())
             .unwrap_or_default();
-        let map_name = map_url.rsplit('/').find(|s| !s.is_empty()).unwrap_or("").to_string();
+        let map_name = map_url
+            .rsplit('/')
+            .find(|s| !s.is_empty())
+            .unwrap_or("")
+            .to_string();
         (map_url, map_name)
     }
 
     fn run_and_check(uuid: &str, version: &str) {
         let bytes = fixture_bytes(&format!("{uuid}.vrf"));
-        let result = crate::replay::parse_replay_for_app(&bytes, Some(version.to_string()), Some(ParseMode::Full));
+        let result = crate::replay::parse_replay_for_app(
+            &bytes,
+            Some(version.to_string()),
+            Some(ParseMode::Full),
+        );
         let (map_url, map_name) = map_url_and_name(&result.header);
 
         let out_dir = std::env::temp_dir().join(format!("replay-rust-abilities-test-{uuid}"));

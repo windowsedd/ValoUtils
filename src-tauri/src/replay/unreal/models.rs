@@ -21,7 +21,9 @@ use crate::replay::io::binary_reader::BinaryReader;
 use crate::replay::io::models::{FQuat, FRotator, FVector};
 use crate::replay::io::net_bit_reader::NetBitReader;
 
-use super::enums::{ChannelCloseReason, ChannelName, ChannelType, NetworkVersionHistory, ReplayVersionHistory};
+use super::enums::{
+    ChannelCloseReason, ChannelName, ChannelType, NetworkVersionHistory, ReplayVersionHistory,
+};
 use super::net_guid_cache::NetGuidCache;
 
 /// A property that can deserialize itself from a `NetBitReader`, and
@@ -238,7 +240,10 @@ impl UChannel {
         self.ignore.contains(group)
     }
     pub fn archetype_id(&self) -> Option<u32> {
-        self.Actor.as_ref().and_then(|a| a.Archetype).map(|g| g.Value)
+        self.Actor
+            .as_ref()
+            .and_then(|a| a.Archetype)
+            .map(|g| g.Value)
     }
     pub fn actor_id(&self) -> Option<u32> {
         self.Actor.as_ref().map(|a| a.ActorNetGUID.Value)
@@ -438,7 +443,8 @@ impl Default for ReplayHeader {
         ReplayHeader {
             NetworkVersion: NetworkVersionHistory::HistoryReplayInitial,
             NetworkChecksum: 0,
-            EngineNetworkVersion: crate::replay::io::enums::EngineNetworkVersionHistory::HistoryInitial,
+            EngineNetworkVersion:
+                crate::replay::io::enums::EngineNetworkVersionHistory::HistoryInitial,
             GameNetworkProtocolVersion: 0,
             Guid: String::new(),
             Major: 0,

@@ -6,7 +6,7 @@ authors = ["windowsedd"]
 license = ""
 repository = ""
 edition = "2021"
-rust-version = "1.77.2"
+rust-version = "1.88"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -32,10 +32,20 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 base64 = "0.22"
 flate2 = "1"
 tokio = { version = "1", features = ["rt", "net", "io-util", "sync", "time", "macros"] }
+axum = { version = "0.8", default-features = false, features = ["http1", "tokio"] }
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 webpki-roots = "1"
+xmltree = "0.12"
+native-tls = "0.2"
+tokio-native-tls = "0.3"
+x509-parser = "0.18"
 valorant-api = { version = "0.1.0", path = "D:/Developing/Mine/@ts/package/valorant-api/rust-api" }
+
+[target.'cfg(windows)'.dependencies]
+schannel = "0.1"
+windows-sys = { version = "0.61", features = ["Win32_Storage_FileSystem"] }
 
 [dev-dependencies]
 sha2 = "0.10"
+rcgen = { version = "0.14", features = ["x509-parser"] }

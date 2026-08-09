@@ -29,7 +29,6 @@ fn client_platform_header() -> &'static str {
     })
 }
 
-
 fn public_client() -> &'static reqwest::Client {
     static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
     CLIENT.get_or_init(reqwest::Client::new)
@@ -53,9 +52,16 @@ async fn fallback_client_version() -> Option<String> {
     if let Some(cached) = CACHE.get() {
         return Some(cached.clone());
     }
-    let response = public_client().get("https://valorant-api.com/v1/version").send().await.ok()?;
+    let response = public_client()
+        .get("https://valorant-api.com/v1/version")
+        .send()
+        .await
+        .ok()?;
     let body: Value = response.json().await.ok()?;
-    let version = body.pointer("/data/riotClientVersion").and_then(|v| v.as_str())?.to_string();
+    let version = body
+        .pointer("/data/riotClientVersion")
+        .and_then(|v| v.as_str())?
+        .to_string();
     let _ = CACHE.set(version.clone());
     Some(version)
 }
@@ -67,6 +73,7 @@ enum Target {
 
 /// Authenticated client for Riot's `pd`/`glz` game APIs, built from local
 /// Riot Client tokens. Mirrors electron/util/riot/create-api.ts.
+#[derive(Clone)]
 pub struct RiotApiClient {
     pub puuid: String,
     pub region: String,
@@ -83,7 +90,13 @@ impl RiotApiClient {
         }
     }
 
-    async fn request(&self, target: Target, method: reqwest::Method, path: &str, body: Option<Value>) -> Result<Value, String> {
+    async fn request(
+        &self,
+        target: Target,
+        method: reqwest::Method,
+        path: &str,
+        body: Option<Value>,
+    ) -> Result<Value, String> {
         let url = format!("{}{}", self.base_url(&target), path);
         let mut req = public_client()
             .request(method, &url)
@@ -101,7 +114,12 @@ impl RiotApiClient {
         let status = response.status();
         let text = response.text().await.map_err(|e| e.to_string())?;
         if !status.is_success() {
-            return Err(format!("{{\"status\":{},\"path\":{:?},\"message\":{:?}}}", status.as_u16(), path, text));
+            return Err(format!(
+                "{{\"status\":{},\"path\":{:?},\"message\":{:?}}}",
+                status.as_u16(),
+                path,
+                text
+            ));
         }
         serde_json::from_str(&text).or(Ok(Value::String(text)))
     }
@@ -110,12 +128,29 @@ impl RiotApiClient {
     /// hyphen) is a dead route that answers 503, so a typo here fails silently
     /// and every player renders nameless.
     pub async fn get_names(&self, puuids: &[String]) -> Result<Value, String> {
-        self.request(Target::Pd, reqwest::Method::PUT, "/name-service/v2/players", Some(serde_json::json!(puuids))).await
+        self.request(
+            Target::Pd,
+            reqwest::Method::PUT,
+            "/name-service/v2/players",
+            Some(serde_json::json!(puuids)),
+        )
+        .await
     }
     pub async fn get_mmr(&self, puuid: &str) -> Result<Value, String> {
-        self.request(Target::Pd, reqwest::Method::GET, &format!("/mmr/v1/players/{puuid}"), None).await
+        self.request(
+            Target::Pd,
+            reqwest::Method::GET,
+            &format!("/mmr/v1/players/{puuid}"),
+            None,
+        )
+        .await
     }
-    pub async fn get_competitive_history(&self, puuid: &str, start_index: u32, end_index: u32) -> Result<Value, String> {
+    pub async fn get_competitive_history(
+        &self,
+        puuid: &str,
+        start_index: u32,
+        end_index: u32,
+    ) -> Result<Value, String> {
         self.request(
             Target::Pd,
             reqwest::Method::GET,
@@ -124,56 +159,138 @@ impl RiotApiClient {
         )
         .await
     }
-    pub async fn get_match_history(&self, puuid: &str, start_index: u32, end_index: u32) -> Result<Value, String> {
+    pub async fn get_match_history(
+        &self,
+        puuid: &str,
+        start_index: u32,
+        end_index: u32,
+    ) -> Result<Value, String> {
         self.request(
             Target::Pd,
             reqwest::Method::GET,
-            &format!("/match-history/v1/history/{puuid}?startIndex={start_index}&endIndex={end_index}"),
+            &format!(
+                "/match-history/v1/history/{puuid}?startIndex={start_index}&endIndex={end_index}"
+            ),
             None,
         )
         .await
     }
     pub async fn get_match_details(&self, match_id: &str) -> Result<Value, String> {
-        self.request(Target::Pd, reqwest::Method::GET, &format!("/match-details/v1/matches/{match_id}"), None).await
+        self.request(
+            Target::Pd,
+            reqwest::Method::GET,
+            &format!("/match-details/v1/matches/{match_id}"),
+            None,
+        )
+        .await
     }
     pub async fn party_get_by_player(&self, puuid: &str) -> Result<Value, String> {
-        self.request(Target::Glz, reqwest::Method::GET, &format!("/parties/v1/players/{puuid}"), None).await
+        self.request(
+            Target::Glz,
+            reqwest::Method::GET,
+            &format!("/parties/v1/players/{puuid}"),
+            None,
+        )
+        .await
     }
     pub async fn party_get(&self, party_id: &str) -> Result<Value, String> {
-        self.request(Target::Glz, reqwest::Method::GET, &format!("/parties/v1/parties/{party_id}"), None).await
+        self.request(
+            Target::Glz,
+            reqwest::Method::GET,
+            &format!("/parties/v1/parties/{party_id}"),
+            None,
+        )
+        .await
     }
     pub async fn party_get_chat_token(&self, party_id: &str) -> Result<Value, String> {
-        self.request(Target::Glz, reqwest::Method::GET, &format!("/parties/v1/parties/{party_id}/muctoken"), None).await
+        self.request(
+            Target::Glz,
+            reqwest::Method::GET,
+            &format!("/parties/v1/parties/{party_id}/muctoken"),
+            None,
+        )
+        .await
     }
-    pub async fn party_invite(&self, party_id: &str, name: &str, tagline: &str) -> Result<Value, String> {
+    pub async fn party_invite(
+        &self,
+        party_id: &str,
+        name: &str,
+        tagline: &str,
+    ) -> Result<Value, String> {
         self.request(
             Target::Glz,
             reqwest::Method::POST,
-            &format!("/parties/v1/parties/{party_id}/invites/name/{}/tag/{}", crate::riot::client::urlencoding_encode(name), crate::riot::client::urlencoding_encode(tagline)),
+            &format!(
+                "/parties/v1/parties/{party_id}/invites/name/{}/tag/{}",
+                crate::riot::client::urlencoding_encode(name),
+                crate::riot::client::urlencoding_encode(tagline)
+            ),
             None,
         )
         .await
     }
     pub async fn party_request(&self, party_id: &str) -> Result<Value, String> {
-        self.request(Target::Glz, reqwest::Method::POST, &format!("/parties/v1/parties/{party_id}/request"), None).await
+        self.request(
+            Target::Glz,
+            reqwest::Method::POST,
+            &format!("/parties/v1/parties/{party_id}/request"),
+            None,
+        )
+        .await
     }
     pub async fn pregame_get_player(&self, puuid: &str) -> Result<Value, String> {
-        self.request(Target::Glz, reqwest::Method::GET, &format!("/pregame/v1/players/{puuid}"), None).await
+        self.request(
+            Target::Glz,
+            reqwest::Method::GET,
+            &format!("/pregame/v1/players/{puuid}"),
+            None,
+        )
+        .await
     }
     pub async fn pregame_get_match(&self, match_id: &str) -> Result<Value, String> {
-        self.request(Target::Glz, reqwest::Method::GET, &format!("/pregame/v1/matches/{match_id}"), None).await
+        self.request(
+            Target::Glz,
+            reqwest::Method::GET,
+            &format!("/pregame/v1/matches/{match_id}"),
+            None,
+        )
+        .await
     }
     pub async fn pregame_get_loadouts(&self, match_id: &str) -> Result<Value, String> {
-        self.request(Target::Glz, reqwest::Method::GET, &format!("/pregame/v1/matches/{match_id}/loadouts"), None).await
+        self.request(
+            Target::Glz,
+            reqwest::Method::GET,
+            &format!("/pregame/v1/matches/{match_id}/loadouts"),
+            None,
+        )
+        .await
     }
     pub async fn coregame_get_player(&self, puuid: &str) -> Result<Value, String> {
-        self.request(Target::Glz, reqwest::Method::GET, &format!("/core-game/v1/players/{puuid}"), None).await
+        self.request(
+            Target::Glz,
+            reqwest::Method::GET,
+            &format!("/core-game/v1/players/{puuid}"),
+            None,
+        )
+        .await
     }
     pub async fn coregame_get_match(&self, match_id: &str) -> Result<Value, String> {
-        self.request(Target::Glz, reqwest::Method::GET, &format!("/core-game/v1/matches/{match_id}"), None).await
+        self.request(
+            Target::Glz,
+            reqwest::Method::GET,
+            &format!("/core-game/v1/matches/{match_id}"),
+            None,
+        )
+        .await
     }
     pub async fn coregame_get_loadouts(&self, match_id: &str) -> Result<Value, String> {
-        self.request(Target::Glz, reqwest::Method::GET, &format!("/core-game/v1/matches/{match_id}/loadouts"), None).await
+        self.request(
+            Target::Glz,
+            reqwest::Method::GET,
+            &format!("/core-game/v1/matches/{match_id}/loadouts"),
+            None,
+        )
+        .await
     }
 }
 
@@ -181,7 +298,9 @@ impl RiotApiClient {
 /// good — expired, or belonging to an account that has since been switched away
 /// from. Both are fixed by re-reading tokens from the Riot Client.
 pub fn is_auth_error(error: &str) -> bool {
-    error.contains("BAD_CLAIMS") || error.contains("UNAUTHORIZED") || error.contains("\"status\":401")
+    error.contains("BAD_CLAIMS")
+        || error.contains("UNAUTHORIZED")
+        || error.contains("\"status\":401")
 }
 
 /// Runs `f` against an authenticated client, retrying **once** with freshly
@@ -211,19 +330,36 @@ where
 pub async fn create_api(state: &RiotState) -> Result<RiotApiClient, String> {
     let tokens = client::get_tokens(state, false).await?;
     let locale = client::get_region_locale(state).await?;
-    let mut client_version = client::get_valorant_client_version(state).await.unwrap_or_default();
+    let mut client_version = client::get_valorant_client_version(state)
+        .await
+        .unwrap_or_default();
     if !looks_like_client_version(&client_version) {
         client_version = fallback_client_version().await.unwrap_or_default();
     }
 
-    let region_raw = locale.get("region").and_then(|v| v.as_str()).unwrap_or("na");
+    let region_raw = locale
+        .get("region")
+        .and_then(|v| v.as_str())
+        .unwrap_or("na");
     let region = region_to_shard(region_raw);
 
     Ok(RiotApiClient {
-        puuid: tokens.get("subject").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
+        puuid: tokens
+            .get("subject")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string(),
         region,
         client_version,
-        access_token: tokens.get("accessToken").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
-        entitlement_token: tokens.get("token").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
+        access_token: tokens
+            .get("accessToken")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string(),
+        entitlement_token: tokens
+            .get("token")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string(),
     })
 }

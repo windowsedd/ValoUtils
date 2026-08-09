@@ -6,29 +6,42 @@ use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Emitter, State};
 
 fn arg(args: &[Value], index: usize) -> Option<String> {
-    args.get(index).and_then(|v| v.as_str()).map(|s| s.to_string())
+    args.get(index)
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
 }
 
 fn demos_dir() -> PathBuf {
     let base = std::env::var("LOCALAPPDATA")
         .map(PathBuf::from)
         .unwrap_or_else(|_| {
-            let userprofile = std::env::var("USERPROFILE").unwrap_or_else(|_| "C:\\Users\\Default".into());
+            let userprofile =
+                std::env::var("USERPROFILE").unwrap_or_else(|_| "C:\\Users\\Default".into());
             PathBuf::from(userprofile).join("AppData").join("Local")
         });
     base.join("VALORANT").join("Saved").join("Demos")
 }
 
 fn output_dir(vrf_path: &str) -> PathBuf {
-    let name = Path::new(vrf_path).file_stem().and_then(|s| s.to_str()).unwrap_or_default();
+    let name = Path::new(vrf_path)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or_default();
     user_data_dir().join("replay-output").join(name)
 }
 
 fn read_json(path: &Path) -> Option<Value> {
-    std::fs::read_to_string(path).ok().and_then(|s| serde_json::from_str(&s).ok())
+    std::fs::read_to_string(path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
 }
 
-const CACHE_FILES: [&str; 4] = ["positions.json", "events.json", "meta.json", "abilities.json"];
+const CACHE_FILES: [&str; 4] = [
+    "positions.json",
+    "events.json",
+    "meta.json",
+    "abilities.json",
+];
 
 /// A degenerate `positions.json` (zero samples) is a few hundred bytes; a real
 /// one is tens of MB. The cheap check below uses this as a stand-in for "has
@@ -54,7 +67,11 @@ fn is_processed_quick(out_dir: &Path) -> bool {
         .map(|m| m.len() >= MIN_POSITIONS_BYTES)
         .unwrap_or(false);
     let has_map_url = read_json(&out_dir.join("meta.json"))
-        .and_then(|meta| meta.get("mapUrl").and_then(|v| v.as_str()).map(|s| !s.is_empty()))
+        .and_then(|meta| {
+            meta.get("mapUrl")
+                .and_then(|v| v.as_str())
+                .map(|s| !s.is_empty())
+        })
         .unwrap_or(false);
     big_enough && has_map_url
 }
@@ -65,10 +82,22 @@ fn is_already_processed(out_dir: &Path) -> bool {
     if !cache_files_exist(out_dir) {
         return false;
     }
-    let Some(positions) = read_json(&out_dir.join("positions.json")) else { return false };
-    let Some(meta) = read_json(&out_dir.join("meta.json")) else { return false };
-    let has_samples = positions.get("samples").and_then(|v| v.as_array()).map(|a| !a.is_empty()).unwrap_or(false);
-    let has_map_url = meta.get("mapUrl").and_then(|v| v.as_str()).map(|s| !s.is_empty()).unwrap_or(false);
+    let Some(positions) = read_json(&out_dir.join("positions.json")) else {
+        return false;
+    };
+    let Some(meta) = read_json(&out_dir.join("meta.json")) else {
+        return false;
+    };
+    let has_samples = positions
+        .get("samples")
+        .and_then(|v| v.as_array())
+        .map(|a| !a.is_empty())
+        .unwrap_or(false);
+    let has_map_url = meta
+        .get("mapUrl")
+        .and_then(|v| v.as_str())
+        .map(|s| !s.is_empty())
+        .unwrap_or(false);
     has_samples && has_map_url
 }
 
@@ -85,20 +114,33 @@ pub async fn replay_list() -> String {
 fn list_replays_blocking() -> String {
     let dir = demos_dir();
     if !dir.exists() {
-        return json!({ "success": true, "files": [], "demosDir": dir.to_string_lossy() }).to_string();
+        return json!({ "success": true, "files": [], "demosDir": dir.to_string_lossy() })
+            .to_string();
     }
 
     let Ok(entries) = std::fs::read_dir(&dir) else {
-        return json!({ "success": true, "files": [], "demosDir": dir.to_string_lossy() }).to_string();
+        return json!({ "success": true, "files": [], "demosDir": dir.to_string_lossy() })
+            .to_string();
     };
 
     let mut files: Vec<Value> = entries
         .filter_map(|e| e.ok())
-        .filter(|e| e.path().is_file() && e.file_name().to_string_lossy().to_lowercase().ends_with(".vrf"))
+        .filter(|e| {
+            e.path().is_file()
+                && e.file_name()
+                    .to_string_lossy()
+                    .to_lowercase()
+                    .ends_with(".vrf")
+        })
         .filter_map(|e| {
             let path = e.path();
             let metadata = std::fs::metadata(&path).ok()?;
-            let modified = metadata.modified().ok()?.duration_since(std::time::UNIX_EPOCH).ok()?.as_millis() as u64;
+            let modified = metadata
+                .modified()
+                .ok()?
+                .duration_since(std::time::UNIX_EPOCH)
+                .ok()?
+                .as_millis() as u64;
             Some(json!({
                 "name": e.file_name().to_string_lossy(),
                 "path": path.to_string_lossy(),
@@ -123,7 +165,9 @@ pub async fn replay_delete(args: Vec<Value>) -> String {
 }
 
 fn delete_replay_blocking(args: Vec<Value>) -> String {
-    let Some(vrf_path) = arg(&args, 0) else { return json!({ "success": false }).to_string() };
+    let Some(vrf_path) = arg(&args, 0) else {
+        return json!({ "success": false }).to_string();
+    };
     if let Err(e) = std::fs::remove_file(&vrf_path) {
         if e.kind() != std::io::ErrorKind::NotFound {
             return json!({ "success": false, "error": e.to_string() }).to_string();
@@ -162,13 +206,18 @@ pub async fn replay_export_json(args: Vec<Value>, app: AppHandle) -> Result<Stri
 #[tauri::command]
 pub async fn replay_export_raw(args: Vec<Value>, app: AppHandle) -> Result<String, ()> {
     use tauri_plugin_dialog::DialogExt;
-    let Some(vrf_path) = arg(&args, 0) else { return Ok(json!({ "success": false }).to_string()) };
+    let Some(vrf_path) = arg(&args, 0) else {
+        return Ok(json!({ "success": false }).to_string());
+    };
     let out_dir = output_dir(&vrf_path);
     if !is_already_processed(&out_dir) {
         return Ok(json!({ "success": false, "error": "Replay not processed yet — watch it first to generate the cache." }).to_string());
     }
 
-    let base_name = Path::new(&vrf_path).file_stem().and_then(|s| s.to_str()).unwrap_or_default();
+    let base_name = Path::new(&vrf_path)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or_default();
     let data = json!({
         "id": base_name,
         "meta": read_json(&out_dir.join("meta.json")),
@@ -216,7 +265,8 @@ async fn run_replay_worker(app: &AppHandle, vrf_path: &str, out_dir: &Path) -> R
 
     let _ = app.emit(
         "replay:progress",
-        json!({ "path": vrf_path, "status": "reading", "message": "Reading replay file..." }).to_string(),
+        json!({ "path": vrf_path, "status": "reading", "message": "Reading replay file..." })
+            .to_string(),
     );
 
     tokio::task::spawn_blocking(move || {
@@ -231,14 +281,22 @@ async fn run_replay_worker(app: &AppHandle, vrf_path: &str, out_dir: &Path) -> R
     .map_err(|e| e.to_string())?
 }
 
-async fn read_or_fetch_match_details(riot: &RiotState, vrf_path: &str, out_dir: &Path) -> Option<Value> {
+async fn read_or_fetch_match_details(
+    riot: &RiotState,
+    vrf_path: &str,
+    out_dir: &Path,
+) -> Option<Value> {
     let match_details_path = out_dir.join("match-details.json");
     if let Some(cached) = read_json(&match_details_path) {
         return Some(cached);
     }
 
-    let match_id = Path::new(vrf_path).file_stem().and_then(|s| s.to_str()).unwrap_or_default();
-    let is_uuid_like = match_id.len() == 36 && match_id.chars().all(|c| c.is_ascii_hexdigit() || c == '-');
+    let match_id = Path::new(vrf_path)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or_default();
+    let is_uuid_like =
+        match_id.len() == 36 && match_id.chars().all(|c| c.is_ascii_hexdigit() || c == '-');
     if !is_uuid_like {
         return None;
     }
@@ -250,8 +308,14 @@ async fn read_or_fetch_match_details(riot: &RiotState, vrf_path: &str, out_dir: 
 }
 
 #[tauri::command]
-pub async fn replay_process(args: Vec<Value>, app: AppHandle, riot: State<'_, RiotState>) -> Result<String, ()> {
-    let Some(vrf_path) = arg(&args, 0) else { return Ok(json!({ "success": false }).to_string()) };
+pub async fn replay_process(
+    args: Vec<Value>,
+    app: AppHandle,
+    riot: State<'_, RiotState>,
+) -> Result<String, ()> {
+    let Some(vrf_path) = arg(&args, 0) else {
+        return Ok(json!({ "success": false }).to_string());
+    };
     let out_dir = output_dir(&vrf_path);
 
     if !is_already_processed(&out_dir) {

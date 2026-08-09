@@ -80,12 +80,12 @@ use crate::replay::io::models::{FRotator, FVector};
 use crate::replay::io::net_bit_reader::NetBitReader;
 
 use super::enums::{
-    ChannelCloseReason, ChannelName, ChannelType, FBitArchiveEndIndex, NetworkVersionHistory, PacketState, ParseMode,
-    ReplayChunkType, ReplayVersionHistory,
+    ChannelCloseReason, ChannelName, ChannelType, FBitArchiveEndIndex, NetworkVersionHistory,
+    PacketState, ParseMode, ReplayChunkType, ReplayVersionHistory,
 };
 use super::models::{
-    Actor, DataBunch, ExternalData, FFastArraySerializerHeader, NetDeltaUpdate, NetFieldExport, NetFieldExportGroup,
-    NetFieldModel, NetworkGUID, Property, ReplayHeader, ReplayInfo, UChannel,
+    Actor, DataBunch, ExternalData, FFastArraySerializerHeader, NetDeltaUpdate, NetFieldExport,
+    NetFieldExportGroup, NetFieldModel, NetworkGUID, Property, ReplayHeader, ReplayInfo, UChannel,
 };
 use super::net_field_parser::NetFieldParser;
 use super::net_guid_cache::NetGuidCache;
@@ -167,7 +167,14 @@ pub trait ReplayReaderHooks<R: ReplayLike> {
     /// call site already computes all of this locally (channel actor +
     /// archetype-id -> path lookup), so it's threaded through here instead of
     /// requiring the hook to reach back into the reader.
-    fn on_channel_opened(&mut self, _channel_index: u32, _actor: Option<&Actor>, _archetype_path: Option<&str>, _frame_time_seconds: f32) {}
+    fn on_channel_opened(
+        &mut self,
+        _channel_index: u32,
+        _actor: Option<&Actor>,
+        _archetype_path: Option<&str>,
+        _frame_time_seconds: f32,
+    ) {
+    }
     fn on_channel_closed(&mut self, _channel_index: u32, _actor: Option<NetworkGUID>) {}
 
     /// Added in the valorant phase, replacing the TS override point
@@ -181,7 +188,13 @@ pub trait ReplayReaderHooks<R: ReplayLike> {
     /// the owning actor's netguid (TS: `this.channels[bunch.ChIndex]?.ActorId`,
     /// used to fold into the transform seed). Default: identity (no
     /// transform), matching the base `ReplayReader`'s untransformed reads.
-    fn transform_bunch_payload(&mut self, _actor_guid: Option<u32>, payload: Vec<u8>, _payload_bits: u32, _header_branch: &str) -> Vec<u8> {
+    fn transform_bunch_payload(
+        &mut self,
+        _actor_guid: Option<u32>,
+        payload: Vec<u8>,
+        _payload_bits: u32,
+        _header_branch: &str,
+    ) -> Vec<u8> {
         payload
     }
 }
@@ -275,7 +288,9 @@ impl<R: ReplayLike, H: ReplayReaderHooks<R>> ReplayReader<R, H> {
     }
 
     pub fn replay(&self) -> &R {
-        self.replay.as_ref().expect("replay not yet initialized — call read_replay_from_archive first")
+        self.replay
+            .as_ref()
+            .expect("replay not yet initialized — call read_replay_from_archive first")
     }
 
     // ---- top-level -----------------------------------------------------------
@@ -348,7 +363,9 @@ impl<R: ReplayLike, H: ReplayReaderHooks<R>> ReplayReader<R, H> {
     }
 
     fn replay_mut(&mut self) -> &mut R {
-        self.replay.as_mut().expect("replay not yet initialized — call read_replay_from_archive first")
+        self.replay
+            .as_mut()
+            .expect("replay not yet initialized — call read_replay_from_archive first")
     }
 
     pub fn read_replay_chunks(&mut self, archive: &mut BinaryReader) {
@@ -394,12 +411,18 @@ impl<R: ReplayLike, H: ReplayReaderHooks<R>> ReplayReader<R, H> {
     /// the same archive.
     pub fn read_replay_data(&mut self, archive: &mut BinaryReader, fallback_chunk_size: i32) {
         let mut length = fallback_chunk_size;
-        if (archive.archive_state().ReplayVersion & (ReplayVersionHistory::HistoryStreamChunkTimes as u32)) != 0 {
+        if (archive.archive_state().ReplayVersion
+            & (ReplayVersionHistory::HistoryStreamChunkTimes as u32))
+            != 0
+        {
             archive.read_uint32(); // start
             archive.read_uint32(); // end
             length = archive.read_uint32() as i32;
         }
-        if (archive.archive_state().ReplayVersion & (ReplayVersionHistory::HistoryEncryption as u32)) != 0 {
+        if (archive.archive_state().ReplayVersion
+            & (ReplayVersionHistory::HistoryEncryption as u32))
+            != 0
+        {
             archive.read_int32(); // memorySizeInBytes
         }
 
@@ -412,7 +435,11 @@ impl<R: ReplayLike, H: ReplayReaderHooks<R>> ReplayReader<R, H> {
             BinaryReader::new(archive.read_bytes(length.max(0) as usize))
         };
 
-        let mut binary_archive = if is_compressed { self.hooks.decompress(decrypted) } else { decrypted };
+        let mut binary_archive = if is_compressed {
+            self.hooks.decompress(decrypted)
+        } else {
+            decrypted
+        };
         // Bisected bug fix: a freshly-constructed `BinaryReader` (whether
         // from `decrypt_buffer`'s/`decompress`'s default `BinaryReader::new(...)`
         // or a concrete hook impl doing the same) starts with
@@ -426,9 +453,11 @@ impl<R: ReplayLike, H: ReplayReaderHooks<R>> ReplayReader<R, H> {
         // mirrors the existing copy pattern used elsewhere in this file for
         // `packet_reader`/`cmd_reader`), it's done once here instead of
         // pushing it onto every hook implementation.
-        binary_archive.archive_state_mut().EngineNetworkVersion = archive.archive_state().EngineNetworkVersion;
+        binary_archive.archive_state_mut().EngineNetworkVersion =
+            archive.archive_state().EngineNetworkVersion;
         binary_archive.archive_state_mut().NetworkVersion = archive.archive_state().NetworkVersion;
-        binary_archive.archive_state_mut().ReplayHeaderFlags = archive.archive_state().ReplayHeaderFlags;
+        binary_archive.archive_state_mut().ReplayHeaderFlags =
+            archive.archive_state().ReplayHeaderFlags;
         binary_archive.archive_state_mut().ReplayVersion = archive.archive_state().ReplayVersion;
 
         while !binary_archive.at_end() {
@@ -464,13 +493,14 @@ impl<R: ReplayLike, H: ReplayReaderHooks<R>> ReplayReader<R, H> {
             header.Patch = archive.read_uint16();
             header.Changelist = archive.read_uint32();
             header.Branch = archive.read_fstring();
-            archive.archive_state_mut().NetworkReplayVersion = Some(crate::replay::io::models::NetworkReplayVersion {
-                Major: header.Major as i32,
-                Minor: header.Minor as i32,
-                Patch: header.Patch as i32,
-                Changelist: header.Changelist as i32,
-                Branch: header.Branch.clone(),
-            });
+            archive.archive_state_mut().NetworkReplayVersion =
+                Some(crate::replay::io::models::NetworkReplayVersion {
+                    Major: header.Major as i32,
+                    Minor: header.Minor as i32,
+                    Patch: header.Patch as i32,
+                    Changelist: header.Changelist as i32,
+                    Branch: header.Branch.clone(),
+                });
         } else {
             header.Changelist = archive.read_uint32();
         }
@@ -491,7 +521,9 @@ impl<R: ReplayLike, H: ReplayReaderHooks<R>> ReplayReader<R, H> {
             let count = archive.read_uint32();
             header.LevelNamesAndTimes = Vec::with_capacity(count as usize);
             for _ in 0..count {
-                header.LevelNamesAndTimes.push((archive.read_fstring(), archive.read_uint32()));
+                header
+                    .LevelNamesAndTimes
+                    .push((archive.read_fstring(), archive.read_uint32()));
             }
         }
 
@@ -501,7 +533,9 @@ impl<R: ReplayLike, H: ReplayReaderHooks<R>> ReplayReader<R, H> {
         }
 
         let game_specific_count = archive.read_uint32();
-        header.GameSpecificData = (0..game_specific_count).map(|_| archive.read_fstring()).collect();
+        header.GameSpecificData = (0..game_specific_count)
+            .map(|_| archive.read_fstring())
+            .collect();
 
         if network_version_raw >= NetworkVersionHistory::HistorySavePackageVersionUe as u32 {
             archive.read_single(); // minRecordHz
@@ -566,7 +600,8 @@ impl<R: ReplayLike, H: ReplayReaderHooks<R>> ReplayReader<R, H> {
                     group.PathNameIndex = path_name_index;
                     group.NetFieldExportsLength = num_exports;
                     group.NetFieldExports = vec![None; num_exports as usize];
-                    self.net_guid_cache.add_to_export_group_map(&path_name, group);
+                    self.net_guid_cache
+                        .add_to_export_group_map(&path_name, group);
                 }
                 Some(path_name)
             } else {
@@ -592,12 +627,16 @@ impl<R: ReplayLike, H: ReplayReaderHooks<R>> ReplayReader<R, H> {
     // ---- demo frame ----------------------------------------------------------
 
     pub fn read_demo_frame_into_playback_packets(&mut self, archive: &mut BinaryReader) {
-        if archive.archive_state().NetworkVersion >= NetworkVersionHistory::HistoryMultipleLevels as u32 {
+        if archive.archive_state().NetworkVersion
+            >= NetworkVersionHistory::HistoryMultipleLevels as u32
+        {
             archive.read_int32(); // currentLevelIndex
         }
         self.current_frame_time_seconds = archive.read_single();
 
-        if archive.archive_state().NetworkVersion >= NetworkVersionHistory::HistoryLevelStreamingFixes as u32 {
+        if archive.archive_state().NetworkVersion
+            >= NetworkVersionHistory::HistoryLevelStreamingFixes as u32
+        {
             self.read_export_data(archive);
         }
 
@@ -648,8 +687,10 @@ impl<R: ReplayLike, H: ReplayReaderHooks<R>> ReplayReader<R, H> {
             let net_guid = archive.read_int_packed();
             let num_bytes = (external_data_num_bits + 7) >> 3;
             let mut sub = BinaryReader::new(archive.read_bytes(num_bytes as usize));
-            sub.archive_state_mut().NetworkReplayVersion = archive.archive_state().NetworkReplayVersion.clone();
-            sub.archive_state_mut().EngineNetworkVersion = archive.archive_state().EngineNetworkVersion;
+            sub.archive_state_mut().NetworkReplayVersion =
+                archive.archive_state().NetworkReplayVersion.clone();
+            sub.archive_state_mut().EngineNetworkVersion =
+                archive.archive_state().EngineNetworkVersion;
             sub.archive_state_mut().ReplayHeaderFlags = archive.archive_state().ReplayHeaderFlags;
             sub.archive_state_mut().ReplayVersion = archive.archive_state().ReplayVersion;
             sub.archive_state_mut().NetworkVersion = archive.archive_state().NetworkVersion;
@@ -686,7 +727,8 @@ impl<R: ReplayLike, H: ReplayReaderHooks<R>> ReplayReader<R, H> {
             self.packet_reader.fill_buffer(packet, Some(bit_size));
             // Work around borrowing `self.packet_reader` and `self` mutably at
             // once: temporarily swap the reused NetBitReader out.
-            let mut reader = std::mem::replace(&mut self.packet_reader, NetBitReader::new(Vec::new(), None));
+            let mut reader =
+                std::mem::replace(&mut self.packet_reader, NetBitReader::new(Vec::new(), None));
             self.received_packet(&mut reader.0);
             self.packet_reader = reader;
         } else {
@@ -696,7 +738,12 @@ impl<R: ReplayLike, H: ReplayReaderHooks<R>> ReplayReader<R, H> {
 
     // ---- net guid loading ----------------------------------------------------
 
-    pub fn internal_load_object_binary(&mut self, archive: &mut BinaryReader, is_exporting_net_guid_bunch: bool, recursion: u32) -> NetworkGUID {
+    pub fn internal_load_object_binary(
+        &mut self,
+        archive: &mut BinaryReader,
+        is_exporting_net_guid_bunch: bool,
+        recursion: u32,
+    ) -> NetworkGUID {
         if recursion > 16 {
             return NetworkGUID::default();
         }
@@ -725,7 +772,12 @@ impl<R: ReplayLike, H: ReplayReaderHooks<R>> ReplayReader<R, H> {
         net_guid
     }
 
-    pub fn internal_load_object_bit(&mut self, archive: &mut BitReader, is_exporting_net_guid_bunch: bool, recursion: u32) -> NetworkGUID {
+    pub fn internal_load_object_bit(
+        &mut self,
+        archive: &mut BitReader,
+        is_exporting_net_guid_bunch: bool,
+        recursion: u32,
+    ) -> NetworkGUID {
         if recursion > 16 {
             return NetworkGUID::default();
         }
@@ -778,13 +830,18 @@ impl<R: ReplayLike, H: ReplayReaderHooks<R>> ReplayReader<R, H> {
             let group_path: Option<String> = if archive.read_bit() {
                 let path_name = archive.read_fstring();
                 let num_exports = archive.read_uint32();
-                if self.net_guid_cache.get_group_map_entry(&path_name).is_none() {
+                if self
+                    .net_guid_cache
+                    .get_group_map_entry(&path_name)
+                    .is_none()
+                {
                     let mut group = NetFieldExportGroup::default();
                     group.PathName = path_name.clone();
                     group.PathNameIndex = path_name_index;
                     group.NetFieldExportsLength = num_exports;
                     group.NetFieldExports = vec![None; num_exports as usize];
-                    self.net_guid_cache.add_to_export_group_map(&path_name, group);
+                    self.net_guid_cache
+                        .add_to_export_group_map(&path_name, group);
                 }
                 Some(path_name)
             } else {
@@ -807,10 +864,14 @@ impl<R: ReplayLike, H: ReplayReaderHooks<R>> ReplayReader<R, H> {
 
     pub fn received_packet(&mut self, bit_reader: &mut BitReader) {
         self.in_packet_id += 1;
-        let b_has_partial_custom_exports_final_bit = !(bit_reader.archive_state().EngineNetworkVersion < EngineNetworkVersionHistory::CustomExports);
+        let b_has_partial_custom_exports_final_bit =
+            !(bit_reader.archive_state().EngineNetworkVersion
+                < EngineNetworkVersionHistory::CustomExports);
 
         while !bit_reader.at_end() {
-            if bit_reader.archive_state().EngineNetworkVersion < EngineNetworkVersionHistory::HistoryAcksIncludedInHeader {
+            if bit_reader.archive_state().EngineNetworkVersion
+                < EngineNetworkVersionHistory::HistoryAcksIncludedInHeader
+            {
                 bit_reader.read_bit(); // isAckDummy
             }
 
@@ -818,12 +879,23 @@ impl<R: ReplayLike, H: ReplayReaderHooks<R>> ReplayReader<R, H> {
             let b_open = b_control && bit_reader.read_bit();
             let b_close = b_control && bit_reader.read_bit();
 
-            let (b_dormant, close_reason) = if bit_reader.archive_state().EngineNetworkVersion < EngineNetworkVersionHistory::HistoryChannelCloseReason {
+            let (b_dormant, close_reason) = if bit_reader.archive_state().EngineNetworkVersion
+                < EngineNetworkVersionHistory::HistoryChannelCloseReason
+            {
                 let dormant = b_close && bit_reader.read_bit();
-                (dormant, if dormant { ChannelCloseReason::Dormancy } else { ChannelCloseReason::Destroyed })
+                (
+                    dormant,
+                    if dormant {
+                        ChannelCloseReason::Dormancy
+                    } else {
+                        ChannelCloseReason::Destroyed
+                    },
+                )
             } else {
                 let reason = if b_close {
-                    channel_close_reason_from_u32(bit_reader.read_serialized_int(ChannelCloseReason::Max as u32))
+                    channel_close_reason_from_u32(
+                        bit_reader.read_serialized_int(ChannelCloseReason::Max as u32),
+                    )
                 } else {
                     ChannelCloseReason::Destroyed
                 };
@@ -833,7 +905,9 @@ impl<R: ReplayLike, H: ReplayReaderHooks<R>> ReplayReader<R, H> {
             let b_is_replication_paused = bit_reader.read_bit();
             let b_reliable = bit_reader.read_bit();
 
-            let ch_index = if bit_reader.archive_state().EngineNetworkVersion < EngineNetworkVersionHistory::HistoryMaxActorChannelsCustomization {
+            let ch_index = if bit_reader.archive_state().EngineNetworkVersion
+                < EngineNetworkVersionHistory::HistoryMaxActorChannelsCustomization
+            {
                 bit_reader.read_serialized_int(OLD_MAX_ACTOR_CHANNELS)
             } else {
                 bit_reader.read_int_packed()
@@ -852,14 +926,17 @@ impl<R: ReplayLike, H: ReplayReaderHooks<R>> ReplayReader<R, H> {
             };
 
             let b_partial_initial = b_partial && bit_reader.read_bit();
-            let b_has_partial_custom_exports_final_bit = if b_partial && b_has_partial_custom_exports_final_bit {
-                bit_reader.read_bit()
-            } else {
-                false
-            };
+            let b_has_partial_custom_exports_final_bit =
+                if b_partial && b_has_partial_custom_exports_final_bit {
+                    bit_reader.read_bit()
+                } else {
+                    false
+                };
             let b_partial_final = b_partial && bit_reader.read_bit();
 
-            if bit_reader.archive_state().EngineNetworkVersion < EngineNetworkVersionHistory::HistoryChannelNames {
+            if bit_reader.archive_state().EngineNetworkVersion
+                < EngineNetworkVersionHistory::HistoryChannelNames
+            {
                 bit_reader.read_serialized_int(ChannelType::Max as u32);
             } else {
                 bit_reader.read_bit();
@@ -874,9 +951,11 @@ impl<R: ReplayLike, H: ReplayReaderHooks<R>> ReplayReader<R, H> {
             let mut bunch = if b_partial {
                 let sub_bytes = bit_reader.read_bits(bunch_data_bits as i64);
                 let mut sub = BitReader::new(sub_bytes, Some(bunch_data_bits as usize));
-                sub.archive_state_mut().EngineNetworkVersion = bit_reader.archive_state().EngineNetworkVersion;
+                sub.archive_state_mut().EngineNetworkVersion =
+                    bit_reader.archive_state().EngineNetworkVersion;
                 sub.archive_state_mut().NetworkVersion = bit_reader.archive_state().NetworkVersion;
-                sub.archive_state_mut().ReplayHeaderFlags = bit_reader.archive_state().ReplayHeaderFlags;
+                sub.archive_state_mut().ReplayHeaderFlags =
+                    bit_reader.archive_state().ReplayHeaderFlags;
                 DataBunch::new(sub)
             } else {
                 // Non-partial bunches read directly from `bit_reader` within a
@@ -908,9 +987,11 @@ impl<R: ReplayLike, H: ReplayReaderHooks<R>> ReplayReader<R, H> {
                 // whose `IsError` got set with 0 bits ever consumed again.
                 // (The `bPartial` branch just above already did this copy
                 // correctly — this mirrors it.)
-                sub.archive_state_mut().EngineNetworkVersion = bit_reader.archive_state().EngineNetworkVersion;
+                sub.archive_state_mut().EngineNetworkVersion =
+                    bit_reader.archive_state().EngineNetworkVersion;
                 sub.archive_state_mut().NetworkVersion = bit_reader.archive_state().NetworkVersion;
-                sub.archive_state_mut().ReplayHeaderFlags = bit_reader.archive_state().ReplayHeaderFlags;
+                sub.archive_state_mut().ReplayHeaderFlags =
+                    bit_reader.archive_state().ReplayHeaderFlags;
                 DataBunch::new(sub)
             };
 
@@ -935,7 +1016,8 @@ impl<R: ReplayLike, H: ReplayReaderHooks<R>> ReplayReader<R, H> {
             self.bunch_index += 1;
 
             if bunch.bHasPackageMapExports {
-                let mut archive = std::mem::replace(&mut bunch.Archive, BitReader::new(Vec::new(), None));
+                let mut archive =
+                    std::mem::replace(&mut bunch.Archive, BitReader::new(Vec::new(), None));
                 self.receive_net_guid_bunch(&mut archive);
                 bunch.Archive = archive;
             }
@@ -1006,11 +1088,17 @@ impl<R: ReplayLike, H: ReplayReaderHooks<R>> ReplayReader<R, H> {
             if let Some(pb) = &self.partial_bunch {
                 let b_reliable_matches = bunch.ChSequence == pb.ChSequence + 1;
                 let b_unreliable_matches = b_reliable_matches || bunch.ChSequence == pb.ChSequence;
-                b_sequence_matches = if pb.bReliable { b_reliable_matches } else { b_unreliable_matches };
+                b_sequence_matches = if pb.bReliable {
+                    b_reliable_matches
+                } else {
+                    b_unreliable_matches
+                };
             }
 
             let continue_merge = match &self.partial_bunch {
-                Some(pb) => !pb.bPartialFinal && b_sequence_matches && pb.bReliable == bunch.bReliable,
+                Some(pb) => {
+                    !pb.bPartialFinal && b_sequence_matches && pb.bReliable == bunch.bReliable
+                }
                 None => false,
             };
 
@@ -1020,7 +1108,8 @@ impl<R: ReplayLike, H: ReplayReaderHooks<R>> ReplayReader<R, H> {
                 if !bunch.bHasPackageMapExports && bits_left > 0 {
                     let bits = bunch.Archive.read_bits(bits_left);
                     let pb = self.partial_bunch.as_mut().unwrap();
-                    pb.Archive.append_data_from_checked(&bits, bits_left as usize);
+                    pb.Archive
+                        .append_data_from_checked(&bits, bits_left as usize);
                 }
                 if !bunch.bHasPackageMapExports && !bunch.bPartialFinal && bits_left % 8 != 0 {
                     return;
@@ -1054,7 +1143,10 @@ impl<R: ReplayLike, H: ReplayReaderHooks<R>> ReplayReader<R, H> {
         let b_close = bunch.bClose;
         self.received_actor_bunch(bunch);
         if b_close {
-            let actor = self.channels[ch_index as usize].as_ref().and_then(|c| c.Actor.as_ref()).map(|a| a.ActorNetGUID);
+            let actor = self.channels[ch_index as usize]
+                .as_ref()
+                .and_then(|c| c.Actor.as_ref())
+                .map(|a| a.ActorNetGUID);
             self.channels[ch_index as usize] = None;
             self.hooks.on_channel_closed(ch_index, actor);
             return true;
@@ -1072,10 +1164,15 @@ impl<R: ReplayLike, H: ReplayReaderHooks<R>> ReplayReader<R, H> {
         self.process_bunch(bunch);
     }
 
-    pub fn conditionally_serialize_quantized_vector(&mut self, archive: &mut BitReader, def: FVector) -> FVector {
+    pub fn conditionally_serialize_quantized_vector(
+        &mut self,
+        archive: &mut BitReader,
+        def: FVector,
+    ) -> FVector {
         let b_was_serialized = archive.read_bit();
         if b_was_serialized {
-            let b_should_quantize = archive.archive_state().EngineNetworkVersion < EngineNetworkVersionHistory::HistoryOptionallyQuantizeSpawnInfo
+            let b_should_quantize = archive.archive_state().EngineNetworkVersion
+                < EngineNetworkVersionHistory::HistoryOptionallyQuantizeSpawnInfo
                 || archive.read_bit();
             if b_should_quantize {
                 archive.read_packed_vector(10.0, 24)
@@ -1088,7 +1185,9 @@ impl<R: ReplayLike, H: ReplayReaderHooks<R>> ReplayReader<R, H> {
     }
 
     pub fn process_bunch(&mut self, mut bunch: DataBunch) {
-        let channel_has_actor = self.channels[bunch.ChIndex as usize].as_ref().map(|c| c.Actor.is_some());
+        let channel_has_actor = self.channels[bunch.ChIndex as usize]
+            .as_ref()
+            .map(|c| c.Actor.is_some());
         if channel_has_actor == Some(false) {
             if !bunch.bOpen {
                 return;
@@ -1096,7 +1195,8 @@ impl<R: ReplayLike, H: ReplayReaderHooks<R>> ReplayReader<R, H> {
 
             let mut in_actor = Actor::default();
             {
-                let mut archive = std::mem::replace(&mut bunch.Archive, BitReader::new(Vec::new(), None));
+                let mut archive =
+                    std::mem::replace(&mut bunch.Archive, BitReader::new(Vec::new(), None));
                 in_actor.ActorNetGUID = self.internal_load_object_bit(&mut archive, false, 0);
 
                 if archive.at_end() && in_actor.ActorNetGUID.is_dynamic() {
@@ -1105,34 +1205,61 @@ impl<R: ReplayLike, H: ReplayReaderHooks<R>> ReplayReader<R, H> {
                 }
 
                 if in_actor.ActorNetGUID.is_dynamic() {
-                    in_actor.Archetype = Some(self.internal_load_object_bit(&mut archive, false, 0));
-                    if archive.archive_state().EngineNetworkVersion >= EngineNetworkVersionHistory::HistoryNewActorOverrideLevel {
-                        in_actor.Level = Some(self.internal_load_object_bit(&mut archive, false, 0));
+                    in_actor.Archetype =
+                        Some(self.internal_load_object_bit(&mut archive, false, 0));
+                    if archive.archive_state().EngineNetworkVersion
+                        >= EngineNetworkVersionHistory::HistoryNewActorOverrideLevel
+                    {
+                        in_actor.Level =
+                            Some(self.internal_load_object_bit(&mut archive, false, 0));
                     }
-                    in_actor.Location = Some(self.conditionally_serialize_quantized_vector(&mut archive, FVector::new(0.0, 0.0, 0.0)));
+                    in_actor.Location = Some(self.conditionally_serialize_quantized_vector(
+                        &mut archive,
+                        FVector::new(0.0, 0.0, 0.0),
+                    ));
                     if archive.read_bit() {
                         in_actor.Rotation = Some(archive.read_rotation_short());
                     } else {
                         in_actor.Rotation = Some(FRotator::new(0.0, 0.0, 0.0));
                     }
-                    in_actor.Scale = Some(self.conditionally_serialize_quantized_vector(&mut archive, FVector::new(1.0, 1.0, 1.0)));
-                    in_actor.Velocity = Some(self.conditionally_serialize_quantized_vector(&mut archive, FVector::new(0.0, 0.0, 0.0)));
+                    in_actor.Scale = Some(self.conditionally_serialize_quantized_vector(
+                        &mut archive,
+                        FVector::new(1.0, 1.0, 1.0),
+                    ));
+                    in_actor.Velocity = Some(self.conditionally_serialize_quantized_vector(
+                        &mut archive,
+                        FVector::new(0.0, 0.0, 0.0),
+                    ));
                 }
                 bunch.Archive = archive;
             }
 
-            let channel_index = self.channels[bunch.ChIndex as usize].as_ref().unwrap().ChannelIndex;
+            let channel_index = self.channels[bunch.ChIndex as usize]
+                .as_ref()
+                .unwrap()
+                .ChannelIndex;
             let archetype_id = {
                 let channel = self.channels[bunch.ChIndex as usize].as_mut().unwrap();
                 channel.Actor = Some(in_actor.clone());
                 channel.archetype_id()
             };
-            let path = self.net_guid_cache.try_get_path_name(archetype_id.unwrap_or(0)).cloned();
-            self.hooks
-                .on_channel_opened(channel_index, Some(&in_actor), path.as_deref(), self.current_frame_time_seconds);
+            let path = self
+                .net_guid_cache
+                .try_get_path_name(archetype_id.unwrap_or(0))
+                .cloned();
+            self.hooks.on_channel_opened(
+                channel_index,
+                Some(&in_actor),
+                path.as_deref(),
+                self.current_frame_time_seconds,
+            );
 
             if let Some(path) = path {
-                if self.net_field_parser.player_controller_groups(&self.registry).contains(path.as_str()) {
+                if self
+                    .net_field_parser
+                    .player_controller_groups(&self.registry)
+                    .contains(path.as_str())
+                {
                     bunch.Archive.read_byte(); // netPlayerIndex
                 }
             }
@@ -1176,8 +1303,13 @@ impl<R: ReplayLike, H: ReplayReaderHooks<R>> ReplayReader<R, H> {
             // already run its `restore_temp_end`.
             let rep_object = block.rep_object;
             let b_has_rep_layout = block.b_has_rep_layout;
-            let mut archive = std::mem::replace(&mut bunch.Archive, BitReader::new(Vec::new(), None));
-            let guard = TempEndGuard::new(&mut archive, payload as usize, FBitArchiveEndIndex::ContentBlockPayload);
+            let mut archive =
+                std::mem::replace(&mut bunch.Archive, BitReader::new(Vec::new(), None));
+            let guard = TempEndGuard::new(
+                &mut archive,
+                payload as usize,
+                FBitArchiveEndIndex::ContentBlockPayload,
+            );
             if block.b_object_deleted {
                 drop(guard);
                 bunch.Archive = archive;
@@ -1193,7 +1325,12 @@ impl<R: ReplayLike, H: ReplayReaderHooks<R>> ReplayReader<R, H> {
                 bunch.Archive = archive;
                 continue;
             }
-            let ok = self.received_replicator_bunch(&mut bunch, &mut archive, rep_object, b_has_rep_layout);
+            let ok = self.received_replicator_bunch(
+                &mut bunch,
+                &mut archive,
+                rep_object,
+                b_has_rep_layout,
+            );
             drop(guard);
             bunch.Archive = archive;
             if !ok {
@@ -1202,7 +1339,13 @@ impl<R: ReplayLike, H: ReplayReaderHooks<R>> ReplayReader<R, H> {
         }
     }
 
-    pub fn received_replicator_bunch(&mut self, bunch: &mut DataBunch, archive: &mut BitReader, rep_object: Option<u32>, b_has_rep_layout: bool) -> bool {
+    pub fn received_replicator_bunch(
+        &mut self,
+        bunch: &mut DataBunch,
+        archive: &mut BitReader,
+        rep_object: Option<u32>,
+        b_has_rep_layout: bool,
+    ) -> bool {
         // NOTE: `bunch.Archive` has been swapped out for a placeholder by the
         // caller (`process_bunch`) for the duration of this call — `archive`
         // is the real, live reader (see judgment call #1's sibling note in
@@ -1234,11 +1377,16 @@ impl<R: ReplayLike, H: ReplayReaderHooks<R>> ReplayReader<R, H> {
             let start = archive.position();
             let raw_payload = archive.read_bits(payload_bits);
             archive.seek(start as i64, SeekOrigin::Begin);
-            let actor_guid = self.channels[bunch.ChIndex as usize].as_ref().and_then(|c| c.actor_id());
+            let actor_guid = self.channels[bunch.ChIndex as usize]
+                .as_ref()
+                .and_then(|c| c.actor_id());
             let header_branch = self.replay().header_branch().to_string();
-            let transformed = self
-                .hooks
-                .transform_bunch_payload(actor_guid, raw_payload, payload_bits as u32, &header_branch);
+            let transformed = self.hooks.transform_bunch_payload(
+                actor_guid,
+                raw_payload,
+                payload_bits as u32,
+                &header_branch,
+            );
             let mut new_archive = BitReader::new(transformed, Some(payload_bits as usize));
             *new_archive.archive_state_mut() = archive.archive_state().clone();
             new_archive_storage = Some(new_archive);
@@ -1253,7 +1401,10 @@ impl<R: ReplayLike, H: ReplayReaderHooks<R>> ReplayReader<R, H> {
         // here directly (matching TS) instead of re-looking it up by its own
         // `.PathName` field, which isn't guaranteed to match the (possibly
         // fuzzy-matched) key it's stored under in `group_map`.
-        let export_group = match self.net_guid_cache.get_net_field_export_group_by_guid(rep_object) {
+        let export_group = match self
+            .net_guid_cache
+            .get_net_field_export_group_by_guid(rep_object)
+        {
             Some(g) => g.clone(),
             None => return true,
         };
@@ -1270,7 +1421,8 @@ impl<R: ReplayLike, H: ReplayReaderHooks<R>> ReplayReader<R, H> {
             return true;
         }
 
-        let use_full_name = engine_version >= EngineNetworkVersionHistory::HistoryClassnetcacheFullname;
+        let use_full_name =
+            engine_version >= EngineNetworkVersionHistory::HistoryClassnetcacheFullname;
         // TS uses the object `tryGetClassNetCache` returns directly (no
         // re-lookup). The previous port instead grabbed the returned group's
         // own `.PathName` field and re-fetched it from `group_map` by that
@@ -1279,7 +1431,10 @@ impl<R: ReplayLike, H: ReplayReaderHooks<R>> ReplayReader<R, H> {
         // under in `group_map`, so that second lookup could miss and panic
         // on the `.unwrap()`. Cloning the already-found group directly avoids
         // the redundant, unsound re-lookup.
-        let class_net_cache = match self.net_guid_cache.try_get_class_net_cache(Some(&export_group.PathName), use_full_name) {
+        let class_net_cache = match self
+            .net_guid_cache
+            .try_get_class_net_cache(Some(&export_group.PathName), use_full_name)
+        {
             Some(c) => c.clone(),
             None => return false,
         };
@@ -1294,7 +1449,11 @@ impl<R: ReplayLike, H: ReplayReaderHooks<R>> ReplayReader<R, H> {
                 None => continue,
             };
 
-            let guard = TempEndGuard::new(archive, payload as usize, FBitArchiveEndIndex::FieldHeaderPayload);
+            let guard = TempEndGuard::new(
+                archive,
+                payload as usize,
+                FBitArchiveEndIndex::FieldHeaderPayload,
+            );
             let field_cache = match &fh.out_field {
                 Some(f) => f,
                 None => {
@@ -1310,17 +1469,39 @@ impl<R: ReplayLike, H: ReplayReaderHooks<R>> ReplayReader<R, H> {
                 drop(guard);
                 continue;
             }
-            if !self.net_field_parser.will_read_class_net_cache(&self.registry, &class_net_cache.PathName) {
+            if !self
+                .net_field_parser
+                .will_read_class_net_cache(&self.registry, &class_net_cache.PathName)
+            {
                 drop(guard);
                 continue;
             }
 
             let class_net_property = self
                 .net_field_parser
-                .try_get_class_net_cache_property(&self.registry, &field_cache.Name, &class_net_cache.PathName)
-                .map(|p| (p.name, p.path_name, p.is_function, p.is_custom_struct, p.enable_property_checksum));
+                .try_get_class_net_cache_property(
+                    &self.registry,
+                    &field_cache.Name,
+                    &class_net_cache.PathName,
+                )
+                .map(|p| {
+                    (
+                        p.name,
+                        p.path_name,
+                        p.is_function,
+                        p.is_custom_struct,
+                        p.enable_property_checksum,
+                    )
+                });
 
-            if let Some((prop_name, path_name, is_function, is_custom_struct, enable_property_checksum)) = class_net_property {
+            if let Some((
+                prop_name,
+                path_name,
+                is_function,
+                is_custom_struct,
+                enable_property_checksum,
+            )) = class_net_property
+            {
                 if is_function {
                     // TS uses the object `getNetFieldExportGroupByPath` returns
                     // directly (no re-lookup by the returned group's own
@@ -1332,31 +1513,52 @@ impl<R: ReplayLike, H: ReplayReaderHooks<R>> ReplayReader<R, H> {
                     // `add_to_export_group_map`), so re-fetching by `.PathName`
                     // could silently miss and resolve to `None`/the wrong
                     // entry. Clone the already-found group directly instead.
-                    let function_group = self.net_guid_cache.get_net_field_export_group_by_path(path_name).cloned();
+                    let function_group = self
+                        .net_guid_cache
+                        .get_net_field_export_group_by_path(path_name)
+                        .cloned();
                     if !self.received_rpc(archive, function_group.as_ref(), bunch.ChIndex) {
                         drop(guard);
                         return false;
                     }
                 } else if is_custom_struct {
                     let field_cache_owned = field_cache.clone();
-                    self.receive_custom_property(archive, &class_net_cache, &field_cache_owned, bunch.ChIndex, prop_name);
+                    self.receive_custom_property(
+                        archive,
+                        &class_net_cache,
+                        &field_cache_owned,
+                        bunch.ChIndex,
+                        prop_name,
+                    );
                 } else {
                     // Same fix as the `is_function` branch above: use the
                     // group `get_net_field_export_group_by_path` returns
                     // directly instead of re-fetching it by its own
                     // `.PathName`.
-                    let group = match self.net_guid_cache.get_net_field_export_group_by_path(path_name).cloned() {
+                    let group = match self
+                        .net_guid_cache
+                        .get_net_field_export_group_by_path(path_name)
+                        .cloned()
+                    {
                         Some(g) => g,
                         None => {
                             drop(guard);
                             continue;
                         }
                     };
-                    if !self.net_field_parser.will_read_type(&self.registry, &group.PathName) {
+                    if !self
+                        .net_field_parser
+                        .will_read_type(&self.registry, &group.PathName)
+                    {
                         drop(guard);
                         continue;
                     }
-                    self.receive_custom_delta_property(archive, &group, bunch.ChIndex, enable_property_checksum);
+                    self.receive_custom_delta_property(
+                        archive,
+                        &group,
+                        bunch.ChIndex,
+                        enable_property_checksum,
+                    );
                 }
             }
             drop(guard);
@@ -1364,7 +1566,11 @@ impl<R: ReplayLike, H: ReplayReaderHooks<R>> ReplayReader<R, H> {
         true
     }
 
-    pub fn receive_external_data(&mut self, group: &NetFieldExportGroup, channel_index: u32) -> bool {
+    pub fn receive_external_data(
+        &mut self,
+        group: &NetFieldExportGroup,
+        channel_index: u32,
+    ) -> bool {
         let actor_guid_value = match self.channels[channel_index as usize].as_ref() {
             Some(channel) => {
                 if channel.is_ignoring_group(&group.PathName) {
@@ -1375,12 +1581,18 @@ impl<R: ReplayLike, H: ReplayReaderHooks<R>> ReplayReader<R, H> {
             None => return false,
         };
         if let Some(external_data) = self.net_guid_cache.try_get_external_data(actor_guid_value) {
-            self.hooks.on_external_data_read(channel_index, Some(&external_data));
+            self.hooks
+                .on_external_data_read(channel_index, Some(&external_data));
         }
         true
     }
 
-    pub fn received_rpc(&mut self, reader: &mut BitReader, net_field_export_group: Option<&NetFieldExportGroup>, channel_index: u32) -> bool {
+    pub fn received_rpc(
+        &mut self,
+        reader: &mut BitReader,
+        net_field_export_group: Option<&NetFieldExportGroup>,
+        channel_index: u32,
+    ) -> bool {
         let group = match net_field_export_group {
             Some(g) => g,
             None => return false,
@@ -1389,8 +1601,16 @@ impl<R: ReplayLike, H: ReplayReaderHooks<R>> ReplayReader<R, H> {
         if reader.archive_state().IsError {
             return false;
         }
-        let ignoring = self.channels[channel_index as usize].as_ref().unwrap().is_ignoring_group(&group.PathName);
-        if !ignoring && self.net_field_parser.will_read_type(&self.registry, &group.PathName) && !reader.at_end() {
+        let ignoring = self.channels[channel_index as usize]
+            .as_ref()
+            .unwrap()
+            .is_ignoring_group(&group.PathName);
+        if !ignoring
+            && self
+                .net_field_parser
+                .will_read_type(&self.registry, &group.PathName)
+            && !reader.at_end()
+        {
             return false;
         }
         true
@@ -1404,30 +1624,47 @@ impl<R: ReplayLike, H: ReplayReaderHooks<R>> ReplayReader<R, H> {
         channel_index: u32,
         _property_name: &'static str,
     ) -> bool {
-        let export_obj = self
-            .net_field_parser
-            .create_property_type(&self.registry, &class_net_cache.PathName, &field_cache.Name);
+        let export_obj = self.net_field_parser.create_property_type(
+            &self.registry,
+            &class_net_cache.PathName,
+            &field_cache.Name,
+        );
         if let Some(mut export_obj) = export_obj {
             let num_bits = reader.get_bits_left();
             let bits = reader.read_bits(num_bits);
             self.cmd_reader.fill_buffer(bits, Some(num_bits as usize));
-            let mut cmd_reader = std::mem::replace(&mut self.cmd_reader, NetBitReader::new(Vec::new(), None));
+            let mut cmd_reader =
+                std::mem::replace(&mut self.cmd_reader, NetBitReader::new(Vec::new(), None));
             export_obj.serialize(&mut cmd_reader);
             self.cmd_reader = cmd_reader;
-            self.hooks.on_export_read(channel_index, Some(ExportedValue::Property(export_obj.as_ref())));
+            self.hooks.on_export_read(
+                channel_index,
+                Some(ExportedValue::Property(export_obj.as_ref())),
+            );
             return true;
         }
         false
     }
 
-    pub fn receive_custom_delta_property(&mut self, reader: &mut BitReader, group: &NetFieldExportGroup, channel_index: u32, enable_property_checksum: bool) -> bool {
-        if reader.archive_state().EngineNetworkVersion >= EngineNetworkVersionHistory::HistoryFastArrayDeltaStruct {
+    pub fn receive_custom_delta_property(
+        &mut self,
+        reader: &mut BitReader,
+        group: &NetFieldExportGroup,
+        channel_index: u32,
+        enable_property_checksum: bool,
+    ) -> bool {
+        if reader.archive_state().EngineNetworkVersion
+            >= EngineNetworkVersionHistory::HistoryFastArrayDeltaStruct
+        {
             reader.read_bit(); // bSupportsFastArrayDeltaStructSerialization
         }
         self.net_delta_serialize(reader, group, channel_index, enable_property_checksum)
     }
 
-    pub fn net_delta_serialize_header(&mut self, reader: &mut BitReader) -> FFastArraySerializerHeader {
+    pub fn net_delta_serialize_header(
+        &mut self,
+        reader: &mut BitReader,
+    ) -> FFastArraySerializerHeader {
         FFastArraySerializerHeader {
             ArrayReplicationKey: reader.read_int32(),
             BaseReplicationKey: reader.read_int32(),
@@ -1436,7 +1673,13 @@ impl<R: ReplayLike, H: ReplayReaderHooks<R>> ReplayReader<R, H> {
         }
     }
 
-    pub fn net_delta_serialize(&mut self, reader: &mut BitReader, group: &NetFieldExportGroup, channel_index: u32, enable_property_checksum: bool) -> bool {
+    pub fn net_delta_serialize(
+        &mut self,
+        reader: &mut BitReader,
+        group: &NetFieldExportGroup,
+        channel_index: u32,
+        enable_property_checksum: bool,
+    ) -> bool {
         let header = self.net_delta_serialize_header(reader);
         if reader.archive_state().IsError {
             return false;
@@ -1449,17 +1692,25 @@ impl<R: ReplayLike, H: ReplayReaderHooks<R>> ReplayReader<R, H> {
                 self.delta_update.ElementIndex = element_index;
                 self.delta_update.Export = None;
                 self.delta_update.ChannelIndex = channel_index;
-                self.hooks.on_net_delta_read(channel_index, &self.delta_update);
+                self.hooks
+                    .on_net_delta_read(channel_index, &self.delta_update);
             }
         }
         for _ in 0..header.NumChanged {
             let element_index = reader.read_int32();
-            let (_ok, export_group) = self.receive_properties(reader, group, channel_index, !enable_property_checksum, true);
+            let (_ok, export_group) = self.receive_properties(
+                reader,
+                group,
+                channel_index,
+                !enable_property_checksum,
+                true,
+            );
             self.delta_update.Deleted = true;
             self.delta_update.ElementIndex = element_index;
             self.delta_update.Export = export_group;
             self.delta_update.ChannelIndex = channel_index;
-            self.hooks.on_net_delta_read(channel_index, &self.delta_update);
+            self.hooks
+                .on_net_delta_read(channel_index, &self.delta_update);
         }
         true
     }
@@ -1484,8 +1735,14 @@ impl<R: ReplayLike, H: ReplayReaderHooks<R>> ReplayReader<R, H> {
                 return (false, None);
             }
         }
-        if !self.net_field_parser.will_read_type(&self.registry, &group.PathName) {
-            self.channels[channel_index as usize].as_mut().unwrap().ignore_group(&group.PathName);
+        if !self
+            .net_field_parser
+            .will_read_type(&self.registry, &group.PathName)
+        {
+            self.channels[channel_index as usize]
+                .as_mut()
+                .unwrap()
+                .ignore_group(&group.PathName);
             return (false, None);
         }
 
@@ -1493,7 +1750,10 @@ impl<R: ReplayLike, H: ReplayReaderHooks<R>> ReplayReader<R, H> {
             archive.read_bit();
         }
 
-        let mut export_group = match self.net_field_parser.create_type(&self.registry, &group.PathName) {
+        let mut export_group = match self
+            .net_field_parser
+            .create_type(&self.registry, &group.PathName)
+        {
             Some(g) => g,
             None => return (false, None),
         };
@@ -1553,10 +1813,17 @@ impl<R: ReplayLike, H: ReplayReaderHooks<R>> ReplayReader<R, H> {
             hasdata = true;
             let bits = archive.read_bits(num_bits as i64);
             self.cmd_reader.fill_buffer(bits, Some(num_bits as usize));
-            let mut cmd_reader = std::mem::replace(&mut self.cmd_reader, NetBitReader::new(Vec::new(), None));
-            let read_ok = self
-                .net_field_parser
-                .read_field(&self.registry, export_group.as_mut(), &export_field, handle, group, &mut cmd_reader, &self.net_guid_cache);
+            let mut cmd_reader =
+                std::mem::replace(&mut self.cmd_reader, NetBitReader::new(Vec::new(), None));
+            let read_ok = self.net_field_parser.read_field(
+                &self.registry,
+                export_group.as_mut(),
+                &export_field,
+                handle,
+                group,
+                &mut cmd_reader,
+                &self.net_guid_cache,
+            );
             if !read_ok {
                 export_field.Incompatible = true;
             }
@@ -1576,19 +1843,35 @@ impl<R: ReplayLike, H: ReplayReaderHooks<R>> ReplayReader<R, H> {
         }
 
         if !net_delta_update && hasdata {
-            self.hooks.on_export_read(channel_index, Some(ExportedValue::Model(export_group.as_ref())));
+            self.hooks.on_export_read(
+                channel_index,
+                Some(ExportedValue::Model(export_group.as_ref())),
+            );
         }
         (true, Some(export_group))
     }
 
-    pub fn read_field_header_and_payload(&mut self, archive: &mut BitReader, group: &NetFieldExportGroup) -> FieldHeaderResult {
+    pub fn read_field_header_and_payload(
+        &mut self,
+        archive: &mut BitReader,
+        group: &NetFieldExportGroup,
+    ) -> FieldHeaderResult {
         if archive.at_end() {
-            return FieldHeaderResult { more: false, out_field: None, payload: None };
+            return FieldHeaderResult {
+                more: false,
+                out_field: None,
+                payload: None,
+            };
         }
 
-        let net_field_export_handle = archive.read_serialized_int(group.NetFieldExportsLength.max(2));
+        let net_field_export_handle =
+            archive.read_serialized_int(group.NetFieldExportsLength.max(2));
         if archive.archive_state().IsError {
-            return FieldHeaderResult { more: false, out_field: None, payload: None };
+            return FieldHeaderResult {
+                more: false,
+                out_field: None,
+                payload: None,
+            };
         }
 
         let mut out_field = if group.is_valid_index(net_field_export_handle) {
@@ -1605,17 +1888,36 @@ impl<R: ReplayLike, H: ReplayReaderHooks<R>> ReplayReader<R, H> {
 
         let payload = archive.read_int_packed();
         if archive.archive_state().IsError {
-            return FieldHeaderResult { more: false, out_field: None, payload: None };
+            return FieldHeaderResult {
+                more: false,
+                out_field: None,
+                payload: None,
+            };
         }
         if !archive.can_read(payload as i64) {
-            return FieldHeaderResult { more: false, out_field, payload: None };
+            return FieldHeaderResult {
+                more: false,
+                out_field,
+                payload: None,
+            };
         }
-        FieldHeaderResult { more: true, out_field, payload: Some(payload) }
+        FieldHeaderResult {
+            more: true,
+            out_field,
+            payload: Some(payload),
+        }
     }
 
-    pub fn read_content_block_payload(&mut self, bunch: &mut DataBunch) -> ContentBlockPayloadResult {
+    pub fn read_content_block_payload(
+        &mut self,
+        bunch: &mut DataBunch,
+    ) -> ContentBlockPayloadResult {
         let header = self.read_content_block_header(bunch);
-        let payload = if !header.b_object_deleted { Some(bunch.Archive.read_int_packed()) } else { None };
+        let payload = if !header.b_object_deleted {
+            Some(bunch.Archive.read_int_packed())
+        } else {
+            None
+        };
         ContentBlockPayloadResult {
             rep_object: header.rep_object,
             b_object_deleted: header.b_object_deleted,
@@ -1629,8 +1931,14 @@ impl<R: ReplayLike, H: ReplayReaderHooks<R>> ReplayReader<R, H> {
         let b_is_actor = bunch.Archive.read_bit();
         if b_is_actor {
             let channel = self.channels[bunch.ChIndex as usize].as_ref();
-            let rep_object = channel.and_then(|c| c.archetype_id()).or_else(|| channel.and_then(|c| c.actor_id()));
-            return ContentBlockHeaderResult { rep_object, b_has_rep_layout, b_object_deleted: false };
+            let rep_object = channel
+                .and_then(|c| c.archetype_id())
+                .or_else(|| channel.and_then(|c| c.actor_id()));
+            return ContentBlockHeaderResult {
+                rep_object,
+                b_has_rep_layout,
+                b_object_deleted: false,
+            };
         }
 
         let mut archive = std::mem::replace(&mut bunch.Archive, BitReader::new(Vec::new(), None));
@@ -1638,12 +1946,18 @@ impl<R: ReplayLike, H: ReplayReaderHooks<R>> ReplayReader<R, H> {
         let b_stably_named = archive.read_bit();
         if b_stably_named {
             bunch.Archive = archive;
-            return ContentBlockHeaderResult { rep_object: Some(net_guid.Value), b_has_rep_layout, b_object_deleted: false };
+            return ContentBlockHeaderResult {
+                rep_object: Some(net_guid.Value),
+                b_has_rep_layout,
+                b_object_deleted: false,
+            };
         }
 
         let mut b_delete_sub_object = false;
         let mut b_serialize_class = true;
-        if archive.archive_state().EngineNetworkVersion >= EngineNetworkVersionHistory::HistorySubobjectDestroyFlag {
+        if archive.archive_state().EngineNetworkVersion
+            >= EngineNetworkVersionHistory::HistorySubobjectDestroyFlag
+        {
             let b_is_destroy_message = archive.read_bit();
             if b_is_destroy_message {
                 b_delete_sub_object = true;
@@ -1659,17 +1973,27 @@ impl<R: ReplayLike, H: ReplayReaderHooks<R>> ReplayReader<R, H> {
         }
         if b_delete_sub_object {
             bunch.Archive = archive;
-            return ContentBlockHeaderResult { rep_object: None, b_has_rep_layout, b_object_deleted: true };
+            return ContentBlockHeaderResult {
+                rep_object: None,
+                b_has_rep_layout,
+                b_object_deleted: true,
+            };
         }
 
-        if archive.archive_state().EngineNetworkVersion >= EngineNetworkVersionHistory::HistorySubobjectOuterChain {
+        if archive.archive_state().EngineNetworkVersion
+            >= EngineNetworkVersionHistory::HistorySubobjectOuterChain
+        {
             let b_actor_is_outer = archive.at_end() || archive.read_bit();
             if !b_actor_is_outer {
                 self.internal_load_object_bit(&mut archive, false, 0);
             }
         }
         bunch.Archive = archive;
-        ContentBlockHeaderResult { rep_object: Some(class_net_guid.Value), b_has_rep_layout, b_object_deleted: false }
+        ContentBlockHeaderResult {
+            rep_object: Some(class_net_guid.Value),
+            b_has_rep_layout,
+            b_object_deleted: false,
+        }
     }
 }
 

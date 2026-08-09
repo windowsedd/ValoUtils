@@ -31,7 +31,8 @@ use crate::replay::io::net_bit_reader::NetBitReader;
 use crate::replay::unreal::enums::{FBitArchiveEndIndex, ParseMode, RepLayoutCmdType};
 use crate::replay::unreal::models::{FText, FieldValue, NetFieldModel, Property};
 use crate::replay::unreal::registry::{
-    ClassNetCacheDescriptor, ClassNetCacheProperty, NetFieldDescriptor, NetFieldExportGroupDescriptor, NetFieldRegistry,
+    ClassNetCacheDescriptor, ClassNetCacheProperty, NetFieldDescriptor,
+    NetFieldExportGroupDescriptor, NetFieldRegistry,
 };
 
 use super::enums::EAresAttributeIndex;
@@ -104,11 +105,16 @@ pub struct ComponentDataStream {
 impl Property for ComponentDataStream {
     fn serialize(&mut self, reader: &mut NetBitReader) {
         if let Some(payload_bytes) = try_read_payload_bytes(reader) {
-            let mut payload_reader = NetBitReader::new(payload_bytes.clone(), Some(payload_bytes.len() * 8));
-            payload_reader.archive_state_mut().EngineNetworkVersion = reader.archive_state().EngineNetworkVersion;
-            payload_reader.archive_state_mut().NetworkVersion = reader.archive_state().NetworkVersion;
-            payload_reader.archive_state_mut().NetworkReplayVersion = reader.archive_state().NetworkReplayVersion.clone();
-            payload_reader.archive_state_mut().ReplayHeaderFlags = reader.archive_state().ReplayHeaderFlags;
+            let mut payload_reader =
+                NetBitReader::new(payload_bytes.clone(), Some(payload_bytes.len() * 8));
+            payload_reader.archive_state_mut().EngineNetworkVersion =
+                reader.archive_state().EngineNetworkVersion;
+            payload_reader.archive_state_mut().NetworkVersion =
+                reader.archive_state().NetworkVersion;
+            payload_reader.archive_state_mut().NetworkReplayVersion =
+                reader.archive_state().NetworkReplayVersion.clone();
+            payload_reader.archive_state_mut().ReplayHeaderFlags =
+                reader.archive_state().ReplayHeaderFlags;
             payload_reader.archive_state_mut().ReplayVersion = reader.archive_state().ReplayVersion;
             self.parse_component_payload(&mut payload_reader);
             return;
@@ -147,7 +153,10 @@ impl ComponentDataStream {
         self.HasMovementSection = true;
         self.MovementBitCount = movement_bit_count as u32;
 
-        reader.set_temp_end(movement_bit_count as usize, FBitArchiveEndIndex::FieldHeaderPayload as u32);
+        reader.set_temp_end(
+            movement_bit_count as usize,
+            FBitArchiveEndIndex::FieldHeaderPayload as u32,
+        );
         self.parse_movement_section(reader);
         reader.restore_temp_end(FBitArchiveEndIndex::FieldHeaderPayload as u32);
 
@@ -182,7 +191,9 @@ impl ComponentDataStream {
 
         while marker != 0 && !reader.archive_state().IsError {
             if marker != expected_marker {
-                self.MovementParseError = Some(format!("Movement marker mismatch: expected {expected_marker}, got {marker}"));
+                self.MovementParseError = Some(format!(
+                    "Movement marker mismatch: expected {expected_marker}, got {marker}"
+                ));
                 return;
             }
             match try_read_move(reader, marker) {
@@ -244,11 +255,15 @@ fn try_read_move(reader: &mut NetBitReader, marker: u32) -> Result<MovementMove,
     // present (matches TS: `rotationYawMultiplier` is checked for `null` but
     // never actually stored — `RotationYawMultiplier` below is assigned from
     // `unused_byte`, not this value; preserved verbatim, not a typo).
-    let (move_type, _rotation_yaw_multiplier, movement_state, unused_byte) =
-        match (move_type, rotation_yaw_multiplier, movement_state, unused_byte) {
-            (Some(a), Some(b), Some(c), Some(d)) => (a, b, c, d),
-            _ => return Err("Missing movement record header".to_string()),
-        };
+    let (move_type, _rotation_yaw_multiplier, movement_state, unused_byte) = match (
+        move_type,
+        rotation_yaw_multiplier,
+        movement_state,
+        unused_byte,
+    ) {
+        (Some(a), Some(b), Some(c), Some(d)) => (a, b, c, d),
+        _ => return Err("Missing movement record header".to_string()),
+    };
 
     mv.Marker = marker;
     mv.MoveType = if move_type { 1 } else { 0 };
@@ -389,7 +404,11 @@ fn try_read_quantized_vector(reader: &mut NetBitReader, scale_factor: f64) -> Op
         v.Y = reader.read_single() as f64;
         v.Z = reader.read_single() as f64;
         v.Bits = 32;
-        return if reader.archive_state().IsError { None } else { Some(v) };
+        return if reader.archive_state().IsError {
+            None
+        } else {
+            Some(v)
+        };
     }
 
     if !reader.can_read(192) {
@@ -406,7 +425,10 @@ fn try_read_quantized_vector(reader: &mut NetBitReader, scale_factor: f64) -> Op
     }
 }
 
-fn try_read_signed_quantized_component(reader: &mut NetBitReader, component_bits: u32) -> Option<i64> {
+fn try_read_signed_quantized_component(
+    reader: &mut NetBitReader,
+    component_bits: u32,
+) -> Option<i64> {
     if component_bits == 0 || component_bits > 62 || !reader.can_read(component_bits as i64) {
         return None;
     }
@@ -520,17 +542,39 @@ fn try_read_uint32(reader: &mut NetBitReader) -> Option<u32> {
 // ---------------------------------------------------------------------------
 
 macro_rules! field_ty {
-    (Bool) => { bool };
-    (U8) => { u8 };
-    (I16) => { i16 };
-    (U16) => { u16 };
-    (I32) => { i32 };
-    (U32) => { u32 };
-    (U64) => { u64 };
-    (F32) => { f32 };
-    (F64) => { f64 };
-    (Str) => { String };
-    (Vector) => { FVector };
+    (Bool) => {
+        bool
+    };
+    (U8) => {
+        u8
+    };
+    (I16) => {
+        i16
+    };
+    (U16) => {
+        u16
+    };
+    (I32) => {
+        i32
+    };
+    (U32) => {
+        u32
+    };
+    (U64) => {
+        u64
+    };
+    (F32) => {
+        f32
+    };
+    (F64) => {
+        f64
+    };
+    (Str) => {
+        String
+    };
+    (Vector) => {
+        FVector
+    };
 }
 
 macro_rules! plain_model {
@@ -563,15 +607,35 @@ macro_rules! plain_model {
     };
 }
 
-plain_model!(BaseReplayController { PlayerState: U32, SpawnLocation: Vector });
-plain_model!(BaseReplayPlayerState { bOnlySpectator: Bool });
-plain_model!(AbilityTrackingDelegateComponent { AbilityTrackingComponent: U32 });
+plain_model!(BaseReplayController {
+    PlayerState: U32,
+    SpawnLocation: Vector
+});
+plain_model!(BaseReplayPlayerState {
+    bOnlySpectator: Bool
+});
+plain_model!(AbilityTrackingDelegateComponent {
+    AbilityTrackingComponent: U32
+});
 plain_model!(AresWorldSettings { WorldGravityZ: F32 });
-plain_model!(StealthComponent { bReplicates: Bool, bStealthIsActive: Bool, SubscribedToComponent: U32 });
-plain_model!(TimedBomb { TimeRemainingToExplode: F32 });
-plain_model!(EquippableStateMachineComponent { AuthStartWorldTime: F32 });
-plain_model!(EquipmentChargeComponent { AuthResourceAmount: F32 });
-plain_model!(PurchasedItemComponent { bIsCurrentSessionPurchase: Bool, PurchasingPlayerState: U32 });
+plain_model!(StealthComponent {
+    bReplicates: Bool,
+    bStealthIsActive: Bool,
+    SubscribedToComponent: U32
+});
+plain_model!(TimedBomb {
+    TimeRemainingToExplode: F32
+});
+plain_model!(EquippableStateMachineComponent {
+    AuthStartWorldTime: F32
+});
+plain_model!(EquipmentChargeComponent {
+    AuthResourceAmount: F32
+});
+plain_model!(PurchasedItemComponent {
+    bIsCurrentSessionPurchase: Bool,
+    PurchasingPlayerState: U32
+});
 plain_model!(UsableComponent { bIsActive: Bool });
 plain_model!(BombTeamComponent { Team: U8 });
 plain_model!(BombGameState {
@@ -600,18 +664,34 @@ plain_model!(Ability_Gumshoe_E_TripWire {
     CosmeticRandomSeed: I32,
     CreatedByCharacter: U32,
 });
-plain_model!(GameObject_Gumshoe_E_TripWire { Owner: U32, Instigator: U32, Deployed: Bool });
-plain_model!(GameObject_Gumshoe_E_TripWire_SecondWire { Owner: U32, Instigator: U32 });
+plain_model!(GameObject_Gumshoe_E_TripWire {
+    Owner: U32,
+    Instigator: U32,
+    Deployed: Bool
+});
+plain_model!(GameObject_Gumshoe_E_TripWire_SecondWire {
+    Owner: U32,
+    Instigator: U32
+});
 plain_model!(ClientGamePhaseEnded { OldPhase: U8 });
 plain_model!(ClientCleanUpLocationalEffects {});
 plain_model!(ClientPlayOneShotEffectAtLocation {});
 plain_model!(ReplayPlayContinuousEffectAtLocation {});
-plain_model!(BombPlayerState { PlayerId: I32, Ping: U16, CompetitiveTier: I32, ProfileName: Str });
+plain_model!(BombPlayerState {
+    PlayerId: I32,
+    Ping: U16,
+    CompetitiveTier: I32,
+    ProfileName: Str
+});
 // FObfuscatedPlayerInformation: array-element export group (no
 // `[NetFieldExportGroup]` attribute in C#) — only ever constructed via an
 // `elementFactory`, never registered as its own group (mirrors `models.ts`'s
 // comment on the TS class).
-plain_model!(FObfuscatedPlayerInformation { SubjectUniqueId: Str, bIsAfk: Bool, ConnectionStatus: U8 });
+plain_model!(FObfuscatedPlayerInformation {
+    SubjectUniqueId: Str,
+    bIsAfk: Bool,
+    ConnectionStatus: U8
+});
 
 // ---------------------------------------------------------------------------
 // ClientReplayReceiveInputEventProcessingCapture — has a primitive
@@ -700,7 +780,12 @@ impl Property for QuatProperty {
 }
 impl From<QuatProperty> for FQuat {
     fn from(q: QuatProperty) -> FQuat {
-        FQuat { X: q.X, Y: q.Y, Z: q.Z, W: q.W }
+        FQuat {
+            X: q.X,
+            Y: q.Y,
+            Z: q.Z,
+            W: q.W,
+        }
     }
 }
 
@@ -888,7 +973,9 @@ impl NetFieldModel for AresAttributeSet {
             let attr = &mut self.Attributes[index as usize];
             attr.Handle = handle;
             attr.AttributeName = EAresAttributeIndex::name(index);
-            attr.IsBoolean = EAresAttributeIndex::from_index(index).map(EAresAttributeIndex::is_boolean).unwrap_or(false);
+            attr.IsBoolean = EAresAttributeIndex::from_index(index)
+                .map(EAresAttributeIndex::is_boolean)
+                .unwrap_or(false);
             let value = reader.serialize_property_float();
             if is_current {
                 attr.CurrentValue = Some(value);
@@ -959,22 +1046,37 @@ impl NetFieldModel for OwnerExclusivePlayerInfo {
             ("AresController", FieldValue::U32(v)) => self.AresController = Some(v),
             ("NumDeathStreak", FieldValue::I32(v)) => self.NumDeathStreak = Some(v),
             ("StartOfRoundMoneyCache", FieldValue::I32(v)) => self.StartOfRoundMoneyCache = Some(v),
-            ("StartOfRoundLoadoutValueCache", FieldValue::I32(v)) => self.StartOfRoundLoadoutValueCache = Some(v),
-            ("EndOfRoundBeforeRewardsMoney", FieldValue::I32(v)) => self.EndOfRoundBeforeRewardsMoney = Some(v),
+            ("StartOfRoundLoadoutValueCache", FieldValue::I32(v)) => {
+                self.StartOfRoundLoadoutValueCache = Some(v)
+            }
+            ("EndOfRoundBeforeRewardsMoney", FieldValue::I32(v)) => {
+                self.EndOfRoundBeforeRewardsMoney = Some(v)
+            }
             ("bLoadoutFinalized", FieldValue::Bool(v)) => self.bLoadoutFinalized = Some(v),
-            ("bCanProgressAchievements", FieldValue::Bool(v)) => self.bCanProgressAchievements = Some(v),
+            ("bCanProgressAchievements", FieldValue::Bool(v)) => {
+                self.bCanProgressAchievements = Some(v)
+            }
             ("CombatReportComponent", FieldValue::U32(v)) => self.CombatReportComponent = Some(v),
             ("KillStreakComponent", FieldValue::U32(v)) => self.KillStreakComponent = Some(v),
-            ("PersonalizationComponent", FieldValue::U32(v)) => self.PersonalizationComponent = Some(v),
+            ("PersonalizationComponent", FieldValue::U32(v)) => {
+                self.PersonalizationComponent = Some(v)
+            }
             ("SprayLoadoutComponent", FieldValue::U32(v)) => self.SprayLoadoutComponent = Some(v),
             ("TotemLoadoutComponent", FieldValue::U32(v)) => self.TotemLoadoutComponent = Some(v),
-            ("PlayerPurchaseablesComponent", FieldValue::U32(v)) => self.PlayerPurchaseablesComponent = Some(v),
-            ("ExtendedCombatReportComponent", FieldValue::U32(v)) => self.ExtendedCombatReportComponent = Some(v),
+            ("PlayerPurchaseablesComponent", FieldValue::U32(v)) => {
+                self.PlayerPurchaseablesComponent = Some(v)
+            }
+            ("ExtendedCombatReportComponent", FieldValue::U32(v)) => {
+                self.ExtendedCombatReportComponent = Some(v)
+            }
             ("AllPlayersObfuscatedPlayerInformation", FieldValue::Array(items)) => {
                 let out = items
                     .into_iter()
                     .map(|item| match item {
-                        FieldValue::Object(boxed) => boxed.as_any().downcast_ref::<FObfuscatedPlayerInformation>().cloned(),
+                        FieldValue::Object(boxed) => boxed
+                            .as_any()
+                            .downcast_ref::<FObfuscatedPlayerInformation>()
+                            .cloned(),
                         _ => None,
                     })
                     .collect();
@@ -1034,7 +1136,10 @@ impl NetFieldModel for OwnerExclusivePlayerInfo {
         }
         push_opt!(RewardName, Str);
         if let Some(ref t) = self.LocalizedRewardName {
-            out.push(("LocalizedRewardName", FieldValue::PropertyValue(Box::new(t.clone()))));
+            out.push((
+                "LocalizedRewardName",
+                FieldValue::PropertyValue(Box::new(t.clone())),
+            ));
         }
         push_opt!(InstancesOfReward, I32);
         push_opt!(RewardGrantStrategy, U8);
@@ -1061,7 +1166,9 @@ pub struct RemoteCharacterUpdate {
 impl NetFieldModel for RemoteCharacterUpdate {
     fn set_field(&mut self, key: &str, value: FieldValue) {
         match (key, value) {
-            ("ShooterCharacterNetGuidValue", FieldValue::U32(v)) => self.ShooterCharacterNetGuidValue = Some(v),
+            ("ShooterCharacterNetGuidValue", FieldValue::U32(v)) => {
+                self.ShooterCharacterNetGuidValue = Some(v)
+            }
             ("ComponentDataStream", FieldValue::PropertyValue(boxed)) => {
                 if let Some(cds) = boxed.as_any().downcast_ref::<ComponentDataStream>() {
                     self.ComponentDataStream = Some(cds.clone());
@@ -1076,7 +1183,10 @@ impl NetFieldModel for RemoteCharacterUpdate {
             out.push(("ShooterCharacterNetGuidValue", FieldValue::U32(v)));
         }
         if let Some(ref v) = self.ComponentDataStream {
-            out.push(("ComponentDataStream", FieldValue::PropertyValue(Box::new(v.clone()))));
+            out.push((
+                "ComponentDataStream",
+                FieldValue::PropertyValue(Box::new(v.clone())),
+            ));
         }
         out
     }
@@ -1102,7 +1212,9 @@ pub struct ReplaysClientReceiveRemoteCharacterUpdatesSingleArrayNoAutonomous {
 impl NetFieldModel for ReplaysClientReceiveRemoteCharacterUpdatesSingleArrayNoAutonomous {
     fn set_field(&mut self, key: &str, value: FieldValue) {
         match (key, value) {
-            ("ShooterCharacterNetGuidValue", FieldValue::U32(v)) => self.ShooterCharacterNetGuidValue = Some(v),
+            ("ShooterCharacterNetGuidValue", FieldValue::U32(v)) => {
+                self.ShooterCharacterNetGuidValue = Some(v)
+            }
             ("ComponentDataStream", FieldValue::PropertyValue(boxed)) => {
                 if let Some(cds) = boxed.as_any().downcast_ref::<ComponentDataStream>() {
                     self.ComponentDataStream = Some(cds.clone());
@@ -1112,7 +1224,10 @@ impl NetFieldModel for ReplaysClientReceiveRemoteCharacterUpdatesSingleArrayNoAu
                 let out = items
                     .into_iter()
                     .map(|item| match item {
-                        FieldValue::Object(boxed) => boxed.as_any().downcast_ref::<RemoteCharacterUpdate>().cloned(),
+                        FieldValue::Object(boxed) => boxed
+                            .as_any()
+                            .downcast_ref::<RemoteCharacterUpdate>()
+                            .cloned(),
                         _ => None,
                     })
                     .collect();
@@ -1127,7 +1242,10 @@ impl NetFieldModel for ReplaysClientReceiveRemoteCharacterUpdatesSingleArrayNoAu
             out.push(("ShooterCharacterNetGuidValue", FieldValue::U32(v)));
         }
         if let Some(ref v) = self.ComponentDataStream {
-            out.push(("ComponentDataStream", FieldValue::PropertyValue(Box::new(v.clone()))));
+            out.push((
+                "ComponentDataStream",
+                FieldValue::PropertyValue(Box::new(v.clone())),
+            ));
         }
         if let Some(ref items) = self.RemoteCharacterUpdates {
             out.push((
@@ -1186,7 +1304,12 @@ fn hp(handle: u32, key: &'static str, ty: RepLayoutCmdType) -> NetFieldDescripto
     }
 }
 
-fn np_prop(name: &'static str, key: &'static str, ty: RepLayoutCmdType, factory: fn() -> Box<dyn Property>) -> NetFieldDescriptor {
+fn np_prop(
+    name: &'static str,
+    key: &'static str,
+    ty: RepLayoutCmdType,
+    factory: fn() -> Box<dyn Property>,
+) -> NetFieldDescriptor {
     NetFieldDescriptor {
         name: Some(name),
         handle: None,
@@ -1200,7 +1323,11 @@ fn np_prop(name: &'static str, key: &'static str, ty: RepLayoutCmdType, factory:
     }
 }
 
-fn np_arr_group(name: &'static str, key: &'static str, factory: fn() -> Box<dyn NetFieldModel>) -> NetFieldDescriptor {
+fn np_arr_group(
+    name: &'static str,
+    key: &'static str,
+    factory: fn() -> Box<dyn NetFieldModel>,
+) -> NetFieldDescriptor {
     NetFieldDescriptor {
         name: Some(name),
         handle: None,
@@ -1214,7 +1341,11 @@ fn np_arr_group(name: &'static str, key: &'static str, factory: fn() -> Box<dyn 
     }
 }
 
-fn np_arr_prim(name: &'static str, key: &'static str, element_type: RepLayoutCmdType) -> NetFieldDescriptor {
+fn np_arr_prim(
+    name: &'static str,
+    key: &'static str,
+    element_type: RepLayoutCmdType,
+) -> NetFieldDescriptor {
     NetFieldDescriptor {
         name: Some(name),
         handle: None,
@@ -1288,7 +1419,11 @@ pub fn register_all(registry: &mut NetFieldRegistry) {
             np("RemoteRole", "RemoteRole", RepLayoutCmdType::Ignore),
             np("Owner", "Owner", RepLayoutCmdType::Ignore),
             np("Role", "Role", RepLayoutCmdType::Ignore),
-            np("bOnlySpectator", "bOnlySpectator", RepLayoutCmdType::PropertyBool),
+            np(
+                "bOnlySpectator",
+                "bOnlySpectator",
+                RepLayoutCmdType::PropertyBool,
+            ),
         ],
         sub_group_of: None,
     });
@@ -1314,7 +1449,11 @@ pub fn register_all(registry: &mut NetFieldRegistry) {
         properties: vec![
             np("RemoteRole", "RemoteRole", RepLayoutCmdType::Ignore),
             np("Role", "Role", RepLayoutCmdType::Ignore),
-            np("WorldGravityZ", "WorldGravityZ", RepLayoutCmdType::PropertyFloat),
+            np(
+                "WorldGravityZ",
+                "WorldGravityZ",
+                RepLayoutCmdType::PropertyFloat,
+            ),
         ],
         sub_group_of: None,
     });
@@ -1326,8 +1465,16 @@ pub fn register_all(registry: &mut NetFieldRegistry) {
         uses_handles: false,
         properties: vec![
             np("bReplicates", "bReplicates", RepLayoutCmdType::PropertyBool),
-            np("bStealthIsActive", "bStealthIsActive", RepLayoutCmdType::PropertyBool),
-            np("SubscribedToComponent", "SubscribedToComponent", RepLayoutCmdType::PropertyObject),
+            np(
+                "bStealthIsActive",
+                "bStealthIsActive",
+                RepLayoutCmdType::PropertyBool,
+            ),
+            np(
+                "SubscribedToComponent",
+                "SubscribedToComponent",
+                RepLayoutCmdType::PropertyObject,
+            ),
         ],
         sub_group_of: None,
     });
@@ -1340,7 +1487,11 @@ pub fn register_all(registry: &mut NetFieldRegistry) {
         properties: vec![
             np("RemoteRole", "RemoteRole", RepLayoutCmdType::Ignore),
             np("Role", "Role", RepLayoutCmdType::Ignore),
-            np("TimeRemainingToExplode", "TimeRemainingToExplode", RepLayoutCmdType::PropertyFloat),
+            np(
+                "TimeRemainingToExplode",
+                "TimeRemainingToExplode",
+                RepLayoutCmdType::PropertyFloat,
+            ),
         ],
         sub_group_of: None,
     });
@@ -1352,8 +1503,16 @@ pub fn register_all(registry: &mut NetFieldRegistry) {
         uses_handles: false,
         properties: vec![
             np("CurrentState", "CurrentState", RepLayoutCmdType::Ignore),
-            np("TransitionContext", "TransitionContext", RepLayoutCmdType::Ignore),
-            np("AuthStartWorldTime", "AuthStartWorldTime", RepLayoutCmdType::PropertyFloat),
+            np(
+                "TransitionContext",
+                "TransitionContext",
+                RepLayoutCmdType::Ignore,
+            ),
+            np(
+                "AuthStartWorldTime",
+                "AuthStartWorldTime",
+                RepLayoutCmdType::PropertyFloat,
+            ),
         ],
         sub_group_of: None,
     });
@@ -1363,7 +1522,11 @@ pub fn register_all(registry: &mut NetFieldRegistry) {
         minimal_parse_mode: PN,
         factory: || Box::new(EquipmentChargeComponent::default()),
         uses_handles: false,
-        properties: vec![np("AuthResourceAmount", "AuthResourceAmount", RepLayoutCmdType::PropertyFloat)],
+        properties: vec![np(
+            "AuthResourceAmount",
+            "AuthResourceAmount",
+            RepLayoutCmdType::PropertyFloat,
+        )],
         sub_group_of: None,
     });
 
@@ -1374,9 +1537,21 @@ pub fn register_all(registry: &mut NetFieldRegistry) {
         uses_handles: false,
         properties: vec![
             np("Purchaseable", "Purchaseable", RepLayoutCmdType::Ignore),
-            np("bIsCurrentSessionPurchase", "bIsCurrentSessionPurchase", RepLayoutCmdType::PropertyBool),
-            np("PurchasingPlayerState", "PurchasingPlayerState", RepLayoutCmdType::PropertyObject),
-            np("PurchasableTransactionSource", "PurchasableTransactionSource", RepLayoutCmdType::Ignore),
+            np(
+                "bIsCurrentSessionPurchase",
+                "bIsCurrentSessionPurchase",
+                RepLayoutCmdType::PropertyBool,
+            ),
+            np(
+                "PurchasingPlayerState",
+                "PurchasingPlayerState",
+                RepLayoutCmdType::PropertyObject,
+            ),
+            np(
+                "PurchasableTransactionSource",
+                "PurchasableTransactionSource",
+                RepLayoutCmdType::Ignore,
+            ),
         ],
         sub_group_of: None,
     });
@@ -1410,14 +1585,22 @@ pub fn register_all(registry: &mut NetFieldRegistry) {
             np("GameModeClass", "GameModeClass", RepLayoutCmdType::Ignore),
             np("SpectatorClass", "SpectatorClass", RepLayoutCmdType::Ignore),
             np("PlayerArray", "PlayerArray", RepLayoutCmdType::Ignore),
-            np("bReplicatedHasBegunPlay", "bReplicatedHasBegunPlay", RepLayoutCmdType::PropertyBool),
+            np(
+                "bReplicatedHasBegunPlay",
+                "bReplicatedHasBegunPlay",
+                RepLayoutCmdType::PropertyBool,
+            ),
             np(
                 "ReplicatedWorldTimeSecondsDouble",
                 "ReplicatedWorldTimeSecondsDouble",
                 RepLayoutCmdType::PropertyDouble,
             ),
             np("MatchState", "MatchState", RepLayoutCmdType::Ignore),
-            np("bBotDesiredCharactersReady", "bBotDesiredCharactersReady", RepLayoutCmdType::PropertyBool),
+            np(
+                "bBotDesiredCharactersReady",
+                "bBotDesiredCharactersReady",
+                RepLayoutCmdType::PropertyBool,
+            ),
             np(
                 "bShouldPerformanceInstabilityTrackingBeEnabled",
                 "bShouldPerformanceInstabilityTrackingBeEnabled",
@@ -1426,14 +1609,42 @@ pub fn register_all(registry: &mut NetFieldRegistry) {
             np("TeamEconomy", "TeamEconomy", RepLayoutCmdType::Ignore),
             np("TeamComponents", "TeamComponents", RepLayoutCmdType::Ignore),
             np("Phase", "Phase", RepLayoutCmdType::Ignore),
-            np("DisplayRemainingTime", "DisplayRemainingTime", RepLayoutCmdType::Ignore),
-            np("StateRemainingTime", "StateRemainingTime", RepLayoutCmdType::Ignore),
-            np("GamePhaseElapsedTime", "GamePhaseElapsedTime", RepLayoutCmdType::Ignore),
-            np("NetServerMaxTickRate", "NetServerMaxTickRate", RepLayoutCmdType::Ignore),
+            np(
+                "DisplayRemainingTime",
+                "DisplayRemainingTime",
+                RepLayoutCmdType::Ignore,
+            ),
+            np(
+                "StateRemainingTime",
+                "StateRemainingTime",
+                RepLayoutCmdType::Ignore,
+            ),
+            np(
+                "GamePhaseElapsedTime",
+                "GamePhaseElapsedTime",
+                RepLayoutCmdType::Ignore,
+            ),
+            np(
+                "NetServerMaxTickRate",
+                "NetServerMaxTickRate",
+                RepLayoutCmdType::Ignore,
+            ),
             np("MatchID", "MatchID", RepLayoutCmdType::Ignore),
-            np("GameStateHUDConfig", "GameStateHUDConfig", RepLayoutCmdType::Ignore),
-            np("AllowedVoteTypes", "AllowedVoteTypes", RepLayoutCmdType::Ignore),
-            np("ModifierManager", "ModifierManager", RepLayoutCmdType::Ignore),
+            np(
+                "GameStateHUDConfig",
+                "GameStateHUDConfig",
+                RepLayoutCmdType::Ignore,
+            ),
+            np(
+                "AllowedVoteTypes",
+                "AllowedVoteTypes",
+                RepLayoutCmdType::Ignore,
+            ),
+            np(
+                "ModifierManager",
+                "ModifierManager",
+                RepLayoutCmdType::Ignore,
+            ),
         ],
         sub_group_of: None,
     });
@@ -1444,29 +1655,81 @@ pub fn register_all(registry: &mut NetFieldRegistry) {
         factory: || Box::new(OwnerExclusivePlayerInfo::default()),
         uses_handles: false,
         properties: vec![
-            np("SubjectUniqueId", "SubjectUniqueId", RepLayoutCmdType::PropertyNetId),
+            np(
+                "SubjectUniqueId",
+                "SubjectUniqueId",
+                RepLayoutCmdType::PropertyNetId,
+            ),
             np("bIsAfk", "bIsAfk", RepLayoutCmdType::PropertyBool),
-            np("ConnectionStatus", "ConnectionStatus", RepLayoutCmdType::Enum),
+            np(
+                "ConnectionStatus",
+                "ConnectionStatus",
+                RepLayoutCmdType::Enum,
+            ),
             np("RemoteRole", "RemoteRole", RepLayoutCmdType::Ignore),
             np("Owner", "Owner", RepLayoutCmdType::Ignore),
             np("Role", "Role", RepLayoutCmdType::Ignore),
-            np("AresController", "AresController", RepLayoutCmdType::PropertyObject),
-            np("NumDeathStreak", "NumDeathStreak", RepLayoutCmdType::PropertyInt),
-            np("StartOfRoundMoneyCache", "StartOfRoundMoneyCache", RepLayoutCmdType::PropertyInt),
+            np(
+                "AresController",
+                "AresController",
+                RepLayoutCmdType::PropertyObject,
+            ),
+            np(
+                "NumDeathStreak",
+                "NumDeathStreak",
+                RepLayoutCmdType::PropertyInt,
+            ),
+            np(
+                "StartOfRoundMoneyCache",
+                "StartOfRoundMoneyCache",
+                RepLayoutCmdType::PropertyInt,
+            ),
             np(
                 "StartOfRoundLoadoutValueCache",
                 "StartOfRoundLoadoutValueCache",
                 RepLayoutCmdType::PropertyInt,
             ),
             np_arr_ignored("TrackedRewards", "TrackedRewards"),
-            np("EndOfRoundBeforeRewardsMoney", "EndOfRoundBeforeRewardsMoney", RepLayoutCmdType::PropertyInt),
-            np("bLoadoutFinalized", "bLoadoutFinalized", RepLayoutCmdType::PropertyBool),
-            np("bCanProgressAchievements", "bCanProgressAchievements", RepLayoutCmdType::PropertyBool),
-            np("CombatReportComponent", "CombatReportComponent", RepLayoutCmdType::PropertyObject),
-            np("KillStreakComponent", "KillStreakComponent", RepLayoutCmdType::PropertyObject),
-            np("PersonalizationComponent", "PersonalizationComponent", RepLayoutCmdType::PropertyObject),
-            np("SprayLoadoutComponent", "SprayLoadoutComponent", RepLayoutCmdType::PropertyObject),
-            np("TotemLoadoutComponent", "TotemLoadoutComponent", RepLayoutCmdType::PropertyObject),
+            np(
+                "EndOfRoundBeforeRewardsMoney",
+                "EndOfRoundBeforeRewardsMoney",
+                RepLayoutCmdType::PropertyInt,
+            ),
+            np(
+                "bLoadoutFinalized",
+                "bLoadoutFinalized",
+                RepLayoutCmdType::PropertyBool,
+            ),
+            np(
+                "bCanProgressAchievements",
+                "bCanProgressAchievements",
+                RepLayoutCmdType::PropertyBool,
+            ),
+            np(
+                "CombatReportComponent",
+                "CombatReportComponent",
+                RepLayoutCmdType::PropertyObject,
+            ),
+            np(
+                "KillStreakComponent",
+                "KillStreakComponent",
+                RepLayoutCmdType::PropertyObject,
+            ),
+            np(
+                "PersonalizationComponent",
+                "PersonalizationComponent",
+                RepLayoutCmdType::PropertyObject,
+            ),
+            np(
+                "SprayLoadoutComponent",
+                "SprayLoadoutComponent",
+                RepLayoutCmdType::PropertyObject,
+            ),
+            np(
+                "TotemLoadoutComponent",
+                "TotemLoadoutComponent",
+                RepLayoutCmdType::PropertyObject,
+            ),
             np(
                 "PlayerPurchaseablesComponent",
                 "PlayerPurchaseablesComponent",
@@ -1496,8 +1759,16 @@ pub fn register_all(registry: &mut NetFieldRegistry) {
                 RepLayoutCmdType::Property,
                 || Box::new(FText::default()),
             ),
-            np("InstancesOfReward", "InstancesOfReward", RepLayoutCmdType::PropertyInt),
-            np("RewardGrantStrategy", "RewardGrantStrategy", RepLayoutCmdType::Enum),
+            np(
+                "InstancesOfReward",
+                "InstancesOfReward",
+                RepLayoutCmdType::PropertyInt,
+            ),
+            np(
+                "RewardGrantStrategy",
+                "RewardGrantStrategy",
+                RepLayoutCmdType::Enum,
+            ),
             np("Source", "Source", RepLayoutCmdType::Enum),
         ],
     );
@@ -1509,25 +1780,69 @@ pub fn register_all(registry: &mut NetFieldRegistry) {
         uses_handles: false,
         properties: vec![
             np("OwnerActor", "OwnerActor", RepLayoutCmdType::PropertyObject),
-            np("AvatarActor", "AvatarActor", RepLayoutCmdType::PropertyObject),
+            np(
+                "AvatarActor",
+                "AvatarActor",
+                RepLayoutCmdType::PropertyObject,
+            ),
             np("Def", "Def", RepLayoutCmdType::Ignore),
-            np("ModifiedAttributes", "ModifiedAttributes", RepLayoutCmdType::Ignore),
+            np(
+                "ModifiedAttributes",
+                "ModifiedAttributes",
+                RepLayoutCmdType::Ignore,
+            ),
             np("Duration", "Duration", RepLayoutCmdType::PropertyFloat),
             np("Period", "Period", RepLayoutCmdType::PropertyFloat),
-            np("ChanceToApplyToTarget", "ChanceToApplyToTarget", RepLayoutCmdType::PropertyFloat),
-            np("DynamicGrantedTags", "DynamicGrantedTags", RepLayoutCmdType::Ignore),
-            np("DynamicAssetTags", "DynamicAssetTags", RepLayoutCmdType::Ignore),
+            np(
+                "ChanceToApplyToTarget",
+                "ChanceToApplyToTarget",
+                RepLayoutCmdType::PropertyFloat,
+            ),
+            np(
+                "DynamicGrantedTags",
+                "DynamicGrantedTags",
+                RepLayoutCmdType::Ignore,
+            ),
+            np(
+                "DynamicAssetTags",
+                "DynamicAssetTags",
+                RepLayoutCmdType::Ignore,
+            ),
             np("Modifiers", "Modifiers", RepLayoutCmdType::Ignore),
-            np("EvaluatedMagnitude", "EvaluatedMagnitude", RepLayoutCmdType::Ignore),
+            np(
+                "EvaluatedMagnitude",
+                "EvaluatedMagnitude",
+                RepLayoutCmdType::Ignore,
+            ),
             np("StackCount", "StackCount", RepLayoutCmdType::PropertyInt),
-            np("GrantedAbilitySpecs", "GrantedAbilitySpecs", RepLayoutCmdType::Ignore),
+            np(
+                "GrantedAbilitySpecs",
+                "GrantedAbilitySpecs",
+                RepLayoutCmdType::Ignore,
+            ),
             np("EffectContext", "EffectContext", RepLayoutCmdType::Ignore),
             np("Level", "Level", RepLayoutCmdType::PropertyFloat),
             np("PredictionKey", "PredictionKey", RepLayoutCmdType::Ignore),
-            np("GrantedAbilityHandles", "GrantedAbilityHandles", RepLayoutCmdType::Ignore),
-            np("StartServerWorldTime", "StartServerWorldTime", RepLayoutCmdType::PropertyFloat),
-            np("SpawnedAttributes", "SpawnedAttributes", RepLayoutCmdType::Ignore),
-            np("CachedAttributeSet", "CachedAttributeSet", RepLayoutCmdType::PropertyObject),
+            np(
+                "GrantedAbilityHandles",
+                "GrantedAbilityHandles",
+                RepLayoutCmdType::Ignore,
+            ),
+            np(
+                "StartServerWorldTime",
+                "StartServerWorldTime",
+                RepLayoutCmdType::PropertyFloat,
+            ),
+            np(
+                "SpawnedAttributes",
+                "SpawnedAttributes",
+                RepLayoutCmdType::Ignore,
+            ),
+            np(
+                "CachedAttributeSet",
+                "CachedAttributeSet",
+                RepLayoutCmdType::PropertyObject,
+            ),
         ],
         sub_group_of: None,
     });
@@ -1586,10 +1901,17 @@ pub fn register_all(registry: &mut NetFieldRegistry) {
         factory: || Box::new(RemoteCharacterUpdate::default()),
         uses_handles: false,
         properties: vec![
-            np("ShooterCharacterNetGuidValue", "ShooterCharacterNetGuidValue", RepLayoutCmdType::PropertyUInt32),
-            np_prop("ComponentDataStream", "ComponentDataStream", RepLayoutCmdType::Property, || {
-                Box::new(ComponentDataStream::default())
-            }),
+            np(
+                "ShooterCharacterNetGuidValue",
+                "ShooterCharacterNetGuidValue",
+                RepLayoutCmdType::PropertyUInt32,
+            ),
+            np_prop(
+                "ComponentDataStream",
+                "ComponentDataStream",
+                RepLayoutCmdType::Property,
+                || Box::new(ComponentDataStream::default()),
+            ),
         ],
         sub_group_of: None,
     });
@@ -1661,9 +1983,21 @@ pub fn register_all(registry: &mut NetFieldRegistry) {
         factory: || Box::new(MulticastPlayContinuousEffectFromClient::default()),
         uses_handles: false,
         properties: vec![
-            np("EffectManagerComponent", "EffectManagerComponent", RepLayoutCmdType::Ignore),
-            np("EffectContainer", "EffectContainer", RepLayoutCmdType::Ignore),
-            np("WaitOnReplicationActor", "WaitOnReplicationActor", RepLayoutCmdType::Ignore),
+            np(
+                "EffectManagerComponent",
+                "EffectManagerComponent",
+                RepLayoutCmdType::Ignore,
+            ),
+            np(
+                "EffectContainer",
+                "EffectContainer",
+                RepLayoutCmdType::Ignore,
+            ),
+            np(
+                "WaitOnReplicationActor",
+                "WaitOnReplicationActor",
+                RepLayoutCmdType::Ignore,
+            ),
             np("ObjectValues", "ObjectValues", RepLayoutCmdType::Ignore),
             np("Name", "Name", RepLayoutCmdType::Ignore),
             np("Object", "Object", RepLayoutCmdType::Ignore),
@@ -1671,16 +2005,37 @@ pub fn register_all(registry: &mut NetFieldRegistry) {
             // `find_descriptor`'s doc comment); `Rotation`/`PropertyQuat` is
             // registered first and is therefore dead/unreachable, exactly
             // like the TS source.
-            np_prop("Translation", "Rotation", RepLayoutCmdType::PropertyQuat, || Box::new(QuatProperty::default())),
-            np("Translation", "Translation", RepLayoutCmdType::PropertyVector),
+            np_prop(
+                "Translation",
+                "Rotation",
+                RepLayoutCmdType::PropertyQuat,
+                || Box::new(QuatProperty::default()),
+            ),
+            np(
+                "Translation",
+                "Translation",
+                RepLayoutCmdType::PropertyVector,
+            ),
             np("Scale3D", "Scale3D", RepLayoutCmdType::PropertyVector),
             np("EffectID", "EffectID", RepLayoutCmdType::PropertyUInt64),
             np("SourceID", "SourceID", RepLayoutCmdType::PropertyString),
-            np("bLocalEffect", "bLocalEffect", RepLayoutCmdType::PropertyBool),
+            np(
+                "bLocalEffect",
+                "bLocalEffect",
+                RepLayoutCmdType::PropertyBool,
+            ),
             // Both named "StartMovementTime" — same last-wins rule; only the
             // second (PropertyFloat/StartMovementTime) is reachable.
-            np("StartMovementTime", "ClientControllerThatTriggered", RepLayoutCmdType::Ignore),
-            np("StartMovementTime", "StartMovementTime", RepLayoutCmdType::PropertyFloat),
+            np(
+                "StartMovementTime",
+                "ClientControllerThatTriggered",
+                RepLayoutCmdType::Ignore,
+            ),
+            np(
+                "StartMovementTime",
+                "StartMovementTime",
+                RepLayoutCmdType::PropertyFloat,
+            ),
             np("AllianceFilter", "AllianceFilter", RepLayoutCmdType::Enum),
         ],
         sub_group_of: None,
@@ -1701,9 +2056,21 @@ pub fn register_all(registry: &mut NetFieldRegistry) {
             hp(22, "CompetitiveTier", RepLayoutCmdType::PropertyInt),
             np("Subject", "Subject", RepLayoutCmdType::Ignore),
             np("PlayerInfo", "PlayerInfo", RepLayoutCmdType::Ignore),
-            np("PlayerMatchStatsComponent", "PlayerMatchStatsComponent", RepLayoutCmdType::Ignore),
-            np("PlayerScoreComponent", "PlayerScoreComponent", RepLayoutCmdType::Ignore),
-            np("AFKDetectionComponent", "AFKDetectionComponent", RepLayoutCmdType::Ignore),
+            np(
+                "PlayerMatchStatsComponent",
+                "PlayerMatchStatsComponent",
+                RepLayoutCmdType::Ignore,
+            ),
+            np(
+                "PlayerScoreComponent",
+                "PlayerScoreComponent",
+                RepLayoutCmdType::Ignore,
+            ),
+            np(
+                "AFKDetectionComponent",
+                "AFKDetectionComponent",
+                RepLayoutCmdType::Ignore,
+            ),
             hp(197, "ProfileName", RepLayoutCmdType::PropertyString),
         ],
         sub_group_of: None,
@@ -1850,24 +2217,38 @@ mod tests {
 
     #[test]
     fn registers_the_player_controller() {
-        assert!(registered().player_controller_paths.contains("BaseReplayController_C"));
+        assert!(registered()
+            .player_controller_paths
+            .contains("BaseReplayController_C"));
     }
 
     #[test]
     fn registers_handle_based_groups() {
         let r = registered();
-        assert!(r.groups.get("/Script/ShooterGame.AresAttributeSet").unwrap().uses_handles);
-        assert!(r
-            .groups
-            .get("/Game/Characters/_Core/BaseReplayController.BaseReplayController_C")
-            .unwrap()
-            .uses_handles);
+        assert!(
+            r.groups
+                .get("/Script/ShooterGame.AresAttributeSet")
+                .unwrap()
+                .uses_handles
+        );
+        assert!(
+            r.groups
+                .get("/Game/Characters/_Core/BaseReplayController.BaseReplayController_C")
+                .unwrap()
+                .uses_handles
+        );
     }
 
     #[test]
     fn merges_sub_group_properties_into_the_parent() {
         let r = registered();
-        let parent = r.groups.get("/Script/ShooterGame.OwnerExclusivePlayerInfo").unwrap();
-        assert!(parent.properties.iter().any(|p| p.name == Some("RewardName")));
+        let parent = r
+            .groups
+            .get("/Script/ShooterGame.OwnerExclusivePlayerInfo")
+            .unwrap();
+        assert!(parent
+            .properties
+            .iter()
+            .any(|p| p.name == Some("RewardName")));
     }
 }

@@ -62,7 +62,9 @@ pub fn get_riot_client_info(state: &RiotState) -> Result<RiotClientInfo, String>
     let info = RiotClientInfo {
         name: parts[0].to_string(),
         pid: parts[1].parse().unwrap_or(0),
-        port: parts[2].parse().map_err(|_| "invalid port in lockfile".to_string())?,
+        port: parts[2]
+            .parse()
+            .map_err(|_| "invalid port in lockfile".to_string())?,
         password: parts[3].to_string(),
         protocol: parts[4].to_string(),
     };
@@ -93,7 +95,27 @@ pub async fn send_internal_request(
     let status = response.status();
     let text = response.text().await.map_err(|e| e.to_string())?;
     if !status.is_success() {
-        return Err(format!("Riot Client request failed ({status}): {text}"));
+        // Every local endpoint answering 404 "Invalid URI format" means we are
+        // talking to a Riot Client that hasn't mounted its API routes — either
+        // one that is still starting up, or a dead one whose lockfile was left
+        // behind and whose port has since been reused. Both look identical over
+        // HTTP, and both are fixed the same way: drop the cached lockfile so the
+        // next call re-reads it, and report it as a "not signed in" condition so
+        // the frontend shows its login-required state instead of a raw 404.
+        //
+        // The word "lockfile" in the message is load-bearing: friends_get,
+        // chat_get and career_get map errors containing it to `loginRequired`.
+        if status == reqwest::StatusCode::NOT_FOUND && text.contains("RESOURCE_NOT_FOUND") {
+            *state.lockfile_cache.lock().unwrap() = None;
+            *state.tokens_cache.lock().unwrap() = None;
+            return Err(format!(
+                "Riot Client is not ready (stale lockfile, no route for {path}). \
+                 Make sure the Riot Client is running, then try again."
+            ));
+        }
+        return Err(format!(
+            "Riot Client request failed ({status}) for {path}: {text}"
+        ));
     }
     serde_json::from_str(&text).or(Ok(Value::String(text)))
 }
@@ -143,13 +165,16 @@ pub async fn get_tokens(state: &RiotState, skip_cache: bool) -> Result<Value, St
         let cache = state.tokens_cache.lock().unwrap();
         if let Some((tokens, cached_at)) = cache.as_ref() {
             let fresh_enough = cached_at.elapsed() < CACHE_TTL;
-            let still_valid = access_token_ttl(tokens).map(|ttl| ttl > MIN_REMAINING_SECS).unwrap_or(false);
+            let still_valid = access_token_ttl(tokens)
+                .map(|ttl| ttl > MIN_REMAINING_SECS)
+                .unwrap_or(false);
             if fresh_enough && still_valid {
                 return Ok(tokens.clone());
             }
         }
     }
-    let tokens = send_internal_request(state, "/entitlements/v1/token", reqwest::Method::GET, None).await?;
+    let tokens =
+        send_internal_request(state, "/entitlements/v1/token", reqwest::Method::GET, None).await?;
     *state.tokens_cache.lock().unwrap() = Some((tokens.clone(), std::time::Instant::now()));
     Ok(tokens)
 }
@@ -160,15 +185,33 @@ pub fn invalidate_tokens(state: &RiotState) {
 }
 
 pub async fn get_user_info(state: &RiotState) -> Result<Value, String> {
-    send_internal_request(state, "/riot-client-auth/v1/userinfo", reqwest::Method::GET, None).await
+    send_internal_request(
+        state,
+        "/riot-client-auth/v1/userinfo",
+        reqwest::Method::GET,
+        None,
+    )
+    .await
 }
 
 pub async fn swagger_spec(state: &RiotState) -> Result<Value, String> {
-    send_internal_request(state, "/swagger/v3/openapi.json", reqwest::Method::GET, None).await
+    send_internal_request(
+        state,
+        "/swagger/v3/openapi.json",
+        reqwest::Method::GET,
+        None,
+    )
+    .await
 }
 
 pub async fn get_region_locale(state: &RiotState) -> Result<Value, String> {
-    send_internal_request(state, "/riotclient/region-locale", reqwest::Method::GET, None).await
+    send_internal_request(
+        state,
+        "/riotclient/region-locale",
+        reqwest::Method::GET,
+        None,
+    )
+    .await
 }
 
 /// NOTE: the `version` field here is a build hash (e.g. `0127606AA79E4164`), not
@@ -176,10 +219,19 @@ pub async fn get_region_locale(state: &RiotState) -> Result<Value, String> {
 /// `X-Riot-ClientVersion`. Callers must validate it — see
 /// `riot::api::looks_like_client_version`.
 pub async fn get_valorant_client_version(state: &RiotState) -> Result<String, String> {
-    let sessions = send_internal_request(state, "/product-session/v1/external-sessions", reqwest::Method::GET, None).await?;
+    let sessions = send_internal_request(
+        state,
+        "/product-session/v1/external-sessions",
+        reqwest::Method::GET,
+        None,
+    )
+    .await?;
     let version = sessions
         .as_object()
-        .and_then(|obj| obj.values().find(|s| s.get("productId").and_then(|v| v.as_str()) == Some("valorant")))
+        .and_then(|obj| {
+            obj.values()
+                .find(|s| s.get("productId").and_then(|v| v.as_str()) == Some("valorant"))
+        })
         .and_then(|s| s.get("version"))
         .and_then(|v| v.as_str())
         .unwrap_or("")
@@ -192,27 +244,47 @@ pub async fn get_valorant_client_version(state: &RiotState) -> Result<String, St
 /// `partyId` — the only way to group players into parties during a live
 /// game, since coregame/pregame strip PartyID. Tries v4, falls back to v2.
 pub async fn get_presences(state: &RiotState) -> Result<Vec<Value>, String> {
-    let data = match send_internal_request(state, "/chat/v4/presences", reqwest::Method::GET, None).await {
+    let data = match send_internal_request(state, "/chat/v4/presences", reqwest::Method::GET, None)
+        .await
+    {
         Ok(data) => data,
-        Err(_) => send_internal_request(state, "/chat/v2/presences", reqwest::Method::GET, None).await?,
+        Err(_) => {
+            send_internal_request(state, "/chat/v2/presences", reqwest::Method::GET, None).await?
+        }
     };
-    Ok(data.get("presences").and_then(|v| v.as_array()).cloned().unwrap_or_default())
+    Ok(data
+        .get("presences")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default())
 }
 
 pub async fn get_friends(state: &RiotState) -> Result<Vec<Value>, String> {
     let data = send_internal_request(state, "/chat/v4/friends", reqwest::Method::GET, None).await?;
-    Ok(data.get("friends").and_then(|v| v.as_array()).cloned().unwrap_or_default())
+    Ok(data
+        .get("friends")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default())
 }
 
 /// Pending friend invites in both directions. Each entry carries a
 /// `subscription` of `pending_in` (they invited us) or `pending_out` (we
 /// invited them).
 pub async fn get_friend_requests(state: &RiotState) -> Result<Vec<Value>, String> {
-    let data = send_internal_request(state, "/chat/v4/friendrequests", reqwest::Method::GET, None).await?;
-    Ok(data.get("requests").and_then(|v| v.as_array()).cloned().unwrap_or_default())
+    let data =
+        send_internal_request(state, "/chat/v4/friendrequests", reqwest::Method::GET, None).await?;
+    Ok(data
+        .get("requests")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default())
 }
 
-pub async fn get_chat_messages(state: &RiotState, conversation_id: Option<&str>) -> Result<Value, String> {
+pub async fn get_chat_messages(
+    state: &RiotState,
+    conversation_id: Option<&str>,
+) -> Result<Value, String> {
     let path = match conversation_id {
         Some(cid) => format!("/chat/v6/messages?cid={}", urlencoding_encode(cid)),
         None => "/chat/v6/messages".to_string(),
@@ -225,27 +297,58 @@ pub async fn get_chat_conversations(state: &RiotState) -> Result<Value, String> 
 }
 
 pub async fn get_party_chat_info(state: &RiotState) -> Result<Value, String> {
-    send_internal_request(state, "/chat/v6/conversations/ares-parties", reqwest::Method::GET, None).await
+    send_internal_request(
+        state,
+        "/chat/v6/conversations/ares-parties",
+        reqwest::Method::GET,
+        None,
+    )
+    .await
 }
 
 pub async fn get_pre_game_chat_info(state: &RiotState) -> Result<Value, String> {
-    send_internal_request(state, "/chat/v6/conversations/ares-pregame", reqwest::Method::GET, None).await
+    send_internal_request(
+        state,
+        "/chat/v6/conversations/ares-pregame",
+        reqwest::Method::GET,
+        None,
+    )
+    .await
 }
 
 pub async fn get_current_game_chat_info(state: &RiotState) -> Result<Value, String> {
-    send_internal_request(state, "/chat/v6/conversations/ares-coregame", reqwest::Method::GET, None).await
+    send_internal_request(
+        state,
+        "/chat/v6/conversations/ares-coregame",
+        reqwest::Method::GET,
+        None,
+    )
+    .await
 }
 
-pub async fn send_chat_message(state: &RiotState, conversation_id: &str, message: &str, msg_type: &str) -> Result<Value, String> {
+pub async fn send_chat_message(
+    state: &RiotState,
+    conversation_id: &str,
+    message: &str,
+    msg_type: &str,
+) -> Result<Value, String> {
     let body = serde_json::json!({ "cid": conversation_id, "message": message, "type": msg_type });
-    send_internal_request(state, "/chat/v6/messages", reqwest::Method::POST, Some(body)).await
+    send_internal_request(
+        state,
+        "/chat/v6/messages",
+        reqwest::Method::POST,
+        Some(body),
+    )
+    .await
 }
 
 pub fn urlencoding_encode(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
     for byte in input.bytes() {
         match byte {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => out.push(byte as char),
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(byte as char)
+            }
             _ => out.push_str(&format!("%{byte:02X}")),
         }
     }

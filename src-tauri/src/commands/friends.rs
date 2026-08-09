@@ -71,8 +71,14 @@ fn valorant_presence(presence: &Value) -> Option<Value> {
     // `queueId` / `sessionLoopState` live under matchPresenceData on current
     // clients but sat at the blob root on older ones — check both.
     let queue_id = first_str([match_data.get("queueId"), blob.get("queueId")]);
-    let session_loop_state = first_str([match_data.get("sessionLoopState"), blob.get("sessionLoopState")]);
-    let provisioning_flow = first_str([match_data.get("provisioningFlow"), blob.get("provisioningFlow")]);
+    let session_loop_state = first_str([
+        match_data.get("sessionLoopState"),
+        blob.get("sessionLoopState"),
+    ]);
+    let provisioning_flow = first_str([
+        match_data.get("provisioningFlow"),
+        blob.get("provisioningFlow"),
+    ]);
 
     Some(json!({
         "queueId": queue_id,
@@ -104,7 +110,7 @@ fn presence_rank(presence: &Value) -> u8 {
 
     match (product.as_str(), has_private) {
         ("valorant", true) => 4,
-        (_, true) => 3,        // in another Riot game
+        (_, true) => 3, // in another Riot game
         ("riot_client", _) => 1,
         _ => 2,
     }
@@ -119,7 +125,11 @@ fn normalize_request(request: &Value) -> Option<Value> {
     }
     // "pending_in" = they invited us, "pending_out" = we invited them.
     let subscription = first_str([request.get("subscription")]);
-    let direction = if subscription == "pending_out" { "outgoing" } else { "incoming" };
+    let direction = if subscription == "pending_out" {
+        "outgoing"
+    } else {
+        "incoming"
+    };
 
     Some(json!({
         "puuid": id_root(&puuid),
@@ -133,13 +143,17 @@ fn normalize_request(request: &Value) -> Option<Value> {
 }
 
 #[tauri::command]
-pub async fn friends_get(riot: State<'_, RiotState>) -> Result<String, ()> {
+pub async fn friends_get(
+    riot: State<'_, RiotState>,
+) -> Result<String, ()> {
     let result: Result<Value, String> = async {
         // The roster is the only hard requirement; presences and requests are
         // best-effort so a hiccup in either still renders a usable list.
         let friends_payload = riot_client::get_friends(&riot).await?;
         let presences_payload = riot_client::get_presences(&riot).await.unwrap_or_default();
-        let requests_payload = riot_client::get_friend_requests(&riot).await.unwrap_or_default();
+        let requests_payload = riot_client::get_friend_requests(&riot)
+            .await
+            .unwrap_or_default();
 
         // A player has ONE presence entry per running Riot product, so someone in
         // a VALORANT match shows up twice: once as `valorant` (with the `private`
@@ -211,12 +225,22 @@ pub async fn friends_get(riot: State<'_, RiotState>) -> Result<String, ()> {
             })
             .collect();
 
+        // Injected before the sort so the bot lands in alphabetical order like
+        // any other friend, rather than pinned to the end.
         friends.sort_by(|a, b| {
-            let name = |v: &Value| v.get("displayName").and_then(|v| v.as_str()).unwrap_or_default().to_lowercase();
+            let name = |v: &Value| {
+                v.get("displayName")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_lowercase()
+            };
             name(a).cmp(&name(b))
         });
 
-        let requests: Vec<Value> = requests_payload.iter().filter_map(normalize_request).collect();
+        let requests: Vec<Value> = requests_payload
+            .iter()
+            .filter_map(normalize_request)
+            .collect();
 
         Ok(json!({
             "success": true,
@@ -230,7 +254,11 @@ pub async fn friends_get(riot: State<'_, RiotState>) -> Result<String, ()> {
     Ok(match result {
         Ok(value) => value.to_string(),
         Err(e) => {
-            let code = if e.contains("lockfile") { json!("loginRequired") } else { Value::Null };
+            let code = if e.contains("lockfile") {
+                json!("loginRequired")
+            } else {
+                Value::Null
+            };
             json!({ "success": false, "code": code, "error": e }).to_string()
         }
     })

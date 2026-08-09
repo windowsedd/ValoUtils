@@ -146,7 +146,9 @@ impl BitReader {
         for i in 0..byte_count {
             let b0 = self.buffer[current_byte + i] as u32;
             let b1 = self.buffer[current_byte + i + 1] as u32;
-            result[i] = (((b0 >> bit_count_used_in_byte) | ((b1 & shift_delta) << bit_count_left_in_byte)) & 0xff) as u8;
+            result[i] = (((b0 >> bit_count_used_in_byte)
+                | ((b1 & shift_delta) << bit_count_left_in_byte))
+                & 0xff) as u8;
         }
         self.position += byte_count * 8;
 
@@ -186,9 +188,9 @@ impl BitReader {
             self.buffer[self.current_byte()]
         } else {
             (((self.buffer[self.current_byte()] as u32) >> bit_count_used_in_byte)
-                | (((self.buffer[self.current_byte() + 1] as u32) & ((1 << bit_count_used_in_byte) - 1))
-                    << bit_count_left_in_byte))
-                as u8
+                | (((self.buffer[self.current_byte() + 1] as u32)
+                    & ((1 << bit_count_used_in_byte) - 1))
+                    << bit_count_left_in_byte)) as u8
         };
         self.position += 8;
         result
@@ -210,9 +212,9 @@ impl BitReader {
             for i in 0..byte_count {
                 let b0 = self.buffer[self.current_byte() + i] as u32;
                 let b1 = self.buffer[self.current_byte() + 1 + i] as u32;
-                output[i] =
-                    (((b0 >> bit_count_used_in_byte) | ((b1 & ((1 << bit_count_used_in_byte) - 1)) << bit_count_left_in_byte)) & 0xff)
-                        as u8;
+                output[i] = (((b0 >> bit_count_used_in_byte)
+                    | ((b1 & ((1 << bit_count_used_in_byte) - 1)) << bit_count_left_in_byte))
+                    & 0xff) as u8;
             }
             output
         };
@@ -221,7 +223,10 @@ impl BitReader {
     }
 
     pub fn read_bytes_to_string(&mut self, count: i64) -> String {
-        self.read_bytes(count).iter().map(|b| format!("{:02X}", b)).collect()
+        self.read_bytes(count)
+            .iter()
+            .map(|b| format!("{:02X}", b))
+            .collect()
     }
 
     pub fn read_fstring(&mut self) -> String {
@@ -235,7 +240,10 @@ impl BitReader {
         }
         let raw = self.read_bytes(length as i64);
         let decoded = if is_unicode {
-            let units: Vec<u16> = raw.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
+            let units: Vec<u16> = raw
+                .chunks_exact(2)
+                .map(|c| u16::from_le_bytes([c[0], c[1]]))
+                .collect();
             String::from_utf16_lossy(&units)
         } else {
             String::from_utf8_lossy(&raw).into_owned()
@@ -246,7 +254,9 @@ impl BitReader {
     pub fn read_fname(&mut self) -> String {
         let is_hardcoded = self.read_bit();
         if is_hardcoded {
-            let name_index = if self.state.EngineNetworkVersion < EngineNetworkVersionHistory::HistoryChannelNames {
+            let name_index = if self.state.EngineNetworkVersion
+                < EngineNetworkVersionHistory::HistoryChannelNames
+            {
                 self.read_uint32()
             } else {
                 self.read_int_packed()
@@ -319,7 +329,11 @@ impl BitReader {
         let src_mask_byte0: u32 = ((1u32 << bit_count_left_in_byte) - 1) & 0xff;
         let src_mask_byte1: u32 = ((1u32 << bit_count_used_in_byte) - 1) & 0xff;
         let mut src_index = self.current_byte();
-        let mut next_src_index = if bit_count_used_in_byte != 0 { src_index + 1 } else { src_index };
+        let mut next_src_index = if bit_count_used_in_byte != 0 {
+            src_index + 1
+        } else {
+            src_index
+        };
 
         let mut value: u32 = 0;
         let mut shift_count: u32 = 0;
@@ -332,8 +346,10 @@ impl BitReader {
                 next_src_index = src_index;
             }
             self.position += 8;
-            let read_byte = (((self.buffer[src_index] as u32) >> bit_count_used_in_byte) & src_mask_byte0)
-                | (((self.buffer[next_src_index] as u32) & src_mask_byte1) << (bit_count_left_in_byte & 7));
+            let read_byte = (((self.buffer[src_index] as u32) >> bit_count_used_in_byte)
+                & src_mask_byte0)
+                | (((self.buffer[next_src_index] as u32) & src_mask_byte1)
+                    << (bit_count_left_in_byte & 7));
             let read_byte = read_byte & 0xff;
             value = ((read_byte >> 1) << shift_count) | value;
             src_index += 1;
@@ -351,16 +367,24 @@ impl BitReader {
     }
 
     pub fn read_fvector(&mut self) -> FVector {
-        if self.state.EngineNetworkVersion >= EngineNetworkVersionHistory::HistoryPackedVectorLwcSupport {
+        if self.state.EngineNetworkVersion
+            >= EngineNetworkVersionHistory::HistoryPackedVectorLwcSupport
+        {
             FVector::new(self.read_double(), self.read_double(), self.read_double())
         } else {
-            FVector::new(self.read_single() as f64, self.read_single() as f64, self.read_single() as f64)
+            FVector::new(
+                self.read_single() as f64,
+                self.read_single() as f64,
+                self.read_single() as f64,
+            )
         }
     }
 
     pub fn read_packed_vector(&mut self, scale_factor: f64, max_bits: u32) -> FVector {
-        if self.state.EngineNetworkVersion >= EngineNetworkVersionHistory::HistoryPackedVectorLwcSupport
-            && self.state.EngineNetworkVersion != EngineNetworkVersionHistory::History21AndViewpitchOnlyDoNotUse
+        if self.state.EngineNetworkVersion
+            >= EngineNetworkVersionHistory::HistoryPackedVectorLwcSupport
+            && self.state.EngineNetworkVersion
+                != EngineNetworkVersionHistory::History21AndViewpitchOnlyDoNotUse
         {
             self.read_quantized_vector(scale_factor)
         } else {
@@ -391,7 +415,11 @@ impl BitReader {
             v.ScaleFactor = scale_factor;
             v
         } else if extra_info == 0 {
-            let mut v = FVector::new(self.read_single() as f64, self.read_single() as f64, self.read_single() as f64);
+            let mut v = FVector::new(
+                self.read_single() as f64,
+                self.read_single() as f64,
+                self.read_single() as f64,
+            );
             v.Bits = 32;
             v.ScaleFactor = scale_factor;
             v
@@ -645,11 +673,14 @@ mod vector_tests {
     }
 
     fn as_f64(v: &Value) -> f64 {
-        v.as_f64().unwrap_or_else(|| panic!("expected numeric value, got {v:?}"))
+        v.as_f64()
+            .unwrap_or_else(|| panic!("expected numeric value, got {v:?}"))
     }
 
     fn as_str(v: &Value) -> String {
-        v.as_str().unwrap_or_else(|| panic!("expected string value, got {v:?}")).to_string()
+        v.as_str()
+            .unwrap_or_else(|| panic!("expected string value, got {v:?}"))
+            .to_string()
     }
 
     #[test]
@@ -657,7 +688,9 @@ mod vector_tests {
         let vectors = load_vectors();
         let buf = make_buf(64, 0xabcdef01);
         let mut br = BitReader::new(buf, None);
-        let out: Vec<i64> = (0..200).map(|_| if br.read_bit() { 1 } else { 0 }).collect();
+        let out: Vec<i64> = (0..200)
+            .map(|_| if br.read_bit() { 1 } else { 0 })
+            .collect();
         let expected: Vec<i64> = vectors["readBit"].iter().map(as_i64).collect();
         assert_eq!(out, expected);
     }
@@ -700,7 +733,10 @@ mod vector_tests {
         let mut br = BitReader::new(packed, None);
         br.skip_bits(2);
         let out: Vec<i64> = (0..3).map(|_| br.read_int_packed() as i64).collect();
-        let expected: Vec<i64> = vectors["readIntPacked_unaligned2"].iter().map(as_i64).collect();
+        let expected: Vec<i64> = vectors["readIntPacked_unaligned2"]
+            .iter()
+            .map(as_i64)
+            .collect();
         assert_eq!(out, expected);
     }
 
@@ -709,7 +745,10 @@ mod vector_tests {
         let vectors = load_vectors();
         let buf = make_buf(64, 0xabcdef01);
         let mut br = BitReader::new(buf, None);
-        let out: Vec<i64> = [2u32, 7, 16, 100, 1024].iter().map(|&max| br.read_serialized_int(max) as i64).collect();
+        let out: Vec<i64> = [2u32, 7, 16, 100, 1024]
+            .iter()
+            .map(|&max| br.read_serialized_int(max) as i64)
+            .collect();
         let expected: Vec<i64> = vectors["readSerializedInt"].iter().map(as_i64).collect();
         assert_eq!(out, expected);
     }
@@ -720,7 +759,10 @@ mod vector_tests {
         let buf = make_buf(64, 0xabcdef01);
         let mut br = BitReader::new(buf, None);
         br.skip_bits(5);
-        let out: Vec<String> = [1i64, 7, 8, 13, 16, 31, 33].iter().map(|&n| hex(&br.read_bits(n))).collect();
+        let out: Vec<String> = [1i64, 7, 8, 13, 16, 31, 33]
+            .iter()
+            .map(|&n| hex(&br.read_bits(n)))
+            .collect();
         let expected: Vec<String> = vectors["readBits_unaligned5"].iter().map(as_str).collect();
         assert_eq!(out, expected);
     }
@@ -731,7 +773,10 @@ mod vector_tests {
         let buf = make_buf(64, 0xabcdef01);
         let mut br = BitReader::new(buf, None);
         br.skip_bits(4);
-        let out: Vec<String> = [1i64, 3, 8].iter().map(|&n| hex(&br.read_bytes(n))).collect();
+        let out: Vec<String> = [1i64, 3, 8]
+            .iter()
+            .map(|&n| hex(&br.read_bytes(n)))
+            .collect();
         let expected: Vec<String> = vectors["readBytes_unaligned4"].iter().map(as_str).collect();
         assert_eq!(out, expected);
     }

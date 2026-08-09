@@ -8,6 +8,7 @@
     "settings": "設定",
     "about": "關於",
     "apiReference": "API 參考",
+    "dummyBot": "機器人",
     "matches": "對戰紀錄"
   },
   "common": {
@@ -24,7 +25,14 @@
   },
   "riotStatus": {
     "connecting": "連線中...",
-    "offline": "Riot 用戶端離線"
+    "offline": "Riot 用戶端離線",
+    "presenceControl": "Riot 在線狀態",
+    "relayRequired": "請從 ValoUtils 啟動 Riot 用戶端，並等待聊天連線後再變更狀態。",
+    "presence": {
+      "online": "在線",
+      "offline": "離線",
+      "mobile": "行動裝置"
+    }
   },
   "profiles": {
     "title": "設定檔",
@@ -112,12 +120,45 @@
     "teamAlly": "我方",
     "teamEnemy": "敵方",
     "players": "玩家",
+    "me": "我",
     "current": "目前",
     "peak": "生涯最高",
     "hidden": "隱藏玩家",
     "vandal": "Vandal",
     "phantom": "Phantom",
-    "knife": "近戰武器"
+    "knife": "近戰武器",
+    "matchContext": "對戰資訊",
+    "teamAverage": "隊伍平均",
+    "ratedPlayers": "{{count}} 位有牌位",
+    "detectedParties": "偵測到的組隊",
+    "rosterSize": "玩家名單",
+    "recentFive": "最近 5 場競技對戰",
+    "kd": "K/D",
+    "winRate": "勝率",
+    "acs": "ACS",
+    "matchesAnalyzed": "已分析 {{count}} 場",
+    "unavailable": "無法取得",
+    "refresh": "重新整理",
+    "refreshing": "正在重新整理",
+    "expandPlayer": "展開 {{player}}",
+    "collapsePlayer": "收合 {{player}}",
+    "collapseSummary": "收合對戰摘要",
+    "expandSummary": "展開對戰摘要",
+    "retry": "重試",
+    "partyDetected": "偵測到 {{party}}",
+    "skins": "造型",
+    "matchup": "隊伍比較",
+    "ally": "我方",
+    "enemy": "敵方",
+    "averageKd": "平均 K/D",
+    "averageWinRate": "平均勝率",
+    "averageAcs": "平均 ACS",
+    "playersAnalyzed": "已分析 {{count}} 位玩家",
+    "recentHistory": "近期對戰紀錄",
+    "win": "勝利",
+    "loss": "敗北",
+    "score": "比分",
+    "noHistory": "沒有可用的近期競技對戰詳細資料"
   },
   "replays": {
     "selectParser": "選擇 ValorantReplayParser.exe",
@@ -156,6 +197,8 @@
     "autoUpdateDesc": "啟動時及每小時自動檢查更新",
     "devTools": "開發人員工具",
     "devToolsDesc": "啟動時開啟 DevTools（需要重新啟動）",
+    "dummyBot": "機器人",
+    "dummyBotDesc": "透過 ValoUtils 機器人控制 Riot 上線狀態 — 傳送 $help 試試",
     "sectionAnalytics": "分析",
     "analyticsToggle": "分享使用資料",
     "analyticsDesc": "傳送匿名使用統計以協助改善 ValoUtils",
@@ -318,6 +361,28 @@
     "disclaimer": "ValoUtils 與 Riot Games 或 Valorant 無任何關聯",
     "sectionApp": "應用程式",
     "sectionLegal": "法律聲明"
+  },
+  "dummyBot": {
+    "title": "遊戲內機器人",
+    "relayTitle": "Riot 轉送",
+    "connected": "已連線",
+    "waiting": "等待中",
+    "presenceMasking": "在線狀態偽裝",
+    "lobbyForwarding": "大廳 / MUC 轉送",
+    "enabled": "已啟用",
+    "disabled": "已停用",
+    "launchWithRelay": "使用 XMPP 轉送啟動",
+    "launch": "啟動",
+    "launchFailed": "啟動失敗。",
+    "conversationTitle": "真實遊戲內對話",
+    "conversationDescription": "唯讀鏡像。請在 Riot 或 VALORANT 用戶端中傳送指令給 {{name}}。",
+    "fallbackName": "機器人",
+    "empty": "尚無轉送訊息。",
+    "mode": {
+      "online": "在線",
+      "offline": "離線",
+      "mobile": "行動裝置"
+    }
   },
   "apiReference": {
     "subtitle": "Riot 客戶端 REST API",

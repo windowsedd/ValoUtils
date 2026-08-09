@@ -13,8 +13,12 @@ pub mod unreal_names;
 
 pub use binary_reader::BinaryReader;
 pub use bit_reader::BitReader;
-pub use enums::{unique_id_encoding_flags, EngineNetworkVersionHistory, RotatorQuantization, VectorQuantization};
+pub use enums::{
+    unique_id_encoding_flags, EngineNetworkVersionHistory, RotatorQuantization, VectorQuantization,
+};
 pub use farchive::{ArchiveState, FArchive, SeekOrigin};
-pub use models::{FQuat, FRepMovement, FRotator, FTransform, FVector, FVector2D, NetworkReplayVersion};
+pub use models::{
+    FQuat, FRepMovement, FRotator, FTransform, FVector, FVector2D, NetworkReplayVersion,
+};
 pub use net_bit_reader::NetBitReader;
 pub use unreal_names::unreal_name;

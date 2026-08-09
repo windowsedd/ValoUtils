@@ -49,12 +49,22 @@ impl XmppHandle {
 
     async fn send_raw(&self, data: &str) -> Result<(), String> {
         let mut write = self.write.lock().await;
-        write.write_all(data.as_bytes()).await.map_err(|e| e.to_string())
+        write
+            .write_all(data.as_bytes())
+            .await
+            .map_err(|e| e.to_string())
     }
 
-    pub async fn join_match_muc(&self, muc_jid: &str, match_token: Option<&str>) -> Result<(), String> {
+    pub async fn join_match_muc(
+        &self,
+        muc_jid: &str,
+        match_token: Option<&str>,
+    ) -> Result<(), String> {
         let token_el = match match_token {
-            Some(t) if !t.is_empty() => format!(r#"<token xmlns="urn:riotgames:match:token">{}</token>"#, escape_xml(t)),
+            Some(t) if !t.is_empty() => format!(
+                r#"<token xmlns="urn:riotgames:match:token">{}</token>"#,
+                escape_xml(t)
+            ),
             _ => String::new(),
         };
         let stanza = format!(
@@ -67,7 +77,11 @@ impl XmppHandle {
     }
 
     pub async fn leave_match_muc(&self, muc_jid: &str) -> Result<(), String> {
-        let stanza = format!(r#"<presence to="{}/{}" type="unavailable"/>"#, escape_xml(muc_jid), escape_xml(&self.puuid));
+        let stanza = format!(
+            r#"<presence to="{}/{}" type="unavailable"/>"#,
+            escape_xml(muc_jid),
+            escape_xml(&self.puuid)
+        );
         self.send_raw(&stanza).await
     }
 
@@ -89,11 +103,17 @@ impl XmppHandle {
 }
 
 fn epoch_secs() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
 }
 
 fn escape_xml(s: &str) -> String {
-    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
 }
 
 fn extract_attr(tag: &str, attr: &str) -> Option<String> {
@@ -143,7 +163,9 @@ async fn get_pas_token(access_token: &str) -> Result<String, String> {
 
 async fn tls_connect(region: &XmppRegion) -> Result<Stream, String> {
     let host = format!("{}.chat.si.riotgames.com", region.affinity);
-    let tcp = tokio::net::TcpStream::connect((host.as_str(), 5223)).await.map_err(|e| e.to_string())?;
+    let tcp = tokio::net::TcpStream::connect((host.as_str(), 5223))
+        .await
+        .map_err(|e| e.to_string())?;
     let _ = tcp.set_nodelay(true);
 
     let mut root_store = rustls::RootCertStore::empty();
@@ -151,14 +173,21 @@ async fn tls_connect(region: &XmppRegion) -> Result<Stream, String> {
     // Explicit provider (rather than relying on a process-wide default) so this
     // doesn't race/conflict with whatever crypto backend reqwest's rustls-tls
     // stack installs elsewhere in the process.
-    let config = rustls::ClientConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
-        .with_safe_default_protocol_versions()
-        .expect("rustls: ring provider supports default protocol versions")
-        .with_root_certificates(root_store)
-        .with_no_client_auth();
+    let config = rustls::ClientConfig::builder_with_provider(Arc::new(
+        rustls::crypto::ring::default_provider(),
+    ))
+    .with_safe_default_protocol_versions()
+    .expect("rustls: ring provider supports default protocol versions")
+    .with_root_certificates(root_store)
+    .with_no_client_auth();
     let connector = TlsConnector::from(Arc::new(config));
-    let server_name = rustls::pki_types::ServerName::try_from(host).map_err(|e| e.to_string())?.to_owned();
-    connector.connect(server_name, tcp).await.map_err(|e| e.to_string())
+    let server_name = rustls::pki_types::ServerName::try_from(host)
+        .map_err(|e| e.to_string())?
+        .to_owned();
+    connector
+        .connect(server_name, tcp)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Reads whatever is currently available on the socket in one syscall —
@@ -196,7 +225,9 @@ fn is_balanced(xml: &str) -> bool {
         if c != '<' {
             continue;
         }
-        let Some(end) = xml[i..].find('>') else { return false };
+        let Some(end) = xml[i..].find('>') else {
+            return false;
+        };
         let tag = &xml[i..i + end + 1];
         if tag.starts_with("<?") || tag.starts_with("<!") {
             continue;
@@ -223,11 +254,19 @@ pub struct LoginResult {
 /// Mirrors ValorantXmppClient.login()'s token-auth path in
 /// @windowsedd/valorant-api (roster/friend-request features are intentionally
 /// not ported — ValoUtils only uses match/party MUC chat).
-pub async fn login(access_token: &str, _entitlement_token: &str, puuid: &str) -> Result<LoginResult, String> {
+pub async fn login(
+    access_token: &str,
+    _entitlement_token: &str,
+    puuid: &str,
+) -> Result<LoginResult, String> {
     let pas_token = get_pas_token(access_token).await?;
     let claims = decode_jwt_payload(&pas_token)?;
-    let affinity = claims.get("affinity").and_then(|v| v.as_str()).ok_or("PAS token missing affinity claim")?;
-    let region = region_by_lookup_name(affinity).ok_or_else(|| format!("InvalidRegion: {affinity}"))?;
+    let affinity = claims
+        .get("affinity")
+        .and_then(|v| v.as_str())
+        .ok_or("PAS token missing affinity claim")?;
+    let region =
+        region_by_lookup_name(affinity).ok_or_else(|| format!("InvalidRegion: {affinity}"))?;
 
     let stream = tls_connect(region).await?;
     let (mut read, mut write) = tokio::io::split(stream);
@@ -236,7 +275,10 @@ pub async fn login(access_token: &str, _entitlement_token: &str, puuid: &str) ->
         r#"<?xml version="1.0"?><stream:stream to="{}.pvp.net" version="1.0" xmlns:stream="http://etherx.jabber.org/streams">"#,
         region.domain
     );
-    write.write_all(stream_decl.as_bytes()).await.map_err(|e| e.to_string())?;
+    write
+        .write_all(stream_decl.as_bytes())
+        .await
+        .map_err(|e| e.to_string())?;
     let first = read_once(&mut read).await?;
     if !first.contains("stream:features") {
         read_once(&mut read).await?;
@@ -247,13 +289,19 @@ pub async fn login(access_token: &str, _entitlement_token: &str, puuid: &str) ->
         escape_xml(access_token),
         escape_xml(&pas_token)
     );
-    write.write_all(auth_stanza.as_bytes()).await.map_err(|e| e.to_string())?;
+    write
+        .write_all(auth_stanza.as_bytes())
+        .await
+        .map_err(|e| e.to_string())?;
     let auth_response = read_stanza(&mut read).await?;
     if !auth_response.contains("<success") {
         return Err("XMPP auth error".into());
     }
 
-    write.write_all(stream_decl.as_bytes()).await.map_err(|e| e.to_string())?;
+    write
+        .write_all(stream_decl.as_bytes())
+        .await
+        .map_err(|e| e.to_string())?;
     let second = read_once(&mut read).await?;
     if !second.contains("stream:features") {
         read_once(&mut read).await?;
@@ -278,11 +326,17 @@ pub async fn login(access_token: &str, _entitlement_token: &str, puuid: &str) ->
         .map_err(|e| e.to_string())?;
     let session_response = read_stanza(&mut read).await?;
     let display_name = extract_tag(&session_response, "id").map(|id_tag| {
-        (extract_attr(&id_tag, "name").unwrap_or_default(), extract_attr(&id_tag, "tagline").unwrap_or_default())
+        (
+            extract_attr(&id_tag, "name").unwrap_or_default(),
+            extract_attr(&id_tag, "tagline").unwrap_or_default(),
+        )
     });
 
     let presence_stanza = build_presence_stanza();
-    write.write_all(presence_stanza.as_bytes()).await.map_err(|e| e.to_string())?;
+    write
+        .write_all(presence_stanza.as_bytes())
+        .await
+        .map_err(|e| e.to_string())?;
 
     write
         .write_all(br#"<iq type="get"><query xmlns="jabber:iq:riotgames:roster"/></iq>"#)
@@ -301,7 +355,10 @@ pub async fn login(access_token: &str, _entitlement_token: &str, puuid: &str) ->
     let write_for_presence = handle.clone();
     tokio::spawn(async move { run_background(read, alive, messages, write_for_presence).await });
 
-    Ok(LoginResult { handle, display_name })
+    Ok(LoginResult {
+        handle,
+        display_name,
+    })
 }
 
 fn extract_tag(stanza: &str, tag: &str) -> Option<String> {
@@ -311,7 +368,10 @@ fn extract_tag(stanza: &str, tag: &str) -> Option<String> {
 }
 
 fn build_presence_stanza() -> String {
-    let ts = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0);
+    let ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
     format!(
         r#"<presence id="presence_1"><show>chat</show><status/><games><keystone><st>chat</st><s.t>{ts}</s.t><m/><s.p>keystone</s.p></keystone></games></presence>"#
     )
@@ -359,9 +419,14 @@ fn handle_incoming_stanza(stanza: &str, messages: &Arc<std::sync::Mutex<VecDeque
             None => (from.clone(), String::new()),
         };
         let body = extract_text(&message_tag, "body").unwrap_or_default();
-        let id = extract_attr(&message_tag, "id").unwrap_or_else(|| format!("{room}:{sender_nick}:{}", epoch_secs()));
+        let id = extract_attr(&message_tag, "id")
+            .unwrap_or_else(|| format!("{room}:{sender_nick}:{}", epoch_secs()));
 
-        let scope = if room.to_lowercase().contains("ares-parties") { "party" } else { "match" };
+        let scope = if room.to_lowercase().contains("ares-parties") {
+            "party"
+        } else {
+            "match"
+        };
         let mut buf = messages.lock().unwrap();
         if buf.iter().any(|m| m.id == id) {
             continue;
@@ -392,7 +457,9 @@ fn split_top_level_tags(xml: &str, tag: &str) -> Vec<String> {
     let open_needle = format!("<{tag}");
     while let Some(rel_start) = xml[search_from..].find(&open_needle) {
         let start = search_from + rel_start;
-        let Some(rel_tag_end) = xml[start..].find('>') else { break };
+        let Some(rel_tag_end) = xml[start..].find('>') else {
+            break;
+        };
         let tag_end = start + rel_tag_end + 1;
         if xml[start..tag_end].ends_with("/>") {
             out.push(xml[start..tag_end].to_string());
@@ -400,7 +467,9 @@ fn split_top_level_tags(xml: &str, tag: &str) -> Vec<String> {
             continue;
         }
         let close_needle = format!("</{tag}>");
-        let Some(rel_close) = xml[tag_end..].find(&close_needle) else { break };
+        let Some(rel_close) = xml[tag_end..].find(&close_needle) else {
+            break;
+        };
         let close_end = tag_end + rel_close + close_needle.len();
         out.push(xml[start..close_end].to_string());
         search_from = close_end;

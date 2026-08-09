@@ -21,7 +21,9 @@ pub async fn career_get(riot: State<'_, RiotState>) -> Result<String, ()> {
             "competitiveUpdates": competitive_updates,
         })
         .to_string(),
-        Err(e) if e.contains("lockfile") => json!({ "success": false, "code": "loginRequired" }).to_string(),
+        Err(e) if e.contains("lockfile") => {
+            json!({ "success": false, "code": "loginRequired" }).to_string()
+        }
         Err(e) => json!({ "success": false, "error": e }).to_string(),
     })
 }

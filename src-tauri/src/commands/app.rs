@@ -6,13 +6,21 @@ use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_opener::OpenerExt;
 
 fn arg(args: &[Value], index: usize) -> Option<String> {
-    args.get(index).and_then(|v| v.as_str()).map(|s| s.to_string())
+    args.get(index)
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
 }
 
 #[tauri::command]
 pub fn open_url(args: Vec<Value>, app: AppHandle) -> String {
-    let Some(url) = arg(&args, 0) else { return String::new() };
-    aptabase::track_event("open_url".into(), json!({ "url": url }), app.package_info().version.to_string());
+    let Some(url) = arg(&args, 0) else {
+        return String::new();
+    };
+    aptabase::track_event(
+        "open_url".into(),
+        json!({ "url": url }),
+        app.package_info().version.to_string(),
+    );
     let _ = app.opener().open_url(&url, None::<&str>);
     String::new()
 }
@@ -66,7 +74,9 @@ pub async fn debug_save_json(args: Vec<Value>, app: AppHandle) -> String {
 
 #[tauri::command]
 pub fn analytics_track(args: Vec<Value>, app: AppHandle) -> String {
-    let Some(event) = arg(&args, 0) else { return String::new() };
+    let Some(event) = arg(&args, 0) else {
+        return String::new();
+    };
     let data = args
         .get(1)
         .and_then(|v| v.as_str())
@@ -88,6 +98,12 @@ pub fn config_get_all(store: State<ConfigStore>) -> String {
     json!({
         "autoUpdate": get_or("autoUpdate", json!(true)),
         "openDevTools": get_or("openDevTools", json!(false)),
+        // Every key the frontend reads has to be listed here — this is an
+        // allowlist, not a passthrough of the whole store.
+        "presenceEnabled": get_or("presenceEnabled", json!(true)),
+        "presenceMode": get_or("presenceMode", json!("offline")),
+        "presenceStartup": get_or("presenceStartup", json!("last")),
+        "presenceMucEnabled": get_or("presenceMucEnabled", json!(true)),
         "translatorProvider": get_or("translatorProvider", json!("google")),
         "translatorTargetLanguage": get_or("translatorTargetLanguage", json!("en")),
         "deeplApiKey": get_or("deeplApiKey", json!("")),
@@ -97,7 +113,9 @@ pub fn config_get_all(store: State<ConfigStore>) -> String {
 
 #[tauri::command]
 pub fn config_set(args: Vec<Value>, store: State<ConfigStore>) -> String {
-    let Some(key) = arg(&args, 0) else { return json!({ "success": false }).to_string() };
+    let Some(key) = arg(&args, 0) else {
+        return json!({ "success": false }).to_string();
+    };
     let value = args.get(1).cloned().unwrap_or(Value::Null);
     store.set(&key, value);
     json!({ "success": true, "key": key }).to_string()

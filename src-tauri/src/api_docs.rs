@@ -41,7 +41,9 @@ pub async fn ensure_running(app: &AppHandle) -> Result<String, String> {
 
     // Bind to port 0 — the OS picks a free ephemeral port. Loopback only, so
     // the spec is never exposed off-machine.
-    let listener = TcpListener::bind("127.0.0.1:0").await.map_err(|e| e.to_string())?;
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .map_err(|e| e.to_string())?;
     let port = listener.local_addr().map_err(|e| e.to_string())?.port();
 
     // Lost race (another call bound first): drop this listener and use theirs.
@@ -69,7 +71,15 @@ pub async fn ensure_running(app: &AppHandle) -> Result<String, String> {
 async fn handle_connection(mut stream: TcpStream, app: &AppHandle) -> std::io::Result<()> {
     let path = match read_request_path(&mut stream).await? {
         Some(path) => path,
-        None => return write_response(&mut stream, 400, "text/plain; charset=utf-8", b"Bad Request").await,
+        None => {
+            return write_response(
+                &mut stream,
+                400,
+                "text/plain; charset=utf-8",
+                b"Bad Request",
+            )
+            .await
+        }
     };
 
     // Ignore the query string / fragment when routing.
@@ -81,15 +91,35 @@ async fn handle_connection(mut stream: TcpStream, app: &AppHandle) -> std::io::R
             match client::swagger_spec(&state).await {
                 Ok(spec) => {
                     let body = spec.to_string();
-                    write_response(&mut stream, 200, "application/json; charset=utf-8", body.as_bytes()).await
+                    write_response(
+                        &mut stream,
+                        200,
+                        "application/json; charset=utf-8",
+                        body.as_bytes(),
+                    )
+                    .await
                 }
                 Err(e) => {
                     let body = serde_json::json!({ "error": e }).to_string();
-                    write_response(&mut stream, 502, "application/json; charset=utf-8", body.as_bytes()).await
+                    write_response(
+                        &mut stream,
+                        502,
+                        "application/json; charset=utf-8",
+                        body.as_bytes(),
+                    )
+                    .await
                 }
             }
         }
-        "/" => write_response(&mut stream, 200, "text/html; charset=utf-8", REFERENCE_PAGE.as_bytes()).await,
+        "/" => {
+            write_response(
+                &mut stream,
+                200,
+                "text/html; charset=utf-8",
+                REFERENCE_PAGE.as_bytes(),
+            )
+            .await
+        }
         _ => write_response(&mut stream, 404, "text/plain; charset=utf-8", b"Not Found").await,
     }
 }
@@ -128,7 +158,12 @@ async fn read_request_path(stream: &mut TcpStream) -> std::io::Result<Option<Str
     Ok(Some(target.to_string()))
 }
 
-async fn write_response(stream: &mut TcpStream, status: u16, content_type: &str, body: &[u8]) -> std::io::Result<()> {
+async fn write_response(
+    stream: &mut TcpStream,
+    status: u16,
+    content_type: &str,
+    body: &[u8],
+) -> std::io::Result<()> {
     let reason = match status {
         200 => "OK",
         400 => "Bad Request",
@@ -174,9 +209,14 @@ mod tests {
 
         let (mut server, _) = listener.accept().await.unwrap();
         let path = read_request_path(&mut server).await.unwrap();
-        write_response(&mut server, 200, "application/json; charset=utf-8", b"{\"ok\":true}")
-            .await
-            .unwrap();
+        write_response(
+            &mut server,
+            200,
+            "application/json; charset=utf-8",
+            b"{\"ok\":true}",
+        )
+        .await
+        .unwrap();
         drop(server);
 
         (path, client.await.unwrap())
@@ -185,7 +225,8 @@ mod tests {
     #[tokio::test]
     async fn parses_the_target_and_frames_the_response() {
         let (path, response) =
-            round_trip("GET /openapi.json?v=1 HTTP/1.1\r\nHost: 127.0.0.1\r\nAccept: */*\r\n\r\n").await;
+            round_trip("GET /openapi.json?v=1 HTTP/1.1\r\nHost: 127.0.0.1\r\nAccept: */*\r\n\r\n")
+                .await;
 
         assert_eq!(path.as_deref(), Some("/openapi.json?v=1"));
         assert!(response.starts_with("HTTP/1.1 200 OK\r\n"), "{response}");

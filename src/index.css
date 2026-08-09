@@ -143,6 +143,14 @@ h6 {
 	background: var(--valo-dark-red);
 }
 
+.nav-tabs-scroll {
+	scrollbar-width: none;
+}
+
+.nav-tabs-scroll::-webkit-scrollbar {
+	display: none;
+}
+
 /* Glassmorphism effect */
 .glass {
 	background: rgba(255, 255, 255, 0.05);

@@ -43,7 +43,10 @@ impl Store {
     pub fn set(&self, key: &str, value: Value) {
         let mut data = self.data.lock().unwrap();
         data.insert(key.to_string(), value);
-        let _ = fs::write(&self.path, serde_json::to_string(&*data).unwrap_or_default());
+        let _ = fs::write(
+            &self.path,
+            serde_json::to_string(&*data).unwrap_or_default(),
+        );
     }
 }
 

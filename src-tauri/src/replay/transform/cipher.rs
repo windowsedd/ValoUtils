@@ -383,7 +383,13 @@ fn substitute_bytes32(value: u32, table: &[u8; 256]) -> u32 {
 
 /// The trailing `bits_remaining != 0` tail step, identical across every
 /// variant apart from its `TAIL_XOR_*` constant.
-fn apply_tail(output: &mut [u8], byte_offset: usize, bit_count: u32, stream_byte: u8, tail_xor: u8) {
+fn apply_tail(
+    output: &mut [u8],
+    byte_offset: usize,
+    bit_count: u32,
+    stream_byte: u8,
+    tail_xor: u8,
+) {
     let mask = (0xffu32 >> (7 - ((bit_count.wrapping_sub(1)) & 7))) as u8;
     output[byte_offset] ^= mask & (stream_byte ^ tail_xor);
 }
@@ -452,7 +458,13 @@ fn apply_v13_00(payload: &[u8], bit_count: u32, seed: u32) -> Vec<u8> {
     }
 
     if bits_remaining != 0 {
-        apply_tail(&mut output, byte_offset, bit_count, s.stream_byte, TAIL_XOR_V13_00);
+        apply_tail(
+            &mut output,
+            byte_offset,
+            bit_count,
+            s.stream_byte,
+            TAIL_XOR_V13_00,
+        );
     }
 
     output
@@ -509,7 +521,13 @@ fn apply_v13_01(payload: &[u8], bit_count: u32, seed: u32) -> Vec<u8> {
     }
 
     if bits_remaining != 0 {
-        apply_tail(&mut output, byte_offset, bit_count, s.stream_byte, TAIL_XOR_V13_01);
+        apply_tail(
+            &mut output,
+            byte_offset,
+            bit_count,
+            s.stream_byte,
+            TAIL_XOR_V13_01,
+        );
     }
 
     output
@@ -579,7 +597,13 @@ fn apply_v13_02(payload: &[u8], bit_count: u32, seed: u32) -> Vec<u8> {
     }
 
     if bits_remaining != 0 {
-        apply_tail(&mut output, byte_offset, bit_count, s.stream_byte, TAIL_XOR_V13_02);
+        apply_tail(
+            &mut output,
+            byte_offset,
+            bit_count,
+            s.stream_byte,
+            TAIL_XOR_V13_02,
+        );
     }
 
     output
@@ -622,7 +646,8 @@ mod vector_tests {
             "/test-fixtures/transform-vectors-csharp.json"
         ))
         .expect("C# reference vectors file should exist");
-        let vectors: Vec<Vector> = serde_json::from_str(raw.trim_start_matches('\u{feff}')).unwrap();
+        let vectors: Vec<Vector> =
+            serde_json::from_str(raw.trim_start_matches('\u{feff}')).unwrap();
         assert_eq!(vectors.len(), 55);
 
         for v in &vectors {

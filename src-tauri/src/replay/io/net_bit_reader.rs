@@ -9,7 +9,9 @@
 use std::ops::{Deref, DerefMut};
 
 use super::bit_reader::BitReader;
-use super::enums::{unique_id_encoding_flags, EngineNetworkVersionHistory, RotatorQuantization, VectorQuantization};
+use super::enums::{
+    unique_id_encoding_flags, EngineNetworkVersionHistory, RotatorQuantization, VectorQuantization,
+};
 use super::farchive::FArchive;
 use super::models::{FRepMovement, FRotator, FVector, FVector2D};
 
@@ -69,8 +71,10 @@ impl NetBitReader {
         let mut b_rep_server_frame = false;
         let mut b_rep_server_handle = false;
 
-        if self.0.archive_state().EngineNetworkVersion >= EngineNetworkVersionHistory::HistoryRepmoveServerframeAndHandle
-            && self.0.archive_state().EngineNetworkVersion != EngineNetworkVersionHistory::History21AndViewpitchOnlyDoNotUse
+        if self.0.archive_state().EngineNetworkVersion
+            >= EngineNetworkVersionHistory::HistoryRepmoveServerframeAndHandle
+            && self.0.archive_state().EngineNetworkVersion
+                != EngineNetworkVersionHistory::History21AndViewpitchOnlyDoNotUse
         {
             b_rep_server_frame = self.0.read_bit();
             b_rep_server_handle = self.0.read_bit();
@@ -83,18 +87,23 @@ impl NetBitReader {
             ServerFrame: 0,
             ServerPhysicsHandle: 0,
             Location: Some(self.serialize_property_quantized_vector(location_quantization_level)),
-            Rotation: Some(if rotation_quantization_level == RotatorQuantization::ByteComponents {
-                self.0.read_rotation()
-            } else {
-                self.0.read_rotation_short()
-            }),
-            LinearVelocity: Some(self.serialize_property_quantized_vector(velocity_quantization_level)),
+            Rotation: Some(
+                if rotation_quantization_level == RotatorQuantization::ByteComponents {
+                    self.0.read_rotation()
+                } else {
+                    self.0.read_rotation_short()
+                },
+            ),
+            LinearVelocity: Some(
+                self.serialize_property_quantized_vector(velocity_quantization_level),
+            ),
             AngularVelocity: None,
             Acceleration: None,
         };
 
         if rep_movement.bRepPhysics {
-            rep_movement.AngularVelocity = Some(self.serialize_property_quantized_vector(velocity_quantization_level));
+            rep_movement.AngularVelocity =
+                Some(self.serialize_property_quantized_vector(velocity_quantization_level));
         }
         if b_rep_server_frame {
             rep_movement.ServerFrame = self.0.read_int_packed();
@@ -103,10 +112,13 @@ impl NetBitReader {
             rep_movement.ServerPhysicsHandle = self.0.read_int_packed();
         }
 
-        if self.0.archive_state().EngineNetworkVersion >= EngineNetworkVersionHistory::RepMoveOptionalAcceleration {
+        if self.0.archive_state().EngineNetworkVersion
+            >= EngineNetworkVersionHistory::RepMoveOptionalAcceleration
+        {
             rep_movement.bRepAcceleration = self.0.read_bit();
             if rep_movement.bRepAcceleration {
-                rep_movement.Acceleration = Some(self.serialize_property_quantized_vector(velocity_quantization_level));
+                rep_movement.Acceleration =
+                    Some(self.serialize_property_quantized_vector(velocity_quantization_level));
             }
         }
         rep_movement
@@ -174,7 +186,10 @@ impl NetBitReader {
         self.0.read_int_packed()
     }
 
-    pub fn serialize_property_quantized_vector(&mut self, quantization_level: VectorQuantization) -> FVector {
+    pub fn serialize_property_quantized_vector(
+        &mut self,
+        quantization_level: VectorQuantization,
+    ) -> FVector {
         match quantization_level {
             VectorQuantization::RoundTwoDecimals => self.0.read_packed_vector(100.0, 30),
             VectorQuantization::RoundOneDecimal => self.0.read_packed_vector(10.0, 27),

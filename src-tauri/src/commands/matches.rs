@@ -27,11 +27,18 @@ fn cache_key(puuid: &str, match_id: &str) -> String {
 }
 
 fn arg(args: &[Value], index: usize) -> Option<String> {
-    args.get(index).and_then(|v| v.as_str()).map(|s| s.to_string())
+    args.get(index)
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
 }
 
 fn arg_u32(args: &[Value], index: usize) -> Option<u32> {
-    args.get(index).and_then(|v| v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse().ok()))).map(|v| v as u32)
+    args.get(index)
+        .and_then(|v| {
+            v.as_u64()
+                .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+        })
+        .map(|v| v as u32)
 }
 
 /// Per-player damage totals, summed across every round.
@@ -46,11 +53,20 @@ struct Damage {
 fn aggregate_damage(round_results: &[Value]) -> HashMap<String, Damage> {
     let mut totals: HashMap<String, Damage> = HashMap::new();
     for round in round_results {
-        let Some(player_stats) = round.get("playerStats").and_then(|v| v.as_array()) else { continue };
+        let Some(player_stats) = round.get("playerStats").and_then(|v| v.as_array()) else {
+            continue;
+        };
         for stat in player_stats {
-            let Some(subject) = stat.get("subject").and_then(|v| v.as_str()) else { continue };
+            let Some(subject) = stat.get("subject").and_then(|v| v.as_str()) else {
+                continue;
+            };
             let entry = totals.entry(subject.to_string()).or_default();
-            for hit in stat.get("damage").and_then(|v| v.as_array()).into_iter().flatten() {
+            for hit in stat
+                .get("damage")
+                .and_then(|v| v.as_array())
+                .into_iter()
+                .flatten()
+            {
                 let num = |key: &str| hit.get(key).and_then(|v| v.as_u64()).unwrap_or(0);
                 entry.total += num("damage");
                 entry.headshots += num("headshots");
@@ -64,32 +80,67 @@ fn aggregate_damage(round_results: &[Value]) -> HashMap<String, Damage> {
 
 /// Match details omit `gameName`/`tagLine` for most players, so resolve the
 /// blanks in one batched nameservice call rather than showing bare puuids.
-async fn resolve_missing_names(api: &RiotApiClient, players: &[Value]) -> HashMap<String, (String, String)> {
+async fn resolve_missing_names(
+    api: &RiotApiClient,
+    players: &[Value],
+) -> HashMap<String, (String, String)> {
     let missing: Vec<String> = players
         .iter()
-        .filter(|p| p.get("gameName").and_then(|v| v.as_str()).unwrap_or("").trim().is_empty())
-        .filter_map(|p| p.get("subject").and_then(|v| v.as_str()).map(|s| s.to_string()))
+        .filter(|p| {
+            p.get("gameName")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .is_empty()
+        })
+        .filter_map(|p| {
+            p.get("subject")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+        })
         .collect();
 
     let mut names = HashMap::new();
     if missing.is_empty() {
         return names;
     }
-    let Ok(resolved) = api.get_names(&missing).await else { return names };
+    let Ok(resolved) = api.get_names(&missing).await else {
+        return names;
+    };
     for entry in resolved.as_array().into_iter().flatten() {
-        let subject = entry.get("Subject").and_then(|v| v.as_str()).unwrap_or_default();
-        let game_name = entry.get("GameName").and_then(|v| v.as_str()).unwrap_or_default();
-        let tag_line = entry.get("TagLine").and_then(|v| v.as_str()).unwrap_or_default();
+        let subject = entry
+            .get("Subject")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default();
+        let game_name = entry
+            .get("GameName")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default();
+        let tag_line = entry
+            .get("TagLine")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default();
         if !subject.is_empty() {
-            names.insert(subject.to_string(), (game_name.to_string(), tag_line.to_string()));
+            names.insert(
+                subject.to_string(),
+                (game_name.to_string(), tag_line.to_string()),
+            );
         }
     }
     names
 }
 
-fn reduce_match(details: &Value, names: &HashMap<String, (String, String)>, own_puuid: &str) -> Value {
+fn reduce_match(
+    details: &Value,
+    names: &HashMap<String, (String, String)>,
+    own_puuid: &str,
+) -> Value {
     let info = details.get("matchInfo").cloned().unwrap_or(json!({}));
-    let round_results = details.get("roundResults").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+    let round_results = details
+        .get("roundResults")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
     let damage = aggregate_damage(&round_results);
 
     let teams: Vec<Value> = details
@@ -191,7 +242,9 @@ pub async fn match_list(args: Vec<Value>, riot: State<'_, RiotState>) -> Result<
 
     let result: Result<Value, String> = async {
         let history = api::with_api(&riot, |api| async move {
-            let history = api.get_match_history(&api.puuid, start, start + count).await?;
+            let history = api
+                .get_match_history(&api.puuid, start, start + count)
+                .await?;
             Ok((history, api.puuid.clone()))
         })
         .await?;
@@ -222,7 +275,11 @@ pub async fn match_list(args: Vec<Value>, riot: State<'_, RiotState>) -> Result<
     Ok(match result {
         Ok(value) => value.to_string(),
         Err(e) => {
-            let code = if e.contains("lockfile") { json!("loginRequired") } else { Value::Null };
+            let code = if e.contains("lockfile") {
+                json!("loginRequired")
+            } else {
+                Value::Null
+            };
             json!({ "success": false, "code": code, "error": e }).to_string()
         }
     })
@@ -246,7 +303,11 @@ pub async fn match_summaries(
     let ids: Vec<String> = args
         .first()
         .and_then(|v| v.as_array())
-        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect()
+        })
         .unwrap_or_default();
     if ids.is_empty() {
         return Ok(json!({ "success": true, "count": 0 }).to_string());
@@ -270,21 +331,36 @@ pub async fn match_summaries(
                     // and retry rather than abandoning the rest of the list.
                     Err(e) if api::is_auth_error(&e) => {
                         crate::riot::client::invalidate_tokens(&riot);
-                        let Ok(fresh) = api::create_api(&riot).await else { break };
+                        let Ok(fresh) = api::create_api(&riot).await else {
+                            break;
+                        };
                         api = fresh;
-                        let Ok(details) = api.get_match_details(&match_id).await else { continue };
+                        let Ok(details) = api.get_match_details(&match_id).await else {
+                            continue;
+                        };
                         details
                     }
                     Err(_) => continue,
                 };
-                let players = details.get("players").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+                let players = details
+                    .get("players")
+                    .and_then(|v| v.as_array())
+                    .cloned()
+                    .unwrap_or_default();
                 let names = resolve_missing_names(&api, &players).await;
                 let reduced = reduce_match(&details, &names, &api.puuid);
-                cache.0.lock().unwrap().insert(cache_key(&api.puuid, &match_id), reduced.clone());
+                cache
+                    .0
+                    .lock()
+                    .unwrap()
+                    .insert(cache_key(&api.puuid, &match_id), reduced.clone());
                 reduced
             }
         };
-        let _ = app.emit("match:details", json!({ "success": true, "match": reduced, "cached": true }).to_string());
+        let _ = app.emit(
+            "match:details",
+            json!({ "success": true, "match": reduced, "cached": true }).to_string(),
+        );
         sent += 1;
     }
 
@@ -292,7 +368,11 @@ pub async fn match_summaries(
 }
 
 #[tauri::command]
-pub async fn match_details(args: Vec<Value>, riot: State<'_, RiotState>, cache: State<'_, MatchCache>) -> Result<String, ()> {
+pub async fn match_details(
+    args: Vec<Value>,
+    riot: State<'_, RiotState>,
+    cache: State<'_, MatchCache>,
+) -> Result<String, ()> {
     let Some(match_id) = arg(&args, 0).filter(|s| !s.trim().is_empty()) else {
         return Ok(json!({ "success": false, "error": "No match id" }).to_string());
     };
@@ -301,10 +381,20 @@ pub async fn match_details(args: Vec<Value>, riot: State<'_, RiotState>, cache: 
     let own_puuid = crate::riot::client::get_tokens(&riot, false)
         .await
         .ok()
-        .and_then(|t| t.get("subject").and_then(|v| v.as_str()).map(|s| s.to_string()))
+        .and_then(|t| {
+            t.get("subject")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+        })
         .unwrap_or_default();
 
-    if let Some(hit) = cache.0.lock().unwrap().get(&cache_key(&own_puuid, &match_id)).cloned() {
+    if let Some(hit) = cache
+        .0
+        .lock()
+        .unwrap()
+        .get(&cache_key(&own_puuid, &match_id))
+        .cloned()
+    {
         return Ok(json!({ "success": true, "match": hit, "cached": true }).to_string());
     }
 
@@ -314,7 +404,11 @@ pub async fn match_details(args: Vec<Value>, riot: State<'_, RiotState>, cache: 
             let match_id = match_id.clone();
             async move {
                 let details = api.get_match_details(&match_id).await?;
-                let players = details.get("players").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+                let players = details
+                    .get("players")
+                    .and_then(|v| v.as_array())
+                    .cloned()
+                    .unwrap_or_default();
                 let names = resolve_missing_names(&api, &players).await;
                 Ok(reduce_match(&details, &names, &api.puuid))
             }
@@ -325,7 +419,11 @@ pub async fn match_details(args: Vec<Value>, riot: State<'_, RiotState>, cache: 
 
     Ok(match result {
         Ok(reduced) => {
-            cache.0.lock().unwrap().insert(cache_key(&own_puuid, &match_id), reduced.clone());
+            cache
+                .0
+                .lock()
+                .unwrap()
+                .insert(cache_key(&own_puuid, &match_id), reduced.clone());
             json!({ "success": true, "match": reduced, "cached": false }).to_string()
         }
         Err(e) => json!({ "success": false, "matchId": match_id, "error": e }).to_string(),

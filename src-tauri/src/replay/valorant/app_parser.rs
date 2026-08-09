@@ -23,7 +23,10 @@ use crate::replay::unreal::registry::NetFieldRegistry;
 use crate::replay::unreal::replay_reader::{ExportedValue, ReplayReader, ReplayReaderHooks};
 
 use super::models::{register_all, RemoteCharacterUpdate};
-use super::replay_reader::{do_decompress, do_transform, push_export, ExportRecord, ValorantReplay, REMOTE_CHARACTER_UPDATES_RPC_TYPE};
+use super::replay_reader::{
+    do_decompress, do_transform, push_export, ExportRecord, ValorantReplay,
+    REMOTE_CHARACTER_UPDATES_RPC_TYPE,
+};
 
 /// One decoded character-movement tick (the local player).
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -183,7 +186,13 @@ impl ReplayReaderHooks<ValorantReplay> for AppHooks {
         }));
     }
 
-    fn on_channel_opened(&mut self, _channel_index: u32, actor: Option<&Actor>, archetype_path: Option<&str>, frame_time_seconds: f32) {
+    fn on_channel_opened(
+        &mut self,
+        _channel_index: u32,
+        actor: Option<&Actor>,
+        archetype_path: Option<&str>,
+        frame_time_seconds: f32,
+    ) {
         let actor = match actor {
             Some(a) => a,
             None => return,
@@ -198,17 +207,34 @@ impl ReplayReaderHooks<ValorantReplay> for AppHooks {
         });
     }
 
-    fn transform_bunch_payload(&mut self, actor_guid: Option<u32>, payload: Vec<u8>, payload_bits: u32, header_branch: &str) -> Vec<u8> {
-        do_transform(&self.version, actor_guid, payload, payload_bits, header_branch)
+    fn transform_bunch_payload(
+        &mut self,
+        actor_guid: Option<u32>,
+        payload: Vec<u8>,
+        payload_bits: u32,
+        header_branch: &str,
+    ) -> Vec<u8> {
+        do_transform(
+            &self.version,
+            actor_guid,
+            payload,
+            payload_bits,
+            header_branch,
+        )
     }
 }
 
 /// Parse a `.vrf` replay into the app's record streams. TS: `parseReplayForApp`.
-pub fn parse_replay_for_app(bytes: &[u8], version: Option<String>, mode: Option<ParseMode>) -> AppParseResult {
+pub fn parse_replay_for_app(
+    bytes: &[u8],
+    version: Option<String>,
+    mode: Option<ParseMode>,
+) -> AppParseResult {
     let mut registry = NetFieldRegistry::new();
     register_all(&mut registry);
     let hooks = AppHooks::new(version);
-    let mut reader: ReplayReader<ValorantReplay, AppHooks> = ReplayReader::new(mode.unwrap_or(ParseMode::Full), hooks, registry);
+    let mut reader: ReplayReader<ValorantReplay, AppHooks> =
+        ReplayReader::new(mode.unwrap_or(ParseMode::Full), hooks, registry);
 
     let mut archive = BinaryReader::new(bytes.to_vec());
     let replay = reader.read_replay_from_archive(&mut archive);

@@ -117,7 +117,11 @@ fn round_to(x: f64, dp: i32) -> f64 {
     let negative = x.is_sign_negative() && x != 0.0;
     let exact = format!("{:.40}", x.abs());
     let (int_part, frac_part) = exact.split_once('.').unwrap();
-    let mut digits: Vec<u8> = int_part.bytes().chain(frac_part.bytes()).map(|b| b - b'0').collect();
+    let mut digits: Vec<u8> = int_part
+        .bytes()
+        .chain(frac_part.bytes())
+        .map(|b| b - b'0')
+        .collect();
     let int_len = int_part.len();
     let round_pos = int_len + dp;
     let round_up = digits.get(round_pos).copied().unwrap_or(0) >= 5;
@@ -139,9 +143,15 @@ fn round_to(x: f64, dp: i32) -> f64 {
         }
     }
     let new_int_len = digits.len() - dp;
-    let int_str: String = digits[..new_int_len].iter().map(|d| (d + b'0') as char).collect();
+    let int_str: String = digits[..new_int_len]
+        .iter()
+        .map(|d| (d + b'0') as char)
+        .collect();
     let s = if dp > 0 {
-        let frac_str: String = digits[new_int_len..].iter().map(|d| (d + b'0') as char).collect();
+        let frac_str: String = digits[new_int_len..]
+            .iter()
+            .map(|d| (d + b'0') as char)
+            .collect();
         format!("{int_str}.{frac_str}")
     } else {
         int_str
@@ -301,7 +311,10 @@ const MAP_URL_FIELD_NAMES: [&str; 4] = ["MapUrl", "MapURL", "MapAssetPath", "Map
 fn process_record(state: &mut ExtractState, record: &AppExportRecord) {
     if state.map_url.is_empty() {
         for (name, value) in &record.fields {
-            if MAP_URL_FIELD_NAMES.iter().any(|n| n.eq_ignore_ascii_case(name)) {
+            if MAP_URL_FIELD_NAMES
+                .iter()
+                .any(|n| n.eq_ignore_ascii_case(name))
+            {
                 if let FieldValue::Str(s) = value {
                     state.map_url = s.clone();
                     break;
@@ -318,12 +331,16 @@ fn process_record(state: &mut ExtractState, record: &AppExportRecord) {
             }
         }
         "BombTeamComponent" => {
-            if let Some((_, FieldValue::U8(v))) = record.fields.iter().find(|(name, _)| *name == "Team") {
+            if let Some((_, FieldValue::U8(v))) =
+                record.fields.iter().find(|(name, _)| *name == "Team")
+            {
                 state.team_by_ch.insert(record.ch, *v);
             }
         }
         "ClientGamePhaseEnded" => {
-            if let Some((_, FieldValue::U8(v))) = record.fields.iter().find(|(name, _)| *name == "OldPhase") {
+            if let Some((_, FieldValue::U8(v))) =
+                record.fields.iter().find(|(name, _)| *name == "OldPhase")
+            {
                 state.phase_events.push((*v, record.sample_index));
             }
         }
@@ -333,7 +350,9 @@ fn process_record(state: &mut ExtractState, record: &AppExportRecord) {
                 .iter()
                 .find(|(name, _)| *name == "ReplicatedWorldTimeSecondsDouble")
             {
-                state.bomb_states.push((round_to(*v, 3), record.sample_index));
+                state
+                    .bomb_states
+                    .push((round_to(*v, 3), record.sample_index));
             }
         }
         _ => {}
@@ -344,7 +363,12 @@ fn process_record(state: &mut ExtractState, record: &AppExportRecord) {
 /// accumulator. TS `finalize`. Returns `Err` (after `positions.json` is
 /// already written, matching the TS `throw` placement) if no movement
 /// samples were extracted.
-fn finalize(state: &ExtractState, out_dir: &Path, source_label: &str, map_hint: &str) -> Result<(), String> {
+fn finalize(
+    state: &ExtractState,
+    out_dir: &Path,
+    source_label: &str,
+    map_hint: &str,
+) -> Result<(), String> {
     let mut min_x = f64::INFINITY;
     let mut max_x = f64::NEG_INFINITY;
     let mut min_y = f64::INFINITY;
@@ -540,13 +564,21 @@ mod tests {
             .find(|(level, _)| level.starts_with("/Game/Maps/"))
             .map(|(level, _)| level.clone())
             .unwrap_or_default();
-        let map_name = map_url.rsplit('/').find(|s| !s.is_empty()).unwrap_or("").to_string();
+        let map_name = map_url
+            .rsplit('/')
+            .find(|s| !s.is_empty())
+            .unwrap_or("")
+            .to_string();
         (map_url, map_name)
     }
 
     fn run_and_check(uuid: &str, version: &str) {
         let bytes = fixture_bytes(&format!("{uuid}.vrf"));
-        let result = crate::replay::parse_replay_for_app(&bytes, Some(version.to_string()), Some(ParseMode::Full));
+        let result = crate::replay::parse_replay_for_app(
+            &bytes,
+            Some(version.to_string()),
+            Some(ParseMode::Full),
+        );
         let (map_url, map_name) = map_url_and_name(&result.header);
 
         let out_dir = std::env::temp_dir().join(format!("replay-rust-extract-test-{uuid}"));

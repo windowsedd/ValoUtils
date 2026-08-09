@@ -8,6 +8,7 @@
     "settings": "설정",
     "about": "정보",
     "apiReference": "API 문서",
+    "dummyBot": "봇",
     "matches": "매치"
   },
   "common": {
@@ -24,7 +25,14 @@
   },
   "riotStatus": {
     "connecting": "연결 중...",
-    "offline": "라이엇 클라이언트 오프라인"
+    "offline": "라이엇 클라이언트 오프라인",
+    "presenceControl": "Riot 접속 상태",
+    "relayRequired": "ValoUtils에서 Riot 클라이언트를 실행하고 채팅이 연결된 후 접속 상태를 변경하세요.",
+    "presence": {
+      "online": "온라인",
+      "offline": "오프라인",
+      "mobile": "모바일"
+    }
   },
   "profiles": {
     "title": "프로필",
@@ -112,12 +120,45 @@
     "teamAlly": "아군",
     "teamEnemy": "적군",
     "players": "플레이어",
+    "me": "나",
     "current": "현재",
     "peak": "통산 최고",
     "hidden": "숨겨진 플레이어",
     "vandal": "밴달",
     "phantom": "팬텀",
-    "knife": "근접무기"
+    "knife": "근접무기",
+    "matchContext": "매치 정보",
+    "teamAverage": "팀 평균",
+    "ratedPlayers": "랭크 {{count}}명",
+    "detectedParties": "감지된 파티",
+    "rosterSize": "로스터",
+    "recentFive": "최근 경쟁전 5경기",
+    "kd": "K/D",
+    "winRate": "승률",
+    "acs": "ACS",
+    "matchesAnalyzed": "{{count}}경기 분석",
+    "unavailable": "사용할 수 없음",
+    "refresh": "새로고침",
+    "refreshing": "새로고침 중",
+    "expandPlayer": "{{player}} 펼치기",
+    "collapsePlayer": "{{player}} 접기",
+    "collapseSummary": "매치 요약 접기",
+    "expandSummary": "매치 요약 펼치기",
+    "retry": "다시 시도",
+    "partyDetected": "감지된 {{party}}",
+    "skins": "스킨",
+    "matchup": "매치업",
+    "ally": "아군",
+    "enemy": "적군",
+    "averageKd": "평균 K/D",
+    "averageWinRate": "평균 승률",
+    "averageAcs": "평균 ACS",
+    "playersAnalyzed": "플레이어 {{count}}명 분석",
+    "recentHistory": "최근 매치 기록",
+    "win": "승리",
+    "loss": "패배",
+    "score": "스코어",
+    "noHistory": "최근 경쟁전 상세 기록이 없습니다"
   },
   "replays": {
     "selectParser": "ValorantReplayParser.exe 선택",
@@ -156,6 +197,8 @@
     "autoUpdateDesc": "실행 시 및 매 시간마다 자동으로 업데이트를 확인합니다",
     "devTools": "개발자 도구",
     "devToolsDesc": "실행 시 DevTools를 엽니다 (재시작 필요)",
+    "dummyBot": "봇",
+    "dummyBotDesc": "ValoUtils 봇으로 Riot 상태를 제어하세요 — $help를 보내보세요",
     "sectionAnalytics": "분석",
     "analyticsToggle": "사용 데이터 공유",
     "analyticsDesc": "ValoUtils 개선을 위해 익명 사용 통계를 전송합니다",
@@ -318,6 +361,28 @@
     "disclaimer": "ValoUtils는 라이엇 게임즈 또는 발로란트와 관계가 없습니다",
     "sectionApp": "애플리케이션",
     "sectionLegal": "법적 고지"
+  },
+  "dummyBot": {
+    "title": "게임 내 봇",
+    "relayTitle": "Riot 릴레이",
+    "connected": "연결됨",
+    "waiting": "대기 중",
+    "presenceMasking": "접속 상태 숨기기",
+    "lobbyForwarding": "로비 / MUC 전달",
+    "enabled": "사용",
+    "disabled": "사용 안 함",
+    "launchWithRelay": "XMPP 릴레이로 실행",
+    "launch": "실행",
+    "launchFailed": "실행하지 못했습니다.",
+    "conversationTitle": "실제 게임 내 대화",
+    "conversationDescription": "읽기 전용 미러입니다. Riot 또는 VALORANT 클라이언트에서 {{name}}에게 명령을 보내세요.",
+    "fallbackName": "봇",
+    "empty": "아직 릴레이 메시지가 없습니다.",
+    "mode": {
+      "online": "온라인",
+      "offline": "오프라인",
+      "mobile": "모바일"
+    }
   },
   "apiReference": {
     "subtitle": "라이엇 클라이언트 REST API",

@@ -1,13 +1,15 @@
 import { PageHeader, SectionCard } from "@/components/section-card";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { FaArrowUpRightFromSquare, FaBook } from "react-icons/fa6";
+import { FaArrowLeft, FaArrowUpRightFromSquare, FaBook } from "react-icons/fa6";
 
 // The Riot Client serves a genuine OpenAPI 3 document at
 // `/swagger/v3/openapi.json`. `swagger:open` hosts it on a loopback port (see
 // `src-tauri/src/api_docs.rs`) and opens that URL in the system browser — the
 // spec is a live endpoint, so a refresh always shows the current client's API.
-const SwaggerPage = () => {
+type SwaggerPageProps = { onBack?: () => void };
+
+const SwaggerPage = ({ onBack }: SwaggerPageProps) => {
 	const { t } = useTranslation();
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState<string | null>(null);
@@ -37,7 +39,9 @@ const SwaggerPage = () => {
 				icon={<FaBook className="text-[#22d3ee] text-lg" />}
 				title={t("nav.apiReference")}
 				subtitle={t("apiReference.subtitle")}
-			/>
+			>
+				{onBack && <button onClick={onBack} className="flex items-center gap-1.5 rounded border border-white/10 px-3 py-1.5 text-xs font-semibold text-gray-300 hover:bg-white/5"><FaArrowLeft className="h-3 w-3" />{t("settings.title")}</button>}
+			</PageHeader>
 
 			<div className="flex-1 min-h-0 overflow-y-auto px-6 pb-6 flex flex-col gap-4">
 				<SectionCard title={t("apiReference.sectionTitle")} accent="#22d3ee">

@@ -119,7 +119,8 @@ pub enum NetworkVersionHistory {
     HistoryRecordingMetadata = 18,
     HistoryUseCustomVersion = 19,
 }
-pub const NETWORK_VERSION_HISTORY_LATEST: NetworkVersionHistory = NetworkVersionHistory::HistoryUseCustomVersion;
+pub const NETWORK_VERSION_HISTORY_LATEST: NetworkVersionHistory =
+    NetworkVersionHistory::HistoryUseCustomVersion;
 
 /// Compared with `>=` in `replay_reader.rs`, and also used with bitwise `&`
 /// against the raw `ReplayVersion` u32 (mirrors the TS source verbatim —
@@ -138,7 +139,8 @@ pub enum ReplayVersionHistory {
     HistoryEncryption = 6,
     HistoryCustomVersions = 7,
 }
-pub const REPLAY_VERSION_HISTORY_LATEST: ReplayVersionHistory = ReplayVersionHistory::HistoryCustomVersions;
+pub const REPLAY_VERSION_HISTORY_LATEST: ReplayVersionHistory =
+    ReplayVersionHistory::HistoryCustomVersions;
 
 /// Real bit flags (see PORTING.md correctness anchor: `HasStreamingFixes = 1<<1`,
 /// not `1<<0`). Not further bit-tested in `replay_reader.rs` itself (that

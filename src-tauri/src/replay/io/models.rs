@@ -81,7 +81,11 @@ impl FRotator {
 
 impl std::fmt::Display for FRotator {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Pitch: {}, Yaw: {}, Roll: {}", self.Pitch, self.Yaw, self.Roll)
+        write!(
+            f,
+            "Pitch: {}, Yaw: {}, Roll: {}",
+            self.Pitch, self.Yaw, self.Roll
+        )
     }
 }
 

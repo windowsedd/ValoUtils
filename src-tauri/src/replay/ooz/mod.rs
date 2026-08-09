@@ -14,10 +14,7 @@ pub use types::{DecoderException, DecoderTypes, KrakenHeader, KrakenQuantumHeade
 
 /// Ported from `package/ts-replay-parser/src/ooz/index.ts`
 /// `decompressReplayData`.
-pub fn decompress_replay_data(
-    buffer: &[u8],
-    uncompressed_size: usize,
-) -> types::DResult<Vec<u8>> {
+pub fn decompress_replay_data(buffer: &[u8], uncompressed_size: usize) -> types::DResult<Vec<u8>> {
     let mut kraken = Kraken::new();
     kraken.decompress(buffer, uncompressed_size)
 }

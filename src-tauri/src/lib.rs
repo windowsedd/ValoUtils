@@ -1,6 +1,9 @@
 mod api_docs;
 mod aptabase;
+mod client_config;
 mod commands;
+mod fake_player;
+mod presence_proxy;
 mod replay;
 mod riot;
 mod settings_decoder;
@@ -35,13 +38,29 @@ pub fn run() {
 
             let mut config_defaults = serde_json::Map::new();
             config_defaults.insert("openDevTools".into(), json!(false));
+            config_defaults.insert("presenceEnabled".into(), json!(true));
+            config_defaults.insert("presenceMode".into(), json!("offline"));
+            config_defaults.insert("presenceStartup".into(), json!("last"));
+            config_defaults.insert("presenceMucEnabled".into(), json!(true));
             config_defaults.insert("autoUpdate".into(), json!(true));
             config_defaults.insert("translatorProvider".into(), json!("google"));
             config_defaults.insert("translatorTargetLanguage".into(), json!("en"));
             config_defaults.insert("deeplApiKey".into(), json!(""));
             let config_store = Store::new("config", config_defaults);
+            let saved_presence_mode = config_store
+                .get("presenceMode")
+                .and_then(|value| value.as_str().and_then(presence_proxy::PresenceMode::parse))
+                .unwrap_or(presence_proxy::PresenceMode::Offline);
+            let presence_mode = config_store.get("presenceStartup")
+                .and_then(|value| value.as_str().and_then(presence_proxy::PresenceMode::parse))
+                .unwrap_or(saved_presence_mode);
+            let presence_enabled = config_store.get("presenceEnabled").and_then(|value| value.as_bool()).unwrap_or(true);
+            let presence_muc_enabled = config_store.get("presenceMucEnabled").and_then(|value| value.as_bool()).unwrap_or(true);
+            presence_proxy::init(presence_enabled, presence_mode, presence_muc_enabled)
+                .expect("presence controller initialized once");
 
-            let open_dev_tools = matches!(config_store.get("openDevTools"), Some(v) if v == json!(true));
+            let open_dev_tools =
+                matches!(config_store.get("openDevTools"), Some(v) if v == json!(true));
             if open_dev_tools {
                 if let Some(window) = app.get_webview_window("main") {
                     window.open_devtools();
@@ -52,19 +71,24 @@ pub fn run() {
             profiles_defaults.insert("profiles".into(), json!([]));
             let profiles_store = Store::new("profiles", profiles_defaults);
 
-            let auto_update = matches!(config_store.get("autoUpdate"), Some(v) if v == json!(true)) || config_store.get("autoUpdate").is_none();
+            let auto_update = matches!(config_store.get("autoUpdate"), Some(v) if v == json!(true))
+                || config_store.get("autoUpdate").is_none();
 
             app.manage(ConfigStore(config_store));
+            presence_proxy::attach_app(app.handle().clone())
+                .expect("presence app handle initialized once");
             app.manage(ProfilesStore(profiles_store));
             app.manage(RiotState::default());
             app.manage(commands::live::LiveCache::default());
+            app.manage(commands::live::LiveStatsCache::default());
             app.manage(commands::matches::MatchCache::default());
 
             if auto_update {
                 let app_handle = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
                     updater::check_for_updates(&app_handle, true).await;
-                    let mut interval = tokio::time::interval(std::time::Duration::from_secs(60 * 60));
+                    let mut interval =
+                        tokio::time::interval(std::time::Duration::from_secs(60 * 60));
                     interval.tick().await; // first tick fires immediately; already checked above
                     loop {
                         interval.tick().await;
@@ -103,6 +127,7 @@ pub fn run() {
             commands::profiles::share_get_data,
             commands::career::career_get,
             commands::live::live_game_fetch,
+            commands::live::live_game_stats,
             commands::live::live_game_dump,
             commands::replays::replay_list,
             commands::replays::replay_delete,
@@ -110,6 +135,13 @@ pub fn run() {
             commands::replays::replay_export_raw,
             commands::replays::replay_process,
             commands::friends::friends_get,
+            commands::fake_player::fake_player_state,
+            commands::riot_launch::riot_launch_normal,
+            commands::riot_launch::riot_launch_with_config,
+            commands::riot_launch::client_config_status,
+            commands::riot_launch::client_config_stop,
+            commands::presence::presence_status_get,
+            commands::presence::presence_status_set,
             commands::matches::match_list,
             commands::matches::match_details,
             commands::matches::match_summaries,

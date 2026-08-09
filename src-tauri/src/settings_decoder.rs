@@ -12,7 +12,9 @@ pub fn decode_profile_data(data: &str) -> Result<Value, String> {
 
     let mut decoder = flate2::read::DeflateDecoder::new(&compressed[..]);
     let mut inflated = String::new();
-    decoder.read_to_string(&mut inflated).map_err(|e| e.to_string())?;
+    decoder
+        .read_to_string(&mut inflated)
+        .map_err(|e| e.to_string())?;
 
     serde_json::from_str(&inflated).map_err(|e| e.to_string())
 }
@@ -24,7 +26,10 @@ pub fn extract_crosshair_profiles(decoded: &Value) -> Option<Value> {
         .get("stringSettings")?
         .as_array()?
         .iter()
-        .find(|s| s.get("settingEnum").and_then(|v| v.as_str()) == Some("EAresStringSettingName::SavedCrosshairProfileData"))?;
+        .find(|s| {
+            s.get("settingEnum").and_then(|v| v.as_str())
+                == Some("EAresStringSettingName::SavedCrosshairProfileData")
+        })?;
 
     let value_str = entry.get("value")?.as_str()?;
     serde_json::from_str(value_str).ok()

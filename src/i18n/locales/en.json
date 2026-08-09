@@ -9,6 +9,7 @@
     "settings": "Settings",
     "about": "About",
     "apiReference": "API Reference",
+    "dummyBot": "Bot",
     "matches": "Matches"
   },
   "common": {
@@ -25,7 +26,14 @@
   },
   "riotStatus": {
     "connecting": "Connecting...",
-    "offline": "Riot Client offline"
+    "offline": "Riot Client offline",
+    "presenceControl": "Riot presence",
+    "relayRequired": "Launch Riot Client through ValoUtils and wait for chat to connect before changing presence.",
+    "presence": {
+      "online": "Online",
+      "offline": "Offline",
+      "mobile": "Mobile"
+    }
   },
   "profiles": {
     "title": "Profiles",
@@ -114,12 +122,45 @@
     "teamAlly": "Allies",
     "teamEnemy": "Enemies",
     "players": "Players",
+    "me": "Me",
     "current": "Current",
     "peak": "Lifetime",
     "hidden": "Hidden Player",
     "vandal": "Vandal",
     "phantom": "Phantom",
-    "knife": "Knife"
+    "knife": "Knife",
+    "matchContext": "Match Context",
+    "teamAverage": "Team Average",
+    "ratedPlayers": "{{count}} rated players",
+    "detectedParties": "Detected Parties",
+    "rosterSize": "Roster Size",
+    "recentFive": "Last 5 Competitive Matches",
+    "kd": "K/D",
+    "winRate": "Win Rate",
+    "acs": "ACS",
+    "matchesAnalyzed": "{{count}} matches analyzed",
+    "unavailable": "Unavailable",
+    "refresh": "Refresh",
+    "refreshing": "Refreshing",
+    "expandPlayer": "Expand {{player}}",
+    "collapsePlayer": "Collapse {{player}}",
+    "collapseSummary": "Collapse match summary",
+    "expandSummary": "Expand match summary",
+    "retry": "Retry",
+    "partyDetected": "Detected {{party}}",
+    "skins": "Skins",
+    "matchup": "Matchup",
+    "ally": "Allies",
+    "enemy": "Enemies",
+    "averageKd": "Avg. K/D",
+    "averageWinRate": "Avg. Win %",
+    "averageAcs": "Avg. ACS",
+    "playersAnalyzed": "{{count}} players analyzed",
+    "recentHistory": "Recent Match History",
+    "win": "Win",
+    "loss": "Loss",
+    "score": "Score",
+    "noHistory": "No recent competitive match details available"
   },
   "chat": {
     "title": "Chat",
@@ -202,6 +243,8 @@
     "autoUpdateDesc": "Automatically check for updates on launch and every hour",
     "devTools": "Developer tools",
     "devToolsDesc": "Open DevTools on launch (requires restart)",
+    "dummyBot": "Bot",
+    "dummyBotDesc": "Control your Riot presence through the ValoUtils Bot — send it $help",
     "sectionAnalytics": "Analytics",
     "analyticsToggle": "Share usage data",
     "analyticsDesc": "Send anonymous usage stats to help improve ValoUtils",
@@ -364,6 +407,28 @@
     "disclaimer": "ValoUtils is not affiliated with Riot Games or Valorant",
     "sectionApp": "Application",
     "sectionLegal": "Legal"
+  },
+  "dummyBot": {
+    "title": "In-game Bot",
+    "relayTitle": "Riot relay",
+    "connected": "Connected",
+    "waiting": "Waiting",
+    "presenceMasking": "Presence masking",
+    "lobbyForwarding": "Lobby / MUC forwarding",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "launchWithRelay": "Launch with XMPP relay",
+    "launch": "Launch",
+    "launchFailed": "Launch failed.",
+    "conversationTitle": "Real in-game conversation",
+    "conversationDescription": "Read-only mirror. Send commands to {{name}} in the Riot or VALORANT client.",
+    "fallbackName": "the Bot",
+    "empty": "No relay messages yet.",
+    "mode": {
+      "online": "Online",
+      "offline": "Offline",
+      "mobile": "Mobile"
+    }
   },
   "apiReference": {
     "subtitle": "Riot Client REST API",

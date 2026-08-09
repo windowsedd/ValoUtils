@@ -240,7 +240,8 @@ impl BinaryReader {
     pub fn seek(&mut self, offset: i64, origin: SeekOrigin) {
         let invalid = offset < 0
             || offset as usize > self.length
-            || (origin == SeekOrigin::Current && offset + self.position as i64 > self.length as i64);
+            || (origin == SeekOrigin::Current
+                && offset + self.position as i64 > self.length as i64);
         if invalid {
             self.state.IsError = true;
             return;

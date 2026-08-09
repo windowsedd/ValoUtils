@@ -100,16 +100,22 @@ fn write_channels_jsonl(path: &Path, channel_opens: &[AppChannelOpen]) -> Result
 #[cfg(test)]
 mod process_replay_file_tests {
     use super::process_replay_file;
-    use crate::replay::test_support::{fixture_bytes, golden_dir, read_json, assert_json_eq};
+    use crate::replay::test_support::{assert_json_eq, fixture_bytes, golden_dir, read_json};
 
     fn check(vrf_name: &str, uuid: &str) {
         let bytes = fixture_bytes(vrf_name);
         let out_dir = std::env::temp_dir().join(format!("replay-rust-e2e-{uuid}"));
         let _ = std::fs::remove_dir_all(&out_dir);
-        process_replay_file(&bytes, &out_dir, vrf_name, |_, _| {}).expect("pipeline should succeed");
+        process_replay_file(&bytes, &out_dir, vrf_name, |_, _| {})
+            .expect("pipeline should succeed");
 
         let golden = golden_dir(uuid);
-        for file in ["positions.json", "events.json", "meta.json", "abilities.json"] {
+        for file in [
+            "positions.json",
+            "events.json",
+            "meta.json",
+            "abilities.json",
+        ] {
             let actual = read_json(&out_dir.join(file));
             let expected = read_json(&golden.join(file));
             assert_json_eq(&actual, &expected, file);
@@ -118,11 +124,17 @@ mod process_replay_file_tests {
 
     #[test]
     fn end_to_end_matches_golden_5c673443() {
-        check("5c673443-5bdc-4576-b416-aab3f62471a5.vrf", "5c673443-5bdc-4576-b416-aab3f62471a5");
+        check(
+            "5c673443-5bdc-4576-b416-aab3f62471a5.vrf",
+            "5c673443-5bdc-4576-b416-aab3f62471a5",
+        );
     }
 
     #[test]
     fn end_to_end_matches_golden_9f8b32c5() {
-        check("9f8b32c5-c243-41ec-bbbb-832582edf652.vrf", "9f8b32c5-c243-41ec-bbbb-832582edf652");
+        check(
+            "9f8b32c5-c243-41ec-bbbb-832582edf652.vrf",
+            "9f8b32c5-c243-41ec-bbbb-832582edf652",
+        );
     }
 }

@@ -3,7 +3,11 @@
 pub fn civil_from_unix_secs(secs: i64) -> (i64, u32, u32, i64, i64, i64) {
     let days = secs.div_euclid(86_400);
     let time_of_day = secs.rem_euclid(86_400);
-    let (h, m, s) = (time_of_day / 3600, (time_of_day % 3600) / 60, time_of_day % 60);
+    let (h, m, s) = (
+        time_of_day / 3600,
+        (time_of_day % 3600) / 60,
+        time_of_day % 60,
+    );
 
     let z = days + 719_468;
     let era = if z >= 0 { z } else { z - 146_096 } / 146_097;

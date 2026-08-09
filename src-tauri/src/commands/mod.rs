@@ -1,9 +1,12 @@
 pub mod app;
 pub mod career;
 pub mod chat;
+pub mod fake_player;
 pub mod friends;
 pub mod live;
 pub mod matches;
+pub mod presence;
 pub mod profiles;
 pub mod replays;
 pub mod riot;
+pub mod riot_launch;

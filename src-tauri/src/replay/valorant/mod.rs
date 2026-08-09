@@ -8,5 +8,9 @@ pub mod enums;
 pub mod models;
 pub mod replay_reader;
 
-pub use app_parser::{parse_replay_for_app, AppChannelOpen, AppExportRecord, AppParseResult, MovementSample};
-pub use replay_reader::{ExportRecord, ValorantHooks, ValorantReplay, ValorantReplayReader, ValorantReplayResult};
+pub use app_parser::{
+    parse_replay_for_app, AppChannelOpen, AppExportRecord, AppParseResult, MovementSample,
+};
+pub use replay_reader::{
+    ExportRecord, ValorantHooks, ValorantReplay, ValorantReplayReader, ValorantReplayResult,
+};

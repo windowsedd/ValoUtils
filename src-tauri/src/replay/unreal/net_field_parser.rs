@@ -27,8 +27,8 @@
 //! acceptable for a research-grade parser port, and it sidesteps all
 //! self-referential-struct/lifetime issues entirely.
 
-use crate::replay::io::farchive::{FArchive, SeekOrigin};
 use crate::replay::io::enums::VectorQuantization;
+use crate::replay::io::farchive::{FArchive, SeekOrigin};
 use crate::replay::io::net_bit_reader::NetBitReader;
 
 use super::enums::{FBitArchiveEndIndex, ParseMode, RepLayoutCmdType};
@@ -45,7 +45,10 @@ impl NetFieldParser {
         NetFieldParser { mode }
     }
 
-    pub fn player_controller_groups<'r>(&self, registry: &'r NetFieldRegistry) -> &'r std::collections::HashSet<&'static str> {
+    pub fn player_controller_groups<'r>(
+        &self,
+        registry: &'r NetFieldRegistry,
+    ) -> &'r std::collections::HashSet<&'static str> {
         &registry.player_controller_paths
     }
 
@@ -73,14 +76,26 @@ impl NetFieldParser {
         group_info.properties.iter().find(|p| p.name == property)
     }
 
-    pub fn create_type(&self, registry: &NetFieldRegistry, group: &str) -> Option<Box<dyn NetFieldModel>> {
+    pub fn create_type(
+        &self,
+        registry: &NetFieldRegistry,
+        group: &str,
+    ) -> Option<Box<dyn NetFieldModel>> {
         let desc = registry.groups.get(group)?;
         Some((desc.factory)())
     }
 
-    pub fn create_property_type(&self, registry: &NetFieldRegistry, group: &str, property_name: &str) -> Option<Box<dyn Property>> {
+    pub fn create_property_type(
+        &self,
+        registry: &NetFieldRegistry,
+        group: &str,
+        property_name: &str,
+    ) -> Option<Box<dyn Property>> {
         let group_info = registry.class_net_caches.get(group)?;
-        let prop = group_info.properties.iter().find(|p| p.name == property_name)?;
+        let prop = group_info
+            .properties
+            .iter()
+            .find(|p| p.name == property_name)?;
         prop.property_factory.map(|f| f())
     }
 
@@ -149,7 +164,15 @@ impl NetFieldParser {
             Some(d) => d,
             None => return false,
         };
-        self.read_field_into(obj, export_field, handle, export_group, group_desc, reader, guid_cache)
+        self.read_field_into(
+            obj,
+            export_field,
+            handle,
+            export_group,
+            group_desc,
+            reader,
+            guid_cache,
+        )
     }
 
     /// Shared body of [`Self::read_field`], factored out so
@@ -176,12 +199,24 @@ impl NetFieldParser {
             return true;
         }
 
-        let field_desc = match self.find_descriptor(group_desc, group_desc.uses_handles, handle, &export_field.Name) {
+        let field_desc = match self.find_descriptor(
+            group_desc,
+            group_desc.uses_handles,
+            handle,
+            &export_field.Name,
+        ) {
             Some(d) => d,
             None => return false,
         };
 
-        self.set_type(obj, field_desc, guid_cache, export_group, group_desc, reader);
+        self.set_type(
+            obj,
+            field_desc,
+            guid_cache,
+            export_group,
+            group_desc,
+            reader,
+        );
         true
     }
 
@@ -208,7 +243,12 @@ impl NetFieldParser {
             };
             Some(FieldValue::RepMovement(rm))
         } else {
-            self.read_data_type(field_info.ty, reader, field_info.element_factory, guid_cache)
+            self.read_data_type(
+                field_info.ty,
+                reader,
+                field_info.element_factory,
+                guid_cache,
+            )
         };
 
         if let Some(value) = data {
@@ -232,26 +272,52 @@ impl NetFieldParser {
                 data.resolve(guid_cache);
                 Some(FieldValue::PropertyValue(data))
             }
-            RepLayoutCmdType::PropertyBool => Some(FieldValue::Bool(reader.serialize_property_bool())),
-            RepLayoutCmdType::PropertyName => Some(FieldValue::Str(reader.serialize_property_name())),
-            RepLayoutCmdType::PropertyFloat => Some(FieldValue::F32(reader.serialize_property_float())),
-            RepLayoutCmdType::PropertyDouble => Some(FieldValue::F64(reader.serialize_property_double())),
-            RepLayoutCmdType::PropertyNativeBool => Some(FieldValue::Bool(reader.serialize_property_native_bool())),
-            RepLayoutCmdType::PropertyNetId => Some(FieldValue::Str(reader.serialize_property_net_id())),
-            RepLayoutCmdType::PropertyObject => Some(FieldValue::U32(reader.serialize_property_object())),
-            RepLayoutCmdType::PropertyRotator => Some(FieldValue::Rotator(reader.serialize_property_rotator())),
-            RepLayoutCmdType::PropertyString => Some(FieldValue::Str(reader.serialize_property_string())),
-            RepLayoutCmdType::PropertyVector10 => Some(FieldValue::Vector(reader.serialize_property_vector10())),
-            RepLayoutCmdType::PropertyVector100 => Some(FieldValue::Vector(reader.serialize_property_vector100())),
-            RepLayoutCmdType::PropertyVectorNormal => Some(FieldValue::Vector(reader.serialize_property_vector_normal())),
-            RepLayoutCmdType::PropertyVectorQ => {
-                Some(FieldValue::Vector(reader.serialize_property_quantized_vector(VectorQuantization::RoundWholeNumber)))
+            RepLayoutCmdType::PropertyBool => {
+                Some(FieldValue::Bool(reader.serialize_property_bool()))
             }
-            RepLayoutCmdType::RepMovement => Some(FieldValue::RepMovement(reader.serialize_rep_movement(
-                VectorQuantization::default(),
-                Default::default(),
-                VectorQuantization::default(),
-            ))),
+            RepLayoutCmdType::PropertyName => {
+                Some(FieldValue::Str(reader.serialize_property_name()))
+            }
+            RepLayoutCmdType::PropertyFloat => {
+                Some(FieldValue::F32(reader.serialize_property_float()))
+            }
+            RepLayoutCmdType::PropertyDouble => {
+                Some(FieldValue::F64(reader.serialize_property_double()))
+            }
+            RepLayoutCmdType::PropertyNativeBool => {
+                Some(FieldValue::Bool(reader.serialize_property_native_bool()))
+            }
+            RepLayoutCmdType::PropertyNetId => {
+                Some(FieldValue::Str(reader.serialize_property_net_id()))
+            }
+            RepLayoutCmdType::PropertyObject => {
+                Some(FieldValue::U32(reader.serialize_property_object()))
+            }
+            RepLayoutCmdType::PropertyRotator => {
+                Some(FieldValue::Rotator(reader.serialize_property_rotator()))
+            }
+            RepLayoutCmdType::PropertyString => {
+                Some(FieldValue::Str(reader.serialize_property_string()))
+            }
+            RepLayoutCmdType::PropertyVector10 => {
+                Some(FieldValue::Vector(reader.serialize_property_vector10()))
+            }
+            RepLayoutCmdType::PropertyVector100 => {
+                Some(FieldValue::Vector(reader.serialize_property_vector100()))
+            }
+            RepLayoutCmdType::PropertyVectorNormal => Some(FieldValue::Vector(
+                reader.serialize_property_vector_normal(),
+            )),
+            RepLayoutCmdType::PropertyVectorQ => Some(FieldValue::Vector(
+                reader.serialize_property_quantized_vector(VectorQuantization::RoundWholeNumber),
+            )),
+            RepLayoutCmdType::RepMovement => {
+                Some(FieldValue::RepMovement(reader.serialize_rep_movement(
+                    VectorQuantization::default(),
+                    Default::default(),
+                    VectorQuantization::default(),
+                )))
+            }
             RepLayoutCmdType::Enum => Some(FieldValue::U8(reader.serialize_property_enum())),
             RepLayoutCmdType::PropertyByte => Some(FieldValue::U8(reader.read_byte())),
             RepLayoutCmdType::PropertyInt => Some(FieldValue::I32(reader.read_int32())),
@@ -259,8 +325,12 @@ impl NetFieldParser {
             RepLayoutCmdType::PropertyUInt64 => Some(FieldValue::U64(reader.read_uint64())),
             RepLayoutCmdType::PropertyUInt16 => Some(FieldValue::U16(reader.read_uint16())),
             RepLayoutCmdType::PropertyUInt32 => Some(FieldValue::U32(reader.read_uint32())),
-            RepLayoutCmdType::PropertyVector => Some(FieldValue::Vector(reader.serialize_property_vector())),
-            RepLayoutCmdType::PropertyVector2D => Some(FieldValue::Vector2D(reader.serialize_property_vector2d())),
+            RepLayoutCmdType::PropertyVector => {
+                Some(FieldValue::Vector(reader.serialize_property_vector()))
+            }
+            RepLayoutCmdType::PropertyVector2D => {
+                Some(FieldValue::Vector2D(reader.serialize_property_vector2d()))
+            }
             RepLayoutCmdType::PropertyQuat => {
                 let mut data = element_factory.map(|f| f())?;
                 data.serialize(reader);
@@ -330,7 +400,10 @@ impl NetFieldParser {
                     return Some(FieldValue::Array(arr));
                 }
 
-                let export_field = export_group.NetFieldExports.get(handle as usize).and_then(|e| e.as_ref());
+                let export_field = export_group
+                    .NetFieldExports
+                    .get(handle as usize)
+                    .and_then(|e| e.as_ref());
                 let num_bits = reader.read_int_packed();
                 if num_bits == 0 {
                     continue;
@@ -343,10 +416,21 @@ impl NetFieldParser {
                     }
                 };
 
-                reader.set_temp_end(num_bits as usize, FBitArchiveEndIndex::ReadArrayField as u32);
+                reader.set_temp_end(
+                    num_bits as usize,
+                    FBitArchiveEndIndex::ReadArrayField as u32,
+                );
                 if is_group_type {
                     if let Some(obj) = data.as_deref_mut() {
-                        self.read_field_into(obj, export_field, handle, export_group, group_desc, reader, _guid_cache);
+                        self.read_field_into(
+                            obj,
+                            export_field,
+                            handle,
+                            export_group,
+                            group_desc,
+                            reader,
+                            _guid_cache,
+                        );
                     }
                 } else {
                     primitive = self.read_data_type(replayout, reader, None, _guid_cache);

@@ -7,7 +7,9 @@ use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter, State};
 
 fn arg(args: &[Value], index: usize) -> Option<String> {
-    args.get(index).and_then(|v| v.as_str()).map(|s| s.to_string())
+    args.get(index)
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
 }
 
 fn get_profiles(store: &Store) -> Vec<Value> {
@@ -67,26 +69,30 @@ pub async fn settings_profile_add(
     let name = format!("Profile {}", chrono_like_now());
 
     let mut profiles = get_profiles(&store);
-    let data = if profile_source == "current" {
-        let tokens = match crate::riot::client::get_tokens(&riot, false).await {
-            Ok(t) => t,
-            Err(e) => {
-                return Ok(json!({ "error": e, "profiles": profiles }).to_string());
+    let data =
+        if profile_source == "current" {
+            let tokens = match crate::riot::client::get_tokens(&riot, false).await {
+                Ok(t) => t,
+                Err(e) => {
+                    return Ok(json!({ "error": e, "profiles": profiles }).to_string());
+                }
+            };
+            match settings::get_preferences(&tokens).await {
+                Ok(prefs) => match prefs.get("data").and_then(|v| v.as_str()) {
+                    Some(d) => d.to_string(),
+                    None => return Ok(
+                        json!({ "error": "malformed preferences response", "profiles": profiles })
+                            .to_string(),
+                    ),
+                },
+                Err(e) => return Ok(json!({ "error": e, "profiles": profiles }).to_string()),
             }
+        } else if profile_source == "clipboard" {
+            use tauri_plugin_clipboard_manager::ClipboardExt;
+            app.clipboard().read_text().unwrap_or_default()
+        } else {
+            profile_source
         };
-        match settings::get_preferences(&tokens).await {
-            Ok(prefs) => match prefs.get("data").and_then(|v| v.as_str()) {
-                Some(d) => d.to_string(),
-                None => return Ok(json!({ "error": "malformed preferences response", "profiles": profiles }).to_string()),
-            },
-            Err(e) => return Ok(json!({ "error": e, "profiles": profiles }).to_string()),
-        }
-    } else if profile_source == "clipboard" {
-        use tauri_plugin_clipboard_manager::ClipboardExt;
-        app.clipboard().read_text().unwrap_or_default()
-    } else {
-        profile_source
-    };
 
     let created = now_millis();
     profiles.push(json!({ "name": name, "data": data, "created": created, "updated": created }));
@@ -96,7 +102,11 @@ pub async fn settings_profile_add(
 }
 
 #[tauri::command]
-pub fn settings_profile_remove(args: Vec<Value>, app: AppHandle, store: State<ProfilesStore>) -> String {
+pub fn settings_profile_remove(
+    args: Vec<Value>,
+    app: AppHandle,
+    store: State<ProfilesStore>,
+) -> String {
     let name = arg(&args, 0).unwrap_or_default();
     let profiles = get_profiles(&store);
     let new_profiles: Vec<Value> = profiles
@@ -109,7 +119,11 @@ pub fn settings_profile_remove(args: Vec<Value>, app: AppHandle, store: State<Pr
 }
 
 #[tauri::command]
-pub fn settings_profile_rename(args: Vec<Value>, app: AppHandle, store: State<ProfilesStore>) -> String {
+pub fn settings_profile_rename(
+    args: Vec<Value>,
+    app: AppHandle,
+    store: State<ProfilesStore>,
+) -> String {
     let name = arg(&args, 0).unwrap_or_default();
     let new_name = arg(&args, 1).unwrap_or_default();
     let mut profiles = get_profiles(&store);
@@ -121,10 +135,17 @@ pub fn settings_profile_rename(args: Vec<Value>, app: AppHandle, store: State<Pr
         }
     }
 
-    let names: Vec<&str> = profiles.iter().filter_map(|p| p.get("name").and_then(|v| v.as_str())).collect();
-    let has_duplicates = names.iter().enumerate().any(|(i, n)| names[..i].contains(n));
+    let names: Vec<&str> = profiles
+        .iter()
+        .filter_map(|p| p.get("name").and_then(|v| v.as_str()))
+        .collect();
+    let has_duplicates = names
+        .iter()
+        .enumerate()
+        .any(|(i, n)| names[..i].contains(n));
     if has_duplicates {
-        return json!({ "error": "Duplicate names", "profiles": profiles, "success": false }).to_string();
+        return json!({ "error": "Duplicate names", "profiles": profiles, "success": false })
+            .to_string();
     }
 
     set_profiles(&store, &profiles);
@@ -133,16 +154,28 @@ pub fn settings_profile_rename(args: Vec<Value>, app: AppHandle, store: State<Pr
 }
 
 #[tauri::command]
-pub fn settings_profile_duplicate(args: Vec<Value>, app: AppHandle, store: State<ProfilesStore>) -> String {
+pub fn settings_profile_duplicate(
+    args: Vec<Value>,
+    app: AppHandle,
+    store: State<ProfilesStore>,
+) -> String {
     let name = arg(&args, 0).unwrap_or_default();
     let mut profiles = get_profiles(&store);
-    let Some(profile) = profiles.iter().find(|p| p.get("name").and_then(|v| v.as_str()) == Some(name.as_str())).cloned() else {
+    let Some(profile) = profiles
+        .iter()
+        .find(|p| p.get("name").and_then(|v| v.as_str()) == Some(name.as_str()))
+        .cloned()
+    else {
         return json!({ "error": "Profile not found", "success": false }).to_string();
     };
 
     let existing_names: Vec<String> = profiles
         .iter()
-        .filter_map(|p| p.get("name").and_then(|v| v.as_str()).map(|s| s.to_string()))
+        .filter_map(|p| {
+            p.get("name")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+        })
         .collect();
     let mut new_name = format!("{name} (copy)");
     let mut copy_index = 2;
@@ -171,10 +204,16 @@ pub async fn settings_profile_load(
 ) -> Result<String, ()> {
     let name = arg(&args, 0).unwrap_or_default();
     let profiles = get_profiles(&store);
-    let Some(profile) = profiles.iter().find(|p| p.get("name").and_then(|v| v.as_str()) == Some(name.as_str())) else {
+    let Some(profile) = profiles
+        .iter()
+        .find(|p| p.get("name").and_then(|v| v.as_str()) == Some(name.as_str()))
+    else {
         return Ok(json!({ "error": "Profile not found", "success": false }).to_string());
     };
-    let data = profile.get("data").and_then(|v| v.as_str()).unwrap_or_default();
+    let data = profile
+        .get("data")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default();
 
     let tokens = match crate::riot::client::get_tokens(&riot, false).await {
         Ok(t) => t,
@@ -190,10 +229,16 @@ pub async fn settings_profile_load(
 pub fn settings_profile_view(args: Vec<Value>, store: State<ProfilesStore>) -> String {
     let name = arg(&args, 0).unwrap_or_default();
     let profiles = get_profiles(&store);
-    let Some(profile) = profiles.iter().find(|p| p.get("name").and_then(|v| v.as_str()) == Some(name.as_str())) else {
+    let Some(profile) = profiles
+        .iter()
+        .find(|p| p.get("name").and_then(|v| v.as_str()) == Some(name.as_str()))
+    else {
         return json!({ "error": "Profile not found", "success": false }).to_string();
     };
-    let data = profile.get("data").and_then(|v| v.as_str()).unwrap_or_default();
+    let data = profile
+        .get("data")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default();
     view_settings_blob(data)
 }
 
@@ -207,7 +252,10 @@ pub async fn settings_current_view(riot: State<'_, RiotState>) -> Result<String,
         Ok(p) => p,
         Err(e) => return Ok(json!({ "error": e, "success": false }).to_string()),
     };
-    let data = prefs.get("data").and_then(|v| v.as_str()).unwrap_or_default();
+    let data = prefs
+        .get("data")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default();
     Ok(view_settings_blob(data))
 }
 
@@ -222,13 +270,23 @@ fn view_settings_blob(data: &str) -> String {
 }
 
 #[tauri::command]
-pub async fn settings_profile_share(args: Vec<Value>, store: State<'_, ProfilesStore>) -> Result<String, ()> {
+pub async fn settings_profile_share(
+    args: Vec<Value>,
+    store: State<'_, ProfilesStore>,
+) -> Result<String, ()> {
     let name = arg(&args, 0).unwrap_or_default();
     let profiles = get_profiles(&store);
-    let Some(profile) = profiles.iter().find(|p| p.get("name").and_then(|v| v.as_str()) == Some(name.as_str())) else {
+    let Some(profile) = profiles
+        .iter()
+        .find(|p| p.get("name").and_then(|v| v.as_str()) == Some(name.as_str()))
+    else {
         return Ok(json!({ "error": "Profile not found", "success": false }).to_string());
     };
-    let data = profile.get("data").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+    let data = profile
+        .get("data")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string();
 
     match share::save_data(data).await {
         Ok(code) => Ok(json!({ "code": code, "success": true }).to_string()),
