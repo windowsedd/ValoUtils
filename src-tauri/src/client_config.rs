@@ -25,7 +25,7 @@ use std::sync::{Mutex, OnceLock};
 
 const UPSTREAM: &str = "https://clientconfig.rpg.riotgames.com";
 const PAS_CHAT_URL: &str = "https://riot-geo.pas.si.riotgames.com/pas/v1/service/chat";
-pub const LOCAL_CHAT_HOST: &str = "deceive-localhost.molenzwiebel.xyz";
+pub const LOCAL_CHAT_HOST: &str = "valoutils-tools.windowsed.me";
 pub const DEFAULT_PORT: u16 = 8000;
 pub const HEALTH_PATH: &str = "/__valoutils/health";
 
@@ -334,12 +334,12 @@ mod tests {
 
         assert_eq!(
             result.json["chat.host"],
-            "deceive-localhost.molenzwiebel.xyz"
+            "valoutils-tools.windowsed.me"
         );
         assert_eq!(result.json["chat.port"], 43123);
         assert_eq!(
             result.json["chat.affinities"]["na1"],
-            "deceive-localhost.molenzwiebel.xyz"
+            "valoutils-tools.windowsed.me"
         );
         assert!(result.json.get("chat.allow_bad_cert.enabled").is_none());
         assert_eq!(result.json["unrelated"], "kept");
