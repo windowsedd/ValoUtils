@@ -35,9 +35,6 @@ jobs:
       - name: Install dependencies
         run: bun install
 
-      - name: Build sidecar
-        run: bun run build:sidecar
-
       # On a version tag → build, sign, and publish a GitHub Release.
       - name: Build & Publish
         if: startsWith(github.ref, 'refs/tags/v')
@@ -52,15 +49,10 @@ jobs:
           releaseDraft: true
           prerelease: false
 
-      # On every other push/PR → just build, upload artifact.
-      - name: Build
+      # On every other push/PR → build an unsigned NSIS installer and upload it.
+      - name: Build NSIS installer (unsigned)
         if: "!startsWith(github.ref, 'refs/tags/v')"
-        run: bun run build:vite
-
-      - name: Build (Tauri, unsigned)
-        if: "!startsWith(github.ref, 'refs/tags/v')"
-        run: bunx tauri build --no-bundle
-        continue-on-error: true
+        run: bunx tauri build --bundles nsis
 
       - name: Upload artifact
         if: "!startsWith(github.ref, 'refs/tags/v')"
@@ -68,5 +60,5 @@ jobs:
         with:
           name: ValoUtils-windows-${{ github.sha }}
           path: src-tauri/target/release/bundle/nsis/*.exe
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 7
