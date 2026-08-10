@@ -40,7 +40,7 @@ The command updates these version locations:
 8. Stage only the four version files.
 9. Create commit `chore(release): v<version>`.
 10. Create annotated tag `v<version>` with message `ValoUtils v<version>`.
-11. Print the resulting commit and the manual push command `git push origin master --follow-tags`.
+11. Print the resulting commit and the manual push command `git push origin HEAD:master --follow-tags`, which works even when the release commit was created on a differently named local branch.
 
 The script does not push, publish a GitHub Release, or change branches. GitHub Actions handles the release after the maintainer pushes the tag.
 
