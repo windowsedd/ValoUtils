@@ -1,4 +1,5 @@
 import { readFileSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 
 const VERSION = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
@@ -137,6 +138,38 @@ export function updateVersionFiles(root: string, version: string) {
 	}
 }
 
+function git(root: string, args: string[]) {
+	const result = spawnSync("git", args, {
+		cwd: root,
+		encoding: "utf8",
+	});
+	if (result.status !== 0) {
+		const detail = result.stderr.trim() || result.stdout.trim();
+		throw new Error(`git ${args.join(" ")} failed${detail ? `:\n${detail}` : ""}`);
+	}
+	return result.stdout.trim();
+}
+
+function createRelease(root: string, version: string) {
+	if (git(root, ["status", "--porcelain", "--untracked-files=all"])) {
+		throw new Error("The Git worktree must be clean before creating a release");
+	}
+	const tag = `v${version}`;
+	if (git(root, ["tag", "--list", tag])) {
+		throw new Error(`The tag ${tag} already exists`);
+	}
+
+	updateVersionFiles(root, version);
+	assertVersions(readVersions(root), version);
+	git(root, ["add", "--", ...VERSION_PATHS]);
+	git(root, ["commit", "-m", `chore(release): ${tag}`]);
+	git(root, ["tag", "-a", tag, "-m", `ValoUtils ${tag}`]);
+	const commit = git(root, ["rev-parse", "HEAD"]);
+	console.log(`Created ${tag} at ${commit}`);
+	console.log("Review the release, then push it with:");
+	console.log("git push origin HEAD:master --follow-tags");
+}
+
 function main() {
 	const { mode, version } = parseInvocation(Bun.argv.slice(2));
 	const root = process.cwd();
@@ -145,7 +178,7 @@ function main() {
 		console.log(`Version metadata matches ${version}`);
 		return;
 	}
-	throw new Error("Release mode is not implemented yet");
+	createRelease(root, version);
 }
 
 if (import.meta.main) {

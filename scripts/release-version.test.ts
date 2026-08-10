@@ -44,6 +44,28 @@ function run(root: string, ...args: string[]) {
 	});
 }
 
+function git(root: string, ...args: string[]) {
+	const result = Bun.spawnSync(["git", ...args], {
+		cwd: root,
+		stdout: "pipe",
+		stderr: "pipe",
+	});
+	if (result.exitCode !== 0) {
+		throw new Error(result.stderr.toString());
+	}
+	return result.stdout.toString().trim();
+}
+
+function initializeGit(root: string) {
+	git(root, "init");
+	git(root, "config", "user.name", "Release Test");
+	git(root, "config", "user.email", "release-test@example.invalid");
+	git(root, "config", "commit.gpgsign", "false");
+	git(root, "config", "tag.gpgsign", "false");
+	git(root, "add", ".");
+	git(root, "commit", "-m", "initial");
+}
+
 afterEach(() => {
 	for (const root of roots.splice(0)) {
 		rmSync(root, { recursive: true, force: true });
@@ -119,5 +141,59 @@ describe("version updates", () => {
 		expect(() => updateVersionFiles(root, "2.0.0")).toThrow(
 			"src-tauri/Cargo.lock",
 		);
+	});
+});
+
+describe("release mode", () => {
+	test("creates a release commit and annotated tag without a remote", () => {
+		const root = fixture();
+		initializeGit(root);
+
+		const result = run(root, "2.0.0");
+
+		expect(result.exitCode).toBe(0);
+		expect(readVersions(root)).toEqual({
+			"package.json": "2.0.0",
+			"src-tauri/tauri.conf.json": "2.0.0",
+			"src-tauri/Cargo.toml": "2.0.0",
+			"src-tauri/Cargo.lock": "2.0.0",
+		});
+		expect(git(root, "log", "-1", "--pretty=%s")).toBe(
+			"chore(release): v2.0.0",
+		);
+		expect(git(root, "tag", "--list", "v2.0.0")).toBe("v2.0.0");
+		expect(git(root, "cat-file", "-t", "v2.0.0")).toBe("tag");
+		expect(git(root, "remote")).toBe("");
+		expect(result.stdout.toString()).toContain(
+			"git push origin HEAD:master --follow-tags",
+		);
+	});
+
+	test("rejects a dirty worktree before editing", () => {
+		const root = fixture();
+		initializeGit(root);
+		writeFileSync(join(root, "notes.txt"), "local change\n");
+		const before = readVersions(root);
+
+		const result = run(root, "2.0.0");
+
+		expect(result.exitCode).not.toBe(0);
+		expect(result.stderr.toString()).toContain("worktree must be clean");
+		expect(readVersions(root)).toEqual(before);
+		expect(git(root, "log", "-1", "--pretty=%s")).toBe("initial");
+	});
+
+	test("rejects an existing tag before editing", () => {
+		const root = fixture();
+		initializeGit(root);
+		git(root, "tag", "-a", "v2.0.0", "-m", "existing");
+		const before = readVersions(root);
+
+		const result = run(root, "2.0.0");
+
+		expect(result.exitCode).not.toBe(0);
+		expect(result.stderr.toString()).toContain("tag v2.0.0 already exists");
+		expect(readVersions(root)).toEqual(before);
+		expect(git(root, "log", "-1", "--pretty=%s")).toBe("initial");
 	});
 });
