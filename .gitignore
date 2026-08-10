@@ -54,3 +54,11 @@ src-tauri/binaries/*.exe
 
 # Local isolated development worktrees
 .worktrees/
+tools/win-acme
+
+# Superpowers game engine
+.superpowers/
+docs/*
+docs/plans/*
+docs/designs/*
+docs/superpowers/*

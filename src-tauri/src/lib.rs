@@ -1,3 +1,6 @@
+#![allow(dead_code)]
+#![allow(unused_imports)]
+
 mod api_docs;
 mod aptabase;
 mod client_config;
@@ -51,11 +54,18 @@ pub fn run() {
                 .get("presenceMode")
                 .and_then(|value| value.as_str().and_then(presence_proxy::PresenceMode::parse))
                 .unwrap_or(presence_proxy::PresenceMode::Offline);
-            let presence_mode = config_store.get("presenceStartup")
+            let presence_mode = config_store
+                .get("presenceStartup")
                 .and_then(|value| value.as_str().and_then(presence_proxy::PresenceMode::parse))
                 .unwrap_or(saved_presence_mode);
-            let presence_enabled = config_store.get("presenceEnabled").and_then(|value| value.as_bool()).unwrap_or(true);
-            let presence_muc_enabled = config_store.get("presenceMucEnabled").and_then(|value| value.as_bool()).unwrap_or(true);
+            let presence_enabled = config_store
+                .get("presenceEnabled")
+                .and_then(|value| value.as_bool())
+                .unwrap_or(true);
+            let presence_muc_enabled = config_store
+                .get("presenceMucEnabled")
+                .and_then(|value| value.as_bool())
+                .unwrap_or(true);
             presence_proxy::init(presence_enabled, presence_mode, presence_muc_enabled)
                 .expect("presence controller initialized once");
 
