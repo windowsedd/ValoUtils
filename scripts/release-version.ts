@@ -121,6 +121,9 @@ export function assertVersions(versions: VersionState, expected: string) {
 }
 
 export function updateVersionFiles(root: string, version: string) {
+	if (!VERSION.test(version)) {
+		throw new Error("Version must use MAJOR.MINOR.PATCH format");
+	}
 	readVersions(root);
 	for (const path of ["package.json", "src-tauri/tauri.conf.json"] as const) {
 		const absolutePath = join(root, path);
@@ -162,8 +165,24 @@ function createRelease(root: string, version: string) {
 	updateVersionFiles(root, version);
 	assertVersions(readVersions(root), version);
 	git(root, ["add", "--", ...VERSION_PATHS]);
-	git(root, ["commit", "-m", `chore(release): ${tag}`]);
-	git(root, ["tag", "-a", tag, "-m", `ValoUtils ${tag}`]);
+	try {
+		git(root, ["commit", "-m", `chore(release): ${tag}`]);
+	} catch (error) {
+		throw new Error(
+			`${error instanceof Error ? error.message : String(error)}\n` +
+				"Release files were updated and staged, but the commit failed. " +
+				"Inspect them with git diff --cached and resolve the Git error before committing.",
+		);
+	}
+	try {
+		git(root, ["tag", "-a", tag, "-m", `ValoUtils ${tag}`]);
+	} catch (error) {
+		throw new Error(
+			`${error instanceof Error ? error.message : String(error)}\n` +
+				`The release commit was created, but tag ${tag} failed. ` +
+				`Resolve the Git signing error, then create it with git tag -a ${tag} -m "ValoUtils ${tag}".`,
+		);
+	}
 	const commit = git(root, ["rev-parse", "HEAD"]);
 	console.log(`Created ${tag} at ${commit}`);
 	console.log("Review the release, then push it with:");

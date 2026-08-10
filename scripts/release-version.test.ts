@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import {
+	chmodSync,
 	mkdtempSync,
 	mkdirSync,
 	readFileSync,
@@ -142,6 +143,16 @@ describe("version updates", () => {
 			"src-tauri/Cargo.lock",
 		);
 	});
+
+	test("rejects an invalid version before editing", () => {
+		const root = fixture();
+		const before = readVersions(root);
+
+		expect(() => updateVersionFiles(root, "v2.0.0")).toThrow(
+			"MAJOR.MINOR.PATCH",
+		);
+		expect(readVersions(root)).toEqual(before);
+	});
 });
 
 describe("release mode", () => {
@@ -195,6 +206,49 @@ describe("release mode", () => {
 		expect(result.stderr.toString()).toContain("tag v2.0.0 already exists");
 		expect(readVersions(root)).toEqual(before);
 		expect(git(root, "log", "-1", "--pretty=%s")).toBe("initial");
+	});
+
+	test("reports staged files when the release commit fails", () => {
+		const root = fixture();
+		initializeGit(root);
+		const hook = join(root, ".git", "hooks", "pre-commit");
+		writeFileSync(hook, "#!/bin/sh\nexit 1\n");
+		chmodSync(hook, 0o755);
+
+		const result = run(root, "2.0.0");
+
+		expect(result.exitCode).not.toBe(0);
+		expect(result.stderr.toString()).toContain(
+			"Release files were updated and staged, but the commit failed",
+		);
+		expect(git(root, "diff", "--cached", "--name-only").split("\n")).toEqual([
+			"package.json",
+			"src-tauri/Cargo.lock",
+			"src-tauri/Cargo.toml",
+			"src-tauri/tauri.conf.json",
+		]);
+		expect(git(root, "log", "-1", "--pretty=%s")).toBe("initial");
+	});
+
+	test("reports an untagged release commit when tag creation fails", () => {
+		const root = fixture();
+		initializeGit(root);
+		const failingGpg = join(root, ".git", "fail-gpg.sh");
+		writeFileSync(failingGpg, "#!/bin/sh\nexit 1\n");
+		chmodSync(failingGpg, 0o755);
+		git(root, "config", "tag.gpgSign", "true");
+		git(root, "config", "gpg.program", failingGpg.replaceAll("\\", "/"));
+
+		const result = run(root, "2.0.0");
+
+		expect(result.exitCode).not.toBe(0);
+		expect(result.stderr.toString()).toContain(
+			"The release commit was created, but tag v2.0.0 failed",
+		);
+		expect(git(root, "log", "-1", "--pretty=%s")).toBe(
+			"chore(release): v2.0.0",
+		);
+		expect(git(root, "tag", "--list", "v2.0.0")).toBe("");
 	});
 });
 
