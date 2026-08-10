@@ -1,56 +1,48 @@
 {
-  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "ValoUtils",
-  "version": "1.0.3",
-  "identifier": "com.windowsedd.valoutils",
-  "build": {
-    "frontendDist": "../dist",
-    "devUrl": "http://localhost:5173",
-    "beforeDevCommand": "bun run dev:vite",
-    "beforeBuildCommand": "bun run build:vite"
-  },
-  "app": {
-    "windows": [
-      {
-        "title": "ValoUtils",
-        "width": 1000,
-        "height": 720,
-        "minWidth": 760,
-        "minHeight": 560,
-        "resizable": true,
-        "fullscreen": false
-      }
-    ],
-    "security": {
-      "csp": null
-    }
-  },
-  "bundle": {
-    "active": true,
-    "targets": ["nsis"],
-    "icon": [
-      "icons/32x32.png",
-      "icons/128x128.png",
-      "icons/128x128@2x.png",
-      "icons/icon.icns",
-      "icons/icon.ico"
-    ],
-    "windows": {
-      "nsis": {
-        "installMode": "currentUser",
-        "installerIcon": "icons/icon.ico"
-      }
-    }
-  },
-  "plugins": {
-    "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEQ5MEMwMjBCODc1QTVFQ0IKUldUTFhscUhDd0lNMmVCbzlPNWI4OTlvRzVuSUcrWWpVT2R5bi9CK3VQcnF6c094cTdpek05MWIK",
-      "endpoints": [
-        "https://github.com/windowsedd/ValoUtils/releases/latest/download/latest.json"
-      ],
-      "windows": {
-        "installMode": "passive"
-      }
-    }
-  }
+	"$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+	"productName": "ValoUtils",
+	"version": "1.0.4",
+	"identifier": "com.windowsedd.valoutils",
+	"build": {
+		"frontendDist": "../dist",
+		"devUrl": "http://localhost:5173",
+		"beforeDevCommand": "bun run dev:vite",
+		"beforeBuildCommand": "bun run build:vite"
+	},
+	"app": {
+		"windows": [
+			{
+				"title": "ValoUtils",
+				"width": 1000,
+				"height": 720,
+				"minWidth": 760,
+				"minHeight": 560,
+				"resizable": true,
+				"fullscreen": false
+			}
+		],
+		"security": {
+			"csp": null
+		}
+	},
+	"bundle": {
+		"active": true,
+		"targets": ["nsis"],
+		"icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"],
+		"windows": {
+			"nsis": {
+				"installMode": "currentUser",
+				"installerIcon": "icons/icon.ico"
+			}
+		}
+	},
+	"plugins": {
+		"updater": {
+			"pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEQ5MEMwMjBCODc1QTVFQ0IKUldUTFhscUhDd0lNMmVCbzlPNWI4OTlvRzVuSUcrWWpVT2R5bi9CK3VQcnF6c094cTdpek05MWIK",
+			"endpoints": ["https://github.com/windowsedd/ValoUtils/releases/latest/download/latest.json"],
+			"windows": {
+				"installMode": "passive"
+			}
+		}
+	}
 }
