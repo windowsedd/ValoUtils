@@ -35,6 +35,13 @@ jobs:
       - name: Install dependencies
         run: bun install
 
+      - name: Verify release version
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $releaseVersion = '${{ github.ref_name }}'.Substring(1)
+          bun run version:check $releaseVersion
+
       # On a version tag → build, sign, and publish a GitHub Release.
       - name: Build & Publish
         if: startsWith(github.ref, 'refs/tags/v')

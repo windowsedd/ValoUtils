@@ -197,3 +197,16 @@ describe("release mode", () => {
 		expect(git(root, "log", "-1", "--pretty=%s")).toBe("initial");
 	});
 });
+
+describe("package commands", () => {
+	test("exposes release and read-only check commands", () => {
+		const packageJson = JSON.parse(
+			readFileSync(resolve(import.meta.dir, "..", "package.json"), "utf8"),
+		) as { scripts: Record<string, string> };
+
+		expect(packageJson.scripts.version).toBe("bun scripts/release-version.ts");
+		expect(packageJson.scripts["version:check"]).toBe(
+			"bun scripts/release-version.ts --check",
+		);
+	});
+});
