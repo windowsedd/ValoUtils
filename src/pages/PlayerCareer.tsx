@@ -112,14 +112,7 @@ const PlayerCareer = () => {
 
 	return (
 		<div className="flex h-full flex-col animate-fade-in">
-			<PageHeader icon={<FaTrophy className="text-lg text-[#ff4655]" />} title={t("career.title")}>
-				{!loading && !error && !loginRequired && currentTier > 0 && (
-					<span className="flex items-center gap-2 text-xs font-semibold" style={{ color }}>
-						<RankBadge tier={currentTier} tiers={tiers} size={18} />
-						{tierName(currentTier)}
-					</span>
-				)}
-			</PageHeader>
+			<PageHeader icon={<FaTrophy className="text-lg text-[#ff4655]" />} title={t("career.title")} />
 
 			<div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-6 pb-6">
 				{loading && (

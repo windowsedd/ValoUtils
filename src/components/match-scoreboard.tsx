@@ -13,6 +13,8 @@ import { tierName } from "@/util/valorant-ranks";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { isMatchPlayerHighlighted } from "./match-player-highlight";
+import { matchPlayerSubtitle } from "./match-player-subtitle";
+import { scoreboardPlayerInteraction } from "./match-scoreboard-selection";
 
 /** CDN lookups every match view needs. Each getter memoises at module scope. */
 export type MatchAssets = {
@@ -56,7 +58,7 @@ export const useMatchDetails = () => {
 	// and several cards can be in flight at once.
 	useEffect(() => {
 		if (!window.Main) return;
-		window.Main.on("match:details", (message: string) => {
+		const onMatchDetails = (message: string) => {
 			const res = JSON.parse(message) as MatchDetailsResponse;
 			const id = res.success ? res.match.matchId : res.matchId;
 			if (!id) return;
@@ -68,8 +70,9 @@ export const useMatchDetails = () => {
 				next.delete(id);
 				return next;
 			});
-		});
-		return () => window.Main.removeAllListeners("match:details");
+		};
+		window.Main.on("match:details", onMatchDetails);
+		return () => window.Main.removeListener("match:details", onMatchDetails);
 	}, []);
 
 	/** Fetch one match; already-loaded or in-flight ids are no-ops. */
@@ -128,16 +131,19 @@ const Stat = ({ label, value, color }: { label: string; value: string; color?: s
 	</div>
 );
 
-const ScoreboardRow = ({ player, assets, highlighted }: { player: MatchPlayer; assets: MatchAssets; highlighted: boolean }) => {
+const ScoreboardRow = ({ player, assets, highlighted, onPlayerSelect, coachLabel }: {
+	player: MatchPlayer;
+	assets: MatchAssets;
+	highlighted: boolean;
+	onPlayerSelect?: (player: MatchPlayer) => void;
+	coachLabel: string;
+}) => {
 	const agent = assets.agents.get(player.characterId.toLowerCase());
 	const tierIcon = player.competitiveTier > 0 ? assets.tiers.get(player.competitiveTier)?.icon : undefined;
+	const interaction = scoreboardPlayerInteraction(player, onPlayerSelect);
 
-	return (
-		<div
-			className={`flex items-center gap-3 rounded-lg px-2 py-1.5 transition-colors ${
-				highlighted ? "bg-white/6" : "hover:bg-white/4"
-			}`}
-		>
+	const content = (
+		<>
 			<span className="w-0.5 self-stretch rounded-full shrink-0" style={{ background: teamColor(player.teamId) }} />
 			{agent?.icon ? (
 				<img src={agent.icon} alt={localize(agent.name)} title={localize(agent.name)} className="w-7 h-7 rounded shrink-0" />
@@ -149,7 +155,9 @@ const ScoreboardRow = ({ player, assets, highlighted }: { player: MatchPlayer; a
 					<span className={highlighted ? "text-white" : "text-gray-300"}>{player.gameName || "—"}</span>
 					{player.tagLine && <span className="text-gray-600">#{player.tagLine}</span>}
 				</p>
-				<p className="text-[10px] text-gray-600 truncate">{agent ? localize(agent.name) : ""}</p>
+				<p className="text-[10px] text-gray-600 truncate">
+					{matchPlayerSubtitle(player, agent ? localize(agent.name) : "", coachLabel)}
+				</p>
 			</div>
 			{tierIcon && (
 				<img src={tierIcon} alt={tierName(player.competitiveTier)} title={tierName(player.competitiveTier)} className="w-5 h-5 shrink-0" />
@@ -160,7 +168,23 @@ const ScoreboardRow = ({ player, assets, highlighted }: { player: MatchPlayer; a
 			<span className="w-12 text-right text-xs font-semibold tabular-nums text-white shrink-0">{player.acs}</span>
 			<span className="w-12 text-right text-xs tabular-nums text-gray-400 shrink-0">{player.adr}</span>
 			<span className="w-12 text-right text-xs tabular-nums text-gray-400 shrink-0">{player.headshotPercent.toFixed(0)}%</span>
-		</div>
+		</>
+	);
+	const className = `flex w-full items-center gap-3 rounded-lg px-2 py-1.5 text-left transition-colors ${
+		highlighted ? "bg-white/6" : "hover:bg-white/4"
+	}`;
+
+	return interaction.selectable ? (
+		<button
+			type="button"
+			onClick={interaction.activate}
+			aria-label={interaction.label}
+			className={`${className} cursor-pointer hover:bg-white/6 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-cyan-400`}
+		>
+			{content}
+		</button>
+	) : (
+		<div className={className}>{content}</div>
 	);
 };
 
@@ -174,7 +198,15 @@ export const MatchScoreboard = ({
 	loading,
 	error,
 	highlightPuuid,
-}: { details?: MatchDetails; assets: MatchAssets; loading?: boolean; error?: string; highlightPuuid?: string }) => {
+	onPlayerSelect,
+}: {
+	details?: MatchDetails;
+	assets: MatchAssets;
+	loading?: boolean;
+	error?: string;
+	highlightPuuid?: string;
+	onPlayerSelect?: (player: MatchPlayer) => void;
+}) => {
 	const { t } = useTranslation();
 	if (loading) return <p className="text-xs text-gray-500 px-2 py-3">{t("matches.loadingDetails")}</p>;
 	if (error) return <p className="text-xs text-red-300 px-2 py-3">{error}</p>;
@@ -220,7 +252,14 @@ export const MatchScoreboard = ({
 					<span className="w-12 text-right shrink-0">{t("matches.hs")}</span>
 				</div>
 				{details.players.map((player) => (
-					<ScoreboardRow key={player.subject} player={player} assets={assets} highlighted={isMatchPlayerHighlighted(player, highlightPuuid)} />
+					<ScoreboardRow
+						key={player.subject}
+						player={player}
+						assets={assets}
+						highlighted={isMatchPlayerHighlighted(player, highlightPuuid)}
+						onPlayerSelect={onPlayerSelect}
+						coachLabel={t("matches.coach")}
+					/>
 				))}
 			</div>
 

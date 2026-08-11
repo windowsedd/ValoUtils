@@ -5,12 +5,13 @@ import {
 	useMatchDetails,
 	type MatchAssets,
 } from "@/components/match-scoreboard";
+import { useMatchPlayerProfileModal } from "@/components/match-player-profile-modal";
 import { PageHeader, SectionCard } from "@/components/section-card";
 import { localize } from "@/util/valorant-assets";
 import type { MatchDetails, MatchListEntry, MatchListResponse } from "@/types/matches";
 import { mapIcon, mapName } from "@/util/valorant-maps";
 import { queueAccent, queueLabel } from "@/util/valorant-queues";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ComponentProps } from "react";
 import { useTranslation } from "react-i18next";
 import { FaChevronDown, FaClockRotateLeft } from "react-icons/fa6";
 
@@ -24,6 +25,7 @@ const MatchCard = ({
 	expanded,
 	onToggle,
 	assets,
+	onPlayerSelect,
 }: {
 	entry: MatchListEntry;
 	details?: MatchDetails;
@@ -32,6 +34,7 @@ const MatchCard = ({
 	expanded: boolean;
 	onToggle: () => void;
 	assets: MatchAssets;
+	onPlayerSelect: NonNullable<ComponentProps<typeof MatchScoreboard>["onPlayerSelect"]>;
 }) => {
 	const self = details?.players.find((p) => p.isSelf);
 	const map = details ? mapName(details.mapId, assets.maps) : "";
@@ -91,7 +94,7 @@ const MatchCard = ({
 
 			{expanded && (
 				<div className="px-3 pb-3">
-					<MatchScoreboard details={details} assets={assets} loading={loading} error={error} />
+					<MatchScoreboard details={details} assets={assets} loading={loading} error={error} onPlayerSelect={onPlayerSelect} />
 				</div>
 			)}
 		</div>
@@ -108,6 +111,7 @@ const Matches = () => {
 	const [loginRequired, setLoginRequired] = useState(false);
 
 	const assets = useMatchAssets();
+	const openMatchPlayerProfile = useMatchPlayerProfileModal(assets);
 	const { details, errors, pending, ensure, prefetch } = useMatchDetails();
 
 	useEffect(() => {
@@ -192,6 +196,7 @@ const Matches = () => {
 									expanded={expanded.has(entry.matchId)}
 									onToggle={() => toggle(entry.matchId)}
 									assets={assets}
+									onPlayerSelect={openMatchPlayerProfile}
 								/>
 							))
 						)}

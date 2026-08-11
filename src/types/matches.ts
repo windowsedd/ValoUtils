@@ -17,6 +17,7 @@ export type MatchPlayer = {
 	subject: string;
 	gameName: string;
 	tagLine: string;
+	role: "player" | "coach";
 	teamId: string;
 	partyId: string;
 	characterId: string;

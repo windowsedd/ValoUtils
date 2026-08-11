@@ -1,4 +1,5 @@
 import { MatchScoreboard, useMatchAssets, useMatchDetails } from "@/components/match-scoreboard";
+import { useMatchPlayerProfileModal } from "@/components/match-player-profile-modal";
 import { SectionCard, SectionRow } from "@/components/section-card";
 import type { FriendMatch } from "@/types/friend-profile";
 import { localize } from "@/util/valorant-assets";
@@ -13,12 +14,16 @@ import { availableFriendQueues, filterFriendMatches } from "./friend-match-filte
 export const FriendMatchHistory = ({
 	puuid,
 	matches,
+	playerProfilesEnabled = true,
 }: {
 	puuid: string;
 	matches: FriendMatch[];
+	playerProfilesEnabled?: boolean;
 }) => {
 	const { t } = useTranslation();
 	const assets = useMatchAssets();
+	const openPlayerProfileModal = useMatchPlayerProfileModal(assets);
+	const openMatchPlayerProfile = playerProfilesEnabled ? openPlayerProfileModal : undefined;
 	const { details, errors, pending, ensure, prefetch } = useMatchDetails();
 	const [expanded, setExpanded] = useState<Set<string>>(new Set());
 	const [queue, setQueue] = useState("all");
@@ -120,6 +125,7 @@ export const FriendMatchHistory = ({
 									loading={pending.has(matchId)}
 									error={errors[matchId]}
 									highlightPuuid={puuid}
+									onPlayerSelect={openMatchPlayerProfile}
 								/>
 							</div>
 						)}
