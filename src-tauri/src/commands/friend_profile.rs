@@ -3,7 +3,104 @@ use crate::riot::api;
 use crate::riot::client::RiotState;
 use serde_json::{json, Value};
 use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant};
 use tauri::State;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct LeaderboardThresholds {
+    immortal_two: i64,
+    immortal_three: i64,
+    radiant: i64,
+}
+
+#[derive(Clone)]
+struct CachedLeaderboardThresholds {
+    thresholds: LeaderboardThresholds,
+    fetched_at: Instant,
+}
+
+const LEADERBOARD_CACHE_TTL: Duration = Duration::from_secs(5 * 60);
+
+fn leaderboard_cache() -> &'static Mutex<HashMap<String, CachedLeaderboardThresholds>> {
+    static CACHE: OnceLock<Mutex<HashMap<String, CachedLeaderboardThresholds>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn non_negative_integer(value: Option<&Value>) -> Option<i64> {
+    value.and_then(Value::as_i64).filter(|value| *value >= 0)
+}
+
+fn parse_leaderboard_thresholds(value: &Value) -> Option<LeaderboardThresholds> {
+    let details = value.get("tierDetails")?.as_object()?;
+    let threshold = |tier: &str| {
+        non_negative_integer(
+            details
+                .get(tier)
+                .and_then(|detail| detail.get("rankedRatingThreshold")),
+        )
+    };
+    let immortal_two = threshold("25")?;
+    let immortal_three = threshold("26")?;
+    let configured_radiant = threshold("27")?;
+    let top_tier = non_negative_integer(value.get("topTierRRThreshold"))?;
+    let radiant = configured_radiant.max(top_tier);
+    (immortal_two <= immortal_three && immortal_three <= radiant).then_some(LeaderboardThresholds {
+        immortal_two,
+        immortal_three,
+        radiant,
+    })
+}
+
+fn resolve_current_tier(raw_tier: i64, rr: i64, thresholds: Option<&LeaderboardThresholds>) -> i64 {
+    if !(24..=27).contains(&raw_tier) {
+        return raw_tier;
+    }
+    let Some(thresholds) = thresholds else {
+        return raw_tier;
+    };
+    if rr >= thresholds.radiant {
+        27
+    } else if rr >= thresholds.immortal_three {
+        26
+    } else if rr >= thresholds.immortal_two {
+        25
+    } else {
+        24
+    }
+}
+
+async fn current_leaderboard_thresholds(
+    api: &api::RiotApiClient,
+    season_id: &str,
+) -> Option<LeaderboardThresholds> {
+    let cache_key = format!(
+        "{}:{}",
+        api.region.to_ascii_lowercase(),
+        season_id.to_ascii_lowercase()
+    );
+    let now = Instant::now();
+    if let Ok(cache) = leaderboard_cache().lock() {
+        if let Some(cached) = cache.get(&cache_key) {
+            if now.saturating_duration_since(cached.fetched_at) < LEADERBOARD_CACHE_TTL {
+                return Some(cached.thresholds.clone());
+            }
+        }
+    }
+
+    let response = api.get_competitive_leaderboard(season_id).await.ok()?;
+    let thresholds = parse_leaderboard_thresholds(&response)?;
+    if let Ok(mut cache) = leaderboard_cache().lock() {
+        cache.insert(
+            cache_key,
+            CachedLeaderboardThresholds {
+                thresholds: thresholds.clone(),
+                fetched_at: now,
+            },
+        );
+    }
+    Some(thresholds)
+}
 
 fn friend_match_history_indices() -> (u32, u32) {
     (0, 25)
@@ -79,8 +176,14 @@ fn normalize_friend_matches(history: &Value, competitive_updates: &Value) -> Vec
         .collect()
 }
 
-fn normalize_friend_profile(mmr: &Value, competitive_updates: &Value, history: &Value) -> Value {
-    let (current_tier, current_rr, peak_tier, peak_season_id) = extract_rank(Some(mmr));
+fn normalize_friend_profile(
+    mmr: &Value,
+    competitive_updates: &Value,
+    history: &Value,
+    thresholds: Option<&LeaderboardThresholds>,
+) -> Value {
+    let (raw_current_tier, current_rr, peak_tier, peak_season_id) = extract_rank(Some(mmr));
+    let current_tier = resolve_current_tier(raw_current_tier, current_rr, thresholds);
     let (current_season_id, competitive_seasons) = extract_competitive_seasons(Some(mmr));
     json!({
         "currentTier": current_tier,
@@ -120,10 +223,24 @@ pub async fn friend_profile_get(
                 api.get_competitive_history(&puuid, 0, 15),
                 api.get_match_history(&puuid, history_start, history_end),
             )?;
+            let raw_current_tier = extract_rank(Some(&mmr)).0;
+            let current_season_id = mmr
+                .pointer("/LatestCompetitiveUpdate/SeasonID")
+                .and_then(Value::as_str)
+                .filter(|season_id| !season_id.is_empty());
+            let thresholds = if (24..=27).contains(&raw_current_tier) {
+                match current_season_id {
+                    Some(season_id) => current_leaderboard_thresholds(&api, season_id).await,
+                    None => None,
+                }
+            } else {
+                None
+            };
             Ok(normalize_friend_profile(
                 &mmr,
                 &competitive_updates,
                 &history,
+                thresholds.as_ref(),
             ))
         }
     })
@@ -144,6 +261,70 @@ pub async fn friend_profile_get(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    fn leaderboard_thresholds_fixture(
+        immortal_two: i64,
+        immortal_three: i64,
+        radiant: i64,
+        top_tier: i64,
+    ) -> Value {
+        json!({
+            "tierDetails": {
+                "25": {"rankedRatingThreshold": immortal_two},
+                "26": {"rankedRatingThreshold": immortal_three},
+                "27": {"rankedRatingThreshold": radiant}
+            },
+            "topTierRRThreshold": top_tier
+        })
+    }
+
+    #[test]
+    fn parses_monotonic_leaderboard_thresholds_and_uses_the_live_radiant_cutoff() {
+        let parsed =
+            parse_leaderboard_thresholds(&leaderboard_thresholds_fixture(90, 200, 450, 478))
+                .expect("valid thresholds");
+        assert_eq!(parsed.immortal_two, 90);
+        assert_eq!(parsed.immortal_three, 200);
+        assert_eq!(parsed.radiant, 478);
+
+        let configured_radiant =
+            parse_leaderboard_thresholds(&leaderboard_thresholds_fixture(90, 200, 500, 478))
+                .expect("valid thresholds");
+        assert_eq!(configured_radiant.radiant, 500);
+    }
+
+    #[test]
+    fn rejects_missing_negative_and_non_monotonic_leaderboard_thresholds() {
+        assert!(parse_leaderboard_thresholds(&json!({})).is_none());
+        assert!(
+            parse_leaderboard_thresholds(&leaderboard_thresholds_fixture(-1, 200, 450, 478,))
+                .is_none()
+        );
+        assert!(
+            parse_leaderboard_thresholds(&leaderboard_thresholds_fixture(220, 200, 450, 478,))
+                .is_none()
+        );
+        assert!(
+            parse_leaderboard_thresholds(&leaderboard_thresholds_fixture(90, 500, 450, 478,))
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn resolves_only_current_immortal_and_radiant_tiers_from_rr() {
+        let thresholds = LeaderboardThresholds {
+            immortal_two: 90,
+            immortal_three: 200,
+            radiant: 450,
+        };
+        assert_eq!(resolve_current_tier(24, 89, Some(&thresholds)), 24);
+        assert_eq!(resolve_current_tier(24, 90, Some(&thresholds)), 25);
+        assert_eq!(resolve_current_tier(24, 200, Some(&thresholds)), 26);
+        assert_eq!(resolve_current_tier(24, 450, Some(&thresholds)), 27);
+        assert_eq!(resolve_current_tier(23, 999, Some(&thresholds)), 23);
+        assert_eq!(resolve_current_tier(24, 999, None), 24);
+        assert_eq!(resolve_current_tier(27, 0, None), 27);
+    }
 
     #[test]
     fn limits_friend_match_history_to_riot_page_size() {
@@ -198,7 +379,7 @@ mod tests {
             "RankedRatingAfterUpdate": 64,
             "RankedRatingEarned": 18
         }]});
-        let result = normalize_friend_profile(&mmr, &updates, &history);
+        let result = normalize_friend_profile(&mmr, &updates, &history, None);
         assert_eq!(result["currentTier"], 22);
         assert_eq!(result["currentRR"], 64);
         assert_eq!(result["currentSeasonId"], "act-current");
@@ -207,6 +388,46 @@ mod tests {
         assert_eq!(result["matches"][0]["queueId"], "unrated");
         assert_eq!(result["matches"][1]["rrEarned"], 18);
         assert_eq!(result["matches"][2]["queueId"], "deathmatch");
+    }
+
+    #[test]
+    fn enriches_only_current_immortal_rank_from_leaderboard_thresholds() {
+        let mmr = json!({
+            "LatestCompetitiveUpdate": {
+                "SeasonID": "act-current",
+                "TierAfterUpdate": 24,
+                "RankedRatingAfterUpdate": 117
+            },
+            "QueueSkills": {"competitive": {"SeasonalInfoBySeasonID": {
+                "act-current": {
+                    "CompetitiveTier": 24,
+                    "RankedRating": 117,
+                    "NumberOfWins": 20,
+                    "NumberOfGames": 30,
+                    "WinsByTier": {"26": 1, "24": 19}
+                }
+            }}}
+        });
+        let thresholds = LeaderboardThresholds {
+            immortal_two: 80,
+            immortal_three: 200,
+            radiant: 400,
+        };
+        let enriched = normalize_friend_profile(
+            &mmr,
+            &json!({"Matches": []}),
+            &json!({"History": []}),
+            Some(&thresholds),
+        );
+        assert_eq!(enriched["currentTier"], 25);
+        assert_eq!(enriched["currentRR"], 117);
+        assert_eq!(enriched["peakTier"], 26);
+        assert_eq!(enriched["peakSeasonId"], "act-current");
+
+        let fallback =
+            normalize_friend_profile(&mmr, &json!({"Matches": []}), &json!({"History": []}), None);
+        assert_eq!(fallback["currentTier"], 24);
+        assert_eq!(fallback["peakTier"], 26);
     }
 
     #[test]

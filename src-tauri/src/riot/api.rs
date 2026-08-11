@@ -71,6 +71,13 @@ enum Target {
     Glz,
 }
 
+fn competitive_leaderboard_path(region: &str, season_id: &str) -> String {
+    format!(
+        "/mmr/v1/leaderboards/affinity/{region}/queue/competitive/season/{}?startIndex=0&size=1",
+        client::urlencoding_encode(season_id)
+    )
+}
+
 /// Authenticated client for Riot's `pd`/`glz` game APIs, built from local
 /// Riot Client tokens. Mirrors electron/util/riot/create-api.ts.
 #[derive(Clone)]
@@ -155,6 +162,15 @@ impl RiotApiClient {
             Target::Pd,
             reqwest::Method::GET,
             &format!("/mmr/v1/players/{puuid}/competitiveupdates?startIndex={start_index}&endIndex={end_index}&queue=competitive"),
+            None,
+        )
+        .await
+    }
+    pub async fn get_competitive_leaderboard(&self, season_id: &str) -> Result<Value, String> {
+        self.request(
+            Target::Pd,
+            reqwest::Method::GET,
+            &competitive_leaderboard_path(&self.region, season_id),
             None,
         )
         .await
@@ -362,4 +378,17 @@ pub async fn create_api(state: &RiotState) -> Result<RiotApiClient, String> {
             .unwrap_or_default()
             .to_string(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn builds_the_regional_competitive_leaderboard_path() {
+        assert_eq!(
+            competitive_leaderboard_path("ap", "act/current"),
+            "/mmr/v1/leaderboards/affinity/ap/queue/competitive/season/act%2Fcurrent?startIndex=0&size=1"
+        );
+    }
 }
