@@ -353,6 +353,31 @@ fn decode_presence_private(value: &str) -> Value {
         .unwrap_or(json!({}))
 }
 
+fn presence_rank(presence: &Value) -> (u8, u8) {
+    let state = pick_string(
+        [
+            presence.get("status"),
+            presence.get("availability"),
+            presence.get("show"),
+            presence.get("state"),
+        ]
+        .map(|value| value.and_then(|value| value.as_str())),
+    )
+    .to_lowercase();
+    let active = matches!(state.as_str(), "chat" | "away" | "dnd" | "online") as u8;
+    let product = pick_string(
+        [presence.get("product"), presence.get("Product")]
+            .map(|value| value.and_then(|value| value.as_str())),
+    )
+    .to_lowercase();
+    let product_priority = match product.as_str() {
+        "valorant" => 2,
+        "riot_client" => 1,
+        _ => 0,
+    };
+    (active, product_priority)
+}
+
 fn normalize_friends(friends_payload: &[Value], presences_payload: &[Value]) -> Vec<Value> {
     let mut presences: HashMap<String, &Value> = HashMap::new();
     for presence in presences_payload {
@@ -366,7 +391,14 @@ fn normalize_friends(friends_payload: &[Value], presences_payload: &[Value]) -> 
             .map(|v| v.and_then(|v| v.as_str())),
         );
         if !puuid.is_empty() {
-            presences.insert(id_root(&puuid), presence);
+            presences
+                .entry(id_root(&puuid))
+                .and_modify(|current| {
+                    if presence_rank(presence) > presence_rank(current) {
+                        *current = presence;
+                    }
+                })
+                .or_insert(presence);
         }
     }
 
@@ -434,10 +466,15 @@ fn normalize_friends(friends_payload: &[Value], presences_payload: &[Value]) -> 
                     presence.get("status"),
                     presence.get("availability"),
                     presence.get("show"),
+                    presence.get("state"),
                 ]
                 .map(|v| v.and_then(|v| v.as_str())),
             );
-            let is_online = presence.get("puuid").is_some() && status != "offline";
+            let normalized_status = status.to_lowercase();
+            let is_online = matches!(
+                normalized_status.as_str(),
+                "chat" | "away" | "dnd" | "online"
+            );
 
             if puuid.is_empty() && display_name.is_empty() {
                 return None;
@@ -1409,5 +1446,50 @@ mod tests {
             unique_messages(vec![messages[0].clone(), messages[0].clone()]).len(),
             1
         );
+    }
+
+    #[test]
+    fn treats_mobile_only_presence_as_offline() {
+        let friends = vec![json!({
+            "puuid": "friend-puuid",
+            "game_name": "BoBoGam3r",
+            "game_tag": "trAsh"
+        })];
+        let presences = vec![json!({
+            "puuid": "friend-puuid",
+            "product": "league_of_legends",
+            "state": "mobile"
+        })];
+
+        let result = normalize_friends(&friends, &presences);
+
+        assert_eq!(result[0]["isOnline"], false);
+    }
+
+    #[test]
+    fn prefers_active_valorant_presence_over_mobile_presence() {
+        let friends = vec![json!({
+            "puuid": "friend-puuid",
+            "game_name": "Friend",
+            "game_tag": "1234"
+        })];
+        let presences = vec![
+            json!({
+                "puuid": "friend-puuid",
+                "product": "valorant",
+                "state": "dnd"
+            }),
+            json!({
+                "puuid": "friend-puuid",
+                "product": "league_of_legends",
+                "state": "mobile"
+            }),
+        ];
+
+        let result = normalize_friends(&friends, &presences);
+
+        assert_eq!(result[0]["isOnline"], true);
+        assert_eq!(result[0]["product"], "valorant");
+        assert_eq!(result[0]["status"], "dnd");
     }
 }
