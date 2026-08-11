@@ -2,7 +2,7 @@
 
 ## Goal
 
-Restore Chat as a first-class ValoUtils navigation tab and replace the legacy brown, monolithic page with a Riot-style, information-dense desktop chat interface. Preserve friend direct messages, Party chat, Match Team chat, Match All chat, translation, friend party actions, and XMPP live delivery while adding on-demand per-conversation message history through Riot's local Chat API.
+Restore Chat as a first-class ValoUtils navigation tab and replace the legacy brown, monolithic page with a Riot-style, information-dense desktop chat interface. Preserve friend direct messages, Party chat, Match Team chat, Match All chat, translation, friend party actions, and XMPP live delivery while adding on-demand per-conversation message history through Riot's local Chat API. Incoming Party, Team, and All XMPP messages must appear in the mounted Chat page immediately rather than waiting for the five-second summary poll.
 
 ## Scope
 
@@ -85,6 +85,27 @@ The existing five-second Chat summary refresh continues to update rooms, convers
 
 The Party conversation metadata fields `message_history`, `unread_count`, mute state, and UI state should be preserved when returned. Use Riot's real unread value where applicable; do not fabricate unread badges. Treat `message_history` as metadata, not as permission to construct or guess a history response.
 
+## Real-Time Group Message Delivery
+
+Keep the existing XMPP message buffer as the durable in-process source used by summary polling, and add an event-driven path for incoming Party, Team, and All messages:
+
+1. The XMPP reader parses and stores each message in its current bounded buffer.
+2. After buffering, it publishes the same normalized message to an internal Rust broadcast channel.
+3. A single Tauri forwarder subscribes to that broadcast channel and emits `chat:message` to the renderer.
+4. The mounted Chat controller listens once for `chat:message` and merges the message into the cache for its CID.
+
+The broadcast layer keeps the XMPP parser independent from Tauri UI concerns. Starting or refreshing Chat must not create duplicate forwarders. The forwarder and renderer payload must not contain tokens, lockfile credentials, authorization headers, or unrelated raw stanzas.
+
+The event payload uses the normal `ChatMessage` shape and includes CID, stable message ID, sender identity, body, timestamp, scope, type, and `isSelf`. Party, Team, and All use the same event path. Direct Friend history continues through Riot's Local API because this real-time addition targets the existing group XMPP transport.
+
+When the event CID matches the visible thread, render the message immediately. Apply the existing near-bottom rule: follow the new message only when the viewer was already near the bottom or the message is the user's just-sent message. When the CID belongs to another channel or conversation, update that CID's cache and preview without changing `selectedChannel` or `selectedCid`.
+
+Do not increment a fabricated unread counter from the event. The next summary response supplies Riot's authoritative unread metadata. The real-time cache may update ordering and preview text immediately while leaving the unread badge unchanged until Riot reports it.
+
+The five-second summary poll remains active for room/CID discovery, friends and presence, authoritative unread metadata, and recovery from dropped or late events. Summary/history and event messages merge through the same CID-plus-message-ID deduplication logic, so reconciliation cannot render duplicate bubbles.
+
+If the Chat page is not mounted, no renderer listener is required. XMPP still buffers messages; opening Chat later recovers them through summary and selected-CID history. This feature does not add background navigation badges or automatically open/switch the Chat tab.
+
 ## Send Message
 
 Send through the documented Riot Local API endpoint:
@@ -125,6 +146,7 @@ Provide distinct states for:
 
 - initial Chat loading;
 - selected history loading with cached content available;
+- a transient real-time event gap while polling/history remains available;
 - Riot Client not running;
 - Riot Client running but not logged in;
 - summary refresh failure;
@@ -140,6 +162,7 @@ History or send failures must remain scoped to the selected thread. A failed his
 Replace the monolithic `Chat.tsx` implementation with a thin page shell and focused modules. The exact filenames may follow repository conventions, but responsibilities remain separate:
 
 - a Chat data hook/controller for IPC lifecycle, summary polling, per-CID caches, history requests, send, translation, and friend actions;
+- one renderer-owned `chat:message` listener that merges broadcast group messages without changing selection;
 - pure selectors/helpers for conversation grouping, CID/channel mapping, sorting, deduplication, searching, and near-bottom scroll decisions;
 - channel rail;
 - conversation list;
@@ -160,6 +183,8 @@ Keep `chat:get` as the lightweight summary endpoint. Extend its normalized outpu
 - friend notes.
 
 Add a CID-specific history IPC operation that validates a non-empty CID, calls the already available `get_chat_messages(..., Some(cid))`, normalizes messages through the same path as the summary, and returns the CID with the response. The response distinguishes login-required, unavailable-room, and generic request failures.
+
+Add an internal XMPP message publisher and one Tauri event forwarder for `chat:message`. Initialization must be idempotent so repeated `chat:get`, navigation, or React Strict Mode mounts do not create duplicate subscriptions. A lagged broadcast receiver is recoverable: log the condition without crashing and rely on buffer polling/history reconciliation.
 
 Update `chat:send` to return enough normalized sent-message/transport data for immediate UI reconciliation when Riot supplies it. Preserve the current REST-first and XMPP fallback behavior. Never return lockfile credentials, Local API authorization headers, or raw secrets to the frontend/debug panel.
 
@@ -188,6 +213,10 @@ Add focused tests for:
 - Party, Team, and All CID extraction without cross-channel substitution;
 - CID history request/response correlation;
 - normalization, chronological sorting, and deduplication of REST history plus XMPP messages;
+- Party, Team, and All incoming XMPP messages publish immediately to the internal broadcast channel;
+- the Tauri `chat:message` forwarder starts only once and tolerates a lagged receiver;
+- real-time events update the matching CID cache without switching the current channel/conversation;
+- event plus summary/history reconciliation produces one message bubble;
 - per-CID cache behavior when switching quickly;
 - real unread metadata preservation;
 - Friend=`chat` and Party/Team/All=`groupchat` send typing;
@@ -215,4 +244,5 @@ These are unofficial endpoint documents. Runtime behavior and observed Riot Clie
 - Editing Riot friend notes from Chat
 - Sending `system` messages
 - Voice chat, attachments, reactions, or rich embeds
+- Background Chat navigation badges or automatic channel switching for incoming events
 - Replacing Riot/XMPP chat transport with a ValoUtils-hosted service
