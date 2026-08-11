@@ -1,5 +1,5 @@
 import { LiveGameStatePanel } from "@/components/live-game/live-game-state-panel";
-import { isCurrentStatsAttempt } from "@/components/live-game/live-game-events";
+import { isCurrentStatsAttempt, liveStatsRequestKey } from "@/components/live-game/live-game-events";
 import { LiveScoutTable } from "@/components/live-game/live-scout-table";
 import { useLiveGameAssets } from "@/components/live-game/use-live-game-assets";
 import { PageHeader } from "@/components/section-card";
@@ -24,7 +24,7 @@ const LiveGame = () => {
 	const [loading, setLoading] = useState(true);
 	const [refreshing, setRefreshing] = useState(false);
 	const rosterKeyRef = useRef<string | null>(null);
-	const requestedRosterRef = useRef<string | null>(null);
+	const requestedStatsKeyRef = useRef<string | null>(null);
 	const statsAttemptRef = useRef(0);
 
 	const requestSnapshot = useCallback(() => {
@@ -34,7 +34,7 @@ const LiveGame = () => {
 		window.Main.send("live-game:fetch");
 	}, []);
 	const refreshSnapshot = useCallback(() => {
-		requestedRosterRef.current = null;
+		requestedStatsKeyRef.current = null;
 		requestSnapshot();
 	}, [requestSnapshot]);
 
@@ -70,16 +70,18 @@ const LiveGame = () => {
 			rosterKeyRef.current = response.state === "idle" ? null : response.rosterKey;
 
 			if (response.state === "idle") {
-				requestedRosterRef.current = null;
+				requestedStatsKeyRef.current = null;
 				setRecent({});
 				return;
 			}
 
-			if (requestedRosterRef.current !== response.rosterKey) {
-				requestedRosterRef.current = response.rosterKey;
+			const queueId = response.match?.queueId ?? "";
+			const statsKey = liveStatsRequestKey(response.rosterKey, queueId);
+			if (requestedStatsKeyRef.current !== statsKey) {
+				requestedStatsKeyRef.current = statsKey;
 				const attemptId = ++statsAttemptRef.current;
 				setRecent(Object.fromEntries(response.players.map((player) => [player.puuid, { status: "loading" }])));
-				window.Main.send("live-game:stats", response.rosterKey, response.players.map((player) => player.puuid), attemptId);
+				window.Main.send("live-game:stats", response.rosterKey, response.players.map((player) => player.puuid), attemptId, queueId);
 			}
 		};
 

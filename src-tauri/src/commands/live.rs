@@ -106,7 +106,10 @@ fn summarize_teams(players: &[Value]) -> Vec<Value> {
     output
 }
 
-fn select_competitive_match_ids(history: &Value, limit: usize) -> Vec<String> {
+fn select_match_ids_for_queue(history: &Value, queue_id: &str, limit: usize) -> Vec<String> {
+    if queue_id.is_empty() || queue_id.eq_ignore_ascii_case("custom") {
+        return Vec::new();
+    }
     history
         .get("History")
         .and_then(Value::as_array)
@@ -116,7 +119,7 @@ fn select_competitive_match_ids(history: &Value, limit: usize) -> Vec<String> {
             entry
                 .get("QueueID")
                 .and_then(Value::as_str)
-                .is_some_and(|queue| queue.eq_ignore_ascii_case("competitive"))
+                .is_some_and(|queue| queue.eq_ignore_ascii_case(queue_id))
         })
         .filter_map(|entry| {
             entry
@@ -249,7 +252,7 @@ fn non_negative(value: Option<&Value>) -> i64 {
     value.and_then(Value::as_i64).unwrap_or(0).max(0)
 }
 
-fn extract_competitive_seasons(mmr: Option<&Value>) -> (Option<String>, Vec<Value>) {
+pub(crate) fn extract_competitive_seasons(mmr: Option<&Value>) -> (Option<String>, Vec<Value>) {
     let Some(mmr) = mmr else {
         return (None, vec![]);
     };
@@ -295,7 +298,7 @@ fn extract_competitive_seasons(mmr: Option<&Value>) -> (Option<String>, Vec<Valu
     (current_season_id, seasons)
 }
 
-fn extract_rank(mmr: Option<&Value>) -> (i64, i64, i64, Option<String>) {
+pub(crate) fn extract_rank(mmr: Option<&Value>) -> (i64, i64, i64, Option<String>) {
     let Some(mmr) = mmr else {
         return (0, 0, 0, None);
     };
@@ -801,6 +804,7 @@ pub async fn live_game_fetch(
 async fn fetch_recent_stats(
     api: RiotApiClient,
     puuid: String,
+    queue_id: String,
     cache: Arc<Mutex<HashMap<String, Value>>>,
     permits: Arc<Semaphore>,
 ) -> (String, Result<Value, String>) {
@@ -809,13 +813,23 @@ async fn fetch_recent_stats(
             .acquire_owned()
             .await
             .map_err(|_| "Recent-stat worker pool is unavailable.".to_string())?;
+        if queue_id.is_empty() || queue_id.eq_ignore_ascii_case("custom") {
+            return Err("Recent stats are unavailable for this game mode.".into());
+        }
         let history = api.get_match_history(&puuid, 0, 20).await?;
-        let match_ids = select_competitive_match_ids(&history, 5);
+        let match_ids = select_match_ids_for_queue(&history, &queue_id, 5);
         if match_ids.is_empty() {
-            return Err("No recent competitive matches were found for this player.".into());
+            return Err(format!(
+                "No recent {queue_id} matches were found for this player."
+            ));
         }
 
-        let cache_key = format!("{}:{}", puuid.to_lowercase(), match_ids.join(","));
+        let cache_key = format!(
+            "{}:{}:{}",
+            puuid.to_lowercase(),
+            queue_id.to_lowercase(),
+            match_ids.join(",")
+        );
         if let Some(cached) = cache.lock().unwrap().get(&cache_key).cloned() {
             return Ok(cached);
         }
@@ -857,6 +871,12 @@ pub async fn live_game_stats(
         .unwrap_or_default()
         .to_string();
     let attempt_id = args.get(2).and_then(Value::as_u64).unwrap_or_default();
+    let queue_id = args
+        .get(3)
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .trim()
+        .to_string();
     let players: Vec<String> = args
         .get(1)
         .and_then(Value::as_array)
@@ -896,6 +916,7 @@ pub async fn live_game_stats(
         workers.spawn(fetch_recent_stats(
             api.clone(),
             puuid,
+            queue_id.clone(),
             shared_cache.clone(),
             shared_permits.clone(),
         ));
@@ -928,6 +949,7 @@ pub async fn live_game_stats(
             workers.spawn(fetch_recent_stats(
                 api.clone(),
                 puuid,
+                queue_id.clone(),
                 shared_cache.clone(),
                 shared_permits.clone(),
             ));
@@ -1109,21 +1131,30 @@ mod tests {
     }
 
     #[test]
-    fn selects_five_newest_competitive_matches() {
+    fn selects_recent_matches_for_active_queue() {
         let history = json!({"History": [
             {"MatchID":"c1","QueueID":"competitive"},
             {"MatchID":"u1","QueueID":"unrated"},
-            {"MatchID":"c2","QueueID":"competitive"},
+            {"MatchID":"u2","QueueID":"UNRATED"},
+            {"MatchID":"u3","QueueID":"unrated"},
+            {"MatchID":"u4","QueueID":"unrated"},
+            {"MatchID":"u5","QueueID":"unrated"},
+            {"MatchID":"u6","QueueID":"unrated"},
             {"MatchID":"c3","QueueID":"competitive"},
-            {"MatchID":"c4","QueueID":"competitive"},
-            {"MatchID":"c5","QueueID":"competitive"},
-            {"MatchID":"c6","QueueID":"competitive"}
+            {"MatchID":"custom1","QueueID":"custom"},
+            {"MatchID":"","QueueID":"unrated"}
         ]});
 
         assert_eq!(
-            select_competitive_match_ids(&history, 5),
-            ["c1", "c2", "c3", "c4", "c5"]
+            select_match_ids_for_queue(&history, "unrated", 5),
+            ["u1", "u2", "u3", "u4", "u5"]
         );
+        assert_eq!(
+            select_match_ids_for_queue(&history, "competitive", 5),
+            ["c1", "c3"]
+        );
+        assert!(select_match_ids_for_queue(&history, "", 5).is_empty());
+        assert!(select_match_ids_for_queue(&history, "custom", 5).is_empty());
     }
 
     #[test]

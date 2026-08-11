@@ -1,15 +1,15 @@
 import type { ReactNode } from "react";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import type { LivePlayer } from "../../types/live-game";
+import type { CompetitiveSeason } from "../../types/live-game";
 import { tierColor, tierName } from "../../util/valorant-ranks";
 import { seasonFallbackLabel, sortCompetitiveSeasons, tierRangeFromWins } from "./act-rank";
 import { ActRankTriangle } from "./act-rank-triangle";
 import type { LiveGameAssets } from "./use-live-game-assets";
 
 type Props = {
-	player: LivePlayer;
-	assets: LiveGameAssets;
+	competitiveSeasons: CompetitiveSeason[];
+	assets: Pick<LiveGameAssets, "seasons">;
 	selectedSeasonId: string | null;
 	onSeasonChange: (seasonId: string) => void;
 };
@@ -21,15 +21,15 @@ const ActStat = ({ label, value }: { label: string; value: ReactNode }) => (
 	</div>
 );
 
-export const ActRankPanel = ({ player, assets, selectedSeasonId, onSeasonChange }: Props) => {
+export const ActRankPanel = ({ competitiveSeasons, assets, selectedSeasonId, onSeasonChange }: Props) => {
 	const { t } = useTranslation();
 	const starts = useMemo(
 		() => new Map([...assets.seasons].map(([id, season]) => [id, season.startMillis])),
 		[assets.seasons],
 	);
 	const seasons = useMemo(
-		() => sortCompetitiveSeasons(player.competitiveSeasons, starts),
-		[player.competitiveSeasons, starts],
+		() => sortCompetitiveSeasons(competitiveSeasons, starts),
+		[competitiveSeasons, starts],
 	);
 	const selected = seasons.find((season) => season.seasonId === selectedSeasonId) ?? seasons[0];
 	const labelFor = (seasonId: string) =>
@@ -69,7 +69,7 @@ export const ActRankPanel = ({ player, assets, selectedSeasonId, onSeasonChange 
 				</select>
 			</header>
 
-			<div className="mt-3 grid grid-cols-2 gap-4 lg:grid-cols-[minmax(8rem,1fr)_minmax(16rem,24rem)_minmax(8rem,1fr)] lg:items-center">
+			<div className="mx-auto mt-3 grid w-full max-w-[48rem] grid-cols-2 gap-4 lg:grid-cols-[9rem_minmax(16rem,20rem)_10rem] lg:items-center lg:justify-center">
 				<div className="order-2 col-span-2 grid grid-cols-2 gap-3 lg:order-1 lg:col-span-1 lg:grid-cols-1">
 					<ActStat
 						label={t("liveGame.rank")}

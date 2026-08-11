@@ -2,6 +2,7 @@ pub mod app;
 pub mod career;
 pub mod chat;
 pub mod fake_player;
+pub mod friend_profile;
 pub mod friends;
 pub mod live;
 pub mod matches;

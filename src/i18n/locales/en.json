@@ -90,7 +90,17 @@
     "sent": "Sent",
     "partySize": "Party {{size}}/{{max}}",
     "others": "+{{count}} Other",
-    "others_plural": "+{{count}} Others"
+    "others_plural": "+{{count}} Others",
+    "profileBack": "Back to friends",
+    "profileRefresh": "Refresh profile",
+    "profileLoading": "Loading player profile...",
+    "profileFailed": "Failed to load player profile",
+    "profileLoginRequired": "Open the Riot Client and sign in to view this profile.",
+    "profileRetry": "Retry",
+    "profileCurrentRank": "Current Rank",
+    "profileRecentMatches": "Recent Competitive Matches",
+    "profileNoMatches": "No recent competitive matches found",
+    "profileUnknownMap": "Unknown Map"
   },
   "career": {
     "title": "Career",
@@ -134,7 +144,7 @@
     "ratedPlayers": "{{count}} rated players",
     "detectedParties": "Detected Parties",
     "rosterSize": "Roster Size",
-    "recentFive": "Last 5 Competitive Matches",
+    "recentFive": "Last 5 {{mode}} Matches",
     "kd": "K/D",
     "winRate": "Win Rate",
     "acs": "ACS",

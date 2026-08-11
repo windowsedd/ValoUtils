@@ -12,6 +12,7 @@ import {
 import { tierName } from "@/util/valorant-ranks";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { isMatchPlayerHighlighted } from "./match-player-highlight";
 
 /** CDN lookups every match view needs. Each getter memoises at module scope. */
 export type MatchAssets = {
@@ -127,14 +128,14 @@ const Stat = ({ label, value, color }: { label: string; value: string; color?: s
 	</div>
 );
 
-const ScoreboardRow = ({ player, assets }: { player: MatchPlayer; assets: MatchAssets }) => {
+const ScoreboardRow = ({ player, assets, highlighted }: { player: MatchPlayer; assets: MatchAssets; highlighted: boolean }) => {
 	const agent = assets.agents.get(player.characterId.toLowerCase());
 	const tierIcon = player.competitiveTier > 0 ? assets.tiers.get(player.competitiveTier)?.icon : undefined;
 
 	return (
 		<div
 			className={`flex items-center gap-3 rounded-lg px-2 py-1.5 transition-colors ${
-				player.isSelf ? "bg-white/6" : "hover:bg-white/4"
+				highlighted ? "bg-white/6" : "hover:bg-white/4"
 			}`}
 		>
 			<span className="w-0.5 self-stretch rounded-full shrink-0" style={{ background: teamColor(player.teamId) }} />
@@ -145,7 +146,7 @@ const ScoreboardRow = ({ player, assets }: { player: MatchPlayer; assets: MatchA
 			)}
 			<div className="min-w-0 flex-1">
 				<p className="text-xs font-semibold truncate">
-					<span className={player.isSelf ? "text-white" : "text-gray-300"}>{player.gameName || "—"}</span>
+					<span className={highlighted ? "text-white" : "text-gray-300"}>{player.gameName || "—"}</span>
 					{player.tagLine && <span className="text-gray-600">#{player.tagLine}</span>}
 				</p>
 				<p className="text-[10px] text-gray-600 truncate">{agent ? localize(agent.name) : ""}</p>
@@ -164,7 +165,7 @@ const ScoreboardRow = ({ player, assets }: { player: MatchPlayer; assets: MatchA
 };
 
 /**
- * Expanded match body: your line, the full scoreboard, and match metadata.
+ * Expanded match body: the highlighted player's line, the full scoreboard, and match metadata.
  * Shared by the Matches tab and the Competitive tab's match history.
  */
 export const MatchScoreboard = ({
@@ -172,13 +173,14 @@ export const MatchScoreboard = ({
 	assets,
 	loading,
 	error,
-}: { details?: MatchDetails; assets: MatchAssets; loading?: boolean; error?: string }) => {
+	highlightPuuid,
+}: { details?: MatchDetails; assets: MatchAssets; loading?: boolean; error?: string; highlightPuuid?: string }) => {
 	const { t } = useTranslation();
 	if (loading) return <p className="text-xs text-gray-500 px-2 py-3">{t("matches.loadingDetails")}</p>;
 	if (error) return <p className="text-xs text-red-300 px-2 py-3">{error}</p>;
 	if (!details) return null;
 
-	const self = details.players.find((p) => p.isSelf);
+	const self = details.players.find((player) => isMatchPlayerHighlighted(player, highlightPuuid));
 	// Deathmatch gives each player their own "team", so a Red/Blue scoreline
 	// would be meaningless there.
 	const scoreTeams = details.teams.filter((team) => team.teamId === "Red" || team.teamId === "Blue");
@@ -218,7 +220,7 @@ export const MatchScoreboard = ({
 					<span className="w-12 text-right shrink-0">{t("matches.hs")}</span>
 				</div>
 				{details.players.map((player) => (
-					<ScoreboardRow key={player.subject} player={player} assets={assets} />
+					<ScoreboardRow key={player.subject} player={player} assets={assets} highlighted={isMatchPlayerHighlighted(player, highlightPuuid)} />
 				))}
 			</div>
 

@@ -1,10 +1,12 @@
 import type { Friend, FriendRequest, FriendsResponse } from "@/types/friends";
+import type { FriendProfileData } from "@/types/friend-profile";
 import { getMaps, getPlayerCard, getTiers, type CardAsset, type MapAsset, type TierAsset } from "@/util/valorant-assets";
 import { tierName } from "@/util/valorant-ranks";
 import { mapName } from "@/util/valorant-maps";
 import { queueLabel } from "@/util/valorant-queues";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SectionCard } from "@/components/section-card";
+import { FriendProfile } from "@/components/friends/friend-profile";
 import { useTranslation } from "react-i18next";
 import { FaMagnifyingGlass, FaUserGroup } from "react-icons/fa6";
 
@@ -90,6 +92,24 @@ const Friends = () => {
 	const [loginRequired, setLoginRequired] = useState(false);
 	const [loading, setLoading] = useState(true);
 	const [live, setLive] = useState(false);
+	const [selectedFriend, setSelectedFriend] = useState<Friend | null>(null);
+	const [profileCache, setProfileCache] = useState<Record<string, FriendProfileData>>({});
+	const listScrollRef = useRef<HTMLDivElement>(null);
+	const savedScrollTopRef = useRef(0);
+
+	const openFriend = (friend: Friend) => {
+		savedScrollTopRef.current = listScrollRef.current?.scrollTop ?? 0;
+		setSelectedFriend(friend);
+	};
+	const closeProfile = () => {
+		setSelectedFriend(null);
+		window.requestAnimationFrame(() => {
+			if (listScrollRef.current) listScrollRef.current.scrollTop = savedScrollTopRef.current;
+		});
+	};
+	const cacheProfile = useCallback((puuid: string, profile: FriendProfileData) => {
+		setProfileCache((current) => ({ ...current, [puuid.toLowerCase()]: profile }));
+	}, []);
 
 	useEffect(() => {
 		let cancelled = false;
@@ -212,9 +232,11 @@ const Friends = () => {
 		const losing = hasScore && v!.allyScore! < v!.enemyScore!;
 
 		return (
-			<div
+			<button
+				type="button"
+				onClick={() => openFriend(friend)}
 				key={friend.puuid || friend.displayName}
-				className={`flex items-center gap-3 rounded-xl px-3 py-2.5 transition-colors ${inParty ? "hover:bg-white/4" : "bg-white/2 hover:bg-white/6"}`}
+				className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 ${inParty ? "hover:bg-white/4" : "bg-white/2 hover:bg-white/6"}`}
 			>
 				<Avatar friend={friend} cards={cards} tiers={tiers} />
 				<div className="min-w-0 flex-1">
@@ -244,7 +266,7 @@ const Friends = () => {
 					)}
 				</div>
 				<span className={`text-xs shrink-0 ${presence.className}`}>{presence.label}</span>
-			</div>
+			</button>
 		);
 	};
 
@@ -262,18 +284,24 @@ const Friends = () => {
 		</div>
 	);
 
-	const simpleRow = (person: Friend | FriendRequest, label: string) => (
-		<div
-			key={person.puuid || person.displayName}
-			className="flex items-center gap-3 rounded-lg px-3 py-2 hover:bg-white/4 transition-colors"
-		>
+	const simpleRow = (person: Friend | FriendRequest, label: string) => {
+		const content = <>
 			<span className="w-1.5 h-1.5 rounded-full bg-gray-700 shrink-0" />
 			<p className="min-w-0 flex-1 text-sm truncate">
 				<NameWithTag friend={person} />
 			</p>
 			<span className="text-xs text-gray-600 shrink-0">{label}</span>
-		</div>
-	);
+		</>;
+		return "isOnline" in person ? (
+			<button type="button" key={person.puuid || person.displayName} onClick={() => openFriend(person)} className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors hover:bg-white/4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400">
+				{content}
+			</button>
+		) : (
+			<div key={person.puuid || person.displayName} className="flex items-center gap-3 rounded-lg px-3 py-2">
+				{content}
+			</div>
+		);
+	};
 
 	const total = friends.length;
 	const nothingToShow =
@@ -283,6 +311,22 @@ const Friends = () => {
 		groups.offline.length === 0 &&
 		incoming.length === 0 &&
 		outgoing.length === 0;
+
+	if (selectedFriend) {
+		const profileFriend = friends.find((friend) => friend.puuid === selectedFriend.puuid) ?? selectedFriend;
+		const cardId = profileFriend.valorant?.playerCardId?.toLowerCase();
+		return (
+			<FriendProfile
+				friend={profileFriend}
+				card={cardId ? cards.get(cardId) : null}
+				tiers={tiers}
+				presenceLabel={presenceOf(profileFriend, t).label}
+				cachedProfile={profileCache[profileFriend.puuid.toLowerCase()]}
+				onProfileLoaded={cacheProfile}
+				onBack={closeProfile}
+			/>
+		);
+	}
 
 	return (
 		<div className="h-full flex flex-col animate-fade-in">
@@ -304,7 +348,7 @@ const Friends = () => {
 				</span>
 			</div>
 
-			<div className="flex-1 min-h-0 overflow-y-auto px-6 pb-6 flex flex-col gap-4">
+			<div ref={listScrollRef} className="flex-1 min-h-0 overflow-y-auto px-6 pb-6 flex flex-col gap-4">
 				{loading && <div className="flex-1 flex items-center justify-center text-gray-500 text-sm">{t("friends.loading")}</div>}
 
 				{!loading && loginRequired && (

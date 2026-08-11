@@ -11,7 +11,7 @@ export const ActRankTriangle = ({
 	const border = borderIndexForWins(wins);
 
 	return (
-		<div className="relative mx-auto aspect-square w-full max-w-[24rem]" aria-hidden="true">
+		<div className="relative mx-auto aspect-square w-full max-w-[20rem]" aria-hidden="true">
 			{tiles.map((tile, index) => {
 				const style = actRankTileStyle(tile);
 				return (

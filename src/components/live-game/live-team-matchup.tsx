@@ -19,7 +19,7 @@ const MetricValue = ({ value, metric, side }: { value: number | null; metric: Me
 	)
 );
 
-export const LiveTeamMatchup = ({ matchup }: { matchup: TeamMatchup }) => {
+export const LiveTeamMatchup = ({ matchup, mode }: { matchup: TeamMatchup; mode: string }) => {
 	const { t } = useTranslation();
 	const metrics: Array<{ field: Metric; label: string }> = [
 		{ field: "kd", label: t("liveGame.averageKd") },
@@ -29,7 +29,7 @@ export const LiveTeamMatchup = ({ matchup }: { matchup: TeamMatchup }) => {
 	return (
 		<div className="border-t border-white/6 px-4 py-3 bg-black/10">
 			<div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-				<div><p className="text-[10px] font-bold uppercase tracking-widest text-white">{t("liveGame.matchup")}</p><p className="text-[9px] uppercase tracking-wider text-gray-600">{t("liveGame.recentFive")}</p></div>
+				<div><p className="text-[10px] font-bold uppercase tracking-widest text-white">{t("liveGame.matchup")}</p><p className="text-[9px] uppercase tracking-wider text-gray-600">{t("liveGame.recentFive", { mode })}</p></div>
 				<p className="text-[10px] text-gray-500">
 					<span className="text-cyan-300">{t("liveGame.ally")}: {matchup.ally.players}</span>
 					<span className="mx-2 text-gray-700">/</span>

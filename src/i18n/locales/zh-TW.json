@@ -88,7 +88,17 @@
     "offline": "離線",
     "sent": "已送出",
     "partySize": "小隊 {{size}}/{{max}}",
-    "others": "+{{count}} 位其他玩家"
+    "others": "+{{count}} 位其他玩家",
+    "profileBack": "返回好友列表",
+    "profileRefresh": "重新整理玩家資料",
+    "profileLoading": "正在載入玩家資料...",
+    "profileFailed": "無法載入玩家資料",
+    "profileLoginRequired": "請開啟 Riot 用戶端並登入以查看此玩家資料。",
+    "profileRetry": "重試",
+    "profileCurrentRank": "目前段位",
+    "profileRecentMatches": "近期競技對戰",
+    "profileNoMatches": "找不到近期競技對戰",
+    "profileUnknownMap": "未知地圖"
   },
   "career": {
     "title": "戰績",
@@ -132,7 +142,7 @@
     "ratedPlayers": "{{count}} 位有牌位",
     "detectedParties": "偵測到的組隊",
     "rosterSize": "玩家名單",
-    "recentFive": "最近 5 場競技對戰",
+    "recentFive": "最近 5 場{{mode}}對戰",
     "kd": "K/D",
     "winRate": "勝率",
     "acs": "ACS",

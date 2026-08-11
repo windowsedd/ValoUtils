@@ -145,6 +145,7 @@ pub fn run() {
             commands::replays::replay_export_raw,
             commands::replays::replay_process,
             commands::friends::friends_get,
+            commands::friend_profile::friend_profile_get,
             commands::fake_player::fake_player_state,
             commands::riot_launch::riot_launch_normal,
             commands::riot_launch::riot_launch_with_config,

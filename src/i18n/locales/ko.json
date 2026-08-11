@@ -88,7 +88,17 @@
     "offline": "오프라인",
     "sent": "보냄",
     "partySize": "파티 {{size}}/{{max}}",
-    "others": "외 {{count}}명"
+    "others": "외 {{count}}명",
+    "profileBack": "친구 목록으로",
+    "profileRefresh": "프로필 새로고침",
+    "profileLoading": "플레이어 프로필 로딩 중...",
+    "profileFailed": "플레이어 프로필을 불러오지 못했습니다",
+    "profileLoginRequired": "이 프로필을 보려면 Riot 클라이언트를 열고 로그인하세요.",
+    "profileRetry": "다시 시도",
+    "profileCurrentRank": "현재 랭크",
+    "profileRecentMatches": "최근 경쟁전",
+    "profileNoMatches": "최근 경쟁전 기록이 없습니다",
+    "profileUnknownMap": "알 수 없는 맵"
   },
   "career": {
     "title": "전적",
@@ -132,7 +142,7 @@
     "ratedPlayers": "랭크 {{count}}명",
     "detectedParties": "감지된 파티",
     "rosterSize": "로스터",
-    "recentFive": "최근 경쟁전 5경기",
+    "recentFive": "최근 {{mode}} 5경기",
     "kd": "K/D",
     "winRate": "승률",
     "acs": "ACS",
