@@ -23,7 +23,7 @@ const centroid = (cell: readonly [Point, Point, Point]): Point => [
 ];
 
 export const ActRankTriangle = ({ winsByTier }: Props) => {
-	const id = useId().replaceAll(":", "");
+	const id = useId().replace(/:/g, "");
 	const outer = outerTrianglePoints();
 	const inner = innerTrianglePoints();
 	const tiles = buildActRankTiles(winsByTier);

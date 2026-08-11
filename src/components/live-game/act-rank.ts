@@ -131,9 +131,6 @@ const BADGE_SLOTS = [
 	[4, 4],
 	[4, 5],
 ] as const;
-const TILE_WIDTH = 63 / 512 * 100;
-const TILE_HEIGHT = 56 / 512 * 100;
-const FIRST_ROW_TOP = 160 / 512 * 100;
 
 export const buildActRankTiles = (winsByTier: Record<string, number>): ActRankTile[] => {
 	const tiers = Object.entries(winsByTier)
@@ -151,18 +148,6 @@ export const buildActRankTiles = (winsByTier: Record<string, number>): ActRankTi
 		const [row, column] = BADGE_SLOTS[index];
 		return { tier, row, column, orientation: column % 2 === 0 ? "up" : "down" };
 	});
-};
-
-export const actRankTileStyle = (
-	tile: ActRankTile,
-): { left: number; top: number; width: number; height: number } => {
-	const rowWidth = TILE_WIDTH * (tile.row + 1);
-	return {
-		left: 50 - rowWidth / 2 + (tile.column * TILE_WIDTH) / 2,
-		top: FIRST_ROW_TOP + tile.row * TILE_HEIGHT,
-		width: TILE_WIDTH,
-		height: TILE_HEIGHT,
-	};
 };
 
 export const borderIndexForWins = (wins: number): number => {
