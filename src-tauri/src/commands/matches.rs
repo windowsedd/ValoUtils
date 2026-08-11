@@ -142,6 +142,20 @@ fn reduce_match(
         .cloned()
         .unwrap_or_default();
     let damage = aggregate_damage(&round_results);
+    let coach_teams: HashMap<String, String> = details
+        .get("coaches")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|coach| {
+            let subject = coach.get("subject").and_then(Value::as_str)?.trim();
+            let team_id = coach.get("teamId").and_then(Value::as_str)?.trim();
+            if subject.is_empty() || team_id.is_empty() {
+                return None;
+            }
+            Some((subject.to_ascii_lowercase(), team_id.to_string()))
+        })
+        .collect();
 
     let teams: Vec<Value> = details
         .get("teams")
@@ -165,6 +179,7 @@ fn reduce_match(
         .flatten()
         .map(|player| {
             let subject = player.get("subject").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+            let coach_team = coach_teams.get(&subject.to_ascii_lowercase());
             let stats = player.get("stats").cloned().unwrap_or(json!({}));
             let stat = |key: &str| stats.get(key).and_then(|v| v.as_u64()).unwrap_or(0);
             // Deathmatch reports roundsPlayed 1; guard anyway so we never divide by zero.
@@ -185,7 +200,10 @@ fn reduce_match(
                 "subject": subject,
                 "gameName": game_name,
                 "tagLine": tag_line,
-                "teamId": player.get("teamId").and_then(|v| v.as_str()).unwrap_or_default(),
+                "teamId": coach_team
+                    .map(String::as_str)
+                    .unwrap_or_else(|| player.get("teamId").and_then(Value::as_str).unwrap_or_default()),
+                "role": if coach_team.is_some() { "coach" } else { "player" },
                 "partyId": player.get("partyId").and_then(|v| v.as_str()).unwrap_or_default(),
                 "characterId": player.get("characterId").and_then(|v| v.as_str()).unwrap_or_default(),
                 "competitiveTier": player.get("competitiveTier").and_then(|v| v.as_u64()).unwrap_or(0),
@@ -428,4 +446,66 @@ pub async fn match_details(
         }
         Err(e) => json!({ "success": false, "matchId": match_id, "error": e }).to_string(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn player(subject: &str, team_id: &str) -> Value {
+        json!({
+            "subject": subject,
+            "gameName": subject,
+            "tagLine": "TEST",
+            "teamId": team_id,
+            "partyId": "",
+            "characterId": "",
+            "competitiveTier": 0,
+            "playerCard": "",
+            "accountLevel": 1,
+            "stats": null
+        })
+    }
+
+    #[test]
+    fn assigns_explicit_role_and_coached_team() {
+        let details = json!({
+            "matchInfo": { "matchId": "custom-1", "provisioningFlowID": "CustomGame" },
+            "players": [player("coach-1", "Neutral"), player("player-1", "Red")],
+            "coaches": [{ "subject": "COACH-1", "teamId": "Blue" }],
+            "teams": [],
+            "roundResults": []
+        });
+
+        let reduced = reduce_match(&details, &HashMap::new(), "player-1");
+        let players = reduced["players"].as_array().unwrap();
+        let coach = players
+            .iter()
+            .find(|value| value["subject"] == "coach-1")
+            .unwrap();
+        let player = players
+            .iter()
+            .find(|value| value["subject"] == "player-1")
+            .unwrap();
+
+        assert_eq!(coach["role"], "coach");
+        assert_eq!(coach["teamId"], "Blue");
+        assert_eq!(player["role"], "player");
+        assert_eq!(player["teamId"], "Red");
+    }
+
+    #[test]
+    fn leaves_unmatched_observer_unchanged() {
+        let details = json!({
+            "matchInfo": { "matchId": "custom-2" },
+            "players": [player("observer-1", "Neutral")],
+            "teams": [],
+            "roundResults": []
+        });
+
+        let reduced = reduce_match(&details, &HashMap::new(), "");
+        let observer = &reduced["players"][0];
+        assert_eq!(observer["role"], "player");
+        assert_eq!(observer["teamId"], "Neutral");
+    }
 }
