@@ -3,13 +3,14 @@ import {
 	getAgents,
 	getMaps,
 	getPlayerCard,
-	getSeasonLabels,
+	getSeasonAssets,
 	getTiers,
 	getWeaponSkin,
 	weaponSkinKey,
 	type AgentAsset,
 	type CardAsset,
 	type MapAsset,
+	type SeasonAsset,
 	type SkinAsset,
 	type TierAsset,
 } from "@/util/valorant-assets";
@@ -19,7 +20,7 @@ export type LiveGameAssets = {
 	agents: Map<string, AgentAsset>;
 	tiers: Map<number, TierAsset>;
 	maps: Map<string, MapAsset>;
-	seasons: Map<string, string>;
+	seasons: Map<string, SeasonAsset>;
 	skins: Map<string, SkinAsset | null>;
 	cards: Map<string, CardAsset | null>;
 };
@@ -49,7 +50,7 @@ export const useLiveGameAssets = (players: LivePlayer[]): LiveGameAssets => {
 
 	useEffect(() => {
 		let cancelled = false;
-		Promise.all([getAgents(), getTiers(), getMaps(), getSeasonLabels()]).then(
+		Promise.all([getAgents(), getTiers(), getMaps(), getSeasonAssets()]).then(
 			([agents, tiers, maps, seasons]) => {
 				if (!cancelled) setAssets((current) => ({ ...current, agents, tiers, maps, seasons }));
 			},

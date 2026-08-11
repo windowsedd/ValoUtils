@@ -34,11 +34,12 @@ export type SkinAsset = { name: Localized; icon: string };
 export type TierAsset = { name: Localized; icon: string | null; largeIcon: string | null; color: string };
 export type CardAsset = { name: Localized; icon: string };
 export type MapAsset = { name: Localized; listViewIcon: string | null; splash: string | null };
+export type SeasonAsset = { label: string; startMillis: number };
 
 let agentsPromise: Promise<Map<string, AgentAsset>> | null = null;
 let tiersPromise: Promise<Map<number, TierAsset>> | null = null;
 let mapsPromise: Promise<Map<string, MapAsset>> | null = null;
-let seasonsPromise: Promise<Map<string, string>> | null = null;
+let seasonAssetsPromise: Promise<Map<string, SeasonAsset>> | null = null;
 const skinDataCache = new Map<string, Promise<any | null>>();
 const skinVariantCache = new Map<string, Promise<SkinAsset | null>>();
 const cardCache = new Map<string, Promise<CardAsset | null>>();
@@ -230,9 +231,9 @@ const episodeLabel = (displayName: string): string => {
 // Seasons are parsed in English regardless of UI language (we only need numbers).
 const enName = (v: any): string => (typeof v === "string" ? v : v?.["en-US"] ?? Object.values(v ?? {})[0] ?? "");
 
-export const getSeasonLabels = (): Promise<Map<string, string>> => {
-	if (!seasonsPromise) {
-		seasonsPromise = fetch(`${API}/seasons?language=all`)
+export const getSeasonAssets = (): Promise<Map<string, SeasonAsset>> => {
+	if (!seasonAssetsPromise) {
+		seasonAssetsPromise = fetch(`${API}/seasons?language=all`)
 			.then((r) => r.json())
 			.then((json) => {
 				const seasons: any[] = json?.data ?? [];
@@ -256,18 +257,21 @@ export const getSeasonLabels = (): Promise<Map<string, string>> => {
 				// the episode whose date range contains the act's start time.
 				const byTime = (t: number) => episodes.find((e) => t >= e.start && t < e.end)?.label ?? "";
 
-				const labels = new Map<string, string>();
+				const assets = new Map<string, SeasonAsset>();
 				for (const s of seasons) {
 					if (s.type === "EAresSeasonType::Act") {
-						const start = Date.parse(s.startTime) || 0;
-						const ep = byUuid.get(s.parentUuid) || byTime(start);
+						const startMillis = Date.parse(s.startTime) || 0;
+						const ep = byUuid.get(s.parentUuid) || byTime(startMillis);
 						const label = formatSeasonActLabel(ep, actNumber(enName(s.displayName)));
-						if (label) labels.set((s.uuid as string).toLowerCase(), label);
+						if (label) assets.set((s.uuid as string).toLowerCase(), { label, startMillis });
 					}
 				}
-				return labels;
+				return assets;
 			})
-			.catch(() => new Map<string, string>());
+			.catch(() => new Map<string, SeasonAsset>());
 	}
-	return seasonsPromise;
+	return seasonAssetsPromise;
 };
+
+export const getSeasonLabels = (): Promise<Map<string, string>> =>
+	getSeasonAssets().then((assets) => new Map([...assets].map(([id, asset]) => [id, asset.label])));

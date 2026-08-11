@@ -12,6 +12,15 @@ export type LiveLoadout = {
 	knife: WeaponSkin;
 };
 
+export type CompetitiveSeason = {
+	seasonId: string;
+	tier: number;
+	rankedRating: number;
+	wins: number;
+	games: number;
+	winsByTier: Record<string, number>;
+};
+
 export type LivePlayer = {
 	puuid: string;
 	gameName: string;
@@ -27,6 +36,8 @@ export type LivePlayer = {
 	peakTier: number;
 	/** Competitive act/season UUID of the peak; resolved to a label client-side. */
 	peakSeasonId: string | null;
+	currentSeasonId: string | null;
+	competitiveSeasons: CompetitiveSeason[];
 	/** "Team 1" / "Team 2" … when a multi-player party is detected, else null. */
 	party: string | null;
 	isSelf: boolean;

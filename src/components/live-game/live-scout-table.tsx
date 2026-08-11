@@ -93,7 +93,7 @@ const PlayerRow = ({ player, assets, stats, expanded, onToggle, teamColor, teamL
 	const card = player.cardId ? assets.cards.get(player.cardId.toLowerCase()) : undefined;
 	const agentName = agent ? localize(agent.name) : "";
 	const displayName = player.incognito || !player.gameName ? t("liveGame.hidden") : `${player.gameName}#${player.tagLine}`;
-	const peakAct = player.peakSeasonId ? assets.seasons.get(player.peakSeasonId.toLowerCase()) : null;
+	const peakAct = player.peakSeasonId ? assets.seasons.get(player.peakSeasonId.toLowerCase())?.label : null;
 	const detailsId = `live-player-${player.puuid.replace(/[^a-z0-9]/gi, "-")}`;
 	return (
 		<div className="border-b border-white/5 last:border-0" style={{ borderLeft: `3px solid ${teamColor}` }}>
