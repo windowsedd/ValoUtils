@@ -7,6 +7,11 @@ import { queueLabel } from "@/util/valorant-queues";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SectionCard } from "@/components/section-card";
 import { FriendProfile } from "@/components/friends/friend-profile";
+import {
+	FriendIdentity,
+	matchesFriendRequestSearch,
+	matchesFriendSearch,
+} from "@/components/friends/friend-identity";
 import { useTranslation } from "react-i18next";
 import { FaMagnifyingGlass, FaUserGroup } from "react-icons/fa6";
 
@@ -39,17 +44,6 @@ const presenceOf = (friend: Friend, t: (k: string) => string): Presence => {
 	if (loop === "PREGAME") return { key: "agentSelect", label: t("friends.agentSelect"), className: "text-gray-400" };
 	if (loop === "MENUS") return { key: "inLobby", label: t("friends.inLobby"), className: "text-gray-400" };
 	return { key: "online", label: t("friends.online"), className: "text-green-500/80" };
-};
-
-/** Splits "Name#1234" so the tag can be dimmed. */
-const NameWithTag = ({ friend }: { friend: { gameName: string; tagLine: string; displayName: string } }) => {
-	if (!friend.gameName) return <span className="text-gray-300">{friend.displayName}</span>;
-	return (
-		<>
-			<span className="text-white">{friend.gameName}</span>
-			{friend.tagLine && <span className="text-gray-600">#{friend.tagLine}</span>}
-		</>
-	);
 };
 
 /** Player card with the competitive tier badge tucked into the corner. */
@@ -169,10 +163,8 @@ const Friends = () => {
 		};
 	}, [friends, cards]);
 
-	const matches = (name: string) => name.toLowerCase().includes(search.trim().toLowerCase());
-
 	const groups = useMemo(() => {
-		const visible = friends.filter((f) => matches(f.displayName));
+		const visible = friends.filter((friend) => matchesFriendSearch(friend, search));
 		const playing = visible.filter((f) => f.isOnline && f.playing);
 		return {
 			valorant: playing.filter((f) => f.product === "valorant"),
@@ -219,8 +211,12 @@ const Friends = () => {
 		};
 	}, [groups.valorant]);
 
-	const incoming = requests.filter((r) => r.direction === "incoming" && matches(r.displayName));
-	const outgoing = requests.filter((r) => r.direction === "outgoing" && matches(r.displayName));
+	const incoming = requests.filter(
+		(request) => request.direction === "incoming" && matchesFriendRequestSearch(request, search),
+	);
+	const outgoing = requests.filter(
+		(request) => request.direction === "outgoing" && matchesFriendRequestSearch(request, search),
+	);
 
 	const friendRow = (friend: Friend, inParty = false) => {
 		const presence = presenceOf(friend, t);
@@ -240,8 +236,8 @@ const Friends = () => {
 			>
 				<Avatar friend={friend} cards={cards} tiers={tiers} />
 				<div className="min-w-0 flex-1">
-					<p className="text-sm font-semibold truncate">
-						<NameWithTag friend={friend} />
+					<p className="min-w-0 text-sm font-semibold">
+						<FriendIdentity person={friend} showNote />
 					</p>
 					{v && (
 						<p className="text-xs text-gray-500 truncate flex items-center gap-1.5">
@@ -287,8 +283,8 @@ const Friends = () => {
 	const simpleRow = (person: Friend | FriendRequest, label: string) => {
 		const content = <>
 			<span className="w-1.5 h-1.5 rounded-full bg-gray-700 shrink-0" />
-			<p className="min-w-0 flex-1 text-sm truncate">
-				<NameWithTag friend={person} />
+			<p className="min-w-0 flex-1 text-sm">
+				<FriendIdentity person={person} showNote={"isOnline" in person} />
 			</p>
 			<span className="text-xs text-gray-600 shrink-0">{label}</span>
 		</>;
