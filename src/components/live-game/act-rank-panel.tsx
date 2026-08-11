@@ -70,7 +70,7 @@ export const ActRankPanel = ({ player, assets, selectedSeasonId, onSeasonChange 
 			</header>
 
 			<div className="mt-3 grid grid-cols-2 gap-4 lg:grid-cols-[minmax(8rem,1fr)_minmax(16rem,24rem)_minmax(8rem,1fr)] lg:items-center">
-				<div className="order-2 grid grid-cols-2 gap-3 lg:order-1 lg:grid-cols-1">
+				<div className="order-2 col-span-2 grid grid-cols-2 gap-3 lg:order-1 lg:col-span-1 lg:grid-cols-1">
 					<ActStat
 						label={t("liveGame.rank")}
 						value={
@@ -87,7 +87,7 @@ export const ActRankPanel = ({ player, assets, selectedSeasonId, onSeasonChange 
 				<div className="order-1 col-span-2 lg:order-2 lg:col-span-1">
 					<ActRankTriangle winsByTier={selected.winsByTier} wins={selected.wins} />
 				</div>
-				<div className="order-3 grid grid-cols-2 gap-3 lg:grid-cols-1">
+				<div className="order-3 col-span-2 grid grid-cols-2 gap-3 lg:col-span-1 lg:grid-cols-1">
 					<ActStat label={t("liveGame.wins")} value={selected.wins} />
 					<ActStat label={t("liveGame.games")} value={selected.games} />
 					<ActStat label={t("liveGame.winRate")} value={winRate} />

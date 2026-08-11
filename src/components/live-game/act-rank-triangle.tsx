@@ -1,8 +1,4 @@
-import { borderIndexForWins, buildActRankTiles } from "./act-rank";
-
-const TILE_WIDTH = 24.4140625;
-const TILE_HEIGHT = 21.6796875;
-const FIRST_ROW_TOP = 29.6875;
+import { actRankTileStyle, borderIndexForWins, buildActRankTiles } from "./act-rank";
 
 export const ActRankTriangle = ({
 	winsByTier,
@@ -17,9 +13,7 @@ export const ActRankTriangle = ({
 	return (
 		<div className="relative mx-auto aspect-square w-full max-w-[24rem]" aria-hidden="true">
 			{tiles.map((tile, index) => {
-				const rowWidth = TILE_WIDTH * (tile.row + 1);
-				const left = 50 - rowWidth / 2 + (tile.column * TILE_WIDTH) / 2;
-				const top = FIRST_ROW_TOP + (tile.row * TILE_HEIGHT) / 2;
+				const style = actRankTileStyle(tile);
 				return (
 					<img
 						key={`${tile.tier}-${index}`}
@@ -27,10 +21,10 @@ export const ActRankTriangle = ({
 						alt=""
 						className="absolute object-fill"
 						style={{
-							left: `${left}%`,
-							top: `${top}%`,
-							width: `${TILE_WIDTH}%`,
-							height: `${TILE_HEIGHT}%`,
+							left: `${style.left}%`,
+							top: `${style.top}%`,
+							width: `${style.width}%`,
+							height: `${style.height}%`,
 						}}
 					/>
 				);

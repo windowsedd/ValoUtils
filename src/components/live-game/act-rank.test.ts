@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { CompetitiveSeason } from "../../types/live-game";
 import {
+	actRankTileStyle,
 	borderIndexForWins,
 	buildActRankTiles,
 	initialSeasonId,
@@ -49,6 +50,21 @@ describe("act rank badge", () => {
 			peak: 24,
 		});
 		expect(tierRangeFromWins({ "20": 0 })).toEqual({ lowest: 0, peak: 0 });
+	});
+
+	test("maps tiles to the supplied 512px border grid", () => {
+		expect(actRankTileStyle({ tier: 24, row: 0, column: 0, orientation: "up" })).toEqual({
+			left: 45.3125,
+			top: 31.25,
+			width: 9.375,
+			height: 8.203125,
+		});
+		expect(actRankTileStyle({ tier: 20, row: 2, column: 4, orientation: "up" })).toEqual({
+			left: 54.6875,
+			top: 47.65625,
+			width: 9.375,
+			height: 8.203125,
+		});
 	});
 });
 
