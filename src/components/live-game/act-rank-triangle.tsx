@@ -1,7 +1,7 @@
 import { useId } from "react";
 import {
 	ACT_RANK_CANVAS_SIZE,
-	actRankCellBounds,
+	actRankCrystalCellBounds,
 	borderIndexForWins,
 	buildActRankTiles,
 	buildLatticeCells,
@@ -53,7 +53,7 @@ export const ActRankTriangle = ({ winsByTier, wins }: Props) => {
 				</g>
 			</svg>
 			{tiles.map((tile, index) => {
-				const position = actRankCellBounds(tile.row, tile.column);
+				const position = actRankCrystalCellBounds(tile.row, tile.column);
 				return (
 					<img
 						key={`${tile.tier}-${index}`}

@@ -16,6 +16,8 @@ describe("ActRankTriangle", () => {
 		expect(markup).toContain('<image href="/mmr/border1.png"');
 		expect(markup).toContain('data-act-rank-mask=""');
 		expect(markup).toContain('data-act-rank-lattice=""');
+		expect(markup).toContain('data-rank-cell="" class="absolute z-[2] object-fill" style="left:44.925');
+		expect(markup).toContain('top:18.75%');
 		expect(markup).toContain('data-act-rank-border=""');
 		expect(markup).toContain("<mask");
 		expect(markup).toContain("<polygon");

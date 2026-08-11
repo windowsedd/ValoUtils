@@ -84,6 +84,31 @@ describe("act rank badge", () => {
 		expect(down.left + down.width / 2).toBeCloseTo(256, 10);
 	});
 
+	test("builds Rank crystal cells against the frame interior", () => {
+		type TestPoint = readonly [number, number];
+		const geometry = actRankGeometry as typeof actRankGeometry & {
+			actRankCrystalCellPoints?: (
+				row: number,
+				column: number,
+			) => readonly [TestPoint, TestPoint, TestPoint];
+			actRankCrystalCellBounds?: (
+				row: number,
+				column: number,
+			) => { left: number; top: number; width: number; height: number };
+		};
+		expect(geometry.actRankCrystalCellPoints).toBeDefined();
+		expect(geometry.actRankCrystalCellBounds).toBeDefined();
+		if (!geometry.actRankCrystalCellPoints || !geometry.actRankCrystalCellBounds) return;
+
+		const [apex] = geometry.actRankCrystalCellPoints(0, 0);
+		const firstBounds = geometry.actRankCrystalCellBounds(0, 0);
+		const lastRowBounds = geometry.actRankCrystalCellBounds(6, 0);
+		expect(apex).toEqual([256, 96]);
+		expect(firstBounds.top).toBe(96);
+		expect(firstBounds.height).toBe(45);
+		expect(lastRowBounds.top + lastRowBounds.height).toBe(411);
+	});
+
 	test("builds a symmetric near-equilateral reference triangle", () => {
 		expect(actRankGeometry.ACT_RANK_GEOMETRY).toMatchObject({
 			width: 512,

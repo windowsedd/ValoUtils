@@ -99,11 +99,12 @@ export const innerTrianglePoints = (): readonly [Point, Point, Point] => {
 	];
 };
 
-export const actRankCellPoints = (
+const cellPointsForTriangle = (
+	triangle: readonly [Point, Point, Point],
 	row: number,
 	column: number,
 ): readonly [Point, Point, Point] => {
-	const [apex, left, right] = innerTrianglePoints();
+	const [apex, left, right] = triangle;
 	const cellWidth = (right[0] - left[0]) / ACT_RANK_GEOMETRY.rows;
 	const cellHeight = (left[1] - apex[1]) / ACT_RANK_GEOMETRY.rows;
 	const top = apex[1] + row * cellHeight;
@@ -125,11 +126,13 @@ export const actRankCellPoints = (
 		];
 };
 
-export const actRankCellBounds = (
-	row: number,
-	column: number,
-): ActRankCellBounds => {
-	const points = actRankCellPoints(row, column);
+export const actRankCellPoints = (row: number, column: number) =>
+	cellPointsForTriangle(innerTrianglePoints(), row, column);
+
+export const actRankCrystalCellPoints = (row: number, column: number) =>
+	cellPointsForTriangle(frameInnerTrianglePoints(), row, column);
+
+const boundsFromPoints = (points: readonly Point[]): ActRankCellBounds => {
 	const xs = points.map(([x]) => x);
 	const ys = points.map(([, y]) => y);
 	const left = Math.min(...xs);
@@ -141,6 +144,16 @@ export const actRankCellBounds = (
 		height: Math.max(...ys) - top,
 	};
 };
+
+export const actRankCellBounds = (
+	row: number,
+	column: number,
+): ActRankCellBounds => boundsFromPoints(actRankCellPoints(row, column));
+
+export const actRankCrystalCellBounds = (
+	row: number,
+	column: number,
+): ActRankCellBounds => boundsFromPoints(actRankCrystalCellPoints(row, column));
 
 export const buildLatticeCells = () =>
 	Array.from({ length: ACT_RANK_GEOMETRY.rows }, (_, row) =>
