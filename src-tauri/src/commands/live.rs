@@ -245,6 +245,56 @@ where
     }
 }
 
+fn non_negative(value: Option<&Value>) -> i64 {
+    value.and_then(Value::as_i64).unwrap_or(0).max(0)
+}
+
+fn extract_competitive_seasons(mmr: Option<&Value>) -> (Option<String>, Vec<Value>) {
+    let Some(mmr) = mmr else {
+        return (None, vec![]);
+    };
+    let current_season_id = mmr
+        .pointer("/LatestCompetitiveUpdate/SeasonID")
+        .and_then(Value::as_str)
+        .filter(|id| !id.is_empty())
+        .map(str::to_owned);
+    let Some(seasonal) = mmr
+        .pointer("/QueueSkills/competitive/SeasonalInfoBySeasonID")
+        .and_then(Value::as_object)
+    else {
+        return (current_season_id, vec![]);
+    };
+
+    let seasons = seasonal
+        .iter()
+        .filter(|(season_id, _)| !season_id.is_empty())
+        .map(|(season_id, info)| {
+            let mut wins_by_tier = serde_json::Map::new();
+            if let Some(wins) = info.get("WinsByTier").and_then(Value::as_object) {
+                for (tier, count) in wins {
+                    let valid_tier = tier
+                        .parse::<i64>()
+                        .ok()
+                        .filter(|tier| (3..=27).contains(tier));
+                    let count = non_negative(Some(count));
+                    if valid_tier.is_some() && count > 0 {
+                        wins_by_tier.insert(tier.clone(), json!(count));
+                    }
+                }
+            }
+            json!({
+                "seasonId": season_id,
+                "tier": non_negative(info.get("CompetitiveTier")),
+                "rankedRating": non_negative(info.get("RankedRating")),
+                "wins": non_negative(info.get("NumberOfWins")),
+                "games": non_negative(info.get("NumberOfGames")),
+                "winsByTier": wins_by_tier,
+            })
+        })
+        .collect();
+    (current_season_id, seasons)
+}
+
 fn extract_rank(mmr: Option<&Value>) -> (i64, i64, i64, Option<String>) {
     let Some(mmr) = mmr else {
         return (0, 0, 0, None);
@@ -528,7 +578,9 @@ async fn enrich_players(
         .enumerate()
         .map(|(index, raw)| {
             let puuid = raw_puuid(raw);
-            let (current_tier, current_rr, peak_tier, peak_season_id) = extract_rank(mmr_map.get(&puuid));
+            let mmr = mmr_map.get(&puuid);
+            let (current_tier, current_rr, peak_tier, peak_season_id) = extract_rank(mmr);
+            let (current_season_id, competitive_seasons) = extract_competitive_seasons(mmr);
             let (game_name, tag_line) = name_map.get(&puuid).cloned().unwrap_or_default();
             let identity = raw.get("PlayerIdentity").cloned().unwrap_or(json!({}));
 
@@ -548,6 +600,8 @@ async fn enrich_players(
                 "currentRR": current_rr,
                 "peakTier": peak_tier,
                 "peakSeasonId": peak_season_id,
+                "currentSeasonId": current_season_id,
+                "competitiveSeasons": competitive_seasons,
                 "party": Value::Null,
                 "isSelf": puuid.eq_ignore_ascii_case(&api.puuid),
                 "incognito": identity.get("Incognito").and_then(|v| v.as_bool()).unwrap_or(false),
@@ -1180,6 +1234,50 @@ mod tests {
         assert!(!should_cache_recent_stats(5, 4, 4));
         assert!(!should_cache_recent_stats(5, 5, 4));
         assert!(!should_cache_recent_stats(1, 0, 0));
+    }
+
+    #[test]
+    fn normalizes_competitive_seasons_and_current_id() {
+        let mmr = json!({
+            "LatestCompetitiveUpdate": {"SeasonID": "act-current"},
+            "QueueSkills": {"competitive": {"SeasonalInfoBySeasonID": {
+                "act-current": {
+                    "CompetitiveTier": 22,
+                    "RankedRating": 61,
+                    "NumberOfWins": 12,
+                    "NumberOfGames": 20,
+                    "WinsByTier": {"22": 8, "21": 4, "bad": 99, "20": -2}
+                }
+            }}}
+        });
+
+        let (current, seasons) = extract_competitive_seasons(Some(&mmr));
+        assert_eq!(current.as_deref(), Some("act-current"));
+        assert_eq!(seasons.len(), 1);
+        assert_eq!(seasons[0]["seasonId"], "act-current");
+        assert_eq!(seasons[0]["tier"], 22);
+        assert_eq!(seasons[0]["rankedRating"], 61);
+        assert_eq!(seasons[0]["wins"], 12);
+        assert_eq!(seasons[0]["games"], 20);
+        assert_eq!(seasons[0]["winsByTier"], json!({"21": 4, "22": 8}));
+    }
+
+    #[test]
+    fn competitive_seasons_tolerate_missing_and_negative_values() {
+        assert_eq!(extract_competitive_seasons(None), (None, vec![]));
+
+        let mmr = json!({
+            "QueueSkills": {"competitive": {"SeasonalInfoBySeasonID": {
+                "act-old": {"CompetitiveTier": -1, "NumberOfWins": null}
+            }}}
+        });
+        let (current, seasons) = extract_competitive_seasons(Some(&mmr));
+        assert_eq!(current, None);
+        assert_eq!(seasons[0]["tier"], 0);
+        assert_eq!(seasons[0]["rankedRating"], 0);
+        assert_eq!(seasons[0]["wins"], 0);
+        assert_eq!(seasons[0]["games"], 0);
+        assert_eq!(seasons[0]["winsByTier"], json!({}));
     }
 }
 
