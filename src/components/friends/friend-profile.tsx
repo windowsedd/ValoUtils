@@ -1,6 +1,6 @@
 import { ActRankPanel } from "@/components/live-game/act-rank-panel";
 import { initialSeasonId, seasonFallbackLabel } from "@/components/live-game/act-rank";
-import { PageHeader, SectionCard } from "@/components/section-card";
+import { PageHeader } from "@/components/section-card";
 import type { FriendProfileData, FriendProfileResponse } from "@/types/friend-profile";
 import type { Friend } from "@/types/friends";
 import { getSeasonAssets, type CardAsset, type SeasonAsset, type TierAsset } from "@/util/valorant-assets";
@@ -107,12 +107,36 @@ export const FriendProfile = ({ friend, card, tiers, presenceLabel, cachedProfil
 			</PageHeader>
 
 			<div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-6 pb-6">
-				<div className="flex items-center gap-4 border-b border-white/6 pb-4">
-					{card?.icon ? <img src={card.icon} alt="" className="h-16 w-16 shrink-0 rounded-md object-cover" /> : <span className="grid h-16 w-16 shrink-0 place-items-center rounded-md bg-white/5 text-gray-600"><FaUser /></span>}
-					<div className="min-w-0">
-						<p className="truncate text-xl font-bold text-white">{displayName}</p>
-						<p className="text-sm text-gray-500">{presenceLabel}</p>
+				<div data-friend-profile-summary="" className="flex flex-wrap items-center gap-4 border-b border-white/6 pb-4">
+					<div className="flex min-w-0 flex-1 items-center gap-4">
+						{card?.icon ? <img src={card.icon} alt="" className="h-16 w-16 shrink-0 rounded-md object-cover" /> : <span className="grid h-16 w-16 shrink-0 place-items-center rounded-md bg-white/5 text-gray-600"><FaUser /></span>}
+						<div className="min-w-0">
+							<p className="truncate text-xl font-bold text-white">{displayName}</p>
+							<p className="text-sm text-gray-500">{presenceLabel}</p>
+						</div>
 					</div>
+
+					{profile && (
+						<div className="flex w-full flex-wrap items-center gap-4 md:w-auto md:flex-nowrap">
+							<div className="flex min-w-40 flex-1 items-center gap-3 border-t border-white/6 pt-3 md:flex-none md:border-l md:border-t-0 md:pl-5 md:pt-0">
+								{rankIcon && <img src={rankIcon} alt={tierName(tier)} className="h-12 w-12 shrink-0 object-contain" />}
+								<div className="min-w-0">
+									<p className="text-[9px] uppercase tracking-widest text-gray-600">{t("friends.profileCurrentRank")}</p>
+									<p className="truncate text-base font-bold" style={{ color }}>{tier > 0 ? tierName(tier) : t("career.unranked")}</p>
+									{tier > 0 && <p className="text-[11px] tabular-nums text-gray-400">{profile.currentRR} / 100 RR</p>}
+								</div>
+							</div>
+
+							<div className="flex min-w-40 flex-1 items-center gap-3 border-t border-white/6 pt-3 md:flex-none md:border-l md:border-t-0 md:pl-5 md:pt-0">
+								{peakRankIcon && <img src={peakRankIcon} alt={tierName(peakTier)} className="h-11 w-11 shrink-0 object-contain" />}
+								<div className="min-w-0">
+									<p className="text-[9px] uppercase tracking-widest text-gray-600">{t("friends.profilePeakRank")}</p>
+									<p className="truncate text-sm font-semibold" style={{ color: peakColor }}>{peakTier > 0 ? tierName(peakTier) : t("career.unranked")}</p>
+									{peakSeasonLabel && <p className="mt-0.5 text-[10px] text-gray-500">{t("friends.profileEpisodeAct")}: {peakSeasonLabel}</p>}
+								</div>
+							</div>
+						</div>
+					)}
 				</div>
 
 				{loading && !profile && <div className="grid min-h-48 place-items-center text-sm text-gray-500">{t("friends.profileLoading")}</div>}
@@ -125,27 +149,6 @@ export const FriendProfile = ({ friend, card, tiers, presenceLabel, cachedProfil
 
 				{profile && (
 					<>
-						<SectionCard title={t("friends.profileCurrentRank")} accent={color} right={tier > 0 ? `${profile.currentRR} RR` : null}>
-							<div className="grid gap-4 px-3 py-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
-								<div className="flex min-w-0 items-center gap-4">
-									{rankIcon && <img src={rankIcon} alt={tierName(tier)} className="h-16 w-16 shrink-0 object-contain" />}
-									<div className="min-w-0 flex-1">
-										<p className="truncate text-2xl font-bold" style={{ color }}>{tier > 0 ? tierName(tier) : t("career.unranked")}</p>
-										<p className="text-sm tabular-nums text-gray-400">{tier > 0 ? `${profile.currentRR} / 100 RR` : "—"}</p>
-										<div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full" style={{ width: `${Math.min(100, Math.max(0, profile.currentRR))}%`, background: color }} /></div>
-									</div>
-								</div>
-								<div className="flex min-w-36 items-center gap-3 border-t border-white/6 pt-3 sm:border-l sm:border-t-0 sm:pl-5 sm:pt-0">
-									{peakRankIcon && <img src={peakRankIcon} alt={tierName(peakTier)} className="h-11 w-11 shrink-0 object-contain" />}
-									<div className="min-w-0">
-										<p className="text-[9px] uppercase tracking-widest text-gray-600">{t("friends.profilePeakRank")}</p>
-										<p className="truncate text-sm font-semibold" style={{ color: peakColor }}>{peakTier > 0 ? tierName(peakTier) : t("career.unranked")}</p>
-										{peakSeasonLabel && <p className="mt-0.5 text-[10px] text-gray-500">{t("friends.profileEpisodeAct")}: {peakSeasonLabel}</p>}
-									</div>
-								</div>
-							</div>
-						</SectionCard>
-
 						<ActRankPanel
 							competitiveSeasons={profile.competitiveSeasons}
 							assets={{ seasons }}

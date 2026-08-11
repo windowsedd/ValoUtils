@@ -11,6 +11,20 @@ const matchHistory = readFileSync(
 const locales = ["en", "ko", "zh-TW"] as const;
 
 describe("Friend profile rank summary", () => {
+	test("places current and peak ranks beside the Riot ID without a duplicate rank card", () => {
+		const summaryStart = profile.indexOf('data-friend-profile-summary=""');
+		const loadingStart = profile.indexOf("{loading && !profile", summaryStart);
+		const summary = profile.slice(summaryStart, loadingStart);
+
+		expect(summaryStart).toBeGreaterThan(-1);
+		expect(loadingStart).toBeGreaterThan(summaryStart);
+		expect(summary).toContain('t("friends.profileCurrentRank")');
+		expect(summary).toContain("profile.currentRR");
+		expect(summary).toContain('t("friends.profilePeakRank")');
+		expect(summary).toContain('t("friends.profileEpisodeAct")');
+		expect(profile).not.toContain('<SectionCard title={t("friends.profileCurrentRank")}');
+	});
+
 	test("renders the peak tier with a localized label", () => {
 		expect(profile).toMatch(/profile\??\.peakTier/);
 		expect(profile).toContain('t("friends.profilePeakRank")');
