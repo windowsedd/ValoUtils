@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { ActRankTriangle } from "./act-rank-triangle";
 
 describe("ActRankTriangle", () => {
-	test("renders every win with its competitive tier PNG below the official border", () => {
+	test("separates the inset lattice and crystals from the official border", () => {
 		const markup = renderToStaticMarkup(
 			<ActRankTriangle winsByTier={{ "20": 47, "24": 2 }} wins={14} />,
 		);
@@ -13,12 +13,12 @@ describe("ActRankTriangle", () => {
 		expect(markup.match(/data-rank-cell=""/g)).toHaveLength(14);
 		expect(markup).toContain('src="/mmr/24_up.png"');
 		expect(markup).toContain('src="/mmr/20_down.png"');
-		expect(markup).toContain('src="/mmr/border1.png"');
+		expect(markup).toContain('<image href="/mmr/border1.png"');
+		expect(markup).toContain('data-act-rank-mask=""');
+		expect(markup).toContain('data-act-rank-lattice=""');
 		expect(markup).toContain('data-act-rank-border=""');
-		expect(markup).toContain('pointer-events-none absolute inset-0 z-10');
-		expect(markup).not.toContain("<svg");
-		expect(markup).not.toContain("<clipPath");
-		expect(markup).not.toContain("<polygon");
+		expect(markup).toContain("<mask");
+		expect(markup).toContain("<polygon");
 	});
 
 	test("selects the official border image from total Act wins", () => {
@@ -33,7 +33,7 @@ describe("ActRankTriangle", () => {
 			const markup = renderToStaticMarkup(
 				<ActRankTriangle winsByTier={{}} wins={wins} />,
 			);
-			expect(markup).toContain(`src="/mmr/border${border}.png"`);
+			expect(markup).toContain(`<image href="/mmr/border${border}.png"`);
 		}
 	});
 });
