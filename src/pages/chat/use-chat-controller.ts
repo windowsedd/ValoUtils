@@ -4,6 +4,7 @@ import type {
 	ChatFriend,
 	ChatHistoryResponse,
 	ChatMessage,
+	ChatPresenceSnapshot,
 	ChatResponse,
 	ChatSendResponse,
 	TranslateResponse,
@@ -11,6 +12,7 @@ import type {
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { chatControllerReducer, initialChatControllerState } from "./chat-controller-state";
 import {
+	applyPresenceSnapshot,
 	buildFriendConversations,
 	chatMessageKey,
 	filterChatFriends,
@@ -126,6 +128,23 @@ export const useChatController = () => {
 			dispatch({ type: "realtimeMessage", message });
 		};
 
+		const onPresence = (payload: string) => {
+			const snapshot = parsePayload<ChatPresenceSnapshot>(payload);
+			if (
+				!snapshot ||
+				!(["syncing", "ready", "reconnecting"] as const).includes(snapshot.state) ||
+				!Number.isFinite(snapshot.generation) ||
+				!snapshot.friends ||
+				typeof snapshot.friends !== "object"
+			) {
+				return;
+			}
+			setSummary((current) => ({
+				...current,
+				friends: applyPresenceSnapshot(current.friends, snapshot),
+			}));
+		};
+
 		const onSend = (payload: string) => {
 			const response = parsePayload<ChatSendResponse>(payload);
 			if (!response) return;
@@ -187,6 +206,7 @@ export const useChatController = () => {
 		window.Main.on("chat:get", onSummary);
 		window.Main.on("chat:history", onHistory);
 		window.Main.on("chat:message", onRealtimeMessage);
+		window.Main.on("chat:presence", onPresence);
 		window.Main.on("chat:send", onSend);
 		window.Main.on("chat:translate", onTranslate);
 		window.Main.on("chat:friend-action", onFriendAction);
@@ -198,6 +218,7 @@ export const useChatController = () => {
 			window.Main.removeListener("chat:get", onSummary);
 			window.Main.removeListener("chat:history", onHistory);
 			window.Main.removeListener("chat:message", onRealtimeMessage);
+			window.Main.removeListener("chat:presence", onPresence);
 			window.Main.removeListener("chat:send", onSend);
 			window.Main.removeListener("chat:translate", onTranslate);
 			window.Main.removeListener("chat:friend-action", onFriendAction);

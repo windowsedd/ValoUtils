@@ -3,6 +3,7 @@ import type {
 	ChatConversation,
 	ChatFriend,
 	ChatMessage,
+	ChatPresenceSnapshot,
 } from "@/types/chat";
 
 export type FriendConversation = {
@@ -17,6 +18,8 @@ export type FriendConversation = {
 
 export type FriendGameStatus =
 	| "offline"
+	| "checking"
+	| "reconnecting"
 	| "inMatch"
 	| "agentSelect"
 	| "inLobby"
@@ -26,6 +29,8 @@ export type FriendGameStatus =
 export const resolveFriendGameStatus = (
 	friend: ChatFriend | undefined,
 ): FriendGameStatus => {
+	if (friend?.presenceState === "syncing") return "checking";
+	if (friend?.presenceState === "reconnecting") return "reconnecting";
 	if (!friend?.isOnline) return "offline";
 	if (friend.sessionLoopState === "INGAME") return "inMatch";
 	if (friend.sessionLoopState === "PREGAME") return "agentSelect";
@@ -33,6 +38,46 @@ export const resolveFriendGameStatus = (
 	if (friend.status.toLocaleLowerCase() === "away") return "away";
 	return "online";
 };
+
+const presenceProductPriority = (product: string) => {
+	switch (product.toLocaleLowerCase()) {
+		case "valorant":
+			return 3;
+		case "league_of_legends":
+			return 2;
+		case "riot_client":
+		case "keystone":
+			return 1;
+		default:
+			return 0;
+	}
+};
+
+export const applyPresenceSnapshot = (
+	friends: ChatFriend[],
+	snapshot: ChatPresenceSnapshot,
+): ChatFriend[] =>
+	friends.map((friend) => {
+		const friendId = friend.puuid.toLocaleLowerCase();
+		const resources =
+			Object.entries(snapshot.friends).find(
+				([puuid]) => puuid.toLocaleLowerCase() === friendId,
+			)?.[1] ?? [];
+		const selected = [...resources].sort(
+			(left, right) =>
+				presenceProductPriority(right.product) - presenceProductPriority(left.product),
+		)[0];
+		const ready = snapshot.state === "ready";
+		return {
+			...friend,
+			presenceState: snapshot.state,
+			isOnline: ready && resources.length > 0,
+			product: ready ? (selected?.product ?? "") : "",
+			status: ready ? (selected?.status ?? "offline") : "offline",
+			statusMessage: ready ? (selected?.statusMessage ?? "") : "",
+			sessionLoopState: ready ? (selected?.sessionLoopState ?? "") : "",
+		};
+	});
 
 type ScrollMetrics = {
 	scrollHeight: number;

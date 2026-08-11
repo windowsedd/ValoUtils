@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { ChatFriend, ChatMessage } from "@/types/chat";
+import * as chatModel from "./chat-model";
 import {
 	buildFriendConversations,
 	channelForCid,
@@ -41,6 +42,7 @@ const friend: ChatFriend = {
 	partySize: 2,
 	maxPartySize: 5,
 	isOnline: true,
+	presenceState: "ready",
 };
 
 describe("chat model", () => {
@@ -135,6 +137,46 @@ describe("chat model", () => {
 		).toBe("inLobby");
 		expect(resolveFriendGameStatus({ ...friend, status: "away" })).toBe("away");
 		expect(resolveFriendGameStatus({ ...friend, status: "chat" })).toBe("online");
+	});
+
+	test("sync state has priority over stale online data", () => {
+		expect(
+			resolveFriendGameStatus({ ...friend, presenceState: "syncing", isOnline: true }),
+		).toBe("checking");
+		expect(
+			resolveFriendGameStatus({ ...friend, presenceState: "reconnecting", isOnline: true }),
+		).toBe("reconnecting");
+	});
+
+	test("applies a ready snapshot and offlines absent friends", () => {
+		expect(typeof chatModel.applyPresenceSnapshot).toBe("function");
+		const result = chatModel.applyPresenceSnapshot(
+			[friend, { ...friend, puuid: "offline" }],
+			{
+				state: "ready",
+				generation: 2,
+				friends: {
+					[friend.puuid]: [
+						{
+							puuid: friend.puuid,
+							resource: "RC-1",
+							product: "valorant",
+							status: "chat",
+							statusMessage: "",
+							sessionLoopState: "INGAME",
+							private: {},
+						},
+					],
+				},
+			},
+		);
+
+		expect(result[0]).toMatchObject({
+			presenceState: "ready",
+			isOnline: true,
+			sessionLoopState: "INGAME",
+		});
+		expect(result[1]).toMatchObject({ presenceState: "ready", isOnline: false });
 	});
 
 	test("attaches the matched friend's status to a direct conversation", () => {

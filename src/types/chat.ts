@@ -1,6 +1,7 @@
 export type TranslatorProvider = "google" | "deepl";
 export type ChatScope = "friends" | "party" | "match";
 export type ChatChannel = "friends" | "party" | "team" | "all";
+export type ChatPresenceState = "syncing" | "ready" | "reconnecting";
 export type ChatRoomKey = ChatScope | "matchTeam" | "matchAll";
 export type ChatRooms = Partial<Record<ChatRoomKey, string>> & { _partyXmppDebug?: Record<string, any> };
 
@@ -43,6 +44,21 @@ export type ChatFriend = {
 	partySize: number | null;
 	maxPartySize: number | null;
 	isOnline: boolean;
+	presenceState: ChatPresenceState;
+};
+
+export type ChatPresenceResource = Pick<
+	ChatFriend,
+	"puuid" | "product" | "status" | "statusMessage" | "sessionLoopState"
+> & {
+	resource: string;
+	private: unknown;
+};
+
+export type ChatPresenceSnapshot = {
+	state: ChatPresenceState;
+	generation: number;
+	friends: Record<string, ChatPresenceResource[]>;
 };
 
 export type ChatResponse =
