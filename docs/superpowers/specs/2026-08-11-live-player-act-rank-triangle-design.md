@@ -37,12 +37,12 @@ No new IPC command or Riot request is required. The larger live snapshot remains
 
 ## Triangle Composition
 
-The frontend builds a maximum of 49 win tiles from `winsByTier`:
+The frontend builds a maximum of nine win tiles from `winsByTier`, matching Riot's Act Rank Badge rule that the badge shows the player's top nine ranked results:
 
 1. Expand each tier/count pair into one entry per win.
 2. Sort entries by tier descending so the strongest wins occupy the top of the badge.
-3. Keep the first 49 entries.
-4. Place entries top-to-bottom in a seven-row triangular grid. Row `r` contains `2r + 1` slots whose orientations alternate up/down.
+3. Keep the first nine entries.
+4. Place entries top-to-bottom in the first three rows of the triangular grid. Row `r` contains `2r + 1` slots whose orientations alternate up/down.
 
 Each slot uses `/mmr/<tier>_up.png` or `/mmr/<tier>_down.png`. CSS gives every source image the same rendered dimensions, including files whose intrinsic dimensions differ.
 
@@ -57,7 +57,7 @@ The panel places the tiles and the border in one responsive square coordinate sy
 | 75-99 | `border4.png` |
 | 100+ | `border5.png` |
 
-The triangle component contains no player-specific fetching or selection state. It receives `winsByTier` and total wins, which makes geometry and border behavior testable in isolation.
+The triangle component contains no player-specific fetching or selection state. It receives `winsByTier` and total wins, which makes geometry and border behavior testable in isolation. Riot documents the badge and border rules in [Act II Ranks and Competitive Changes](https://playvalorant.com/en-gb/news/dev/act-ii-ranks-and-competitive-changes/).
 
 ## Act Statistics
 
@@ -93,6 +93,6 @@ Missing seasonal data produces a compact unavailable message inside the expanded
 
 ## Verification
 
-Rust tests cover season normalization, absent data, numeric coercion, current-season extraction, and preservation of `winsByTier`. Frontend tests cover descending tier expansion, the 49-tile cap, orientation and slot order, border thresholds, season sorting and fallback selection, and empty data.
+Rust tests cover season normalization, absent data, numeric coercion, current-season extraction, and preservation of `winsByTier`. Frontend tests cover descending tier expansion, the nine-tile cap, orientation and slot order, border thresholds, season sorting and fallback selection, and empty data.
 
 The implementation must also pass the TypeScript/Vite build and Rust tests. Browser screenshots at desktop and narrow widths will verify that the expanded row fits without overlap, the supplied assets align inside the border, and the dropdown switches acts.
