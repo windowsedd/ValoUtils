@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make a 14-win Act render exactly 14 native Riot tier crystals aligned with the official border lattice.
+**Goal:** Make each Act win render one tier crystal, capped at 49, with every PNG scaled into the aligned seven-row border lattice.
 
-**Architecture:** Replace the invented SVG lattice with a testable 512-unit placement formula for the existing 125×111 tier PNGs. Pass the selected Act's explicit `wins` value into tile construction so stale or oversized `WinsByTier` totals cannot overfill the badge.
+**Architecture:** Keep the tested seven-row 512-unit cell geometry, but use it only to calculate responsive HTML image bounds; the official border PNG supplies the visible background and grid. Pass the selected Act's explicit `wins` value into tile construction so stale or oversized `WinsByTier` totals cannot exceed the selected Act's wins or the 49-cell custom capacity.
 
 **Tech Stack:** React, TypeScript, CSS absolute positioning, Bun test, React server rendering.
 
@@ -18,19 +18,19 @@
 
 ---
 
-### Task 1: Reproduce the overfill and native-position failures
+### Task 1: Reproduce the overfill and cell-position failures
 
 **Files:**
 - Modify: `src/components/live-game/act-rank.test.ts`
 - Modify: `src/components/live-game/act-rank-triangle.test.tsx`
 
 **Interfaces:**
-- Consumes: `buildActRankTiles(winsByTier, wins)`, `actRankTilePosition(row, column)`, `ActRankTriangle`
+- Consumes: `buildActRankTiles(winsByTier, wins)`, `actRankCellBounds(row, column)`, `ActRankTriangle`
 - Produces: Regression coverage for explicit win caps, official placement, and removal of SVG duplication.
 
 - [ ] **Step 1: Write failing pure-logic tests**
 
-Assert that `buildActRankTiles({ "20": 49 }, 14)` returns 14 tiles and ends at row 3, column 4. Assert that 60 wins still cap at 49, and zero/negative wins render zero. Assert `actRankTilePosition(0, 0)` equals `{ left: 193.5, top: 152, width: 125, height: 111 }`, while row/column movement is `55.5px` vertically and `62.5px` horizontally.
+Assert that `buildActRankTiles({ "20": 49 }, 14)` returns 14 tiles and ends at row 3, column 4. Assert that 60 wins still cap at 49, and zero/negative wins render zero. Assert `actRankCellBounds(0, 0)` uses top `96`, height `45`, and the width derived from the equilateral seven-row lattice.
 
 - [ ] **Step 2: Write the failing rendering regression**
 
@@ -52,11 +52,11 @@ Expected: FAIL because tile construction does not accept `wins`, 49 tier entries
 
 **Interfaces:**
 - Produces: `buildActRankTiles(winsByTier: Record<string, number>, wins: number): ActRankTile[]`
-- Produces: `actRankTilePosition(row: number, column: number): { left: number; top: number; width: number; height: number }`
+- Produces: `actRankCellBounds(row: number, column: number): { left: number; top: number; width: number; height: number }`
 
-- [ ] **Step 1: Add official placement constants and helper**
+- [ ] **Step 1: Add shared cell-bounds helper**
 
-Use canvas `512`, tile width `125`, tile height `111`, first-row top `152`, horizontal step `62.5`, and vertical step `55.5`. Calculate `left = 256 - 62.5 * (row + 1) + 62.5 * column` and `top = 152 + 55.5 * row`.
+Calculate the minimum x/y and maximum x/y from `actRankCellPoints(row, column)`. Return those values as left, top, width, and height so every image fits its equilateral cell and stays inside the inner triangle.
 
 - [ ] **Step 2: Cap tile creation by explicit Act wins**
 
@@ -100,4 +100,3 @@ Expected: TypeScript and Vite build successfully; existing Vite warnings may rem
 Run: `git diff --check`
 
 Expected: No whitespace errors and no surrounding Career UI changes from this fix.
-

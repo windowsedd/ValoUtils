@@ -23,11 +23,14 @@ const season = (seasonId: string): CompetitiveSeason => ({
 
 describe("act rank badge", () => {
 	test("renders all fourteen valid wins in tier order and fills the lattice row by row", () => {
-		const tiles = buildActRankTiles({ "20": 5, "24": 2, "22": 7, bad: 8, "28": 3, "18": -2 });
+		const tiles = buildActRankTiles(
+			{ "20": 35, "24": 2, "22": 12, bad: 8, "28": 3, "18": -2 },
+			14,
+		);
 		expect(tiles.map((tile) => tile.tier)).toEqual([
 			24, 24,
-			22, 22, 22, 22, 22, 22, 22,
-			20, 20, 20, 20, 20,
+			22, 22, 22, 22, 22, 22,
+			22, 22, 22, 22, 22, 22,
 		]);
 		expect(tiles.map((tile) => [tile.row, tile.column, tile.orientation])).toEqual([
 			[0, 0, "up"],
@@ -48,10 +51,37 @@ describe("act rank badge", () => {
 	});
 
 	test("fills the complete seven-row lattice and caps only beyond its 49 cells", () => {
-		const full = buildActRankTiles({ "20": 49 });
+		const full = buildActRankTiles({ "20": 60 }, 60);
 		expect(full).toHaveLength(49);
 		expect(full.at(-1)).toMatchObject({ row: 6, column: 12, orientation: "up" });
-		expect(buildActRankTiles({ "20": 60 })).toHaveLength(49);
+		expect(buildActRankTiles({ "20": 49 }, 14)).toHaveLength(14);
+		expect(buildActRankTiles({ "20": 49 }, 0)).toHaveLength(0);
+		expect(buildActRankTiles({ "20": 49 }, -5)).toHaveLength(0);
+	});
+
+	test("fits tier PNGs into the shared seven-row lattice cells", () => {
+		const actRankCellBounds = (
+			actRankGeometry as typeof actRankGeometry & {
+				actRankCellBounds?: (row: number, column: number) => {
+					left: number;
+					top: number;
+					width: number;
+					height: number;
+				};
+			}
+		).actRankCellBounds;
+		expect(actRankCellBounds).toBeDefined();
+		if (!actRankCellBounds) return;
+		const first = actRankCellBounds(0, 0);
+		expect(first.top).toBe(96);
+		expect(first.height).toBe(45);
+		expect(first.width).toBeCloseTo((2 * 315) / Math.sqrt(3) / 7, 10);
+		expect(first.left + first.width / 2).toBeCloseTo(256, 10);
+
+		const down = actRankCellBounds(1, 1);
+		expect(down.top).toBe(141);
+		expect(down.height).toBe(45);
+		expect(down.left + down.width / 2).toBeCloseTo(256, 10);
 	});
 
 	test("builds a symmetric near-equilateral reference triangle", () => {

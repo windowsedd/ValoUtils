@@ -33,7 +33,7 @@ Each filled lattice cell uses an existing image from `public/mmr`:
 - A 14-win Act therefore displays 14 filled crystals, not nine.
 - Invalid tiers and non-positive win counts remain excluded.
 
-The PNGs replace the hand-generated SVG facet gradients. They use Riot's native overlapping placement instead of being stretched into independent SVG cell bounding boxes.
+The PNGs replace the hand-generated SVG facet gradients. Each PNG is scaled to the bounds of its assigned cell in the shared seven-row lattice. The source asset's 125×111 dimensions are not used as display dimensions because they extend outside the border when repeated across seven rows.
 
 ## Official Win Border
 
@@ -53,11 +53,9 @@ The existing `borderIndexForWins(wins)` function remains the single source of tr
 ## Geometry and Responsiveness
 
 - Use a square 512 by 512 composition to match the official assets without cropping their outer decorations.
-- Render every tier image at the native official slot size: `125px` wide and `111px` high.
-- Center row zero at x `256px` with top y `152px`.
-- Move each later row down by `55.5px`, exactly half the image height, so neighboring up/down images overlap into Riot's connected crystal lattice.
-- Within a row, move each column by `62.5px`, exactly half the image width.
-- Calculate each row's centered starting x-coordinate from its width; do not maintain independent coordinates per crystal.
+- Use the existing centered seven-row equilateral lattice with inner apex y `96px`, inner base y `411px`, and center x `256px`.
+- Calculate every image's left, top, width, and height from its lattice cell points; do not maintain independent coordinates per crystal.
+- Convert the 512-unit cell bounds to percentages so all tier images scale responsively with the square wrapper.
 - Remove the custom SVG background, grid, clipping mask, and border strokes. The official border PNG already supplies the aligned background triangle and lattice.
 - Keep the visualization centered, responsive, and constrained to the existing maximum display size.
 
@@ -74,5 +72,5 @@ Automated tests will verify:
 - Each crystal image path includes the correct numeric tier and its lattice `up` or `down` orientation.
 - The border thresholds select `border0.png` through `border5.png` correctly.
 - The official border is layered above the crystals and does not capture pointer events.
-- Native 125×111 image sizing and half-width/half-height row/column offsets remain aligned.
+- Tier PNG bounds are derived from the shared seven-row cell geometry and remain inside the official border.
 - The former SVG, gradient facets, custom lattice, clipping mask, and custom outer border are no longer rendered.

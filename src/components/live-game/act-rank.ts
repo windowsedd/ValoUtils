@@ -9,6 +9,13 @@ export type ActRankTile = {
 
 export type Point = readonly [number, number];
 
+export type ActRankCellBounds = {
+	left: number;
+	top: number;
+	width: number;
+	height: number;
+};
+
 export type ActRankPalette = {
 	name:
 		| "iron"
@@ -53,6 +60,8 @@ export const ACT_RANK_GEOMETRY = {
 	innerBaseY: 411,
 	rows: 7,
 } as const;
+
+export const ACT_RANK_CANVAS_SIZE = 512;
 
 const equilateralHalfWidth = (height: number) => height / Math.sqrt(3);
 
@@ -101,7 +110,24 @@ export const actRankCellPoints = (
 				[x, top],
 				[x + cellWidth, top],
 				[x + cellWidth / 2, bottom],
-			];
+		];
+};
+
+export const actRankCellBounds = (
+	row: number,
+	column: number,
+): ActRankCellBounds => {
+	const points = actRankCellPoints(row, column);
+	const xs = points.map(([x]) => x);
+	const ys = points.map(([, y]) => y);
+	const left = Math.min(...xs);
+	const top = Math.min(...ys);
+	return {
+		left,
+		top,
+		width: Math.max(...xs) - left,
+		height: Math.max(...ys) - top,
+	};
 };
 
 export const buildLatticeCells = () =>
@@ -126,7 +152,14 @@ const VALID_TIER_MIN = 3;
 const VALID_TIER_MAX = 27;
 const BADGE_SLOTS = buildLatticeCells().map(({ row, column }) => [row, column] as const);
 
-export const buildActRankTiles = (winsByTier: Record<string, number>): ActRankTile[] => {
+export const buildActRankTiles = (
+	winsByTier: Record<string, number>,
+	wins: number,
+): ActRankTile[] => {
+	const tileCount = Math.min(
+		BADGE_SLOTS.length,
+		Math.max(0, Math.floor(Number(wins) || 0)),
+	);
 	const tiers = Object.entries(winsByTier)
 		.flatMap(([rawTier, rawCount]) => {
 			const tier = Number(rawTier);
@@ -136,7 +169,7 @@ export const buildActRankTiles = (winsByTier: Record<string, number>): ActRankTi
 				: [];
 		})
 		.sort((a, b) => b - a)
-		.slice(0, BADGE_SLOTS.length);
+		.slice(0, tileCount);
 
 	return tiers.map((tier, index) => {
 		const [row, column] = BADGE_SLOTS[index];
