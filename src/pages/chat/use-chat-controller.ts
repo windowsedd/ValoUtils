@@ -36,7 +36,7 @@ const emptySummary: ChatSummary = {
 };
 
 let requestSequence = 0;
-const nextRequestId = (kind: "history" | "send" | "translate" | "friend") =>
+const nextRequestId = (kind: "history" | "send" | "translate") =>
 	`${kind}-${Date.now()}-${++requestSequence}`;
 
 const parsePayload = <T>(payload: string): T | null => {
@@ -227,6 +227,10 @@ export const useChatController = () => {
 		},
 		[selectConversation, summary.conversations],
 	);
+	const canOpenFriendChat = useCallback(
+		(friend: ChatFriend) => Boolean(findFriendConversationCid(friend, summary.conversations)),
+		[summary.conversations],
+	);
 
 	const retryHistory = useCallback(() => {
 		if (state.selectedCid) requestHistory(state.selectedCid);
@@ -260,8 +264,7 @@ export const useChatController = () => {
 	const runFriendAction = useCallback(
 		(action: FriendAction, friend: ChatFriend) => {
 			if (pendingFriendAction) return;
-			const requestId = nextRequestId("friend");
-			setPendingFriendAction(requestId);
+			setPendingFriendAction(friend.puuid);
 			setFriendActionError(null);
 			window.Main.send("chat:friend-action", action, friend);
 		},
@@ -347,6 +350,7 @@ export const useChatController = () => {
 		selectChannel,
 		selectConversation,
 		openFriendChat,
+		canOpenFriendChat,
 		refreshSummary,
 		retryHistory,
 		sendMessage,

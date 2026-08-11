@@ -4,6 +4,7 @@ import { Router, RouterProvider } from "@/components/router";
 import SettingsProfiles from "@/pages/SettingsProfiles.tsx";
 import PlayerCareer from "@/pages/PlayerCareer.tsx";
 import Friends from "@/pages/Friends.tsx";
+import Chat from "@/pages/Chat.tsx";
 import Matches from "@/pages/Matches.tsx";
 import Replays from "@/pages/Replays.tsx";
 import Settings from "@/pages/Settings.tsx";
@@ -11,7 +12,7 @@ import { fetcher } from "@/util/swr";
 import { Toast } from "@heroui/react";
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { FaCogs, FaQuestion, FaTrophy, FaFilm } from "react-icons/fa";
+import { FaCogs, FaComments, FaQuestion, FaTrophy, FaFilm } from "react-icons/fa";
 import { FaGear, FaUserGroup, FaClockRotateLeft, FaRobot, FaCrosshairs } from "react-icons/fa6";
 import DummyBotPage from "@/pages/DummyBot.tsx";
 import LiveGame from "@/pages/LiveGame.tsx";
@@ -78,6 +79,12 @@ const AppShell = () => {
 								id: "friends",
 								icon: <FaUserGroup />,
 								component: <Friends />,
+							},
+							{
+								title: "nav.chat",
+								id: "chat",
+								icon: <FaComments />,
+								component: <Chat />,
 							},
 							{
 								title: "nav.replays",

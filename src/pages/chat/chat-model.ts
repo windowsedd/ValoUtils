@@ -51,6 +51,11 @@ export const buildFriendConversations = (
 	)) {
 		grouped.set(item.conversationId, [...(grouped.get(item.conversationId) ?? []), item]);
 	}
+	for (const conversation of metadata) {
+		if (conversation.channel === "friends" && conversation.cid && !grouped.has(conversation.cid)) {
+			grouped.set(conversation.cid, []);
+		}
+	}
 	return [...grouped.entries()]
 		.map(([cid, values]) => {
 			const ordered = mergeChatMessages(values);

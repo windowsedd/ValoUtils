@@ -67,6 +67,24 @@ describe("chat model", () => {
 		expect(groups.map((group) => group.cid)).toEqual(["two", "one"]);
 	});
 
+	test("keeps Riot-provided direct conversations before history has messages", () => {
+		const conversations = buildFriendConversations([], [
+			{
+				cid: "direct-cid",
+				channel: "friends",
+				type: "chat",
+				title: "ALEKSANDAR#4830",
+				participantPuuid: "friend-puuid",
+				unreadCount: 0,
+				messageHistory: true,
+				muted: false,
+			},
+		]);
+		expect(conversations).toHaveLength(1);
+		expect(conversations[0]?.cid).toBe("direct-cid");
+		expect(conversations[0]?.messages).toEqual([]);
+	});
+
 	test("searches friends by Riot ID and note", () => {
 		expect(filterChatFriends([friend], "4830")).toHaveLength(1);
 		expect(filterChatFriends([friend], "架住")).toHaveLength(1);
