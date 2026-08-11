@@ -1,0 +1,2554 @@
+[
+  {
+    "provider": "google",
+    "canonicalId": "ab",
+    "code": "ab",
+    "englishName": "Abkhaz",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "ace",
+    "code": "ace",
+    "englishName": "Acehnese",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "ach",
+    "code": "ach",
+    "englishName": "Acholi",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "af",
+    "code": "af",
+    "englishName": "Afrikaans",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "sq",
+    "code": "sq",
+    "englishName": "Albanian",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "alz",
+    "code": "alz",
+    "englishName": "Alur",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "am",
+    "code": "am",
+    "englishName": "Amharic",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "ar",
+    "code": "ar",
+    "englishName": "Arabic",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "hy",
+    "code": "hy",
+    "englishName": "Armenian",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "as",
+    "code": "as",
+    "englishName": "Assamese",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "awa",
+    "code": "awa",
+    "englishName": "Awadhi",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "ay",
+    "code": "ay",
+    "englishName": "Aymara",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "az",
+    "code": "az",
+    "englishName": "Azerbaijani",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "ban",
+    "code": "ban",
+    "englishName": "Balinese",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "bm",
+    "code": "bm",
+    "englishName": "Bambara",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "ba",
+    "code": "ba",
+    "englishName": "Bashkir",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "eu",
+    "code": "eu",
+    "englishName": "Basque",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "btx",
+    "code": "btx",
+    "englishName": "Batak Karo",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "bts",
+    "code": "bts",
+    "englishName": "Batak Simalungun",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "bbc",
+    "code": "bbc",
+    "englishName": "Batak Toba",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "be",
+    "code": "be",
+    "englishName": "Belarusian",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "bem",
+    "code": "bem",
+    "englishName": "Bemba",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "bn",
+    "code": "bn",
+    "englishName": "Bengali",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "bew",
+    "code": "bew",
+    "englishName": "Betawi",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "bho",
+    "code": "bho",
+    "englishName": "Bhojpuri",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "bik",
+    "code": "bik",
+    "englishName": "Bikol",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "bs",
+    "code": "bs",
+    "englishName": "Bosnian",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "br",
+    "code": "br",
+    "englishName": "Breton",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "bg",
+    "code": "bg",
+    "englishName": "Bulgarian",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "bua",
+    "code": "bua",
+    "englishName": "Buryat",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "yue",
+    "code": "yue",
+    "englishName": "Cantonese",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "ca",
+    "code": "ca",
+    "englishName": "Catalan",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "ceb",
+    "code": "ceb",
+    "englishName": "Cebuano",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "ny",
+    "code": "ny",
+    "englishName": "Chichewa (Nyanja)",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "zh-Hans",
+    "code": "zh-CN",
+    "englishName": "Chinese (Simplified)",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "zh-Hant",
+    "code": "zh-TW",
+    "englishName": "Chinese (Traditional)",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "cv",
+    "code": "cv",
+    "englishName": "Chuvash",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "co",
+    "code": "co",
+    "englishName": "Corsican",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "crh",
+    "code": "crh",
+    "englishName": "Crimean Tatar",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "hr",
+    "code": "hr",
+    "englishName": "Croatian",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "cs",
+    "code": "cs",
+    "englishName": "Czech",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "da",
+    "code": "da",
+    "englishName": "Danish",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "din",
+    "code": "din",
+    "englishName": "Dinka",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "dv",
+    "code": "dv",
+    "englishName": "Divehi",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "doi",
+    "code": "doi",
+    "englishName": "Dogri",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "dov",
+    "code": "dov",
+    "englishName": "Dombe",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "nl",
+    "code": "nl",
+    "englishName": "Dutch",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "dz",
+    "code": "dz",
+    "englishName": "Dzongkha",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "en",
+    "code": "en",
+    "englishName": "English",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "eo",
+    "code": "eo",
+    "englishName": "Esperanto",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "et",
+    "code": "et",
+    "englishName": "Estonian",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "ee",
+    "code": "ee",
+    "englishName": "Ewe",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "fj",
+    "code": "fj",
+    "englishName": "Fijian",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "tl",
+    "code": "fil",
+    "englishName": "Filipino (Tagalog)",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "fi",
+    "code": "fi",
+    "englishName": "Finnish",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "fr",
+    "code": "fr",
+    "englishName": "French",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "fr",
+    "code": "fr-FR",
+    "englishName": "French (French)",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "fr",
+    "code": "fr-CA",
+    "englishName": "French (Canadian)",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "fy",
+    "code": "fy",
+    "englishName": "Frisian",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "ff",
+    "code": "ff",
+    "englishName": "Fulfulde",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "gaa",
+    "code": "gaa",
+    "englishName": "Ga",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "gl",
+    "code": "gl",
+    "englishName": "Galician",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "lg",
+    "code": "lg",
+    "englishName": "Ganda (Luganda)",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "ka",
+    "code": "ka",
+    "englishName": "Georgian",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "de",
+    "code": "de",
+    "englishName": "German",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "el",
+    "code": "el",
+    "englishName": "Greek",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "gn",
+    "code": "gn",
+    "englishName": "Guarani",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "gu",
+    "code": "gu",
+    "englishName": "Gujarati",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "ht",
+    "code": "ht",
+    "englishName": "Haitian Creole",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "cnh",
+    "code": "cnh",
+    "englishName": "Hakha Chin",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "ha",
+    "code": "ha",
+    "englishName": "Hausa",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "haw",
+    "code": "haw",
+    "englishName": "Hawaiian",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "he",
+    "code": "he",
+    "englishName": "Hebrew",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "hil",
+    "code": "hil",
+    "englishName": "Hiligaynon",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "hi",
+    "code": "hi",
+    "englishName": "Hindi",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "hmn",
+    "code": "hmn",
+    "englishName": "Hmong",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "hu",
+    "code": "hu",
+    "englishName": "Hungarian",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "hrx",
+    "code": "hrx",
+    "englishName": "Hunsrik",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "is",
+    "code": "is",
+    "englishName": "Icelandic",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "ig",
+    "code": "ig",
+    "englishName": "Igbo",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "ilo",
+    "code": "ilo",
+    "englishName": "Iloko",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "id",
+    "code": "id",
+    "englishName": "Indonesian",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "ga",
+    "code": "ga",
+    "englishName": "Irish",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "it",
+    "code": "it",
+    "englishName": "Italian",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "ja",
+    "code": "ja",
+    "englishName": "Japanese",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "jv",
+    "code": "jv",
+    "englishName": "Javanese",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "kn",
+    "code": "kn",
+    "englishName": "Kannada",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "pam",
+    "code": "pam",
+    "englishName": "Kapampangan",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "kk",
+    "code": "kk",
+    "englishName": "Kazakh",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "km",
+    "code": "km",
+    "englishName": "Khmer",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "cgg",
+    "code": "cgg",
+    "englishName": "Kiga",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "rw",
+    "code": "rw",
+    "englishName": "Kinyarwanda",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "ktu",
+    "code": "ktu",
+    "englishName": "Kituba",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "gom",
+    "code": "gom",
+    "englishName": "Konkani",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "ko",
+    "code": "ko",
+    "englishName": "Korean",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "kri",
+    "code": "kri",
+    "englishName": "Krio",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "kmr",
+    "code": "ku",
+    "englishName": "Kurdish (Kurmanji)",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "ckb",
+    "code": "ckb",
+    "englishName": "Kurdish (Sorani)",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "ky",
+    "code": "ky",
+    "englishName": "Kyrgyz",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "lo",
+    "code": "lo",
+    "englishName": "Lao",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "ltg",
+    "code": "ltg",
+    "englishName": "Latgalian",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "la",
+    "code": "la",
+    "englishName": "Latin",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "lv",
+    "code": "lv",
+    "englishName": "Latvian",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "lij",
+    "code": "lij",
+    "englishName": "Ligurian",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "li",
+    "code": "li",
+    "englishName": "Limburgan",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "ln",
+    "code": "ln",
+    "englishName": "Lingala",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "lt",
+    "code": "lt",
+    "englishName": "Lithuanian",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "lmo",
+    "code": "lmo",
+    "englishName": "Lombard",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "luo",
+    "code": "luo",
+    "englishName": "Luo",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "lb",
+    "code": "lb",
+    "englishName": "Luxembourgish",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "mk",
+    "code": "mk",
+    "englishName": "Macedonian",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "mai",
+    "code": "mai",
+    "englishName": "Maithili",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "mak",
+    "code": "mak",
+    "englishName": "Makassar",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "mg",
+    "code": "mg",
+    "englishName": "Malagasy",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "ms",
+    "code": "ms",
+    "englishName": "Malay",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "ms-arab",
+    "code": "ms-Arab",
+    "englishName": "Malay (Jawi)",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "ml",
+    "code": "ml",
+    "englishName": "Malayalam",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "mt",
+    "code": "mt",
+    "englishName": "Maltese",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "mi",
+    "code": "mi",
+    "englishName": "Maori",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "mr",
+    "code": "mr",
+    "englishName": "Marathi",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "chm",
+    "code": "chm",
+    "englishName": "Meadow Mari",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "mni-mtei",
+    "code": "mni-Mtei",
+    "englishName": "Meiteilon (Manipuri)",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "min",
+    "code": "min",
+    "englishName": "Minang",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "lus",
+    "code": "lus",
+    "englishName": "Mizo",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "mn",
+    "code": "mn",
+    "englishName": "Mongolian",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "my",
+    "code": "my",
+    "englishName": "Myanmar (Burmese)",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "nr",
+    "code": "nr",
+    "englishName": "Ndebele (South)",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "new",
+    "code": "new",
+    "englishName": "Nepalbhasa (Newari)",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "ne",
+    "code": "ne",
+    "englishName": "Nepali",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "nso",
+    "code": "nso",
+    "englishName": "Northern Sotho (Sepedi)",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "nb",
+    "code": "no",
+    "englishName": "Norwegian",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "nus",
+    "code": "nus",
+    "englishName": "Nuer",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "oc",
+    "code": "oc",
+    "englishName": "Occitan",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "or",
+    "code": "or",
+    "englishName": "Odia (Oriya)",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "om",
+    "code": "om",
+    "englishName": "Oromo",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "pag",
+    "code": "pag",
+    "englishName": "Pangasinan",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "pap",
+    "code": "pap",
+    "englishName": "Papiamento",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "ps",
+    "code": "ps",
+    "englishName": "Pashto",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "fa",
+    "code": "fa",
+    "englishName": "Persian",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "pl",
+    "code": "pl",
+    "englishName": "Polish",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "pt",
+    "code": "pt",
+    "englishName": "Portuguese",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "pt",
+    "code": "pt-PT",
+    "englishName": "Portuguese (Portugal)",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "pt",
+    "code": "pt-BR",
+    "englishName": "Portuguese (Brazil)",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "pa",
+    "code": "pa",
+    "englishName": "Punjabi",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "pa-arab",
+    "code": "pa-Arab",
+    "englishName": "Punjabi (Shahmukhi)",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "qu",
+    "code": "qu",
+    "englishName": "Quechua",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "rom",
+    "code": "rom",
+    "englishName": "Romani",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "ro",
+    "code": "ro",
+    "englishName": "Romanian",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "rn",
+    "code": "rn",
+    "englishName": "Rundi",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "ru",
+    "code": "ru",
+    "englishName": "Russian",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "sm",
+    "code": "sm",
+    "englishName": "Samoan",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "sg",
+    "code": "sg",
+    "englishName": "Sango",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "sa",
+    "code": "sa",
+    "englishName": "Sanskrit",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "gd",
+    "code": "gd",
+    "englishName": "Scots Gaelic",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "sr",
+    "code": "sr",
+    "englishName": "Serbian",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "st",
+    "code": "st",
+    "englishName": "Sesotho",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "crs",
+    "code": "crs",
+    "englishName": "Seychellois Creole",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "shn",
+    "code": "shn",
+    "englishName": "Shan",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "sn",
+    "code": "sn",
+    "englishName": "Shona",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "scn",
+    "code": "scn",
+    "englishName": "Sicilian",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "szl",
+    "code": "szl",
+    "englishName": "Silesian",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "sd",
+    "code": "sd",
+    "englishName": "Sindhi",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "si",
+    "code": "si",
+    "englishName": "Sinhala (Sinhalese)",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "sk",
+    "code": "sk",
+    "englishName": "Slovak",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "sl",
+    "code": "sl",
+    "englishName": "Slovenian",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "so",
+    "code": "so",
+    "englishName": "Somali",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "es",
+    "code": "es",
+    "englishName": "Spanish",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "su",
+    "code": "su",
+    "englishName": "Sundanese",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "sw",
+    "code": "sw",
+    "englishName": "Swahili",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "ss",
+    "code": "ss",
+    "englishName": "Swati",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "sv",
+    "code": "sv",
+    "englishName": "Swedish",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "tg",
+    "code": "tg",
+    "englishName": "Tajik",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "ta",
+    "code": "ta",
+    "englishName": "Tamil",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "tt",
+    "code": "tt",
+    "englishName": "Tatar",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "te",
+    "code": "te",
+    "englishName": "Telugu",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "tet",
+    "code": "tet",
+    "englishName": "Tetum",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "th",
+    "code": "th",
+    "englishName": "Thai",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "ti",
+    "code": "ti",
+    "englishName": "Tigrinya",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "ts",
+    "code": "ts",
+    "englishName": "Tsonga",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "tn",
+    "code": "tn",
+    "englishName": "Tswana",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "tr",
+    "code": "tr",
+    "englishName": "Turkish",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "tk",
+    "code": "tk",
+    "englishName": "Turkmen",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "ak",
+    "code": "ak",
+    "englishName": "Twi (Akan)",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "uk",
+    "code": "uk",
+    "englishName": "Ukrainian",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "ur",
+    "code": "ur",
+    "englishName": "Urdu",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "ug",
+    "code": "ug",
+    "englishName": "Uyghur",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "uz",
+    "code": "uz",
+    "englishName": "Uzbek",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "vi",
+    "code": "vi",
+    "englishName": "Vietnamese",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "cy",
+    "code": "cy",
+    "englishName": "Welsh",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "xh",
+    "code": "xh",
+    "englishName": "Xhosa",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "yi",
+    "code": "yi",
+    "englishName": "Yiddish",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "yo",
+    "code": "yo",
+    "englishName": "Yoruba",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "yua",
+    "code": "yua",
+    "englishName": "Yucatec Maya",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "google",
+    "canonicalId": "zu",
+    "code": "zu",
+    "englishName": "Zulu",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "ace",
+    "code": "ace",
+    "englishName": "Acehnese",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "af",
+    "code": "af",
+    "englishName": "Afrikaans",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "sq",
+    "code": "sq",
+    "englishName": "Albanian",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "ar",
+    "code": "ar",
+    "englishName": "Arabic",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "an",
+    "code": "an",
+    "englishName": "Aragonese",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "hy",
+    "code": "hy",
+    "englishName": "Armenian",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "as",
+    "code": "as",
+    "englishName": "Assamese",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "ay",
+    "code": "ay",
+    "englishName": "Aymara",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "az",
+    "code": "az",
+    "englishName": "Azerbaijani",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "ba",
+    "code": "ba",
+    "englishName": "Bashkir",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "eu",
+    "code": "eu",
+    "englishName": "Basque",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "be",
+    "code": "be",
+    "englishName": "Belarusian",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "bn",
+    "code": "bn",
+    "englishName": "Bengali",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "bho",
+    "code": "bho",
+    "englishName": "Bhojpuri",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "bs",
+    "code": "bs",
+    "englishName": "Bosnian",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "br",
+    "code": "br",
+    "englishName": "Breton",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "bg",
+    "code": "bg",
+    "englishName": "Bulgarian",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "my",
+    "code": "my",
+    "englishName": "Burmese",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "yue",
+    "code": "yue",
+    "englishName": "Cantonese",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "ca",
+    "code": "ca",
+    "englishName": "Catalan",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "ceb",
+    "code": "ceb",
+    "englishName": "Cebuano",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "zh-Hans",
+    "code": "zh-HANS",
+    "englishName": "Chinese (simplified)",
+    "source": false,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "zh-Hant",
+    "code": "zh-HANT",
+    "englishName": "Chinese (traditional)",
+    "source": false,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "zh",
+    "code": "zh",
+    "englishName": "Chinese (unspecified variant)",
+    "source": true,
+    "target": false
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "hr",
+    "code": "hr",
+    "englishName": "Croatian",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "cs",
+    "code": "cs",
+    "englishName": "Czech",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "da",
+    "code": "da",
+    "englishName": "Danish",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "prs",
+    "code": "prs",
+    "englishName": "Dari",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "nl",
+    "code": "nl",
+    "englishName": "Dutch",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "en",
+    "code": "en",
+    "englishName": "English (all variants)",
+    "source": true,
+    "target": false
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "en",
+    "code": "en-US",
+    "englishName": "English (American)",
+    "source": false,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "en",
+    "code": "en-GB",
+    "englishName": "English (British)",
+    "source": false,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "eo",
+    "code": "eo",
+    "englishName": "Esperanto",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "et",
+    "code": "et",
+    "englishName": "Estonian",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "fi",
+    "code": "fi",
+    "englishName": "Finnish",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "fr",
+    "code": "fr",
+    "englishName": "French",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "fr",
+    "code": "fr-CA",
+    "englishName": "French (Canadian)",
+    "source": false,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "fr",
+    "code": "fr-FR",
+    "englishName": "French (France)",
+    "source": false,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "gl",
+    "code": "gl",
+    "englishName": "Galician",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "ka",
+    "code": "ka",
+    "englishName": "Georgian",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "de",
+    "code": "de",
+    "englishName": "German",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "de-de",
+    "code": "de-DE",
+    "englishName": "German (Germany)",
+    "source": false,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "de-ch",
+    "code": "de-CH",
+    "englishName": "German (Swiss)",
+    "source": false,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "el",
+    "code": "el",
+    "englishName": "Greek",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "gn",
+    "code": "gn",
+    "englishName": "Guarani",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "gu",
+    "code": "gu",
+    "englishName": "Gujarati",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "ht",
+    "code": "ht",
+    "englishName": "Haitian Creole",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "ha",
+    "code": "ha",
+    "englishName": "Hausa",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "he",
+    "code": "he",
+    "englishName": "Hebrew",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "hi",
+    "code": "hi",
+    "englishName": "Hindi",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "hu",
+    "code": "hu",
+    "englishName": "Hungarian",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "is",
+    "code": "is",
+    "englishName": "Icelandic",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "ig",
+    "code": "ig",
+    "englishName": "Igbo",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "id",
+    "code": "id",
+    "englishName": "Indonesian",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "ga",
+    "code": "ga",
+    "englishName": "Irish",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "it",
+    "code": "it",
+    "englishName": "Italian",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "ja",
+    "code": "ja",
+    "englishName": "Japanese",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "jv",
+    "code": "jv",
+    "englishName": "Javanese",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "pam",
+    "code": "pam",
+    "englishName": "Kapampangan",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "kk",
+    "code": "kk",
+    "englishName": "Kazakh",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "gom",
+    "code": "gom",
+    "englishName": "Konkani",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "ko",
+    "code": "ko",
+    "englishName": "Korean",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "kmr",
+    "code": "kmr",
+    "englishName": "Kurdish (Kurmanji)",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "ckb",
+    "code": "ckb",
+    "englishName": "Kurdish (Sorani)",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "ky",
+    "code": "ky",
+    "englishName": "Kyrgyz",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "la",
+    "code": "la",
+    "englishName": "Latin",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "lv",
+    "code": "lv",
+    "englishName": "Latvian",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "ln",
+    "code": "ln",
+    "englishName": "Lingala",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "lt",
+    "code": "lt",
+    "englishName": "Lithuanian",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "lmo",
+    "code": "lmo",
+    "englishName": "Lombard",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "lb",
+    "code": "lb",
+    "englishName": "Luxembourgish",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "mk",
+    "code": "mk",
+    "englishName": "Macedonian",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "mai",
+    "code": "mai",
+    "englishName": "Maithili",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "mg",
+    "code": "mg",
+    "englishName": "Malagasy",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "ms",
+    "code": "ms",
+    "englishName": "Malay",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "ml",
+    "code": "ml",
+    "englishName": "Malayalam",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "mt",
+    "code": "mt",
+    "englishName": "Maltese",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "mi",
+    "code": "mi",
+    "englishName": "Maori",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "mr",
+    "code": "mr",
+    "englishName": "Marathi",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "mn",
+    "code": "mn",
+    "englishName": "Mongolian",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "ne",
+    "code": "ne",
+    "englishName": "Nepali",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "nb",
+    "code": "nb",
+    "englishName": "Norwegian (bokmål)",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "oc",
+    "code": "oc",
+    "englishName": "Occitan",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "om",
+    "code": "om",
+    "englishName": "Oromo",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "pag",
+    "code": "pag",
+    "englishName": "Pangasinan",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "ps",
+    "code": "ps",
+    "englishName": "Pashto",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "fa",
+    "code": "fa",
+    "englishName": "Persian",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "pl",
+    "code": "pl",
+    "englishName": "Polish",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "pt",
+    "code": "pt-BR",
+    "englishName": "Portuguese (Brazilian)",
+    "source": false,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "pt",
+    "code": "pt-PT",
+    "englishName": "Portuguese (European)",
+    "source": false,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "pt",
+    "code": "pt",
+    "englishName": "Portuguese (unspecified variant)",
+    "source": true,
+    "target": false
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "pa",
+    "code": "pa",
+    "englishName": "Punjabi",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "qu",
+    "code": "qu",
+    "englishName": "Quechua",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "ro",
+    "code": "ro",
+    "englishName": "Romanian",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "ru",
+    "code": "ru",
+    "englishName": "Russian",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "sa",
+    "code": "sa",
+    "englishName": "Sanskrit",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "sr",
+    "code": "sr",
+    "englishName": "Serbian",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "st",
+    "code": "st",
+    "englishName": "Sesotho",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "scn",
+    "code": "scn",
+    "englishName": "Sicilian",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "sk",
+    "code": "sk",
+    "englishName": "Slovak",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "sl",
+    "code": "sl",
+    "englishName": "Slovenian",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "es",
+    "code": "es",
+    "englishName": "Spanish",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "es-419",
+    "code": "es-419",
+    "englishName": "Spanish (Latin American)",
+    "source": false,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "su",
+    "code": "su",
+    "englishName": "Sundanese",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "sw",
+    "code": "sw",
+    "englishName": "Swahili",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "sv",
+    "code": "sv",
+    "englishName": "Swedish",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "tl",
+    "code": "tl",
+    "englishName": "Tagalog",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "tg",
+    "code": "tg",
+    "englishName": "Tajik",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "ta",
+    "code": "ta",
+    "englishName": "Tamil",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "tt",
+    "code": "tt",
+    "englishName": "Tatar",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "te",
+    "code": "te",
+    "englishName": "Telugu",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "th",
+    "code": "th",
+    "englishName": "Thai",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "ts",
+    "code": "ts",
+    "englishName": "Tsonga",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "tn",
+    "code": "tn",
+    "englishName": "Tswana",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "tr",
+    "code": "tr",
+    "englishName": "Turkish",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "tk",
+    "code": "tk",
+    "englishName": "Turkmen",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "uk",
+    "code": "uk",
+    "englishName": "Ukrainian",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "ur",
+    "code": "ur",
+    "englishName": "Urdu",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "uz",
+    "code": "uz",
+    "englishName": "Uzbek",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "vi",
+    "code": "vi",
+    "englishName": "Vietnamese",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "cy",
+    "code": "cy",
+    "englishName": "Welsh",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "wo",
+    "code": "wo",
+    "englishName": "Wolof",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "xh",
+    "code": "xh",
+    "englishName": "Xhosa",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "yi",
+    "code": "yi",
+    "englishName": "Yiddish",
+    "source": true,
+    "target": true
+  },
+  {
+    "provider": "deepl",
+    "canonicalId": "zu",
+    "code": "zu",
+    "englishName": "Zulu",
+    "source": true,
+    "target": true
+  }
+]
