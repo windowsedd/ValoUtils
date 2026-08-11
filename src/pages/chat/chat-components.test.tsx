@@ -1,9 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import type { ChatMessage } from "@/types/chat";
+import type { ChatFriend, ChatMessage } from "@/types/chat";
 import { renderToStaticMarkup } from "react-dom/server";
 import { ChatChannelRail } from "./chat-channel-rail";
 import { ChatComposer } from "./chat-composer";
 import { ChatConversationList } from "./chat-conversation-list";
+import { ChatFriendsPanel } from "./chat-friends-panel";
 import { ChatThread } from "./chat-thread";
 
 const channelLabels = {
@@ -35,6 +36,22 @@ const message = (id: string, body: string, timestamp: string): ChatMessage => ({
 	scope: "friends",
 	isSelf: false,
 });
+
+const friend: ChatFriend = {
+	puuid: "friend",
+	gameName: "ALEKSANDAR",
+	tagLine: "4830",
+	displayName: "ALEKSANDAR#4830",
+	note: "Rank duo",
+	status: "available",
+	statusMessage: "In Lobby",
+	product: "valorant",
+	queueId: "",
+	partyId: "party-id",
+	partySize: 1,
+	maxPartySize: 5,
+	isOnline: true,
+};
 
 describe("Chat components", () => {
 	test("channel rail exposes all real channels and selected state", () => {
@@ -122,5 +139,44 @@ describe("Chat components", () => {
 		expect(markup).toContain("<textarea");
 		expect(markup).toContain("No team room");
 		expect(markup).toContain("disabled");
+	});
+
+	test("friends panel keeps notes visible and exposes the selected friend's actions", () => {
+		const markup = renderToStaticMarkup(
+			<ChatFriendsPanel
+				friends={[friend]}
+				search=""
+				drawerOpen
+				selectedFriendPuuid="friend"
+				pendingFriendPuuid={null}
+				labels={{
+					title: "Friends",
+					search: "Search friends",
+					empty: "No friends",
+					chat: "Chat",
+					invite: "Invite",
+					join: "Join",
+					close: "Close friends",
+					online: "Online",
+					offline: "Offline",
+				}}
+				canChat={() => false}
+				canInvite={() => true}
+				canJoin={() => true}
+				onSearchChange={() => {}}
+				onFriendSelect={() => {}}
+				onClose={() => {}}
+				onChat={() => {}}
+				onInvite={() => {}}
+				onJoin={() => {}}
+			/>,
+		);
+		expect(markup).toContain("Rank duo");
+		expect(markup).toContain('role="menu"');
+		expect(markup).toContain("Chat");
+		expect(markup).toContain("Invite");
+		expect(markup).toContain("Join");
+		expect(markup).toContain('data-chat-available="false"');
+		expect(markup).toContain('data-friends-drawer="true"');
 	});
 });
