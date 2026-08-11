@@ -203,6 +203,14 @@ export const ChatFriendsPanel = (props: ChatFriendsPanelProps) => {
 		requestAnimationFrame(() => findFriendElement("friendTrigger", puuid)?.focus());
 	};
 
+	const runFriendAction = (
+		action: (friend: ChatFriend) => void,
+		friend: ChatFriend,
+	) => {
+		action(friend);
+		closeFriendMenu();
+	};
+
 	const handleEscape = (event: React.KeyboardEvent) => {
 		if (event.key !== "Escape") return;
 		if (props.selectedFriendPuuid) {
@@ -222,8 +230,19 @@ export const ChatFriendsPanel = (props: ChatFriendsPanelProps) => {
 					onKeyDownCapture={handleEscape}
 				>
 					<button type="button" aria-label={props.labels.close} className="min-w-10 flex-1" onClick={props.onClose} />
-					<aside className="flex h-full w-[min(22rem,88vw)] flex-col border-l border-white/10 bg-[#111214] shadow-2xl">
-						<FriendsPanelContent {...props} showClose />
+					<aside
+						role="dialog"
+						aria-modal="true"
+						aria-label={props.labels.title}
+						className="flex h-full w-[min(22rem,88vw)] flex-col border-l border-white/10 bg-[#111214] shadow-2xl"
+					>
+						<FriendsPanelContent
+							{...props}
+							onChat={(friend) => runFriendAction(props.onChat, friend)}
+							onInvite={(friend) => runFriendAction(props.onInvite, friend)}
+							onJoin={(friend) => runFriendAction(props.onJoin, friend)}
+							showClose
+						/>
 					</aside>
 				</div>
 			)}
@@ -231,7 +250,13 @@ export const ChatFriendsPanel = (props: ChatFriendsPanelProps) => {
 				className="hidden h-full w-72 shrink-0 flex-col border-l border-white/10 bg-[#111214] xl:flex"
 				onKeyDownCapture={handleEscape}
 			>
-				<FriendsPanelContent {...props} showClose={false} />
+				<FriendsPanelContent
+					{...props}
+					onChat={(friend) => runFriendAction(props.onChat, friend)}
+					onInvite={(friend) => runFriendAction(props.onInvite, friend)}
+					onJoin={(friend) => runFriendAction(props.onJoin, friend)}
+					showClose={false}
+				/>
 			</aside>
 		</>
 	);

@@ -241,7 +241,8 @@
     "join": "참가",
     "closeFriends": "친구 목록 닫기",
     "online": "온라인",
-    "offline": "오프라인"
+    "offline": "오프라인",
+    "available": "사용 가능"
   },
   "replays": {
     "selectParser": "ValorantReplayParser.exe 선택",

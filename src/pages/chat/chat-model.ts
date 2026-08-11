@@ -30,10 +30,13 @@ const messageTime = (message: ChatMessage) => {
 const fallbackKey = (message: ChatMessage) =>
 	`${message.conversationId}:${message.timestamp ?? ""}:${message.sender}:${message.body}`;
 
+export const chatMessageKey = (message: ChatMessage) =>
+	message.id ? `${message.conversationId}:${message.id}` : fallbackKey(message);
+
 export const mergeChatMessages = (...sets: ChatMessage[][]) => {
 	const byKey = new Map<string, ChatMessage>();
 	for (const item of sets.flat()) {
-		const key = item.id ? `${item.conversationId}:${item.id}` : fallbackKey(item);
+		const key = chatMessageKey(item);
 		byKey.set(key, { ...byKey.get(key), ...item });
 	}
 	return [...byKey.values()].sort(
@@ -130,3 +133,8 @@ export const channelForCid = (cid: string): ChatChannel => {
 
 export const shouldStickToBottom = (metrics: ScrollMetrics, sentBySelf: boolean) =>
 	sentBySelf || metrics.scrollHeight - metrics.scrollTop - metrics.clientHeight <= 64;
+
+export const shouldResetThreadPosition = (
+	previousCid: string | null,
+	nextCid: string | null,
+) => previousCid !== nextCid;

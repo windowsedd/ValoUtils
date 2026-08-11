@@ -1,7 +1,11 @@
 import type { ChatChannel, ChatMessage } from "@/types/chat";
 import { useEffect, useRef } from "react";
 import { FaBug, FaLanguage, FaRotate, FaUserGroup } from "react-icons/fa6";
-import { shouldStickToBottom } from "./chat-model";
+import {
+	chatMessageKey,
+	shouldResetThreadPosition,
+	shouldStickToBottom,
+} from "./chat-model";
 
 type ThreadLabels = {
 	openFriends: string;
@@ -24,11 +28,13 @@ const formatTime = (value: string | null) => {
 
 export const ChatThread = ({
 	title,
+	conversationId,
 	channel,
 	messages,
 	historyLoading,
 	historyError,
 	translatedByMessageId,
+	translationErrorByMessageId,
 	translatingMessageId,
 	debugData,
 	labels,
@@ -37,20 +43,23 @@ export const ChatThread = ({
 	onOpenFriends,
 }: {
 	title: string;
+	conversationId: string | null;
 	channel: ChatChannel;
 	messages: ChatMessage[];
 	historyLoading: boolean;
 	historyError: string | null;
 	translatedByMessageId: Record<string, string>;
+	translationErrorByMessageId: Record<string, string>;
 	translatingMessageId: string | null;
 	debugData: unknown;
 	labels: ThreadLabels;
 	onRetryHistory: () => void;
 	onTranslate: (message: ChatMessage) => void;
-	onOpenFriends: () => void;
+	onOpenFriends: (trigger: HTMLButtonElement) => void;
 }) => {
 	const scrollRef = useRef<HTMLDivElement>(null);
 	const stickRef = useRef(true);
+	const previousConversationRef = useRef(conversationId);
 	const lastMessage = messages[messages.length - 1];
 
 	useEffect(() => {
@@ -58,6 +67,14 @@ export const ChatThread = ({
 			scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
 		}
 	}, [lastMessage?.id, lastMessage?.isSelf]);
+
+	useEffect(() => {
+		if (shouldResetThreadPosition(previousConversationRef.current, conversationId)) {
+			stickRef.current = true;
+			scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
+		}
+		previousConversationRef.current = conversationId;
+	}, [conversationId]);
 
 	return (
 		<section className="flex min-h-0 flex-1 flex-col bg-[#07090d]">
@@ -70,7 +87,7 @@ export const ChatThread = ({
 			</div>
 			<button
 				type="button"
-				onClick={onOpenFriends}
+				onClick={(event) => onOpenFriends(event.currentTarget)}
 				aria-label={labels.openFriends}
 				className="flex h-10 w-10 items-center justify-center rounded-xl text-gray-400 outline-none hover:bg-white/6 hover:text-white focus-visible:ring-2 focus-visible:ring-cyan-300/80 xl:hidden"
 			>
@@ -133,9 +150,14 @@ export const ChatThread = ({
 								<p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-gray-100">
 									{message.body}
 								</p>
-								{translatedByMessageId[message.id] && (
+								{translatedByMessageId[chatMessageKey(message)] && (
 									<p className="mt-2 border-t border-cyan-300/10 pt-2 text-sm text-cyan-200">
-										{translatedByMessageId[message.id]}
+										{translatedByMessageId[chatMessageKey(message)]}
+									</p>
+								)}
+								{translationErrorByMessageId[chatMessageKey(message)] && (
+									<p role="alert" className="mt-2 text-xs text-red-300">
+										{translationErrorByMessageId[chatMessageKey(message)]}
 									</p>
 								)}
 								<button
@@ -145,7 +167,7 @@ export const ChatThread = ({
 									className="mt-2 min-h-8 rounded-lg px-2 text-[10px] text-gray-500 outline-none hover:bg-white/6 hover:text-white focus-visible:ring-2 focus-visible:ring-cyan-300/80 disabled:opacity-40"
 								>
 									<FaLanguage className="mr-1 inline" />
-									{translatingMessageId === message.id
+									{translatingMessageId === chatMessageKey(message)
 										? labels.translating
 										: labels.translate}
 								</button>

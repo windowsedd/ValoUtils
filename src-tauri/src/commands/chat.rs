@@ -274,6 +274,50 @@ fn merge_normalized_conversations(groups: impl IntoIterator<Item = Vec<Value>>) 
     result
 }
 
+fn room_conversation(cid: &str, channel: &str, title: &str) -> Option<Value> {
+    if cid.is_empty() {
+        return None;
+    }
+    Some(json!({
+        "cid": cid,
+        "channel": channel,
+        "type": "groupchat",
+        "title": title,
+        "participantPuuid": "",
+        "unreadCount": 0,
+        "messageHistory": Value::Null,
+        "muted": false,
+    }))
+}
+
+fn merge_room_conversations(
+    metadata: Vec<Value>,
+    party_cid: &str,
+    team_cid: &str,
+    all_cid: &str,
+) -> Vec<Value> {
+    let rooms = [
+        room_conversation(party_cid, "party", "Party"),
+        room_conversation(team_cid, "team", "Team"),
+        room_conversation(all_cid, "all", "All"),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    merge_normalized_conversations([metadata, rooms])
+}
+
+fn is_login_required_error(error: &str) -> bool {
+    let value = error.to_lowercase();
+    value.contains("lockfile")
+        || value.contains("connection refused")
+        || value.contains("failed to connect")
+        || value.contains("error sending request for url (https://127.0.0.1")
+        || value.contains("riot client is not running")
+        || value.contains("authentication failed")
+        || value.contains("session expired")
+}
+
 fn history_error(request_id: &str, cid: &str, code: &str, error: &str) -> Value {
     let code = if code.is_empty() {
         Value::Null
@@ -458,6 +502,7 @@ fn normalize_friends(friends_payload: &[Value], presences_payload: &[Value]) -> 
     result
 }
 
+#[derive(Default)]
 struct RoomScopes {
     party: HashSet<String>,
     matches: HashSet<String>,
@@ -718,8 +763,7 @@ fn normalize_messages(
 ) -> Vec<Value> {
     messages_array(payload)
         .iter()
-        .enumerate()
-        .filter_map(|(index, message)| {
+        .filter_map(|message| {
             let body = pick_string(
                 [
                     message.get("body"),
@@ -790,16 +834,6 @@ fn normalize_messages(
                 ]
                 .map(|v| v.and_then(|v| v.as_str())),
             );
-            let id_final = if id.is_empty() {
-                let prefix = if timestamp.is_empty() {
-                    "message".to_string()
-                } else {
-                    timestamp.clone()
-                };
-                format!("{prefix}-{index}")
-            } else {
-                id
-            };
             let sender_name_final = if sender_name.is_empty() {
                 sender.clone()
             } else {
@@ -827,7 +861,7 @@ fn normalize_messages(
             );
 
             Some(json!({
-                "id": id_final,
+                "id": id,
                 "conversationId": conversation_id,
                 "sender": sender,
                 "senderName": sender_name_final,
@@ -846,14 +880,21 @@ fn unique_messages(messages: Vec<Value>) -> Vec<Value> {
     messages
         .into_iter()
         .filter(|m| {
-            let key = format!(
-                "{}:{}:{}",
-                m.get("conversationId")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or(""),
-                m.get("id").and_then(|v| v.as_str()).unwrap_or(""),
-                m.get("body").and_then(|v| v.as_str()).unwrap_or("")
-            );
+            let cid = m
+                .get("conversationId")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let id = m.get("id").and_then(|v| v.as_str()).unwrap_or("");
+            let key = if id.is_empty() {
+                format!(
+                    "{cid}:{}:{}:{}",
+                    m.get("timestamp").and_then(|v| v.as_str()).unwrap_or(""),
+                    m.get("sender").and_then(|v| v.as_str()).unwrap_or(""),
+                    m.get("body").and_then(|v| v.as_str()).unwrap_or("")
+                )
+            } else {
+                format!("{cid}:{id}")
+            };
             seen.insert(key)
         })
         .collect()
@@ -930,14 +971,6 @@ pub async fn chat_get(app: AppHandle, riot: State<'_, RiotState>) -> Result<Stri
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
-        let party_payload = if !party_room_str.is_empty() {
-            riot_client::get_chat_messages(&riot, Some(&party_room_str))
-                .await
-                .ok()
-        } else {
-            None
-        };
-
         let needs_xmpp_match_rooms = scopes
             .rooms
             .get("matchTeam")
@@ -972,15 +1005,6 @@ pub async fn chat_get(app: AppHandle, riot: State<'_, RiotState>) -> Result<Stri
             &match_player_ids,
             &own_puuid,
         );
-        if let Some(pp) = &party_payload {
-            messages.extend(normalize_messages(
-                pp,
-                &conversations,
-                &scopes,
-                &match_player_ids,
-                &own_puuid,
-            ));
-        }
         messages.extend(xmpp_messages);
         let messages = unique_messages(messages);
 
@@ -1029,6 +1053,13 @@ pub async fn chat_get(app: AppHandle, riot: State<'_, RiotState>) -> Result<Stri
                 base_match
             });
 
+        let conversation_metadata = merge_room_conversations(
+            conversation_metadata,
+            &final_party_room,
+            &match_team_final,
+            &match_all_final,
+        );
+
         Ok(json!({
             "success": true,
             "messages": messages,
@@ -1049,7 +1080,7 @@ pub async fn chat_get(app: AppHandle, riot: State<'_, RiotState>) -> Result<Stri
     Ok(match result {
         Ok(v) => v.to_string(),
         Err(e) => {
-            let code = if e.contains("lockfile") {
+            let code = if is_login_required_error(&e) {
                 json!("loginRequired")
             } else {
                 Value::Null
@@ -1102,7 +1133,7 @@ pub async fn chat_history(args: Vec<Value>, riot: State<'_, RiotState>) -> Resul
     Ok(match result {
         Ok(value) => value.to_string(),
         Err(error) => {
-            let code = if error.contains("lockfile") {
+            let code = if is_login_required_error(&error) {
                 "loginRequired"
             } else {
                 ""
@@ -1310,5 +1341,52 @@ mod tests {
         assert_eq!(get_send_type("friend-cid"), "chat");
         assert_eq!(get_send_type("party@ares-parties.ap"), "groupchat");
         assert_eq!(get_send_type("game-blue@ares-coregame.ap"), "groupchat");
+    }
+
+    #[test]
+    fn adds_xmpp_only_rooms_to_conversation_metadata() {
+        let result = merge_room_conversations(
+            Vec::new(),
+            "party@ares-parties.ap",
+            "game-blue@ares-coregame.ap",
+            "game-all@ares-coregame.ap",
+        );
+        assert_eq!(result.len(), 3);
+        assert!(result.iter().any(|item| item["channel"] == "party"));
+        assert!(result.iter().any(|item| item["channel"] == "team"));
+        assert!(result.iter().any(|item| item["channel"] == "all"));
+    }
+
+    #[test]
+    fn classifies_stopped_riot_client_as_login_required() {
+        assert!(is_login_required_error(
+			"error sending request for url (https://127.0.0.1:61867/entitlements/v1/token): connection refused"
+		));
+        assert!(is_login_required_error("Riot lockfile was not found"));
+        assert!(!is_login_required_error(
+            "message history payload was malformed"
+        ));
+    }
+
+    #[test]
+    fn missing_message_ids_use_content_identity_instead_of_response_index() {
+        let payload = json!({"messages": [{
+            "cid": "friend-cid",
+            "sender": "friend",
+            "message": "hello",
+            "timestamp": "2000"
+        }]});
+        let messages = normalize_messages(
+            &payload,
+            &HashMap::new(),
+            &RoomScopes::default(),
+            &HashSet::new(),
+            "self",
+        );
+        assert_eq!(messages[0]["id"], "");
+        assert_eq!(
+            unique_messages(vec![messages[0].clone(), messages[0].clone()]).len(),
+            1
+        );
     }
 }

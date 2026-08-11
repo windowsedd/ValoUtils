@@ -241,7 +241,8 @@
     "join": "加入",
     "closeFriends": "關閉好友列表",
     "online": "上線",
-    "offline": "離線"
+    "offline": "離線",
+    "available": "可使用"
   },
   "replays": {
     "selectParser": "選擇 ValorantReplayParser.exe",

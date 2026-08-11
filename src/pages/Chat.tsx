@@ -1,7 +1,8 @@
 import type { ChatChannel, ChatFriend } from "@/types/chat";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ChatChannelRail } from "./chat/chat-channel-rail";
+import { ChatChannelContext } from "./chat/chat-channel-context";
 import { ChatComposer } from "./chat/chat-composer";
 import { ChatConversationList } from "./chat/chat-conversation-list";
 import { ChatFriendsPanel } from "./chat/chat-friends-panel";
@@ -13,6 +14,7 @@ const Chat = () => {
 	const controller = useChatController();
 	const [friendsDrawerOpen, setFriendsDrawerOpen] = useState(false);
 	const [selectedFriendPuuid, setSelectedFriendPuuid] = useState<string | null>(null);
+	const friendsDrawerTriggerRef = useRef<HTMLButtonElement | null>(null);
 
 	const channelLabels: Record<ChatChannel, string> = {
 		friends: t("chat.scopeFriends"),
@@ -51,10 +53,14 @@ const Chat = () => {
 					: t("chat.matchAllPlaceholder");
 	const pageError = controller.summaryError || controller.friendActionError;
 
+	const closeFriendsDrawer = () => {
+		setFriendsDrawerOpen(false);
+		requestAnimationFrame(() => friendsDrawerTriggerRef.current?.focus());
+	};
 	const openFriendChat = (friend: ChatFriend) => {
 		if (!controller.openFriendChat(friend)) return;
 		setSelectedFriendPuuid(null);
-		setFriendsDrawerOpen(false);
+		closeFriendsDrawer();
 	};
 
 	return (
@@ -75,6 +81,15 @@ const Chat = () => {
 					emptyLabel={t("chat.noConversations")}
 					onSearchChange={controller.setConversationSearch}
 					onSelect={controller.selectConversation}
+				/>
+			)}
+			{controller.selectedChannel !== "friends" && (
+				<ChatChannelContext
+					channel={controller.selectedChannel}
+					title={channelLabels[controller.selectedChannel]}
+					available={controller.availableChannels[controller.selectedChannel]}
+					availableLabel={t("chat.available")}
+					unavailableLabel={disabledReason}
 				/>
 			)}
 
@@ -106,12 +121,14 @@ const Chat = () => {
 				) : (
 					<>
 						<ChatThread
+							conversationId={controller.selectedCid}
 							title={threadTitle}
 							channel={controller.selectedChannel}
 							messages={controller.visibleMessages}
 							historyLoading={controller.historyLoading}
 							historyError={controller.historyError}
 							translatedByMessageId={controller.translatedByMessageId}
+							translationErrorByMessageId={controller.translationErrorByMessageId}
 							translatingMessageId={controller.translatingMessageId}
 							debugData={{
 								selectedCid: controller.selectedCid,
@@ -131,7 +148,10 @@ const Chat = () => {
 							}}
 							onRetryHistory={controller.retryHistory}
 							onTranslate={controller.translateMessage}
-							onOpenFriends={() => setFriendsDrawerOpen(true)}
+							onOpenFriends={(trigger) => {
+								friendsDrawerTriggerRef.current = trigger;
+								setFriendsDrawerOpen(true);
+							}}
 						/>
 						<ChatComposer
 							draft={controller.draft}
@@ -177,7 +197,7 @@ const Chat = () => {
 				}
 				onSearchChange={controller.setFriendSearch}
 				onFriendSelect={setSelectedFriendPuuid}
-				onClose={() => setFriendsDrawerOpen(false)}
+				onClose={closeFriendsDrawer}
 				onChat={openFriendChat}
 				onInvite={(friend) => controller.runFriendAction("invite", friend)}
 				onJoin={(friend) => controller.runFriendAction("join", friend)}

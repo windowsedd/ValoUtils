@@ -3,11 +3,13 @@ import type { ChatFriend, ChatMessage } from "@/types/chat";
 import {
 	buildFriendConversations,
 	channelForCid,
+	chatMessageKey,
 	filterChatFriends,
 	filterFriendConversations,
 	findFriendConversationCid,
 	mergeChatMessages,
 	shouldStickToBottom,
+	shouldResetThreadPosition,
 } from "./chat-model";
 
 const message = (overrides: Partial<ChatMessage>): ChatMessage => ({
@@ -57,6 +59,12 @@ describe("chat model", () => {
 			[message({ id: "", timestamp: "1000" })],
 		);
 		expect(result).toHaveLength(1);
+	});
+
+	test("scopes Riot message ids to their conversation", () => {
+		const first = message({ id: "same", conversationId: "cid-a" });
+		const second = message({ id: "same", conversationId: "cid-b" });
+		expect(chatMessageKey(first)).not.toBe(chatMessageKey(second));
 	});
 
 	test("sorts friend conversations by newest message", () => {
@@ -146,5 +154,10 @@ describe("chat model", () => {
 		expect(
 			shouldStickToBottom({ scrollHeight: 1000, scrollTop: 200, clientHeight: 300 }, true),
 		).toBe(true);
+	});
+
+	test("resets thread position only when the selected cid changes", () => {
+		expect(shouldResetThreadPosition("friend-a", "friend-b")).toBe(true);
+		expect(shouldResetThreadPosition("friend-a", "friend-a")).toBe(false);
 	});
 });

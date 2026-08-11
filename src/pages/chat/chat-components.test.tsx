@@ -2,7 +2,8 @@ import { describe, expect, test } from "bun:test";
 import type { ChatFriend, ChatMessage } from "@/types/chat";
 import { renderToStaticMarkup } from "react-dom/server";
 import { ChatChannelRail } from "./chat-channel-rail";
-import { ChatComposer } from "./chat-composer";
+import { ChatChannelContext } from "./chat-channel-context";
+import { ChatComposer, shouldRestoreComposerFocus } from "./chat-composer";
 import { ChatConversationList } from "./chat-conversation-list";
 import { ChatFriendsPanel } from "./chat-friends-panel";
 import { ChatThread } from "./chat-thread";
@@ -101,12 +102,14 @@ describe("Chat components", () => {
 	test("thread renders messages chronologically and keeps developer data collapsed", () => {
 		const markup = renderToStaticMarkup(
 			<ChatThread
+				conversationId="party-cid"
 				title="Party"
 				channel="party"
 				messages={[message("old", "first", "1000"), message("new", "second", "2000")]}
 				historyLoading={false}
 				historyError={null}
 				translatedByMessageId={{}}
+				translationErrorByMessageId={{ "friend-cid:old": "Translation unavailable" }}
 				translatingMessageId={null}
 				debugData={{ cid: "party" }}
 				labels={threadLabels}
@@ -119,6 +122,7 @@ describe("Chat components", () => {
 		expect(markup).toContain('role="log"');
 		expect(markup).toContain("<details");
 		expect(markup).not.toContain("<details open");
+		expect(markup).toContain("Translation unavailable");
 	});
 
 	test("composer is multiline and reports unavailable state", () => {
@@ -139,6 +143,23 @@ describe("Chat components", () => {
 		expect(markup).toContain("<textarea");
 		expect(markup).toContain("No team room");
 		expect(markup).toContain("disabled");
+		expect(shouldRestoreComposerFocus(true, false)).toBe(true);
+		expect(shouldRestoreComposerFocus(false, false)).toBe(false);
+	});
+
+	test("group channel context reports real availability without inventing conversations", () => {
+		const markup = renderToStaticMarkup(
+			<ChatChannelContext
+				channel="team"
+				title="Team"
+				available={false}
+				availableLabel="Available"
+				unavailableLabel="No team room"
+			/>,
+		);
+		expect(markup).toContain('data-channel-context="team"');
+		expect(markup).toContain('data-channel-available="false"');
+		expect(markup).toContain("No team room");
 	});
 
 	test("friends panel keeps notes visible and exposes the selected friend's actions", () => {
@@ -178,5 +199,7 @@ describe("Chat components", () => {
 		expect(markup).toContain("Join");
 		expect(markup).toContain('data-chat-available="false"');
 		expect(markup).toContain('data-friends-drawer="true"');
+		expect(markup).toContain('role="dialog"');
+		expect(markup).toContain('aria-modal="true"');
 	});
 });

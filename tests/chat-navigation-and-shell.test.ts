@@ -26,6 +26,7 @@ const requiredChatKeys = [
 	"closeFriends",
 	"online",
 	"offline",
+	"available",
 ] as const;
 
 describe("Chat navigation and page shell", () => {

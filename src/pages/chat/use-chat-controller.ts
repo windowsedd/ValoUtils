@@ -12,6 +12,7 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "r
 import { chatControllerReducer, initialChatControllerState } from "./chat-controller-state";
 import {
 	buildFriendConversations,
+	chatMessageKey,
 	filterChatFriends,
 	filterFriendConversations,
 	findFriendConversationCid,
@@ -59,6 +60,9 @@ export const useChatController = () => {
 		Record<string, string>
 	>({});
 	const [translatingMessageId, setTranslatingMessageId] = useState<string | null>(null);
+	const [translationErrorByMessageId, setTranslationErrorByMessageId] = useState<
+		Record<string, string>
+	>({});
 	const [friendActionError, setFriendActionError] = useState<string | null>(null);
 	const [pendingFriendAction, setPendingFriendAction] = useState<string | null>(null);
 	const translationMessageRef = useRef<string | null>(null);
@@ -126,7 +130,11 @@ export const useChatController = () => {
 			const response = parsePayload<ChatSendResponse>(payload);
 			if (!response) return;
 			if (response.success) {
-				dispatch({ type: "sendSucceeded", requestId: response.requestId });
+				dispatch({
+					type: "sendSucceeded",
+					requestId: response.requestId,
+					sentAt: new Date().toISOString(),
+				});
 				requestHistory(response.cid);
 				return;
 			}
@@ -142,7 +150,19 @@ export const useChatController = () => {
 			const messageId = translationMessageRef.current;
 			translationMessageRef.current = null;
 			setTranslatingMessageId(null);
-			if (!response?.success || !messageId) return;
+			if (!messageId) return;
+			if (!response?.success) {
+				setTranslationErrorByMessageId((current) => ({
+					...current,
+					[messageId]: response?.error ?? "Translation failed.",
+				}));
+				return;
+			}
+			setTranslationErrorByMessageId((current) => {
+				const next = { ...current };
+				delete next[messageId];
+				return next;
+			});
 			setTranslatedByMessageId((current) => ({
 				...current,
 				[messageId]: response.translatedText,
@@ -246,15 +266,21 @@ export const useChatController = () => {
 		const selectedCid = state.selectedCid;
 		if (!text || !selectedCid) return;
 		const requestId = nextRequestId("send");
-		dispatch({ type: "sendStarted", requestId });
+		dispatch({ type: "sendStarted", requestId, cid: selectedCid, body: text });
 		window.Main.send("chat:send", requestId, selectedCid, text);
 	}, [state.draft, state.pendingSendId, state.selectedCid]);
 
 	const translateMessage = useCallback(
 		(message: ChatMessage) => {
 			if (translatingMessageId) return;
-			translationMessageRef.current = message.id;
-			setTranslatingMessageId(message.id);
+			const messageKey = chatMessageKey(message);
+			translationMessageRef.current = messageKey;
+			setTranslatingMessageId(messageKey);
+			setTranslationErrorByMessageId((current) => {
+				const next = { ...current };
+				delete next[messageKey];
+				return next;
+			});
 			nextRequestId("translate");
 			window.Main.send("chat:translate", message.body);
 		},
@@ -344,6 +370,7 @@ export const useChatController = () => {
 		sending: Boolean(state.pendingSendId),
 		sendError: state.sendError,
 		translatedByMessageId,
+		translationErrorByMessageId,
 		translatingMessageId,
 		pendingFriendAction,
 		friendActionError,

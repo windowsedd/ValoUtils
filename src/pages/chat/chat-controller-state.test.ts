@@ -73,14 +73,82 @@ describe("chat controller state", () => {
 		const ignored = chatControllerReducer(sending, {
 			type: "sendSucceeded",
 			requestId: "send-1",
+			sentAt: "3000",
 		});
 		const completed = chatControllerReducer(sending, {
 			type: "sendSucceeded",
 			requestId: "send-2",
+			sentAt: "3000",
 		});
 		expect(ignored).toBe(sending);
 		expect(completed.draft).toBe("");
 		expect(completed.pendingSendId).toBeNull();
+	});
+
+	test("inserts a successful send immediately and replaces it when history catches up", () => {
+		const sending = chatControllerReducer(
+			{
+				...initialChatControllerState,
+				selectedCid: "friend-cid",
+				draft: "hello",
+			},
+			{
+				type: "sendStarted",
+				requestId: "send-3",
+				cid: "friend-cid",
+				body: "hello",
+			},
+		);
+		const optimistic = chatControllerReducer(sending, {
+			type: "sendSucceeded",
+			requestId: "send-3",
+			sentAt: "3000",
+		});
+		expect(optimistic.historyByCid["friend-cid"]?.[0]?.body).toBe("hello");
+		expect(optimistic.historyByCid["friend-cid"]?.[0]?.isSelf).toBe(true);
+
+		const loading = chatControllerReducer(optimistic, {
+			type: "historyStarted",
+			cid: "friend-cid",
+			requestId: "history-3",
+		});
+		const reconciled = chatControllerReducer(loading, {
+			type: "historySucceeded",
+			cid: "friend-cid",
+			requestId: "history-3",
+			messages: [
+				message({
+					id: "riot-message",
+					conversationId: "friend-cid",
+					body: "hello",
+					isSelf: true,
+				}),
+			],
+		});
+		expect(reconciled.historyByCid["friend-cid"]?.map((item) => item.id)).toEqual([
+			"riot-message",
+		]);
+	});
+
+	test("classifies an optimistic send from its cid after the user switches channels", () => {
+		const sending = chatControllerReducer(initialChatControllerState, {
+			type: "sendStarted",
+			requestId: "send-switch",
+			cid: "friend-cid",
+			body: "still direct",
+		});
+		const switched = chatControllerReducer(sending, {
+			type: "selectChannel",
+			channel: "party",
+			cid: "party@ares-parties.ap",
+		});
+		const completed = chatControllerReducer(switched, {
+			type: "sendSucceeded",
+			requestId: "send-switch",
+			sentAt: "3000",
+		});
+		expect(completed.historyByCid["friend-cid"]?.[0]?.scope).toBe("friends");
+		expect(completed.historyByCid["friend-cid"]?.[0]?.type).toBe("chat");
 	});
 
 	test("merges a realtime message into its cid without switching selection or unread state", () => {

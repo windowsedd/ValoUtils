@@ -242,7 +242,8 @@
     "join": "Join",
     "closeFriends": "Close friends",
     "online": "Online",
-    "offline": "Offline"
+    "offline": "Offline",
+    "available": "Available"
   },
   "replays": {
     "selectParser": "Select ValorantReplayParser.exe",

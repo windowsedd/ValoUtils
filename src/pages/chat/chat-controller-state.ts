@@ -1,5 +1,5 @@
 import type { ChatChannel, ChatMessage } from "@/types/chat";
-import { mergeChatMessages } from "./chat-model";
+import { channelForCid, mergeChatMessages } from "./chat-model";
 
 export type ChatControllerState = {
 	selectedChannel: ChatChannel;
@@ -9,6 +9,8 @@ export type ChatControllerState = {
 	historyErrorByCid: Record<string, string | undefined>;
 	draft: string;
 	pendingSendId: string | null;
+	pendingSendCid: string | null;
+	pendingSendBody: string | null;
 	sendError: string | null;
 };
 
@@ -20,6 +22,8 @@ export const initialChatControllerState: ChatControllerState = {
 	historyErrorByCid: {},
 	draft: "",
 	pendingSendId: null,
+	pendingSendCid: null,
+	pendingSendBody: null,
 	sendError: null,
 };
 
@@ -35,8 +39,8 @@ export type ChatControllerAction =
 	  }
 	| { type: "historyFailed"; cid: string; requestId: string; error: string }
 	| { type: "setDraft"; draft: string }
-	| { type: "sendStarted"; requestId: string }
-	| { type: "sendSucceeded"; requestId: string }
+	| { type: "sendStarted"; requestId: string; cid: string; body: string }
+	| { type: "sendSucceeded"; requestId: string; sentAt: string }
 	| { type: "sendFailed"; requestId: string; error: string }
 	| { type: "summaryMessages"; messages: ChatMessage[] }
 	| { type: "realtimeMessage"; message: ChatMessage };
@@ -45,6 +49,20 @@ const withoutKey = <T>(record: Record<string, T>, key: string) => {
 	const next = { ...record };
 	delete next[key];
 	return next;
+};
+
+const reconcileOptimisticMessages = (
+	existing: ChatMessage[],
+	incoming: ChatMessage[],
+) => {
+	const selfBodies = incoming.filter((message) => message.isSelf).map((message) => message.body);
+	return existing.filter((message) => {
+		if (message._raw?.optimistic !== true) return true;
+		const match = selfBodies.indexOf(message.body);
+		if (match < 0) return true;
+		selfBodies.splice(match, 1);
+		return false;
+	});
 };
 
 export const chatControllerReducer = (
@@ -77,7 +95,10 @@ export const chatControllerReducer = (
 				historyByCid: {
 					...state.historyByCid,
 					[action.cid]: mergeChatMessages(
-						state.historyByCid[action.cid] ?? [],
+						reconcileOptimisticMessages(
+							state.historyByCid[action.cid] ?? [],
+							action.messages,
+						),
 						action.messages,
 					),
 				},
@@ -98,15 +119,66 @@ export const chatControllerReducer = (
 			return { ...state, draft: action.draft };
 		case "sendStarted":
 			if (state.pendingSendId) return state;
-			return { ...state, pendingSendId: action.requestId, sendError: null };
+			return {
+				...state,
+				pendingSendId: action.requestId,
+				pendingSendCid: action.cid,
+				pendingSendBody: action.body,
+				sendError: null,
+			};
 		case "sendSucceeded":
 			if (state.pendingSendId !== action.requestId) return state;
-			return { ...state, draft: "", pendingSendId: null, sendError: null };
+			if (!state.pendingSendCid || !state.pendingSendBody) {
+				return {
+					...state,
+					draft: "",
+					pendingSendId: null,
+					pendingSendCid: null,
+					pendingSendBody: null,
+					sendError: null,
+				};
+			}
+			const pendingChannel = channelForCid(state.pendingSendCid);
+			return {
+				...state,
+				historyByCid: {
+					...state.historyByCid,
+					[state.pendingSendCid]: mergeChatMessages(
+						state.historyByCid[state.pendingSendCid] ?? [],
+						[
+							{
+								id: `optimistic:${action.requestId}`,
+								conversationId: state.pendingSendCid,
+								sender: "",
+								senderName: "",
+								body: state.pendingSendBody,
+								timestamp: action.sentAt,
+								type: pendingChannel === "friends" ? "chat" : "groupchat",
+								scope:
+									pendingChannel === "friends"
+										? "friends"
+										: pendingChannel === "party"
+											? "party"
+											: "match",
+								isSelf: true,
+								_raw: { optimistic: true, requestId: action.requestId },
+							},
+						],
+					),
+				},
+				draft: "",
+				pendingSendId: null,
+				pendingSendCid: null,
+				pendingSendBody: null,
+				sendError: null,
+			};
 		case "sendFailed":
 			if (state.pendingSendId !== action.requestId) return state;
 			return {
 				...state,
 				pendingSendId: null,
+				pendingSendCid: null,
+				pendingSendBody: null,
 				sendError: action.error,
 			};
 		case "summaryMessages": {

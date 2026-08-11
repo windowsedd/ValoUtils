@@ -1,5 +1,8 @@
-import type { KeyboardEvent } from "react";
+import { useEffect, useRef, type KeyboardEvent } from "react";
 import { FaPaperPlane } from "react-icons/fa6";
+
+export const shouldRestoreComposerFocus = (wasSending: boolean, sending: boolean) =>
+	wasSending && !sending;
 
 export const ChatComposer = ({
 	draft,
@@ -24,6 +27,16 @@ export const ChatComposer = ({
 	onDraftChange: (value: string) => void;
 	onSend: () => void;
 }) => {
+	const textareaRef = useRef<HTMLTextAreaElement>(null);
+	const wasSendingRef = useRef(sending);
+
+	useEffect(() => {
+		if (shouldRestoreComposerFocus(wasSendingRef.current, sending)) {
+			textareaRef.current?.focus();
+		}
+		wasSendingRef.current = sending;
+	}, [sending]);
+
 	const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
 		if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;
 		event.preventDefault();
@@ -36,6 +49,7 @@ export const ChatComposer = ({
 		<div className="flex items-end gap-2">
 			<div className="min-w-0 flex-1">
 				<textarea
+					ref={textareaRef}
 					value={draft}
 					onChange={(event) => onDraftChange(event.target.value)}
 					onKeyDown={onKeyDown}
