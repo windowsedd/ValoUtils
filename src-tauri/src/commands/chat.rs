@@ -6,7 +6,43 @@ use crate::xmpp;
 use base64::Engine;
 use serde_json::{json, Map, Value};
 use std::collections::{HashMap, HashSet};
-use tauri::State;
+use tauri::{AppHandle, Emitter, State};
+
+static CHAT_FORWARDER_STARTED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+fn mark_chat_forwarder_started(flag: &std::sync::atomic::AtomicBool) -> bool {
+    flag.compare_exchange(
+        false,
+        true,
+        std::sync::atomic::Ordering::AcqRel,
+        std::sync::atomic::Ordering::Acquire,
+    )
+    .is_ok()
+}
+
+fn ensure_chat_message_forwarder(app: &AppHandle) {
+    if !mark_chat_forwarder_started(&CHAT_FORWARDER_STARTED) {
+        return;
+    }
+    let app = app.clone();
+    let mut receiver = xmpp::subscribe_messages();
+    tauri::async_runtime::spawn(async move {
+        loop {
+            match receiver.recv().await {
+                Ok(message) => {
+                    if let Ok(payload) = serde_json::to_string(&message) {
+                        let _ = app.emit("chat:message", payload);
+                    }
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
+                    log::warn!("chat message forwarder lagged by {skipped} messages");
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+            }
+        }
+    });
+}
 
 fn arg(args: &[Value], index: usize) -> Option<String> {
     args.get(index)
@@ -810,7 +846,8 @@ fn unique_messages(messages: Vec<Value>) -> Vec<Value> {
 }
 
 #[tauri::command]
-pub async fn chat_get(riot: State<'_, RiotState>) -> Result<String, ()> {
+pub async fn chat_get(app: AppHandle, riot: State<'_, RiotState>) -> Result<String, ()> {
+    ensure_chat_message_forwarder(&app);
     let result: Result<Value, String> = async {
         let base_payload = riot_client::get_chat_messages(&riot, None).await?;
         let conversations_payload = riot_client::get_chat_conversations(&riot).await.ok();
@@ -1234,5 +1271,12 @@ mod tests {
         assert_eq!(value["requestId"], "request-7");
         assert_eq!(value["cid"], "room-7");
         assert_eq!(value["code"], "unavailable");
+    }
+
+    #[test]
+    fn forwarder_guard_only_starts_once() {
+        let started = std::sync::atomic::AtomicBool::new(false);
+        assert!(mark_chat_forwarder_started(&started));
+        assert!(!mark_chat_forwarder_started(&started));
     }
 }

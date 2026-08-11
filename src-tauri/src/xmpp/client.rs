@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::io::{AsyncReadExt, AsyncWriteExt, ReadHalf, WriteHalf};
-use tokio::sync::Mutex as AsyncMutex;
+use tokio::sync::{broadcast, Mutex as AsyncMutex};
 use tokio_rustls::client::TlsStream;
 use tokio_rustls::TlsConnector;
 
@@ -258,6 +258,7 @@ pub async fn login(
     access_token: &str,
     _entitlement_token: &str,
     puuid: &str,
+    message_events: broadcast::Sender<ChatMessage>,
 ) -> Result<LoginResult, String> {
     let pas_token = get_pas_token(access_token).await?;
     let claims = decode_jwt_payload(&pas_token)?;
@@ -331,6 +332,16 @@ pub async fn login(
             extract_attr(&id_tag, "tagline").unwrap_or_default(),
         )
     });
+    let own_display_name = display_name
+        .as_ref()
+        .map(|(name, tagline)| {
+            if tagline.is_empty() {
+                name.clone()
+            } else {
+                format!("{name}#{tagline}")
+            }
+        })
+        .unwrap_or_default();
 
     let presence_stanza = build_presence_stanza();
     write
@@ -353,7 +364,19 @@ pub async fn login(
     });
 
     let write_for_presence = handle.clone();
-    tokio::spawn(async move { run_background(read, alive, messages, write_for_presence).await });
+    let own_puuid = puuid.to_string();
+    tokio::spawn(async move {
+        run_background(
+            read,
+            alive,
+            messages,
+            message_events,
+            own_puuid,
+            own_display_name,
+            write_for_presence,
+        )
+        .await
+    });
 
     Ok(LoginResult {
         handle,
@@ -384,6 +407,9 @@ async fn run_background(
     mut read: ReadHalf<Stream>,
     alive: Arc<AtomicBool>,
     messages: Arc<std::sync::Mutex<VecDeque<ChatMessage>>>,
+    message_events: broadcast::Sender<ChatMessage>,
+    own_puuid: String,
+    own_display_name: String,
     handle: Arc<XmppHandle>,
 ) {
     let mut presence_interval = tokio::time::interval(std::time::Duration::from_secs(120));
@@ -399,7 +425,13 @@ async fn run_background(
             }
             result = read_stanza(&mut read) => {
                 match result {
-                    Ok(stanza) => handle_incoming_stanza(&stanza, &messages),
+                    Ok(stanza) => handle_incoming_stanza(
+                        &stanza,
+                        &messages,
+                        &message_events,
+                        &own_puuid,
+                        &own_display_name,
+                    ),
                     Err(_) => break,
                 }
             }
@@ -408,7 +440,13 @@ async fn run_background(
     alive.store(false, Ordering::SeqCst);
 }
 
-fn handle_incoming_stanza(stanza: &str, messages: &Arc<std::sync::Mutex<VecDeque<ChatMessage>>>) {
+fn handle_incoming_stanza(
+    stanza: &str,
+    messages: &Arc<std::sync::Mutex<VecDeque<ChatMessage>>>,
+    message_events: &broadcast::Sender<ChatMessage>,
+    own_puuid: &str,
+    own_display_name: &str,
+) {
     for message_tag in split_top_level_tags(stanza, "message") {
         if extract_attr(&message_tag, "type").as_deref() != Some("groupchat") {
             continue;
@@ -427,24 +465,33 @@ fn handle_incoming_stanza(stanza: &str, messages: &Arc<std::sync::Mutex<VecDeque
         } else {
             "match"
         };
-        let mut buf = messages.lock().unwrap();
-        if buf.iter().any(|m| m.id == id) {
-            continue;
-        }
-        buf.push_back(ChatMessage {
+        let is_self = sender_nick == own_puuid;
+        let message = ChatMessage {
             id,
             conversation_id: room,
             sender: sender_nick.clone(),
-            sender_name: sender_nick,
+            sender_name: if is_self && !own_display_name.is_empty() {
+                own_display_name.to_string()
+            } else {
+                sender_nick
+            },
             body,
             timestamp: iso8601_now(),
             msg_type: "groupchat".into(),
             scope: scope.into(),
-            is_self: false, // isSelf is resolved by the caller (which knows own_puuid)
-        });
-        while buf.len() > MAX_BUFFERED_MESSAGES {
-            buf.pop_front();
+            is_self,
+        };
+        {
+            let mut buffer = messages.lock().unwrap();
+            if buffer.iter().any(|item| item.id == message.id) {
+                continue;
+            }
+            buffer.push_back(message.clone());
+            while buffer.len() > MAX_BUFFERED_MESSAGES {
+                buffer.pop_front();
+            }
         }
+        let _ = message_events.send(message);
     }
 }
 
@@ -481,4 +528,43 @@ fn iso8601_now() -> String {
     let secs = epoch_secs() as i64;
     let (y, m, d, h, mi, s) = crate::util_time::civil_from_unix_secs(secs);
     format!("{y:04}-{m:02}-{d:02}T{h:02}:{mi:02}:{s:02}Z")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn groupchat_stanza_is_buffered_and_published_once() {
+        let messages = Arc::new(std::sync::Mutex::new(VecDeque::new()));
+        let (events, mut receiver) = tokio::sync::broadcast::channel(8);
+        let stanza = r#"<message from="room@ares-parties.ap/friend" id="m-1" type="groupchat"><body>hello</body></message>"#;
+
+        handle_incoming_stanza(stanza, &messages, &events, "self", "Self#NA1");
+        handle_incoming_stanza(stanza, &messages, &events, "self", "Self#NA1");
+
+        assert_eq!(messages.lock().unwrap().len(), 1);
+        let published = receiver.try_recv().unwrap();
+        assert_eq!(published.id, "m-1");
+        assert_eq!(published.conversation_id, "room@ares-parties.ap");
+        assert_eq!(published.scope, "party");
+        assert!(matches!(
+            receiver.try_recv(),
+            Err(tokio::sync::broadcast::error::TryRecvError::Empty)
+        ));
+    }
+
+    #[test]
+    fn own_groupchat_echo_is_identified_before_publish() {
+        let messages = Arc::new(std::sync::Mutex::new(VecDeque::new()));
+        let (events, mut receiver) = tokio::sync::broadcast::channel(8);
+        let stanza = r#"<message from="game-blue@ares-coregame.ap/self" id="m-2" type="groupchat"><body>rotate</body></message>"#;
+
+        handle_incoming_stanza(stanza, &messages, &events, "self", "Player#1234");
+
+        let published = receiver.try_recv().unwrap();
+        assert!(published.is_self);
+        assert_eq!(published.sender_name, "Player#1234");
+        assert_eq!(published.scope, "match");
+    }
 }

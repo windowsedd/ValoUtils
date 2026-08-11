@@ -7,9 +7,21 @@ use client::{ChatMessage, XmppHandle};
 use serde_json::{json, Value};
 use std::collections::HashSet;
 use std::sync::Arc;
-use tokio::sync::Mutex;
+use tokio::sync::{broadcast, Mutex};
 
 const PARTY_ROOM_MARKER: &str = "ares-parties";
+static MESSAGE_EVENTS: std::sync::OnceLock<broadcast::Sender<ChatMessage>> =
+    std::sync::OnceLock::new();
+
+pub fn message_publisher() -> broadcast::Sender<ChatMessage> {
+    MESSAGE_EVENTS
+        .get_or_init(|| broadcast::channel(256).0)
+        .clone()
+}
+
+pub fn subscribe_messages() -> broadcast::Receiver<ChatMessage> {
+    message_publisher().subscribe()
+}
 
 #[derive(Default)]
 struct Inner {
@@ -54,7 +66,7 @@ async fn login_xmpp(riot: &RiotState, inner: &mut Inner) -> Result<Arc<XmppHandl
         .unwrap_or_default();
     inner.own_puuid = puuid.to_string();
 
-    let result = client::login(access_token, entitlement_token, puuid).await?;
+    let result = client::login(access_token, entitlement_token, puuid, message_publisher()).await?;
     if let Some((name, tagline)) = &result.display_name {
         inner.own_display_name = if tagline.is_empty() {
             name.clone()
