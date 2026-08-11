@@ -1230,6 +1230,10 @@ pub async fn chat_translate(
         .get("translatorProvider")
         .and_then(|v| v.as_str().map(|s| s.to_string()))
         .unwrap_or_else(|| "google".into());
+    let source_language = config
+        .get("translatorSourceLanguage")
+        .and_then(|v| v.as_str().map(|s| s.to_string()))
+        .unwrap_or_else(|| "auto".into());
     let default_target = config
         .get("translatorTargetLanguage")
         .and_then(|v| v.as_str().map(|s| s.to_string()))
@@ -1242,10 +1246,27 @@ pub async fn chat_translate(
         .filter(|s| !s.is_empty())
         .unwrap_or(default_target);
 
-    Ok(match translate::translate_text(&text, &provider, &target_language, &deepl_key).await {
-        Ok(translated_text) => json!({ "success": true, "translatedText": translated_text, "provider": provider, "targetLanguage": target_language }).to_string(),
-        Err(e) => json!({ "success": false, "error": e }).to_string(),
-    })
+    Ok(
+        match translate::translate_text(
+            &text,
+            &provider,
+            &source_language,
+            &target_language,
+            &deepl_key,
+        )
+        .await
+        {
+            Ok(result) => json!({
+                "success": true,
+                "translatedText": result.text,
+                "provider": provider,
+                "sourceLanguage": result.source_language,
+                "targetLanguage": result.target_language,
+            })
+            .to_string(),
+            Err(e) => json!({ "success": false, "error": e }).to_string(),
+        },
+    )
 }
 
 #[tauri::command]

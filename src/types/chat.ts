@@ -77,7 +77,13 @@ export type ChatHistoryResponse =
 	  };
 
 export type TranslateResponse =
-	| { success: true; translatedText: string; provider: TranslatorProvider; targetLanguage: string }
+	| {
+			success: true;
+			translatedText: string;
+			provider: TranslatorProvider;
+			sourceLanguage: string;
+			targetLanguage: string;
+	  }
 	| { success: false; error: string };
 
 export type ChatSendResponse =
