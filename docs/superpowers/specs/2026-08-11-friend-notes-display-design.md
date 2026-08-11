@@ -12,13 +12,15 @@ Show notes for accepted friends in every Friends section: playing VALORANT, othe
 
 ## Presentation
 
-Render the identity in one line:
+Render the identity and note in one line:
 
 ```text
-GameName#Tag  Note
+GameName#Tag  [Note]
 ```
 
-Keep the Riot name white and the tag dimmed. Render a non-empty trimmed note after the tag with `text-gray-500` and normal font weight. The identity row remains a single line. Truncate overflow with an ellipsis and expose the full note through the note span's `title` attribute.
+Keep the Riot name white and the Riot tag dimmed. Render a non-empty trimmed note after the Riot tag as a low-contrast outlined pill. Use a transparent background, `border-white/10`, `text-gray-400`, `text-xs`, `rounded-full`, and compact horizontal padding. Do not add a `NOTE` label inside or before the pill.
+
+The identity row remains a single line. Give the note pill a bounded responsive width, truncate its text with an ellipsis, and expose the full trimmed note through the pill's `title` attribute. The pill must shrink before the Riot ID or right-side presence label becomes unreadable.
 
 Do not add a note icon, edit button, animation, or extra row height. The friend row keeps its current click target, focus ring, avatar, presence status, and secondary game-status line.
 
