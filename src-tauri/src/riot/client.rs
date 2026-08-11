@@ -38,6 +38,13 @@ fn insecure_client() -> &'static reqwest::Client {
     })
 }
 
+fn local_client_unavailable_error(path: &str) -> String {
+    format!(
+        "Riot Client is not ready (stale lockfile while requesting {path}). \
+         Make sure the Riot Client is running, then try again."
+    )
+}
+
 pub fn get_riot_client_info(state: &RiotState) -> Result<RiotClientInfo, String> {
     let path = lockfile_path();
     let modified = std::fs::metadata(&path)
@@ -91,7 +98,14 @@ pub async fn send_internal_request(
         req = req.json(&body);
     }
 
-    let response = req.send().await.map_err(|e| e.to_string())?;
+    let response = match req.send().await {
+        Ok(response) => response,
+        Err(_) => {
+            *state.lockfile_cache.lock().unwrap() = None;
+            *state.tokens_cache.lock().unwrap() = None;
+            return Err(local_client_unavailable_error(path));
+        }
+    };
     let status = response.status();
     let text = response.text().await.map_err(|e| e.to_string())?;
     if !status.is_success() {
@@ -353,4 +367,18 @@ pub fn urlencoding_encode(input: &str) -> String {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn transport_failure_is_classified_as_login_required() {
+        let message = local_client_unavailable_error("/entitlements/v1/token");
+
+        assert!(message.contains("lockfile"));
+        assert!(message.contains("Riot Client is not ready"));
+        assert!(!message.contains("127.0.0.1"));
+    }
 }
