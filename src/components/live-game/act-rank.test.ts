@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import type { CompetitiveSeason } from "../../types/live-game";
 import {
 	borderIndexForWins,
@@ -62,4 +64,15 @@ describe("act selection", () => {
 		expect(initialSeasonId([season("b"), season("a")], null, new Map())).toBe("a");
 		expect(seasonFallbackLabel("12345678-abcd-efgh")).toBe("12345678");
 	});
+});
+
+test("all valid tier orientations and borders have supplied assets", () => {
+	for (let tier = 3; tier <= 27; tier++) {
+		for (const orientation of ["up", "down"]) {
+			expect(existsSync(join(process.cwd(), "public", "mmr", `${tier}_${orientation}.png`))).toBe(true);
+		}
+	}
+	for (let border = 0; border <= 5; border++) {
+		expect(existsSync(join(process.cwd(), "public", "mmr", `border${border}.png`))).toBe(true);
+	}
 });
