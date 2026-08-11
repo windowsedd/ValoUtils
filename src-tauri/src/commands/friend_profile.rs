@@ -9,6 +9,22 @@ fn friend_match_history_indices() -> (u32, u32) {
     (0, 25)
 }
 
+fn local_friend_profile(puuid: &str) -> Option<Value> {
+    puuid
+        .eq_ignore_ascii_case(crate::fake_player::PUUID)
+        .then(|| {
+            json!({
+                "currentTier": 0,
+                "currentRR": 0,
+                "peakTier": 0,
+                "peakSeasonId": null,
+                "currentSeasonId": null,
+                "competitiveSeasons": [],
+                "matches": [],
+            })
+        })
+}
+
 fn validated_puuid(value: Option<&str>) -> Result<String, String> {
     let value = value.map(str::trim).filter(|value| !value.is_empty());
     let Some(value) = value else {
@@ -91,6 +107,10 @@ pub async fn friend_profile_get(
         }
     };
 
+    if let Some(profile) = local_friend_profile(&puuid) {
+        return Ok(json!({ "success": true, "puuid": puuid, "profile": profile }).to_string());
+    }
+
     let result = api::with_api(&riot, |api| {
         let puuid = puuid.clone();
         async move {
@@ -128,6 +148,16 @@ mod tests {
     #[test]
     fn limits_friend_match_history_to_riot_page_size() {
         assert_eq!(friend_match_history_indices(), (0, 25));
+    }
+
+    #[test]
+    fn resolves_the_local_fake_player_without_riot_data() {
+        let profile = local_friend_profile(crate::fake_player::PUUID)
+            .expect("the local fake player must have a local profile");
+        assert_eq!(profile["currentTier"], 0);
+        assert_eq!(profile["competitiveSeasons"], json!([]));
+        assert_eq!(profile["matches"], json!([]));
+        assert!(local_friend_profile("real-riot-player").is_none());
     }
 
     #[test]
