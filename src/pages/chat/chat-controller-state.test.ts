@@ -198,6 +198,59 @@ describe("chat controller state", () => {
 		]);
 	});
 
+	test("reconciles repeated messages without Riot ids by stable message identity", () => {
+		const oldMessage = message({
+			id: "",
+			conversationId: "friend-cid",
+			body: "same text",
+			isSelf: true,
+			timestamp: "99000",
+		});
+		const sending = chatControllerReducer(
+			{
+				...initialChatControllerState,
+				historyByCid: { "friend-cid": [oldMessage] },
+			},
+			{
+				type: "sendStarted",
+				requestId: "send-no-id",
+				cid: "friend-cid",
+				body: "same text",
+			},
+		);
+		const optimistic = chatControllerReducer(sending, {
+			type: "sendSucceeded",
+			requestId: "send-no-id",
+			sentAt: "100000",
+		});
+		const loading = chatControllerReducer(optimistic, {
+			type: "historyStarted",
+			cid: "friend-cid",
+			requestId: "history-no-id",
+		});
+		const caughtUp = chatControllerReducer(loading, {
+			type: "historySucceeded",
+			cid: "friend-cid",
+			requestId: "history-no-id",
+			messages: [
+				oldMessage,
+				message({
+					id: "",
+					conversationId: "friend-cid",
+					body: "same text",
+					isSelf: true,
+					timestamp: "101000",
+				}),
+			],
+		});
+		expect(caughtUp.historyByCid["friend-cid"]).toHaveLength(2);
+		expect(
+			caughtUp.historyByCid["friend-cid"]?.some(
+				(item) => item._raw?.optimistic === true,
+			),
+		).toBe(false);
+	});
+
 	test("keeps drafts and send errors scoped to their originating cid", () => {
 		const drafted = chatControllerReducer(initialChatControllerState, {
 			type: "setDraft",
