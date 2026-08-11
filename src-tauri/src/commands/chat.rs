@@ -21,22 +21,46 @@ fn mark_chat_forwarder_started(flag: &std::sync::atomic::AtomicBool) -> bool {
     .is_ok()
 }
 
-fn ensure_chat_message_forwarder(app: &AppHandle) {
+fn presence_event_payload(
+    snapshot: &xmpp::presence::PresenceSnapshot,
+) -> Result<String, serde_json::Error> {
+    serde_json::to_string(snapshot)
+}
+
+fn ensure_chat_forwarders(app: &AppHandle) {
     if !mark_chat_forwarder_started(&CHAT_FORWARDER_STARTED) {
         return;
     }
-    let app = app.clone();
+    let message_app = app.clone();
     let mut receiver = xmpp::subscribe_messages();
     tauri::async_runtime::spawn(async move {
         loop {
             match receiver.recv().await {
                 Ok(message) => {
                     if let Ok(payload) = serde_json::to_string(&message) {
-                        let _ = app.emit("chat:message", payload);
+                        let _ = message_app.emit("chat:message", payload);
                     }
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
                     log::warn!("chat message forwarder lagged by {skipped} messages");
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+            }
+        }
+    });
+
+    let presence_app = app.clone();
+    let mut presence_receiver = xmpp::subscribe_presence();
+    tauri::async_runtime::spawn(async move {
+        loop {
+            match presence_receiver.recv().await {
+                Ok(snapshot) => {
+                    if let Ok(payload) = presence_event_payload(&snapshot) {
+                        let _ = presence_app.emit("chat:presence", payload);
+                    }
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
+                    log::warn!("chat presence forwarder lagged by {skipped} snapshots");
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
             }
@@ -353,55 +377,20 @@ fn decode_presence_private(value: &str) -> Value {
         .unwrap_or(json!({}))
 }
 
-fn presence_rank(presence: &Value) -> (u8, u8) {
-    let state = pick_string(
-        [
-            presence.get("status"),
-            presence.get("availability"),
-            presence.get("show"),
-            presence.get("state"),
-        ]
-        .map(|value| value.and_then(|value| value.as_str())),
-    )
-    .to_lowercase();
-    let active = matches!(state.as_str(), "chat" | "away" | "dnd" | "online") as u8;
-    let product = pick_string(
-        [presence.get("product"), presence.get("Product")]
-            .map(|value| value.and_then(|value| value.as_str())),
-    )
-    .to_lowercase();
-    let product_priority = match product.as_str() {
-        "valorant" => 2,
-        "riot_client" => 1,
+fn product_priority(product: &str) -> u8 {
+    match product.to_ascii_lowercase().as_str() {
+        "valorant" => 3,
+        "league_of_legends" => 2,
+        "riot_client" | "keystone" => 1,
         _ => 0,
-    };
-    (active, product_priority)
+    }
 }
 
-fn normalize_friends(friends_payload: &[Value], presences_payload: &[Value]) -> Vec<Value> {
-    let mut presences: HashMap<String, &Value> = HashMap::new();
-    for presence in presences_payload {
-        let puuid = pick_string(
-            [
-                presence.get("puuid"),
-                presence.get("PUUID"),
-                presence.get("pid"),
-                presence.get("PID"),
-            ]
-            .map(|v| v.and_then(|v| v.as_str())),
-        );
-        if !puuid.is_empty() {
-            presences
-                .entry(id_root(&puuid))
-                .and_modify(|current| {
-                    if presence_rank(presence) > presence_rank(current) {
-                        *current = presence;
-                    }
-                })
-                .or_insert(presence);
-        }
-    }
-
+fn normalize_friends(
+    friends_payload: &[Value],
+    presences_payload: &[Value],
+    live: &xmpp::presence::PresenceSnapshot,
+) -> Vec<Value> {
     let mut result: Vec<Value> = friends_payload
         .iter()
         .filter_map(|friend| {
@@ -414,15 +403,49 @@ fn normalize_friends(friends_payload: &[Value], presences_payload: &[Value]) -> 
                 ]
                 .map(|v| v.and_then(|v| v.as_str())),
             );
+            let puuid_root = id_root(&puuid);
+            let live_resources = live
+                .friends
+                .get(&puuid_root)
+                .map(Vec::as_slice)
+                .unwrap_or_default();
+            let live_resource = live_resources
+                .iter()
+                .max_by_key(|resource| product_priority(&resource.product));
             let empty = json!({});
-            let presence = presences.get(&id_root(&puuid)).copied().unwrap_or(&empty);
+            let presence = live_resource
+                .and_then(|resource| {
+                    presences_payload.iter().find(|presence| {
+                        let presence_puuid = pick_string(
+                            [
+                                presence.get("puuid"),
+                                presence.get("PUUID"),
+                                presence.get("pid"),
+                                presence.get("PID"),
+                            ]
+                            .map(|value| value.and_then(|value| value.as_str())),
+                        );
+                        let product = pick_string(
+                            [presence.get("product"), presence.get("Product")]
+                                .map(|value| value.and_then(|value| value.as_str())),
+                        );
+                        id_root(&presence_puuid) == puuid_root
+                            && product.eq_ignore_ascii_case(&resource.product)
+                    })
+                })
+                .unwrap_or(&empty);
             let private_str = presence.get("private").and_then(|v| v.as_str());
-            let priv_val = private_str
+            let rest_private = private_str
                 .map(decode_presence_private)
-                .unwrap_or(json!({}));
+                .unwrap_or_else(|| json!({}));
+            let priv_val = live_resource
+                .map(|resource| resource.private.clone())
+                .filter(|value| value.as_object().is_some_and(|object| !object.is_empty()))
+                .unwrap_or(rest_private);
             let party = priv_val.get("partyPresenceData").unwrap_or(&priv_val);
             let match_data = priv_val.get("matchPresenceData").unwrap_or(&priv_val);
             let session_loop_state = pick_string([
+                live_resource.map(|resource| resource.session_loop_state.as_str()),
                 match_data
                     .get("sessionLoopState")
                     .and_then(|value| value.as_str()),
@@ -470,35 +493,34 @@ fn normalize_friends(friends_payload: &[Value], presences_payload: &[Value]) -> 
                 [friend.get("note"), friend.get("Note")]
                     .map(|value| value.and_then(|value| value.as_str())),
             );
-            let status = pick_string(
-                [
-                    presence.get("status"),
-                    presence.get("availability"),
-                    presence.get("show"),
-                    presence.get("state"),
-                ]
-                .map(|v| v.and_then(|v| v.as_str())),
-            );
-            let normalized_status = status.to_lowercase();
-            let is_online = matches!(
-                normalized_status.as_str(),
-                "chat" | "away" | "dnd" | "online"
-            );
+            let status = pick_string([
+                live_resource.map(|resource| resource.status.as_str()),
+                presence.get("status").and_then(|value| value.as_str()),
+                presence
+                    .get("availability")
+                    .and_then(|value| value.as_str()),
+                presence.get("show").and_then(|value| value.as_str()),
+                presence.get("state").and_then(|value| value.as_str()),
+            ]);
+            let is_online = live.state == xmpp::presence::PresenceSyncState::Ready
+                && !live_resources.is_empty();
 
             if puuid.is_empty() && display_name.is_empty() {
                 return None;
             }
 
             let status_message = pick_string([
+                live_resource.map(|resource| resource.status_message.as_str()),
                 presence.get("statusMessage").and_then(|v| v.as_str()),
                 presence.get("status_message").and_then(|v| v.as_str()),
                 party.get("sessionLoopState").and_then(|v| v.as_str()),
                 party.get("state").and_then(|v| v.as_str()),
             ]);
-            let product = pick_string(
-                [presence.get("product"), presence.get("Product")]
-                    .map(|v| v.and_then(|v| v.as_str())),
-            );
+            let product = pick_string([
+                live_resource.map(|resource| resource.product.as_str()),
+                presence.get("product").and_then(|value| value.as_str()),
+                presence.get("Product").and_then(|value| value.as_str()),
+            ]);
             let queue_id = pick_string([
                 party.get("queueId").and_then(|v| v.as_str()),
                 party.get("queueID").and_then(|v| v.as_str()),
@@ -531,6 +553,7 @@ fn normalize_friends(friends_payload: &[Value], presences_payload: &[Value]) -> 
                 "partySize": party_size,
                 "maxPartySize": max_party_size,
                 "isOnline": is_online,
+                "presenceState": live.state,
             }))
         })
         .collect();
@@ -951,8 +974,10 @@ fn unique_messages(messages: Vec<Value>) -> Vec<Value> {
 
 #[tauri::command]
 pub async fn chat_get(app: AppHandle, riot: State<'_, RiotState>) -> Result<String, ()> {
-    ensure_chat_message_forwarder(&app);
+    ensure_chat_forwarders(&app);
     let result: Result<Value, String> = async {
+        xmpp::ensure_connected(&riot).await?;
+        let live_presence = xmpp::presence_snapshot();
         let base_payload = riot_client::get_chat_messages(&riot, None).await?;
         let conversations_payload = riot_client::get_chat_conversations(&riot).await.ok();
         let friends_payload = riot_client::get_friends(&riot).await.unwrap_or_default();
@@ -964,7 +989,7 @@ pub async fn chat_get(app: AppHandle, riot: State<'_, RiotState>) -> Result<Stri
             .as_ref()
             .map(normalize_conversation_map)
             .unwrap_or_default();
-        let friends = normalize_friends(&friends_payload, &presences_payload);
+        let friends = normalize_friends(&friends_payload, &presences_payload, &live_presence);
         let mut scopes = get_chat_room_scopes(&riot, conversations_payload.as_ref()).await;
         let conversation_metadata = merge_normalized_conversations([
             conversations_payload
@@ -1331,6 +1356,41 @@ fn chrono_iso_now() -> String {
 mod tests {
     use super::*;
 
+    fn chat_presence_snapshot(
+        state: xmpp::presence::PresenceSyncState,
+        resources: Vec<xmpp::presence::FriendPresenceResource>,
+    ) -> xmpp::presence::PresenceSnapshot {
+        let mut friends: HashMap<String, Vec<xmpp::presence::FriendPresenceResource>> =
+            HashMap::new();
+        for resource in resources {
+            friends
+                .entry(resource.puuid.clone())
+                .or_default()
+                .push(resource);
+        }
+        xmpp::presence::PresenceSnapshot {
+            state,
+            generation: 7,
+            friends,
+        }
+    }
+
+    fn live_resource(
+        puuid: &str,
+        product: &str,
+        session_loop_state: &str,
+    ) -> xmpp::presence::FriendPresenceResource {
+        xmpp::presence::FriendPresenceResource {
+            puuid: puuid.into(),
+            resource: "RC-1".into(),
+            product: product.into(),
+            status: "chat".into(),
+            status_message: String::new(),
+            session_loop_state: session_loop_state.into(),
+            private: json!({}),
+        }
+    }
+
     #[test]
     fn classifies_party_team_all_without_substitution() {
         assert!(is_party_cid("party@ares-parties.ap"));
@@ -1387,6 +1447,21 @@ mod tests {
         let started = std::sync::atomic::AtomicBool::new(false);
         assert!(mark_chat_forwarder_started(&started));
         assert!(!mark_chat_forwarder_started(&started));
+    }
+
+    #[test]
+    fn presence_event_payload_keeps_complete_snapshot() {
+        let snapshot = chat_presence_snapshot(
+            xmpp::presence::PresenceSyncState::Ready,
+            vec![live_resource("friend", "valorant", "INGAME")],
+        );
+
+        let payload = presence_event_payload(&snapshot).unwrap();
+        let value: Value = serde_json::from_str(&payload).unwrap();
+
+        assert_eq!(value["state"], "ready");
+        assert_eq!(value["generation"], 7);
+        assert_eq!(value["friends"]["friend"][0]["product"], "valorant");
     }
 
     #[test]
@@ -1471,8 +1546,56 @@ mod tests {
             "state": "mobile"
         })];
 
-        let result = normalize_friends(&friends, &presences);
+        let live = chat_presence_snapshot(xmpp::presence::PresenceSyncState::Ready, Vec::new());
+        let result = normalize_friends(&friends, &presences, &live);
 
+        assert_eq!(result[0]["isOnline"], false);
+    }
+
+    #[test]
+    fn ready_xmpp_snapshot_overrides_stale_rest_online() {
+        let friends = [json!({ "puuid": "friend", "game_name": "Friend" })];
+        let stale = [json!({
+            "puuid": "friend",
+            "product": "riot_client",
+            "state": "chat"
+        })];
+        let live = chat_presence_snapshot(xmpp::presence::PresenceSyncState::Ready, Vec::new());
+
+        let result = normalize_friends(&friends, &stale, &live);
+
+        assert_eq!(result[0]["presenceState"], "ready");
+        assert_eq!(result[0]["isOnline"], false);
+    }
+
+    #[test]
+    fn live_xmpp_resource_supplies_current_game_state() {
+        let friends = [json!({ "puuid": "friend", "game_name": "Friend" })];
+        let live = chat_presence_snapshot(
+            xmpp::presence::PresenceSyncState::Ready,
+            vec![live_resource("friend", "valorant", "INGAME")],
+        );
+
+        let result = normalize_friends(&friends, &[], &live);
+
+        assert_eq!(result[0]["isOnline"], true);
+        assert_eq!(result[0]["product"], "valorant");
+        assert_eq!(result[0]["sessionLoopState"], "INGAME");
+    }
+
+    #[test]
+    fn syncing_snapshot_never_confirms_stale_online() {
+        let friends = [json!({ "puuid": "friend", "game_name": "Friend" })];
+        let stale = [json!({
+            "puuid": "friend",
+            "product": "riot_client",
+            "state": "chat"
+        })];
+        let live = chat_presence_snapshot(xmpp::presence::PresenceSyncState::Syncing, Vec::new());
+
+        let result = normalize_friends(&friends, &stale, &live);
+
+        assert_eq!(result[0]["presenceState"], "syncing");
         assert_eq!(result[0]["isOnline"], false);
     }
 
@@ -1496,7 +1619,10 @@ mod tests {
             }),
         ];
 
-        let result = normalize_friends(&friends, &presences);
+        let mut valorant = live_resource("friend-puuid", "valorant", "");
+        valorant.status = "dnd".into();
+        let live = chat_presence_snapshot(xmpp::presence::PresenceSyncState::Ready, vec![valorant]);
+        let result = normalize_friends(&friends, &presences, &live);
 
         assert_eq!(result[0]["isOnline"], true);
         assert_eq!(result[0]["product"], "valorant");
@@ -1515,6 +1641,10 @@ mod tests {
                 "state": "dnd",
                 "private": private
             })],
+            &chat_presence_snapshot(
+                xmpp::presence::PresenceSyncState::Ready,
+                vec![live_resource("friend", "valorant", "")],
+            ),
         );
 
         assert_eq!(result[0]["sessionLoopState"], "INGAME");
@@ -1532,6 +1662,10 @@ mod tests {
                 "state": "chat",
                 "private": private
             })],
+            &chat_presence_snapshot(
+                xmpp::presence::PresenceSyncState::Ready,
+                vec![live_resource("friend", "valorant", "")],
+            ),
         );
 
         assert_eq!(result[0]["sessionLoopState"], "MENUS");
