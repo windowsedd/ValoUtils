@@ -17,6 +17,11 @@ import { FaMagnifyingGlass, FaUserGroup } from "react-icons/fa6";
 
 const POLL_MS = 10000;
 
+export const isVisibleFriend = (
+	friend: Pick<Friend, "gameName" | "tagLine">,
+) =>
+	friend.gameName.trim().toLowerCase() !== "valoutils bot" ||
+	friend.tagLine.trim().toLowerCase() !== "bot";
 
 /** Riot product ids -> the game names shown as section headings. */
 const PRODUCT_LABELS: Record<string, string> = {
@@ -90,6 +95,7 @@ const Friends = () => {
 	const [profileCache, setProfileCache] = useState<Record<string, FriendProfileData>>({});
 	const listScrollRef = useRef<HTMLDivElement>(null);
 	const savedScrollTopRef = useRef(0);
+	const visibleFriends = useMemo(() => friends.filter(isVisibleFriend), [friends]);
 
 	const openFriend = (friend: Friend) => {
 		savedScrollTopRef.current = listScrollRef.current?.scrollTop ?? 0;
@@ -144,7 +150,7 @@ const Friends = () => {
 	// seen yet — the poll re-runs this effect every 10s.
 	useEffect(() => {
 		const ids = new Set(
-			friends
+			visibleFriends
 				.map((f) => f.valorant?.playerCardId?.toLowerCase())
 				.filter((id): id is string => Boolean(id) && !cards.has(id!))
 		);
@@ -161,10 +167,10 @@ const Friends = () => {
 		return () => {
 			cancelled = true;
 		};
-	}, [friends, cards]);
+	}, [visibleFriends, cards]);
 
 	const groups = useMemo(() => {
-		const visible = friends.filter((friend) => matchesFriendSearch(friend, search));
+		const visible = visibleFriends.filter((friend) => matchesFriendSearch(friend, search));
 		const playing = visible.filter((f) => f.isOnline && f.playing);
 		return {
 			valorant: playing.filter((f) => f.product === "valorant"),
@@ -181,7 +187,7 @@ const Friends = () => {
 			online: visible.filter((f) => f.isOnline && !f.playing),
 			offline: visible.filter((f) => !f.isOnline),
 		};
-	}, [friends, search]);
+	}, [visibleFriends, search]);
 
 	/**
 	 * Riot renders a party as one card. `partySize` counts everyone in it, but
@@ -299,7 +305,7 @@ const Friends = () => {
 		);
 	};
 
-	const total = friends.length;
+	const total = visibleFriends.length;
 	const nothingToShow =
 		groups.valorant.length === 0 &&
 		groups.otherGames.length === 0 &&
@@ -309,7 +315,7 @@ const Friends = () => {
 		outgoing.length === 0;
 
 	if (selectedFriend) {
-		const profileFriend = friends.find((friend) => friend.puuid === selectedFriend.puuid) ?? selectedFriend;
+		const profileFriend = visibleFriends.find((friend) => friend.puuid === selectedFriend.puuid) ?? selectedFriend;
 		const cardId = profileFriend.valorant?.playerCardId?.toLowerCase();
 		return (
 			<FriendProfile

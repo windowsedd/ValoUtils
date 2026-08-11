@@ -10,7 +10,7 @@ const friendsPage = readFileSync(
 describe("Friends note wiring", () => {
   test("uses note-aware search only for accepted friends", () => {
     expect(friendsPage).toContain(
-      "friends.filter((friend) => matchesFriendSearch(friend, search))",
+      "visibleFriends.filter((friend) => matchesFriendSearch(friend, search))",
     );
     expect(friendsPage).toContain("matchesFriendRequestSearch(request, search)");
   });
