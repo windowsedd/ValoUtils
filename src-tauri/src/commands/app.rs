@@ -105,6 +105,7 @@ pub fn config_get_all(store: State<ConfigStore>) -> String {
         "presenceStartup": get_or("presenceStartup", json!("last")),
         "presenceMucEnabled": get_or("presenceMucEnabled", json!(true)),
         "translatorProvider": get_or("translatorProvider", json!("google")),
+        "translatorSourceLanguage": get_or("translatorSourceLanguage", json!("auto")),
         "translatorTargetLanguage": get_or("translatorTargetLanguage", json!("en")),
         "deeplApiKey": get_or("deeplApiKey", json!("")),
         "hiddenTabs": get_or("hiddenTabs", json!([])),

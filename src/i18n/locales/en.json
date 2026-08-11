@@ -275,6 +275,11 @@
     "cancelSelection": "Cancel"
   },
   "settings": {
+    "translationLanguages": "Translation languages",
+    "translationLanguagesDesc": "Choose the detected or known source language and the translated output language",
+    "translationFrom": "From language",
+    "translationTo": "To language",
+    "translationAuto": "Auto Detect",
     "title": "Settings",
     "sectionGeneral": "General",
     "language": "Language",
@@ -507,6 +512,7 @@
     "loginRequiredDesc": "Open the Riot Client and sign in, then try again.",
     "noMatches": "No matches found",
     "player": "Player",
+    "coach": "Coach",
     "kda": "K / D / A",
     "acs": "ACS",
     "adr": "ADR",

@@ -47,6 +47,7 @@ pub fn run() {
             config_defaults.insert("presenceMucEnabled".into(), json!(true));
             config_defaults.insert("autoUpdate".into(), json!(true));
             config_defaults.insert("translatorProvider".into(), json!("google"));
+            config_defaults.insert("translatorSourceLanguage".into(), json!("auto"));
             config_defaults.insert("translatorTargetLanguage".into(), json!("en"));
             config_defaults.insert("deeplApiKey".into(), json!(""));
             config_defaults.insert("hiddenTabs".into(), json!([]));

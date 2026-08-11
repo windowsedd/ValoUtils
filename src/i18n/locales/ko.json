@@ -274,6 +274,11 @@
     "cancelSelection": "취소"
   },
   "settings": {
+    "translationLanguages": "번역 언어",
+    "translationLanguagesDesc": "자동 감지 또는 원문 언어와 번역할 대상 언어를 선택합니다",
+    "translationFrom": "원문 언어",
+    "translationTo": "대상 언어",
+    "translationAuto": "자동 감지",
     "title": "설정",
     "sectionGeneral": "일반",
     "language": "언어",
@@ -499,6 +504,7 @@
     "loginRequiredDesc": "Riot 클라이언트를 열고 로그인한 후 다시 시도하세요.",
     "noMatches": "매치를 찾을 수 없습니다",
     "player": "플레이어",
+    "coach": "코치",
     "kda": "K / D / A",
     "acs": "ACS",
     "adr": "ADR",

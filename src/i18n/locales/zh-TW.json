@@ -274,6 +274,11 @@
     "cancelSelection": "取消"
   },
   "settings": {
+    "translationLanguages": "翻譯語言",
+    "translationLanguagesDesc": "選擇自動偵測或指定來源語言，以及翻譯後的目標語言",
+    "translationFrom": "來源語言",
+    "translationTo": "目標語言",
+    "translationAuto": "自動偵測",
     "title": "設定",
     "sectionGeneral": "一般",
     "language": "語言",
@@ -499,6 +504,7 @@
     "loginRequiredDesc": "請開啟 Riot 客戶端並登入後再試一次。",
     "noMatches": "找不到對戰紀錄",
     "player": "玩家",
+    "coach": "教練",
     "kda": "K / D / A",
     "acs": "ACS",
     "adr": "ADR",

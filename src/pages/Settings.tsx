@@ -5,6 +5,13 @@ import { PageHeader, SectionCard } from "@/components/section-card";
 import { useConfiguredRoutes } from "@/components/router";
 import SwaggerPage from "@/pages/SwaggerPage";
 import { normalizeHiddenTabs, setTabHidden } from "@/util/navigation-tabs";
+import {
+	displayTranslationLanguage,
+	getTranslationLanguages,
+	normalizeTranslationSelection,
+	switchTranslationProvider,
+	type TranslationProvider,
+} from "@/util/translation-languages";
 
 const LANGUAGES = [
 	{ code: "en", label: "EN", name: "English" },
@@ -19,7 +26,8 @@ type AppConfig = {
 	presenceMode: "online" | "offline" | "mobile";
 	presenceStartup: "online" | "offline" | "mobile" | "last";
 	presenceMucEnabled: boolean;
-	translatorProvider: "google" | "deepl";
+	translatorProvider: TranslationProvider;
+	translatorSourceLanguage: string;
 	translatorTargetLanguage: string;
 	deeplApiKey: string;
 	hiddenTabs: string[];
@@ -94,6 +102,7 @@ const Settings = () => {
 		presenceStartup: "last",
 		presenceMucEnabled: true,
 		translatorProvider: "google",
+		translatorSourceLanguage: "auto",
 		translatorTargetLanguage: "en",
 		deeplApiKey: "",
 		hiddenTabs: [],
@@ -106,11 +115,28 @@ const Settings = () => {
 			window.Main.removeListener("config:get-all", onConfigLoaded);
 			try {
 				const config = JSON.parse(msg) as Partial<AppConfig>;
+				const translation = normalizeTranslationSelection({
+					provider: config.translatorProvider,
+					sourceLanguage: config.translatorSourceLanguage,
+					targetLanguage: config.translatorTargetLanguage,
+				});
 				setAppConfig((current) => ({
 					...current,
 					...config,
+					translatorProvider: translation.provider,
+					translatorSourceLanguage: translation.sourceLanguage,
+					translatorTargetLanguage: translation.targetLanguage,
 					hiddenTabs: normalizeHiddenTabs(config.hiddenTabs),
 				}));
+				for (const [key, value] of Object.entries({
+					translatorProvider: translation.provider,
+					translatorSourceLanguage: translation.sourceLanguage,
+					translatorTargetLanguage: translation.targetLanguage,
+				})) {
+					if (config[key as keyof AppConfig] !== value) {
+						window.Main.send("config:set", key, value);
+					}
+				}
 			} catch {
 				setAppConfig((current) => ({ ...current, hiddenTabs: [] }));
 			}
@@ -146,6 +172,34 @@ const Settings = () => {
 		window.dispatchEvent(
 			new CustomEvent("valoutils:config-changed", { detail: { key, value } }),
 		);
+	};
+
+	const setConfigs = (values: Partial<AppConfig>) => {
+		for (const [key, value] of Object.entries(values)) {
+			window.Main.send("config:set", key, value);
+			window.dispatchEvent(
+				new CustomEvent("valoutils:config-changed", {
+					detail: { key, value },
+				}),
+			);
+		}
+		setAppConfig((previous) => ({ ...previous, ...values }));
+	};
+
+	const changeTranslatorProvider = (provider: TranslationProvider) => {
+		const next = switchTranslationProvider(
+			{
+				provider: appConfig.translatorProvider,
+				sourceLanguage: appConfig.translatorSourceLanguage,
+				targetLanguage: appConfig.translatorTargetLanguage,
+			},
+			provider,
+		);
+		setConfigs({
+			translatorProvider: next.provider,
+			translatorSourceLanguage: next.sourceLanguage,
+			translatorTargetLanguage: next.targetLanguage,
+		});
 	};
 
 	const setRouteHidden = (routeId: string, hidden: boolean) => {
@@ -218,7 +272,7 @@ const Settings = () => {
 							{(["google", "deepl"] as const).map((provider) => (
 								<button
 									key={provider}
-									onClick={() => setConfig("translatorProvider", provider)}
+									onClick={() => changeTranslatorProvider(provider)}
 									className={`px-2.5 py-1 rounded text-xs font-semibold uppercase transition-all ${
 										appConfig.translatorProvider === provider
 											? "bg-[#22d3ee]/20 text-[#22d3ee] border border-[#22d3ee]/40"
@@ -233,15 +287,47 @@ const Settings = () => {
 				/>
 				<SettingRow
 					icon={<FaGlobe />}
-					label={t("settings.translationTarget")}
-					description={t("settings.translationTargetDesc")}
+					label={t("settings.translationLanguages")}
+					description={t("settings.translationLanguagesDesc")}
 					right={
-						<input
-							value={appConfig.translatorTargetLanguage}
-							onChange={(event) => setConfig("translatorTargetLanguage", event.target.value)}
-							className="w-20 px-2 py-1 rounded border border-white/10 bg-black/30 text-sm text-white outline-none focus:border-[#22d3ee]/50"
-							placeholder="en"
-						/>
+						<div className="flex flex-wrap items-center justify-end gap-2 max-w-[32rem]">
+							<select
+								aria-label={t("settings.translationFrom")}
+								value={appConfig.translatorSourceLanguage}
+								onChange={(event) =>
+									setConfig("translatorSourceLanguage", event.target.value)
+								}
+								className="max-w-48 px-2 py-1 rounded border border-white/10 bg-[#0b0e13] text-sm text-white outline-none focus:border-[#22d3ee]/50"
+							>
+								<option value="auto">{t("settings.translationAuto")}</option>
+								{getTranslationLanguages(
+									appConfig.translatorProvider,
+									"source",
+								).map((language) => (
+									<option key={language.code} value={language.code}>
+										{displayTranslationLanguage(language, i18n.language)}
+									</option>
+								))}
+							</select>
+							<span aria-hidden="true" className="text-gray-500">→</span>
+							<select
+								aria-label={t("settings.translationTo")}
+								value={appConfig.translatorTargetLanguage}
+								onChange={(event) =>
+									setConfig("translatorTargetLanguage", event.target.value)
+								}
+								className="max-w-48 px-2 py-1 rounded border border-white/10 bg-[#0b0e13] text-sm text-white outline-none focus:border-[#22d3ee]/50"
+							>
+								{getTranslationLanguages(
+									appConfig.translatorProvider,
+									"target",
+								).map((language) => (
+									<option key={language.code} value={language.code}>
+										{displayTranslationLanguage(language, i18n.language)}
+									</option>
+								))}
+							</select>
+						</div>
 					}
 				/>
 
