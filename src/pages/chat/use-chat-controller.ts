@@ -1,0 +1,359 @@
+import type {
+	ChatChannel,
+	ChatConversation,
+	ChatFriend,
+	ChatHistoryResponse,
+	ChatMessage,
+	ChatResponse,
+	ChatSendResponse,
+	TranslateResponse,
+} from "@/types/chat";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { chatControllerReducer, initialChatControllerState } from "./chat-controller-state";
+import {
+	buildFriendConversations,
+	filterChatFriends,
+	filterFriendConversations,
+	findFriendConversationCid,
+	mergeChatMessages,
+} from "./chat-model";
+
+const POLL_MS = 5000;
+
+type ChatSummary = Extract<ChatResponse, { success: true }>;
+type FriendAction = "invite" | "join";
+type FriendActionResponse =
+	| { success: true; action: FriendAction }
+	| { success: false; error: string };
+
+const emptySummary: ChatSummary = {
+	success: true,
+	messages: [],
+	rooms: {},
+	conversations: [],
+	friends: [],
+	fetchedAt: "",
+};
+
+let requestSequence = 0;
+const nextRequestId = (kind: "history" | "send" | "translate" | "friend") =>
+	`${kind}-${Date.now()}-${++requestSequence}`;
+
+const parsePayload = <T>(payload: string): T | null => {
+	try {
+		return JSON.parse(payload) as T;
+	} catch {
+		return null;
+	}
+};
+
+export const useChatController = () => {
+	const [state, dispatch] = useReducer(chatControllerReducer, initialChatControllerState);
+	const [summary, setSummary] = useState<ChatSummary>(emptySummary);
+	const [loading, setLoading] = useState(true);
+	const [loginRequired, setLoginRequired] = useState(false);
+	const [summaryError, setSummaryError] = useState<string | null>(null);
+	const [conversationSearch, setConversationSearch] = useState("");
+	const [friendSearch, setFriendSearch] = useState("");
+	const [translatedByMessageId, setTranslatedByMessageId] = useState<
+		Record<string, string>
+	>({});
+	const [translatingMessageId, setTranslatingMessageId] = useState<string | null>(null);
+	const [friendActionError, setFriendActionError] = useState<string | null>(null);
+	const [pendingFriendAction, setPendingFriendAction] = useState<string | null>(null);
+	const translationMessageRef = useRef<string | null>(null);
+
+	const refreshSummary = useCallback(() => {
+		window.Main?.send("chat:get");
+	}, []);
+
+	const requestHistory = useCallback((cid: string) => {
+		if (!cid) return;
+		const requestId = nextRequestId("history");
+		dispatch({ type: "historyStarted", cid, requestId });
+		window.Main.send("chat:history", requestId, cid);
+	}, []);
+
+	useEffect(() => {
+		if (!window.Main) return;
+
+		const onSummary = (payload: string) => {
+			const response = parsePayload<ChatResponse>(payload);
+			setLoading(false);
+			if (!response) {
+				setSummaryError("Invalid chat summary response.");
+				return;
+			}
+			if (!response.success) {
+				const requiresLogin = "code" in response && response.code === "loginRequired";
+				setLoginRequired(requiresLogin);
+				setSummaryError("error" in response ? response.error : null);
+				return;
+			}
+			setLoginRequired(false);
+			setSummaryError(null);
+			setSummary(response);
+			dispatch({ type: "summaryMessages", messages: response.messages });
+		};
+
+		const onHistory = (payload: string) => {
+			const response = parsePayload<ChatHistoryResponse>(payload);
+			if (!response) return;
+			if (response.success) {
+				dispatch({
+					type: "historySucceeded",
+					cid: response.cid,
+					requestId: response.requestId,
+					messages: response.messages,
+				});
+				return;
+			}
+			dispatch({
+				type: "historyFailed",
+				cid: response.cid,
+				requestId: response.requestId,
+				error: response.error,
+			});
+		};
+
+		const onRealtimeMessage = (payload: string) => {
+			const message = parsePayload<ChatMessage>(payload);
+			if (!message?.conversationId || !message.id) return;
+			dispatch({ type: "realtimeMessage", message });
+		};
+
+		const onSend = (payload: string) => {
+			const response = parsePayload<ChatSendResponse>(payload);
+			if (!response) return;
+			if (response.success) {
+				dispatch({ type: "sendSucceeded", requestId: response.requestId });
+				requestHistory(response.cid);
+				return;
+			}
+			dispatch({
+				type: "sendFailed",
+				requestId: response.requestId,
+				error: response.error,
+			});
+		};
+
+		const onTranslate = (payload: string) => {
+			const response = parsePayload<TranslateResponse>(payload);
+			const messageId = translationMessageRef.current;
+			translationMessageRef.current = null;
+			setTranslatingMessageId(null);
+			if (!response?.success || !messageId) return;
+			setTranslatedByMessageId((current) => ({
+				...current,
+				[messageId]: response.translatedText,
+			}));
+		};
+
+		const onFriendAction = (payload: string) => {
+			const response = parsePayload<FriendActionResponse>(payload);
+			setPendingFriendAction(null);
+			if (!response) {
+				setFriendActionError("Invalid friend action response.");
+				return;
+			}
+			if (!response.success) {
+				setFriendActionError(response.error);
+				return;
+			}
+			setFriendActionError(null);
+			refreshSummary();
+		};
+
+		window.Main.on("chat:get", onSummary);
+		window.Main.on("chat:history", onHistory);
+		window.Main.on("chat:message", onRealtimeMessage);
+		window.Main.on("chat:send", onSend);
+		window.Main.on("chat:translate", onTranslate);
+		window.Main.on("chat:friend-action", onFriendAction);
+		refreshSummary();
+		const interval = window.setInterval(refreshSummary, POLL_MS);
+
+		return () => {
+			window.clearInterval(interval);
+			window.Main.removeListener("chat:get", onSummary);
+			window.Main.removeListener("chat:history", onHistory);
+			window.Main.removeListener("chat:message", onRealtimeMessage);
+			window.Main.removeListener("chat:send", onSend);
+			window.Main.removeListener("chat:translate", onTranslate);
+			window.Main.removeListener("chat:friend-action", onFriendAction);
+		};
+	}, [refreshSummary, requestHistory]);
+
+	useEffect(() => {
+		if (state.selectedChannel === "friends" || !state.selectedCid) return;
+		const cidStillExists = summary.conversations.some(
+			(conversation) =>
+				conversation.channel === state.selectedChannel && conversation.cid === state.selectedCid,
+		);
+		if (!cidStillExists) {
+			dispatch({ type: "selectChannel", channel: state.selectedChannel, cid: null });
+		}
+	}, [state.selectedChannel, state.selectedCid, summary.conversations]);
+
+	const selectChannel = useCallback(
+		(channel: ChatChannel) => {
+			if (channel === "friends") {
+				const cid = state.selectedChannel === "friends" ? state.selectedCid : null;
+				dispatch({ type: "selectChannel", channel, cid });
+				return;
+			}
+			const cid =
+				summary.conversations.find((conversation) => conversation.channel === channel)?.cid ??
+				null;
+			dispatch({ type: "selectChannel", channel, cid });
+			if (cid) requestHistory(cid);
+		},
+		[requestHistory, state.selectedChannel, state.selectedCid, summary.conversations],
+	);
+
+	const selectConversation = useCallback(
+		(cid: string) => {
+			dispatch({ type: "selectConversation", cid });
+			requestHistory(cid);
+		},
+		[requestHistory],
+	);
+
+	const openFriendChat = useCallback(
+		(friend: ChatFriend) => {
+			const cid = findFriendConversationCid(friend, summary.conversations);
+			if (cid) selectConversation(cid);
+			return cid;
+		},
+		[selectConversation, summary.conversations],
+	);
+
+	const retryHistory = useCallback(() => {
+		if (state.selectedCid) requestHistory(state.selectedCid);
+	}, [requestHistory, state.selectedCid]);
+
+	const setDraft = useCallback((draft: string) => {
+		dispatch({ type: "setDraft", draft });
+	}, []);
+
+	const sendMessage = useCallback(() => {
+		if (state.pendingSendId) return;
+		const text = state.draft.trim();
+		const selectedCid = state.selectedCid;
+		if (!text || !selectedCid) return;
+		const requestId = nextRequestId("send");
+		dispatch({ type: "sendStarted", requestId });
+		window.Main.send("chat:send", requestId, selectedCid, text);
+	}, [state.draft, state.pendingSendId, state.selectedCid]);
+
+	const translateMessage = useCallback(
+		(message: ChatMessage) => {
+			if (translatingMessageId) return;
+			translationMessageRef.current = message.id;
+			setTranslatingMessageId(message.id);
+			nextRequestId("translate");
+			window.Main.send("chat:translate", message.body);
+		},
+		[translatingMessageId],
+	);
+
+	const runFriendAction = useCallback(
+		(action: FriendAction, friend: ChatFriend) => {
+			if (pendingFriendAction) return;
+			const requestId = nextRequestId("friend");
+			setPendingFriendAction(requestId);
+			setFriendActionError(null);
+			window.Main.send("chat:friend-action", action, friend);
+		},
+		[pendingFriendAction],
+	);
+
+	const allCachedMessages = useMemo(
+		() => mergeChatMessages(summary.messages, ...Object.values(state.historyByCid)),
+		[state.historyByCid, summary.messages],
+	);
+	const conversations = useMemo(
+		() => buildFriendConversations(allCachedMessages, summary.conversations),
+		[allCachedMessages, summary.conversations],
+	);
+	const filteredConversations = useMemo(
+		() => filterFriendConversations(conversations, summary.friends, conversationSearch),
+		[conversationSearch, conversations, summary.friends],
+	);
+	const friends = useMemo(
+		() => filterChatFriends(summary.friends, friendSearch),
+		[friendSearch, summary.friends],
+	);
+	const selectedConversation = useMemo(
+		() =>
+			state.selectedCid
+				? summary.conversations.find((conversation) => conversation.cid === state.selectedCid) ??
+					null
+				: null,
+		[state.selectedCid, summary.conversations],
+	);
+	const visibleMessages = useMemo(
+		() =>
+			state.selectedCid
+				? mergeChatMessages(
+						state.historyByCid[state.selectedCid] ?? [],
+						summary.messages.filter(
+							(message) => message.conversationId === state.selectedCid,
+						),
+					)
+				: [],
+		[state.historyByCid, state.selectedCid, summary.messages],
+	);
+	const availableChannels = useMemo(
+		() => ({
+			friends: true,
+			party: summary.conversations.some((conversation) => conversation.channel === "party"),
+			team: summary.conversations.some((conversation) => conversation.channel === "team"),
+			all: summary.conversations.some((conversation) => conversation.channel === "all"),
+		}),
+		[summary.conversations],
+	);
+
+	const selectedCid = state.selectedCid;
+	const historyLoading = selectedCid ? Boolean(state.historyLoadingByCid[selectedCid]) : false;
+	const historyError = selectedCid ? (state.historyErrorByCid[selectedCid] ?? null) : null;
+
+	return {
+		summary,
+		loading,
+		loginRequired,
+		summaryError,
+		selectedChannel: state.selectedChannel,
+		selectedCid,
+		selectedConversation,
+		availableChannels,
+		conversations: filteredConversations,
+		conversationSearch,
+		setConversationSearch,
+		friends,
+		friendSearch,
+		setFriendSearch,
+		visibleMessages,
+		historyLoading,
+		historyError,
+		draft: state.draft,
+		setDraft,
+		sending: Boolean(state.pendingSendId),
+		sendError: state.sendError,
+		translatedByMessageId,
+		translatingMessageId,
+		pendingFriendAction,
+		friendActionError,
+		selectChannel,
+		selectConversation,
+		openFriendChat,
+		refreshSummary,
+		retryHistory,
+		sendMessage,
+		translateMessage,
+		runFriendAction,
+	};
+};
+
+export type ChatController = ReturnType<typeof useChatController>;
+export type { ChatConversation };

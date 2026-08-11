@@ -38,6 +38,7 @@ export type ChatControllerAction =
 	| { type: "sendStarted"; requestId: string }
 	| { type: "sendSucceeded"; requestId: string }
 	| { type: "sendFailed"; requestId: string; error: string }
+	| { type: "summaryMessages"; messages: ChatMessage[] }
 	| { type: "realtimeMessage"; message: ChatMessage };
 
 const withoutKey = <T>(record: Record<string, T>, key: string) => {
@@ -108,6 +109,21 @@ export const chatControllerReducer = (
 				pendingSendId: null,
 				sendError: action.error,
 			};
+		case "summaryMessages": {
+			const grouped = new Map<string, ChatMessage[]>();
+			for (const message of action.messages) {
+				if (!message.conversationId) continue;
+				grouped.set(message.conversationId, [
+					...(grouped.get(message.conversationId) ?? []),
+					message,
+				]);
+			}
+			const historyByCid = { ...state.historyByCid };
+			for (const [cid, messages] of grouped) {
+				historyByCid[cid] = mergeChatMessages(historyByCid[cid] ?? [], messages);
+			}
+			return { ...state, historyByCid };
+		}
 		case "realtimeMessage": {
 			const cid = action.message.conversationId;
 			if (!cid) return state;

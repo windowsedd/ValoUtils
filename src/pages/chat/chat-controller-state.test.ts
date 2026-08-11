@@ -99,4 +99,20 @@ describe("chat controller state", () => {
 			"message-1",
 		]);
 	});
+
+	test("merges one summary batch into separate cid caches", () => {
+		const result = chatControllerReducer(initialChatControllerState, {
+			type: "summaryMessages",
+			messages: [
+				message({ id: "party", conversationId: "party@ares-parties.ap" }),
+				message({ id: "team", conversationId: "game-blue@ares-coregame.ap" }),
+			],
+		});
+		expect(result.historyByCid["party@ares-parties.ap"]?.map((item) => item.id)).toEqual([
+			"party",
+		]);
+		expect(result.historyByCid["game-blue@ares-coregame.ap"]?.map((item) => item.id)).toEqual([
+			"team",
+		]);
+	});
 });

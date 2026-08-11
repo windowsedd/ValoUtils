@@ -4,6 +4,7 @@ import {
 	buildFriendConversations,
 	channelForCid,
 	filterChatFriends,
+	filterFriendConversations,
 	findFriendConversationCid,
 	mergeChatMessages,
 	shouldStickToBottom,
@@ -87,6 +88,26 @@ describe("chat model", () => {
 		];
 		expect(findFriendConversationCid(friend, conversations)).toBe("friend-puuid@chat.ap");
 		expect(findFriendConversationCid({ ...friend, puuid: "other" }, conversations)).toBeNull();
+	});
+
+	test("searches direct conversations by the matched friend note", () => {
+		const conversations = buildFriendConversations(
+			[message({ conversationId: "friend-puuid@chat.ap" })],
+			[
+				{
+					cid: "friend-puuid@chat.ap",
+					channel: "friends",
+					type: "chat",
+					title: "ALEKSANDAR#4830",
+					participantPuuid: "friend-puuid",
+					unreadCount: 0,
+					messageHistory: true,
+					muted: false,
+				},
+			],
+		);
+		expect(filterFriendConversations(conversations, [friend], "架住")).toHaveLength(1);
+		expect(filterFriendConversations(conversations, [friend], "missing")).toHaveLength(0);
 	});
 
 	test("classifies only exact Riot room families", () => {

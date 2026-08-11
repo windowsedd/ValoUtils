@@ -80,6 +80,31 @@ export const filterChatFriends = (friends: ChatFriend[], search: string) => {
 
 const idRoot = (value: string) => value.split("@")[0].toLocaleLowerCase();
 
+export const filterFriendConversations = (
+	conversations: FriendConversation[],
+	friends: ChatFriend[],
+	search: string,
+) => {
+	const query = search.trim().toLocaleLowerCase();
+	if (!query) return conversations;
+	return conversations.filter((conversation) => {
+		const participant = idRoot(conversation.participantPuuid);
+		const friend = friends.find((item) => idRoot(item.puuid) === participant);
+		const searchable = [
+			conversation.title,
+			conversation.participantPuuid,
+			friend?.displayName,
+			friend?.gameName,
+			friend?.tagLine,
+			friend?.note,
+		]
+			.filter(Boolean)
+			.join(" ")
+			.toLocaleLowerCase();
+		return searchable.includes(query);
+	});
+};
+
 export const findFriendConversationCid = (
 	friend: ChatFriend,
 	conversations: ChatConversation[],
