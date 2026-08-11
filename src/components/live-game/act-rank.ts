@@ -62,6 +62,7 @@ export const ACT_RANK_GEOMETRY = {
 } as const;
 
 export const ACT_RANK_CANVAS_SIZE = 512;
+export const ACT_RANK_CONTENT_INSET = 10;
 
 const equilateralHalfWidth = (height: number) => height / Math.sqrt(3);
 
@@ -76,7 +77,7 @@ export const outerTrianglePoints = (): readonly [Point, Point, Point] => {
 	];
 };
 
-export const innerTrianglePoints = (): readonly [Point, Point, Point] => {
+export const frameInnerTrianglePoints = (): readonly [Point, Point, Point] => {
 	const halfWidth = equilateralHalfWidth(
 		ACT_RANK_GEOMETRY.innerBaseY - ACT_RANK_GEOMETRY.innerApexY,
 	);
@@ -84,6 +85,17 @@ export const innerTrianglePoints = (): readonly [Point, Point, Point] => {
 		[ACT_RANK_GEOMETRY.centerX, ACT_RANK_GEOMETRY.innerApexY],
 		[ACT_RANK_GEOMETRY.centerX - halfWidth, ACT_RANK_GEOMETRY.innerBaseY],
 		[ACT_RANK_GEOMETRY.centerX + halfWidth, ACT_RANK_GEOMETRY.innerBaseY],
+	];
+};
+
+export const innerTrianglePoints = (): readonly [Point, Point, Point] => {
+	const apexY = ACT_RANK_GEOMETRY.innerApexY + ACT_RANK_CONTENT_INSET * 2;
+	const baseY = ACT_RANK_GEOMETRY.innerBaseY - ACT_RANK_CONTENT_INSET;
+	const halfWidth = equilateralHalfWidth(baseY - apexY);
+	return [
+		[ACT_RANK_GEOMETRY.centerX, apexY],
+		[ACT_RANK_GEOMETRY.centerX - halfWidth, baseY],
+		[ACT_RANK_GEOMETRY.centerX + halfWidth, baseY],
 	];
 };
 

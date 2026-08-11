@@ -73,14 +73,14 @@ describe("act rank badge", () => {
 		expect(actRankCellBounds).toBeDefined();
 		if (!actRankCellBounds) return;
 		const first = actRankCellBounds(0, 0);
-		expect(first.top).toBe(96);
-		expect(first.height).toBe(45);
-		expect(first.width).toBeCloseTo((2 * 315) / Math.sqrt(3) / 7, 10);
+		expect(first.top).toBe(116);
+		expect(first.height).toBeCloseTo(285 / 7, 10);
+		expect(first.width).toBeCloseTo((2 * 285) / Math.sqrt(3) / 7, 10);
 		expect(first.left + first.width / 2).toBeCloseTo(256, 10);
 
 		const down = actRankCellBounds(1, 1);
-		expect(down.top).toBe(141);
-		expect(down.height).toBe(45);
+		expect(down.top).toBeCloseTo(116 + 285 / 7, 10);
+		expect(down.height).toBeCloseTo(285 / 7, 10);
 		expect(down.left + down.width / 2).toBeCloseTo(256, 10);
 	});
 
@@ -107,20 +107,33 @@ describe("act rank badge", () => {
 		expect(left[1]).toBe(right[1]);
 	});
 
-	test("derives a centered inset border from the outer triangle", () => {
-		const innerTrianglePoints = (
-			actRankGeometry as typeof actRankGeometry & {
-				innerTrianglePoints?: () => readonly [readonly [number, number], readonly [number, number], readonly [number, number]];
-			}
-		).innerTrianglePoints;
-		expect(innerTrianglePoints).toBeDefined();
-		if (!innerTrianglePoints) return;
-		const [apex, left, right] = innerTrianglePoints();
-		expect(apex[0]).toBe((left[0] + right[0]) / 2);
-		expect(apex).toEqual([256, 96]);
-		expect(left[1]).toBe(411);
-		expect(right[1]).toBe(411);
-		expect((right[0] - left[0]) / (left[1] - apex[1])).toBeCloseTo(2 / Math.sqrt(3), 10);
+	test("insets the content triangle from the official frame interior", () => {
+		type TestPoint = readonly [number, number];
+		const geometry = actRankGeometry as typeof actRankGeometry & {
+			ACT_RANK_CONTENT_INSET?: number;
+			frameInnerTrianglePoints?: () => readonly [TestPoint, TestPoint, TestPoint];
+		};
+		expect(geometry.ACT_RANK_CONTENT_INSET).toBe(10);
+		expect(geometry.frameInnerTrianglePoints).toBeDefined();
+		if (!geometry.frameInnerTrianglePoints) return;
+
+		const [frameApex, frameLeft, frameRight] = geometry.frameInnerTrianglePoints();
+		const [contentApex, contentLeft, contentRight] = geometry.innerTrianglePoints();
+		expect(frameApex).toEqual([256, 96]);
+		expect(frameLeft[1]).toBe(411);
+		expect(frameRight[1]).toBe(411);
+		expect(contentApex).toEqual([256, 116]);
+		expect(contentLeft[1]).toBe(401);
+		expect(contentRight[1]).toBe(401);
+
+		const lineDistance = (point: TestPoint, start: TestPoint, end: TestPoint) =>
+			Math.abs(
+				(end[0] - start[0]) * (start[1] - point[1]) -
+				(start[0] - point[0]) * (end[1] - start[1]),
+			) / Math.hypot(end[0] - start[0], end[1] - start[1]);
+
+		expect(lineDistance(contentLeft, frameApex, frameLeft)).toBeCloseTo(10, 10);
+		expect(lineDistance(contentRight, frameApex, frameRight)).toBeCloseTo(10, 10);
 	});
 
 	test("builds one aligned lattice whose neighboring cells share vertices", () => {
