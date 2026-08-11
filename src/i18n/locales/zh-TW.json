@@ -96,8 +96,10 @@
     "profileLoginRequired": "請開啟 Riot 用戶端並登入以查看此玩家資料。",
     "profileRetry": "重試",
     "profileCurrentRank": "目前段位",
-    "profileRecentMatches": "近期競技對戰",
-    "profileNoMatches": "找不到近期競技對戰",
+    "profileRecentMatches": "近期對戰",
+    "profileNoMatches": "此模式沒有近期對戰",
+    "profileModeFilter": "依模式篩選對戰",
+    "profileAllModes": "所有模式",
     "profileUnknownMap": "未知地圖"
   },
   "career": {
@@ -177,7 +179,9 @@
     "games": "場次",
     "lowest": "最低",
     "finalRank": "最終",
-    "noActRank": "沒有可用的競技章節資料"
+    "noActRank": "沒有可用的競技章節資料",
+    "expandActRank": "展開幕次牌位",
+    "collapseActRank": "收合幕次牌位"
   },
   "replays": {
     "selectParser": "選擇 ValorantReplayParser.exe",

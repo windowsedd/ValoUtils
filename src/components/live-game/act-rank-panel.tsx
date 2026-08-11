@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
-import { useMemo } from "react";
+import { useId, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { FaChevronDown } from "react-icons/fa6";
 import type { CompetitiveSeason } from "../../types/live-game";
 import { tierColor, tierName } from "../../util/valorant-ranks";
 import { seasonFallbackLabel, sortCompetitiveSeasons, tierRangeFromWins } from "./act-rank";
@@ -23,6 +24,8 @@ const ActStat = ({ label, value }: { label: string; value: ReactNode }) => (
 
 export const ActRankPanel = ({ competitiveSeasons, assets, selectedSeasonId, onSeasonChange }: Props) => {
 	const { t } = useTranslation();
+	const [expanded, setExpanded] = useState(false);
+	const bodyId = useId();
 	const starts = useMemo(
 		() => new Map([...assets.seasons].map(([id, season]) => [id, season.startMillis])),
 		[assets.seasons],
@@ -37,8 +40,23 @@ export const ActRankPanel = ({ competitiveSeasons, assets, selectedSeasonId, onS
 
 	if (!selected) {
 		return (
-			<section className="rounded-lg border border-white/6 bg-white/2 px-3 py-5 text-center">
-				<p className="text-xs text-gray-500">{t("liveGame.noActRank")}</p>
+			<section className="rounded-lg border border-white/6 bg-black/15 p-3">
+				<header className={`flex items-center justify-between gap-3 ${expanded ? "border-b border-white/6 pb-2" : ""}`}>
+					<h3 className="text-xs font-bold text-white">{t("liveGame.actRank")}</h3>
+					<button
+						type="button"
+						onClick={() => setExpanded((current) => !current)}
+						aria-expanded={expanded}
+						aria-controls={bodyId}
+						aria-label={t(expanded ? "liveGame.collapseActRank" : "liveGame.expandActRank")}
+						className="grid h-9 w-9 place-items-center rounded-md border border-white/10 text-gray-400 hover:bg-white/6 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400"
+					>
+						<FaChevronDown className={`text-xs transition-transform ${expanded ? "rotate-180" : ""}`} />
+					</button>
+				</header>
+				<div id={bodyId} hidden={!expanded} className="px-3 py-5 text-center">
+					<p className="text-xs text-gray-500">{t("liveGame.noActRank")}</p>
+				</div>
 			</section>
 		);
 	}
@@ -50,26 +68,38 @@ export const ActRankPanel = ({ competitiveSeasons, assets, selectedSeasonId, onS
 
 	return (
 		<section className="rounded-lg border border-white/6 bg-black/15 p-3">
-			<header className="flex items-center justify-between gap-3 border-b border-white/6 pb-2">
+			<header className={`flex items-center justify-between gap-3 ${expanded ? "border-b border-white/6 pb-2" : ""}`}>
 				<div className="min-w-0">
 					<h3 className="text-xs font-bold text-white">{t("liveGame.actRank")}</h3>
 					<p className="text-[9px] uppercase tracking-widest text-gray-600">{labelFor(selected.seasonId)}</p>
 				</div>
-				<select
-					aria-label={t("liveGame.selectAct")}
-					value={selected.seasonId}
-					onChange={(event) => onSeasonChange(event.target.value)}
-					className="h-9 max-w-44 rounded-md border border-white/10 bg-[#101218] px-2 text-xs text-gray-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400"
-				>
-					{seasons.map((season) => (
-						<option key={season.seasonId} value={season.seasonId}>
-							{labelFor(season.seasonId)}
-						</option>
-					))}
-				</select>
+				<div className="flex shrink-0 items-center gap-2">
+					<select
+						aria-label={t("liveGame.selectAct")}
+						value={selected.seasonId}
+						onChange={(event) => onSeasonChange(event.target.value)}
+						className="h-9 max-w-44 rounded-md border border-white/10 bg-[#101218] px-2 text-xs text-gray-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400"
+					>
+						{seasons.map((season) => (
+							<option key={season.seasonId} value={season.seasonId}>
+								{labelFor(season.seasonId)}
+							</option>
+						))}
+					</select>
+					<button
+						type="button"
+						onClick={() => setExpanded((current) => !current)}
+						aria-expanded={expanded}
+						aria-controls={bodyId}
+						aria-label={t(expanded ? "liveGame.collapseActRank" : "liveGame.expandActRank")}
+						className="grid h-9 w-9 place-items-center rounded-md border border-white/10 text-gray-400 hover:bg-white/6 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400"
+					>
+						<FaChevronDown className={`text-xs transition-transform ${expanded ? "rotate-180" : ""}`} />
+					</button>
+				</div>
 			</header>
 
-			<div className="mx-auto mt-3 grid w-full max-w-[48rem] grid-cols-2 gap-4 lg:grid-cols-[9rem_minmax(16rem,20rem)_10rem] lg:items-center lg:justify-center">
+			<div id={bodyId} hidden={!expanded} className="mx-auto mt-3 grid w-full max-w-[48rem] grid-cols-2 gap-4 lg:grid-cols-[9rem_minmax(16rem,20rem)_10rem] lg:items-center lg:justify-center">
 				<div className="order-2 col-span-2 grid grid-cols-2 gap-3 lg:order-1 lg:col-span-1 lg:grid-cols-1">
 					<ActStat
 						label={t("liveGame.rank")}

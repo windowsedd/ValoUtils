@@ -9,7 +9,7 @@ const profile: FriendProfileData = {
 	peakSeasonId: "old",
 	currentSeasonId: "current",
 	competitiveSeasons: [],
-	competitiveUpdates: { Matches: [] },
+	matches: [],
 };
 
 describe("friend profile response state", () => {

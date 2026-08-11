@@ -1,13 +1,13 @@
 import type { CompetitiveSeason } from "./live-game";
 
-export type CompetitiveUpdate = {
-	MatchID?: string;
-	MapID?: string;
-	MatchStartTime?: number;
-	TierBeforeUpdate?: number;
-	TierAfterUpdate?: number;
-	RankedRatingAfterUpdate?: number;
-	RankedRatingEarned?: number;
+export type FriendMatch = {
+	matchId: string;
+	startMillis: number;
+	queueId: string;
+	tierBefore: number | null;
+	tierAfter: number | null;
+	rankedRatingAfter: number | null;
+	rrEarned: number | null;
 };
 
 export type FriendProfileData = {
@@ -17,7 +17,7 @@ export type FriendProfileData = {
 	peakSeasonId: string | null;
 	currentSeasonId: string | null;
 	competitiveSeasons: CompetitiveSeason[];
-	competitiveUpdates: { Matches?: CompetitiveUpdate[] };
+	matches: FriendMatch[];
 };
 
 export type FriendProfileResponse =

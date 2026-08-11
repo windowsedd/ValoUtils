@@ -54,16 +54,16 @@ describe("act rank badge", () => {
 
 	test("maps tiles to the supplied 512px border grid", () => {
 		expect(actRankTileStyle({ tier: 24, row: 0, column: 0, orientation: "up" })).toEqual({
-			left: 45.3125,
+			left: 43.84765625,
 			top: 31.25,
-			width: 9.375,
-			height: 8.203125,
+			width: 12.3046875,
+			height: 10.9375,
 		});
 		expect(actRankTileStyle({ tier: 20, row: 2, column: 4, orientation: "up" })).toEqual({
-			left: 54.6875,
-			top: 47.65625,
-			width: 9.375,
-			height: 8.203125,
+			left: 56.15234375,
+			top: 53.125,
+			width: 12.3046875,
+			height: 10.9375,
 		});
 	});
 });

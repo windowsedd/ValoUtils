@@ -9,7 +9,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { FaArrowLeft, FaArrowRotateRight, FaUser } from "react-icons/fa6";
 import { acceptedFriendProfile } from "./friend-profile-state";
-import { FriendCompetitiveHistory } from "./friend-competitive-history";
+import { FriendMatchHistory } from "./friend-competitive-history";
 
 type Props = {
 	friend: Friend;
@@ -137,7 +137,7 @@ export const FriendProfile = ({ friend, card, tiers, presenceLabel, cachedProfil
 							onSeasonChange={setSelectedSeasonId}
 						/>
 
-						<FriendCompetitiveHistory puuid={friend.puuid} matches={profile.competitiveUpdates.Matches ?? []} />
+						<FriendMatchHistory puuid={friend.puuid} matches={profile.matches} />
 					</>
 				)}
 			</div>

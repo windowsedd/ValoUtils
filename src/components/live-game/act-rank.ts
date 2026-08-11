@@ -10,8 +10,8 @@ export type ActRankTile = {
 const VALID_TIER_MIN = 3;
 const VALID_TIER_MAX = 27;
 const BADGE_TILE_COUNT = 9;
-const TILE_WIDTH = 48 / 512 * 100;
-const TILE_HEIGHT = 42 / 512 * 100;
+const TILE_WIDTH = 63 / 512 * 100;
+const TILE_HEIGHT = 56 / 512 * 100;
 const FIRST_ROW_TOP = 160 / 512 * 100;
 
 export const buildActRankTiles = (winsByTier: Record<string, number>): ActRankTile[] => {

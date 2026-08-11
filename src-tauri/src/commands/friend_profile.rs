@@ -2,6 +2,7 @@ use crate::commands::live::{extract_competitive_seasons, extract_rank};
 use crate::riot::api;
 use crate::riot::client::RiotState;
 use serde_json::{json, Value};
+use std::collections::HashMap;
 use tauri::State;
 
 fn validated_puuid(value: Option<&str>) -> Result<String, String> {
@@ -19,7 +20,46 @@ fn validated_puuid(value: Option<&str>) -> Result<String, String> {
     Ok(value.to_owned())
 }
 
-fn normalize_friend_profile(mmr: &Value, competitive_updates: Value) -> Value {
+fn normalize_friend_matches(history: &Value, competitive_updates: &Value) -> Vec<Value> {
+    let updates: HashMap<&str, &Value> = competitive_updates
+        .get("Matches")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|update| Some((update.get("MatchID")?.as_str()?, update)))
+        .collect();
+
+    history
+        .get("History")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|entry| {
+            let match_id = entry.get("MatchID")?.as_str()?;
+            if match_id.is_empty() {
+                return None;
+            }
+            let update = updates.get(match_id).copied();
+            let ranked = |key: &str| {
+                update
+                    .and_then(|value| value.get(key))
+                    .cloned()
+                    .unwrap_or(Value::Null)
+            };
+            Some(json!({
+                "matchId": match_id,
+                "startMillis": entry.get("GameStartTime").and_then(Value::as_u64).unwrap_or(0),
+                "queueId": entry.get("QueueID").and_then(Value::as_str).unwrap_or_default(),
+                "tierBefore": ranked("TierBeforeUpdate"),
+                "tierAfter": ranked("TierAfterUpdate"),
+                "rankedRatingAfter": ranked("RankedRatingAfterUpdate"),
+                "rrEarned": ranked("RankedRatingEarned"),
+            }))
+        })
+        .collect()
+}
+
+fn normalize_friend_profile(mmr: &Value, competitive_updates: &Value, history: &Value) -> Value {
     let (current_tier, current_rr, peak_tier, peak_season_id) = extract_rank(Some(mmr));
     let (current_season_id, competitive_seasons) = extract_competitive_seasons(Some(mmr));
     json!({
@@ -29,7 +69,7 @@ fn normalize_friend_profile(mmr: &Value, competitive_updates: Value) -> Value {
         "peakSeasonId": peak_season_id,
         "currentSeasonId": current_season_id,
         "competitiveSeasons": competitive_seasons,
-        "competitiveUpdates": competitive_updates,
+        "matches": normalize_friend_matches(history, competitive_updates),
     })
 }
 
@@ -50,11 +90,16 @@ pub async fn friend_profile_get(
     let result = api::with_api(&riot, |api| {
         let puuid = puuid.clone();
         async move {
-            let (mmr, competitive_updates) = tokio::try_join!(
+            let (mmr, competitive_updates, history) = tokio::try_join!(
                 api.get_mmr(&puuid),
                 api.get_competitive_history(&puuid, 0, 15),
+                api.get_match_history(&puuid, 0, 50),
             )?;
-            Ok(normalize_friend_profile(&mmr, competitive_updates))
+            Ok(normalize_friend_profile(
+                &mmr,
+                &competitive_updates,
+                &history,
+            ))
         }
     })
     .await;
@@ -101,12 +146,27 @@ mod tests {
             }}}
         });
 
-        let result = normalize_friend_profile(&mmr, json!({"Matches": []}));
+        let history = json!({"History": [
+            {"MatchID": "u1", "GameStartTime": 300, "QueueID": "unrated"},
+            {"MatchID": "c1", "GameStartTime": 200, "QueueID": "competitive"},
+            {"MatchID": "d1", "GameStartTime": 100, "QueueID": "deathmatch"}
+        ]});
+        let updates = json!({"Matches": [{
+            "MatchID": "c1",
+            "TierBeforeUpdate": 21,
+            "TierAfterUpdate": 22,
+            "RankedRatingAfterUpdate": 64,
+            "RankedRatingEarned": 18
+        }]});
+        let result = normalize_friend_profile(&mmr, &updates, &history);
         assert_eq!(result["currentTier"], 22);
         assert_eq!(result["currentRR"], 64);
         assert_eq!(result["currentSeasonId"], "act-current");
         assert_eq!(result["competitiveSeasons"].as_array().unwrap().len(), 2);
-        assert_eq!(result["competitiveUpdates"], json!({"Matches": []}));
+        assert_eq!(result["matches"].as_array().unwrap().len(), 3);
+        assert_eq!(result["matches"][0]["queueId"], "unrated");
+        assert_eq!(result["matches"][1]["rrEarned"], 18);
+        assert_eq!(result["matches"][2]["queueId"], "deathmatch");
     }
 
     #[test]

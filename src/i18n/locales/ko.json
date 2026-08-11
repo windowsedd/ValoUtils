@@ -96,8 +96,10 @@
     "profileLoginRequired": "이 프로필을 보려면 Riot 클라이언트를 열고 로그인하세요.",
     "profileRetry": "다시 시도",
     "profileCurrentRank": "현재 랭크",
-    "profileRecentMatches": "최근 경쟁전",
-    "profileNoMatches": "최근 경쟁전 기록이 없습니다",
+    "profileRecentMatches": "최근 매치",
+    "profileNoMatches": "이 모드의 최근 매치가 없습니다",
+    "profileModeFilter": "모드별 매치 필터",
+    "profileAllModes": "모든 모드",
     "profileUnknownMap": "알 수 없는 맵"
   },
   "career": {
@@ -177,7 +179,9 @@
     "games": "게임",
     "lowest": "최저",
     "finalRank": "최종",
-    "noActRank": "경쟁전 액트 데이터를 불러올 수 없습니다"
+    "noActRank": "경쟁전 액트 데이터를 불러올 수 없습니다",
+    "expandActRank": "액트 랭크 펼치기",
+    "collapseActRank": "액트 랭크 접기"
   },
   "replays": {
     "selectParser": "ValorantReplayParser.exe 선택",

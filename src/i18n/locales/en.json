@@ -98,8 +98,10 @@
     "profileLoginRequired": "Open the Riot Client and sign in to view this profile.",
     "profileRetry": "Retry",
     "profileCurrentRank": "Current Rank",
-    "profileRecentMatches": "Recent Competitive Matches",
-    "profileNoMatches": "No recent competitive matches found",
+    "profileRecentMatches": "Recent Matches",
+    "profileNoMatches": "No recent matches found for this mode",
+    "profileModeFilter": "Filter matches by mode",
+    "profileAllModes": "All Modes",
     "profileUnknownMap": "Unknown Map"
   },
   "career": {
@@ -179,7 +181,9 @@
     "games": "Games",
     "lowest": "Lowest",
     "finalRank": "Final",
-    "noActRank": "No competitive act data available"
+    "noActRank": "No competitive act data available",
+    "expandActRank": "Expand Act Rank",
+    "collapseActRank": "Collapse Act Rank"
   },
   "chat": {
     "title": "Chat",
