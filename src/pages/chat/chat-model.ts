@@ -47,6 +47,7 @@ export const mergeChatMessages = (...sets: ChatMessage[][]) => {
 export const buildFriendConversations = (
 	messages: ChatMessage[],
 	metadata: ChatConversation[] = [],
+	friends: ChatFriend[] = [],
 ): FriendConversation[] => {
 	const grouped = new Map<string, ChatMessage[]>();
 	for (const item of messages.filter(
@@ -64,9 +65,12 @@ export const buildFriendConversations = (
 			const ordered = mergeChatMessages(values);
 			const other = [...ordered].reverse().find((entry) => !entry.isSelf);
 			const conversation = metadata.find((item) => item.cid === cid);
+			const participant = idRoot(conversation?.participantPuuid || cid);
+			const friend = friends.find((item) => idRoot(item.puuid) === participant);
 			return {
 				cid,
-				title: conversation?.title || other?.senderName || other?.sender || cid,
+				title:
+					conversation?.title || friend?.displayName || other?.senderName || other?.sender || cid,
 				participantPuuid: conversation?.participantPuuid || "",
 				unreadCount: conversation?.unreadCount ?? 0,
 				latestTime: Math.max(0, ...ordered.map(messageTime)),

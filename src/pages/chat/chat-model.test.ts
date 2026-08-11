@@ -93,6 +93,33 @@ describe("chat model", () => {
 		expect(conversations[0]?.messages).toEqual([]);
 	});
 
+	test("labels a self-only direct conversation from the matched friend", () => {
+		const conversations = buildFriendConversations(
+			[
+				message({
+					conversationId: "friend-puuid@jp1.pvp.net",
+					sender: "self-puuid",
+					senderName: "Me",
+					isSelf: true,
+				}),
+			],
+			[
+				{
+					cid: "friend-puuid@jp1.pvp.net",
+					channel: "friends",
+					type: "chat",
+					title: "",
+					participantPuuid: "friend-puuid",
+					unreadCount: 0,
+					messageHistory: true,
+					muted: false,
+				},
+			],
+			[friend],
+		);
+		expect(conversations[0]?.title).toBe("ALEKSANDAR#4830");
+	});
+
 	test("searches friends by Riot ID and note", () => {
 		expect(filterChatFriends([friend], "4830")).toHaveLength(1);
 		expect(filterChatFriends([friend], "架住")).toHaveLength(1);

@@ -305,8 +305,8 @@ export const useChatController = () => {
 		[state.historyByCid, summary.messages],
 	);
 	const conversations = useMemo(
-		() => buildFriendConversations(allCachedMessages, summary.conversations),
-		[allCachedMessages, summary.conversations],
+		() => buildFriendConversations(allCachedMessages, summary.conversations, summary.friends),
+		[allCachedMessages, summary.conversations, summary.friends],
 	);
 	const filteredConversations = useMemo(
 		() => filterFriendConversations(conversations, summary.friends, conversationSearch),
