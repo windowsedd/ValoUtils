@@ -11,6 +11,7 @@ export type ChatControllerState = {
 	pendingSendId: string | null;
 	pendingSendCid: string | null;
 	pendingSendBody: string | null;
+	pendingSendKnownMessageIds: string[];
 	sendErrorByCid: Record<string, string | undefined>;
 };
 
@@ -24,6 +25,7 @@ export const initialChatControllerState: ChatControllerState = {
 	pendingSendId: null,
 	pendingSendCid: null,
 	pendingSendBody: null,
+	pendingSendKnownMessageIds: [],
 	sendErrorByCid: {},
 };
 
@@ -64,10 +66,12 @@ const reconcileOptimisticMessages = (
 	};
 	return existing.filter((message) => {
 		if (message._raw?.optimistic !== true) return true;
+		const knownMessageIds = new Set<string>(message._raw?.knownServerMessageIds ?? []);
 		const optimisticTime = timestamp(message);
 		const match = selfMessages.findIndex((candidate) => {
 			const candidateTime = timestamp(candidate);
 			return (
+				!knownMessageIds.has(candidate.id) &&
 				candidate.body === message.body &&
 				optimisticTime > 0 &&
 				candidateTime > 0 &&
@@ -141,6 +145,9 @@ export const chatControllerReducer = (
 				pendingSendId: action.requestId,
 				pendingSendCid: action.cid,
 				pendingSendBody: action.body,
+				pendingSendKnownMessageIds: (state.historyByCid[action.cid] ?? [])
+					.filter((message) => message._raw?.optimistic !== true)
+					.map((message) => message.id),
 				sendErrorByCid: withoutKey(state.sendErrorByCid, action.cid),
 			};
 		case "sendSucceeded":
@@ -151,6 +158,7 @@ export const chatControllerReducer = (
 					pendingSendId: null,
 					pendingSendCid: null,
 					pendingSendBody: null,
+					pendingSendKnownMessageIds: [],
 				};
 			}
 			const pendingChannel = channelForCid(state.pendingSendCid);
@@ -176,7 +184,11 @@ export const chatControllerReducer = (
 											? "party"
 											: "match",
 								isSelf: true,
-								_raw: { optimistic: true, requestId: action.requestId },
+								_raw: {
+									optimistic: true,
+									requestId: action.requestId,
+									knownServerMessageIds: state.pendingSendKnownMessageIds,
+								},
 							},
 						],
 					),
@@ -185,6 +197,7 @@ export const chatControllerReducer = (
 				pendingSendId: null,
 				pendingSendCid: null,
 				pendingSendBody: null,
+				pendingSendKnownMessageIds: [],
 				sendErrorByCid: withoutKey(state.sendErrorByCid, state.pendingSendCid),
 			};
 		case "sendFailed":
@@ -194,6 +207,7 @@ export const chatControllerReducer = (
 					...state,
 					pendingSendId: null,
 					pendingSendBody: null,
+					pendingSendKnownMessageIds: [],
 				};
 			}
 			return {
@@ -205,6 +219,7 @@ export const chatControllerReducer = (
 				pendingSendId: null,
 				pendingSendCid: null,
 				pendingSendBody: null,
+				pendingSendKnownMessageIds: [],
 			};
 		case "summaryMessages": {
 			const grouped = new Map<string, ChatMessage[]>();

@@ -135,7 +135,17 @@ describe("chat controller state", () => {
 	});
 
 	test("keeps a new optimistic duplicate until history contains a nearby timestamp", () => {
-		const sending = chatControllerReducer(initialChatControllerState, {
+		const oldMessage = message({
+			id: "old-same-text",
+			conversationId: "friend-cid",
+			body: "same text",
+			isSelf: true,
+			timestamp: "99000",
+		});
+		const sending = chatControllerReducer({
+			...initialChatControllerState,
+			historyByCid: { "friend-cid": [oldMessage] },
+		}, {
 			type: "sendStarted",
 			requestId: "send-repeat",
 			cid: "friend-cid",
@@ -155,19 +165,36 @@ describe("chat controller state", () => {
 			type: "historySucceeded",
 			cid: "friend-cid",
 			requestId: "history-repeat",
-			messages: [
-				message({
-					id: "old-same-text",
-					conversationId: "friend-cid",
-					body: "same text",
-					isSelf: true,
-					timestamp: "1000",
-				}),
-			],
+			messages: [oldMessage],
 		});
 		expect(history.historyByCid["friend-cid"]?.map((item) => item.id)).toEqual([
 			"old-same-text",
 			"optimistic:send-repeat",
+		]);
+
+		const loadingAgain = chatControllerReducer(history, {
+			type: "historyStarted",
+			cid: "friend-cid",
+			requestId: "history-repeat-2",
+		});
+		const caughtUp = chatControllerReducer(loadingAgain, {
+			type: "historySucceeded",
+			cid: "friend-cid",
+			requestId: "history-repeat-2",
+			messages: [
+				oldMessage,
+				message({
+					id: "new-same-text",
+					conversationId: "friend-cid",
+					body: "same text",
+					isSelf: true,
+					timestamp: "101000",
+				}),
+			],
+		});
+		expect(caughtUp.historyByCid["friend-cid"]?.map((item) => item.id)).toEqual([
+			"old-same-text",
+			"new-same-text",
 		]);
 	});
 

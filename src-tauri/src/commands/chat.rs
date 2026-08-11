@@ -65,6 +65,10 @@ fn id_root(value: &str) -> String {
     value.split('@').next().unwrap_or(value).to_lowercase()
 }
 
+fn is_party_cid(value: &str) -> bool {
+    value.to_lowercase().contains("@ares-parties.")
+}
+
 fn get_send_type(conversation_id: &str) -> &'static str {
     let lower = conversation_id.to_lowercase();
     if lower.contains("@ares-parties.")
@@ -552,11 +556,7 @@ fn extract_party_rooms_from_conversations(
             .map(|v| v.and_then(|v| v.as_str())),
         );
         let ctype = pick_string([c.get("type"), c.get("Type")].map(|v| v.and_then(|v| v.as_str())));
-        if !id.is_empty()
-            && ctype == "groupchat"
-            && !match_rooms.contains(&id)
-            && !id.to_lowercase().contains("ares-coregame")
-            && !id.to_lowercase().contains("ares-pregame")
+        if !id.is_empty() && ctype == "groupchat" && is_party_cid(&id) && !match_rooms.contains(&id)
         {
             party.insert(id);
         }
@@ -956,9 +956,8 @@ pub async fn chat_get(app: AppHandle, riot: State<'_, RiotState>) -> Result<Stri
                 );
                 if !cid.is_empty()
                     && msg_type == "groupchat"
+                    && is_party_cid(&cid)
                     && !scopes.matches.contains(&cid)
-                    && !cid.to_lowercase().contains("ares-coregame")
-                    && !cid.to_lowercase().contains("ares-pregame")
                 {
                     scopes.party.insert(cid.clone());
                     scopes.rooms.insert("party".into(), json!(cid));
@@ -1287,6 +1286,8 @@ mod tests {
 
     #[test]
     fn classifies_party_team_all_without_substitution() {
+        assert!(is_party_cid("party@ares-parties.ap"));
+        assert!(!is_party_cid("unknown@conference.example"));
         assert_eq!(channel_for_cid("party@ares-parties.ap"), "party");
         assert_eq!(channel_for_cid("game-blue@ares-coregame.ap"), "team");
         assert_eq!(channel_for_cid("game-red@ares-pregame.ap"), "team");
@@ -1296,6 +1297,19 @@ mod tests {
         let (_, team, all) = split_match_rooms(&unknown);
         assert!(team.is_empty());
         assert!(all.is_empty());
+
+        let mut party = HashSet::new();
+        extract_party_rooms_from_conversations(
+            &json!({
+                "conversations": [
+                    { "cid": "unknown@conference.example", "type": "groupchat" },
+                    { "cid": "party@ares-parties.ap", "type": "groupchat" }
+                ]
+            }),
+            &mut party,
+            &HashSet::new(),
+        );
+        assert_eq!(party, HashSet::from(["party@ares-parties.ap".to_string()]));
     }
 
     #[test]
