@@ -27,6 +27,7 @@
     "connecting": "連線中...",
     "offline": "Riot 用戶端離線",
     "presenceControl": "Riot 在線狀態",
+    "viewSettings": "查看帳號設定",
     "relayRequired": "請從 ValoUtils 啟動 Riot 用戶端，並等待聊天連線後再變更狀態。",
     "presence": {
       "online": "在線",

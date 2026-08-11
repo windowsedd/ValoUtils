@@ -1,10 +1,10 @@
 import CustomButton from "@/components/button";
 import { useDynamicModal } from "@/components/dynamic-modal";
+import { navbarLayout } from "@/components/navbar-layout";
 import { ParsedSettingsViewer } from "@/components/parsed-settings-viewer";
 import { useEffect, useRef, useState } from "react";
 import { FaCheck, FaChevronDown, FaEye, FaMobileScreen, FaUser, FaUserSlash } from "react-icons/fa6";
 import { useTranslation } from "react-i18next";
-import { navbarLayout } from "@/components/navbar-layout";
 
 type Status = "loading" | "offline" | "online";
 
@@ -90,7 +90,7 @@ const RiotStatusBar = () => {
 				const data = JSON.parse(message);
 				if (data?.success && data.presence) setPresence(data.presence);
 			} catch {
-				/* keep the last known relay state */
+				/* Keep the last known relay state. */
 			}
 		};
 		window.Main.on("presence:status-get", applyPresence);
@@ -122,100 +122,121 @@ const RiotStatusBar = () => {
 		setMenuOpen(false);
 	};
 
+	const viewSettings = () => {
+		setMenuOpen(false);
+		return new Promise<void>((resolve, reject) => {
+			window.Main.removeAllListeners("settings:current:view");
+			window.Main.on("settings:current:view", (message: string) => {
+				window.Main.removeAllListeners("settings:current:view");
+				const data = JSON.parse(message);
+				if (data.error) {
+					reject(data.error);
+					return;
+				}
+				showModal({
+					title: `Settings - ${info.username}`,
+					body: (
+						<ParsedSettingsViewer
+							rawSettings={data.settings}
+							crosshairData={data.crosshairs ?? null}
+						/>
+					),
+					footer: (
+						<CustomButton
+							className="w-full"
+							color="danger"
+							showStatusColor={false}
+							onPress={() => {
+								closeModal();
+								resolve();
+							}}
+						>
+							{t("common.close")}
+						</CustomButton>
+					),
+					onClose: resolve,
+				});
+			});
+			window.Main.send("settings:current:view");
+		});
+	};
+
+	const accountLabel = info.status === "online" ? info.username : label[info.status];
+	const presenceLabel = presence
+		? t(`riotStatus.presence.${presence.mode}`)
+		: t("riotStatus.presence.offline");
+
 	return (
-		<div className="flex items-center gap-1.5 text-sm select-none whitespace-nowrap">
-			<span className={`w-2 h-2 rounded-full shrink-0 ${dot[info.status]}`} />
-			<span className="text-gray-300 truncate max-w-28 xl:max-w-45">
-				{info.status === "online" ? info.username : label[info.status]}
-			</span>
-			{info.status === "online" && (
-				<CustomButton
-					size="sm"
-					showStatusColor={false}
-					modalOnError={false}
-					className="min-w-0 w-7 h-7 p-0 ml-1 text-gray-400"
-					onClickLoading={() =>
-						new Promise<void>((resolve, reject) => {
-							window.Main.removeAllListeners("settings:current:view");
-							window.Main.on("settings:current:view", (message: string) => {
-								window.Main.removeAllListeners("settings:current:view");
-								const data = JSON.parse(message);
-								if (data.error) {
-									reject(data.error);
-									return;
-								}
-								showModal({
-									title: `Settings — ${info.username}`,
-									body: (
-										<ParsedSettingsViewer
-											rawSettings={data.settings}
-											crosshairData={data.crosshairs ?? null}
-										/>
-									),
-									footer: (
-										<CustomButton
-											className="w-full"
-											color="danger"
-											showStatusColor={false}
-											onPress={() => {
-												closeModal();
-												resolve();
-											}}
-										>
-											{t("common.close")}
-										</CustomButton>
-									),
-									onClose: resolve,
-								});
-							});
-							window.Main.send("settings:current:view");
-						})
-					}
-				>
-					<FaEye />
-				</CustomButton>
-			)}
-			<div ref={menuRef} className="relative ml-1 pl-2 border-l border-white/10">
-				<button
-					type="button"
-					onClick={() => setMenuOpen((open) => !open)}
-					className={`h-8 px-2 flex items-center gap-1.5 rounded-md hover:bg-white/5 transition-colors ${
-						presence ? presenceColor[presence.mode] : "text-gray-600"
-					}`}
-					title={t("riotStatus.presenceControl")}
-				>
+		<div ref={menuRef} className="relative select-none whitespace-nowrap">
+			<button
+				type="button"
+				onClick={() => setMenuOpen((open) => !open)}
+				aria-haspopup="menu"
+				aria-expanded={menuOpen}
+				className="flex h-10 max-w-56 items-center gap-2 rounded-md border border-transparent px-2 text-sm text-gray-300 transition-colors hover:border-white/10 hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400"
+				title={accountLabel}
+			>
+				<span className={`h-2 w-2 shrink-0 rounded-full ${dot[info.status]}`} />
+				<span className="max-w-28 truncate xl:max-w-40">{accountLabel}</span>
+				<span className={`grid h-6 w-6 shrink-0 place-items-center text-xs ${presence ? presenceColor[presence.mode] : "text-gray-600"}`}>
 					{presence ? presenceIcon[presence.mode] : <FaUserSlash />}
-					<span className="text-xs capitalize">{presence ? t(`riotStatus.presence.${presence.mode}`) : "—"}</span>
-					<FaChevronDown className="w-2.5 h-2.5 text-gray-600" />
-				</button>
-				{menuOpen && (
-					<div className={navbarLayout.statusMenu}>
+				</span>
+				<FaChevronDown className={`h-2.5 w-2.5 shrink-0 text-gray-600 transition-transform ${menuOpen ? "rotate-180" : ""}`} />
+			</button>
+
+			{menuOpen && (
+				<div className={navbarLayout.statusMenu} role="menu">
+					<div className="px-2.5 py-2">
+						<p className="truncate text-sm font-semibold text-white">{accountLabel}</p>
+						<p className={`mt-0.5 text-xs ${presence ? presenceColor[presence.mode] : "text-gray-600"}`}>
+							{presenceLabel}
+						</p>
+					</div>
+
+					{info.status === "online" && (
+						<CustomButton
+							size="sm"
+							showStatusColor={false}
+							modalOnError={false}
+							className="!h-9 !min-w-0 w-full !justify-start gap-2 !rounded-md !bg-transparent px-2.5 text-sm !text-gray-300 hover:!bg-white/5"
+							onClickLoading={viewSettings}
+						>
+							<FaEye className="text-cyan-400" />
+							{t("riotStatus.viewSettings")}
+						</CustomButton>
+					)}
+
+					<div className="mt-1 border-t border-white/10 pt-1">
+						<p className="px-2.5 py-1 text-[10px] uppercase tracking-widest text-gray-600">{t("riotStatus.presenceControl")}</p>
 						{(["online", "offline", "mobile"] as PresenceMode[]).map((mode) => (
 							<button
 								key={mode}
 								type="button"
+								role="menuitemradio"
+								aria-checked={presence?.mode === mode}
 								disabled={!presence || presence.activeConnections < 1}
 								onClick={() => setMode(mode)}
-								className="w-full flex items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm text-gray-300 hover:bg-white/5 disabled:opacity-40 disabled:cursor-not-allowed"
+								className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm text-gray-300 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-40"
 							>
 								<span className={presenceColor[mode]}>{presenceIcon[mode]}</span>
 								<span className="flex-1">{t(`riotStatus.presence.${mode}`)}</span>
 								{presence?.mode === mode && <FaCheck className="text-cyan-400" />}
 							</button>
 						))}
-						{(!presence || presence.activeConnections < 1) && (
-							<p className={`${navbarLayout.statusMessage} text-amber-400/80`}>
-								{t("riotStatus.relayRequired")}
-							</p>
-						)}
-						{presence?.lastWarning && (
-							<p className={`${navbarLayout.statusMessage} text-red-400`}>
-								{presence.lastWarning}
-							</p>
-						)}
 					</div>
-				)}
-			</div>
+
+					{(!presence || presence.activeConnections < 1) && (
+						<p className={`${navbarLayout.statusMessage} text-amber-400/80`}>
+							{t("riotStatus.relayRequired")}
+						</p>
+					)}
+					{presence?.lastWarning && (
+						<p className={`${navbarLayout.statusMessage} text-red-400`}>
+							{presence.lastWarning}
+						</p>
+					)}
+				</div>
+			)}
 		</div>
 	);
 };

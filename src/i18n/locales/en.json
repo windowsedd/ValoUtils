@@ -28,6 +28,7 @@
     "connecting": "Connecting...",
     "offline": "Riot Client offline",
     "presenceControl": "Riot presence",
+    "viewSettings": "View account settings",
     "relayRequired": "Launch Riot Client through ValoUtils and wait for chat to connect before changing presence.",
     "presence": {
       "online": "Online",

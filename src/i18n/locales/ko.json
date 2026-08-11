@@ -27,6 +27,7 @@
     "connecting": "연결 중...",
     "offline": "라이엇 클라이언트 오프라인",
     "presenceControl": "Riot 접속 상태",
+    "viewSettings": "계정 설정 보기",
     "relayRequired": "ValoUtils에서 Riot 클라이언트를 실행하고 채팅이 연결된 후 접속 상태를 변경하세요.",
     "presence": {
       "online": "온라인",

@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { navbarLayout } from "../src/components/navbar-layout";
+
+const root = join(import.meta.dir, "..");
+const statusBar = readFileSync(join(root, "src/components/riot-status-bar.tsx"), "utf8");
+const locales = ["en", "ko", "zh-TW"] as const;
 
 describe("navbarLayout", () => {
 	test("allows the status dropdown to extend below the navbar", () => {
@@ -22,5 +28,21 @@ describe("navbarLayout", () => {
 		expect(layout.statusMenu ?? "").toContain("max-w-[calc(100vw-1rem)]");
 		expect(layout.statusMessage ?? "").toContain("whitespace-normal");
 		expect(layout.statusMessage ?? "").toContain("break-words");
+	});
+
+	test("uses the Riot ID as the single account and presence menu trigger", () => {
+		expect(statusBar).toContain('aria-haspopup="menu"');
+		expect(statusBar).toContain("info.username");
+		expect(statusBar).not.toContain('className="min-w-0 w-7 h-7');
+	});
+
+	test("moves the settings eye action into the account menu", () => {
+		expect(statusBar).toContain('t("riotStatus.viewSettings")');
+		for (const locale of locales) {
+			const messages = JSON.parse(
+				readFileSync(join(root, `src/i18n/locales/${locale}.json`), "utf8"),
+			);
+			expect(messages.riotStatus.viewSettings).toBeString();
+		}
 	});
 });
