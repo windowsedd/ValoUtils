@@ -98,6 +98,7 @@
     "profileLoginRequired": "Open the Riot Client and sign in to view this profile.",
     "profileRetry": "Retry",
     "profileCurrentRank": "Current Rank",
+    "profilePeakRank": "Peak Rank",
     "profileRecentMatches": "Recent Matches",
     "profileNoMatches": "No recent matches found for this mode",
     "profileModeFilter": "Filter matches by mode",

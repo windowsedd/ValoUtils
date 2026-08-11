@@ -96,6 +96,7 @@
     "profileLoginRequired": "이 프로필을 보려면 Riot 클라이언트를 열고 로그인하세요.",
     "profileRetry": "다시 시도",
     "profileCurrentRank": "현재 랭크",
+    "profilePeakRank": "최고 랭크",
     "profileRecentMatches": "최근 매치",
     "profileNoMatches": "이 모드의 최근 매치가 없습니다",
     "profileModeFilter": "모드별 매치 필터",

@@ -5,6 +5,10 @@ use serde_json::{json, Value};
 use std::collections::HashMap;
 use tauri::State;
 
+fn friend_match_history_indices() -> (u32, u32) {
+    (0, 25)
+}
+
 fn validated_puuid(value: Option<&str>) -> Result<String, String> {
     let value = value.map(str::trim).filter(|value| !value.is_empty());
     let Some(value) = value else {
@@ -90,10 +94,11 @@ pub async fn friend_profile_get(
     let result = api::with_api(&riot, |api| {
         let puuid = puuid.clone();
         async move {
+            let (history_start, history_end) = friend_match_history_indices();
             let (mmr, competitive_updates, history) = tokio::try_join!(
                 api.get_mmr(&puuid),
                 api.get_competitive_history(&puuid, 0, 15),
-                api.get_match_history(&puuid, 0, 50),
+                api.get_match_history(&puuid, history_start, history_end),
             )?;
             Ok(normalize_friend_profile(
                 &mmr,
@@ -119,6 +124,11 @@ pub async fn friend_profile_get(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn limits_friend_match_history_to_riot_page_size() {
+        assert_eq!(friend_match_history_indices(), (0, 25));
+    }
 
     #[test]
     fn normalizes_current_rank_and_competitive_seasons() {

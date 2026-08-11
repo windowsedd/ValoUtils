@@ -96,6 +96,7 @@
     "profileLoginRequired": "請開啟 Riot 用戶端並登入以查看此玩家資料。",
     "profileRetry": "重試",
     "profileCurrentRank": "目前段位",
+    "profilePeakRank": "最高段位",
     "profileRecentMatches": "近期對戰",
     "profileNoMatches": "此模式沒有近期對戰",
     "profileModeFilter": "依模式篩選對戰",

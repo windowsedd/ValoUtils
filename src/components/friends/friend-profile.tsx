@@ -82,6 +82,9 @@ export const FriendProfile = ({ friend, card, tiers, presenceLabel, cachedProfil
 	const tier = profile?.currentTier ?? 0;
 	const rankIcon = tier > 0 ? tiers.get(tier)?.largeIcon ?? tiers.get(tier)?.icon : null;
 	const color = tier > 0 ? tierColor(tier) : "#6b7280";
+	const peakTier = profile?.peakTier ?? 0;
+	const peakRankIcon = peakTier > 0 ? tiers.get(peakTier)?.largeIcon ?? tiers.get(peakTier)?.icon : null;
+	const peakColor = peakTier > 0 ? tierColor(peakTier) : "#6b7280";
 	const displayName = friend.gameName ? `${friend.gameName}${friend.tagLine ? `#${friend.tagLine}` : ""}` : friend.displayName;
 
 	return (
@@ -120,12 +123,21 @@ export const FriendProfile = ({ friend, card, tiers, presenceLabel, cachedProfil
 				{profile && (
 					<>
 						<SectionCard title={t("friends.profileCurrentRank")} accent={color} right={tier > 0 ? `${profile.currentRR} RR` : null}>
-							<div className="flex items-center gap-4 px-3 py-2">
-								{rankIcon && <img src={rankIcon} alt={tierName(tier)} className="h-16 w-16 object-contain" />}
-								<div className="min-w-0 flex-1">
-									<p className="truncate text-2xl font-bold" style={{ color }}>{tier > 0 ? tierName(tier) : t("career.unranked")}</p>
-									<p className="text-sm tabular-nums text-gray-400">{tier > 0 ? `${profile.currentRR} / 100 RR` : "—"}</p>
-									<div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full" style={{ width: `${Math.min(100, Math.max(0, profile.currentRR))}%`, background: color }} /></div>
+							<div className="grid gap-4 px-3 py-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+								<div className="flex min-w-0 items-center gap-4">
+									{rankIcon && <img src={rankIcon} alt={tierName(tier)} className="h-16 w-16 shrink-0 object-contain" />}
+									<div className="min-w-0 flex-1">
+										<p className="truncate text-2xl font-bold" style={{ color }}>{tier > 0 ? tierName(tier) : t("career.unranked")}</p>
+										<p className="text-sm tabular-nums text-gray-400">{tier > 0 ? `${profile.currentRR} / 100 RR` : "—"}</p>
+										<div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full" style={{ width: `${Math.min(100, Math.max(0, profile.currentRR))}%`, background: color }} /></div>
+									</div>
+								</div>
+								<div className="flex min-w-36 items-center gap-3 border-t border-white/6 pt-3 sm:border-l sm:border-t-0 sm:pl-5 sm:pt-0">
+									{peakRankIcon && <img src={peakRankIcon} alt={tierName(peakTier)} className="h-11 w-11 shrink-0 object-contain" />}
+									<div className="min-w-0">
+										<p className="text-[9px] uppercase tracking-widest text-gray-600">{t("friends.profilePeakRank")}</p>
+										<p className="truncate text-sm font-semibold" style={{ color: peakColor }}>{peakTier > 0 ? tierName(peakTier) : t("career.unranked")}</p>
+									</div>
 								</div>
 							</div>
 						</SectionCard>
