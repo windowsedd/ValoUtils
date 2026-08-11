@@ -49,6 +49,7 @@ pub fn run() {
             config_defaults.insert("translatorProvider".into(), json!("google"));
             config_defaults.insert("translatorTargetLanguage".into(), json!("en"));
             config_defaults.insert("deeplApiKey".into(), json!(""));
+            config_defaults.insert("hiddenTabs".into(), json!([]));
             let config_store = Store::new("config", config_defaults);
             let saved_presence_mode = config_store
                 .get("presenceMode")
