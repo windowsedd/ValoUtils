@@ -1,6 +1,9 @@
 import { FriendMatchHistory } from "@/components/friends/friend-competitive-history";
+import { initialSeasonId } from "@/components/live-game/act-rank";
+import { ActRankPanel } from "@/components/live-game/act-rank-panel";
 import { PageHeader, SectionCard } from "@/components/section-card";
-import { getTiers, type TierAsset } from "@/util/valorant-assets";
+import type { CompetitiveSeason } from "@/types/live-game";
+import { getSeasonAssets, getTiers, type SeasonAsset, type TierAsset } from "@/util/valorant-assets";
 import { tierColor, tierName } from "@/util/valorant-ranks";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -12,6 +15,8 @@ type CareerData = {
 	mmr: any;
 	competitiveUpdates: any;
 	matchHistory: any;
+	currentSeasonId: string | null;
+	competitiveSeasons: CompetitiveSeason[];
 };
 
 const RankBadge = ({
@@ -38,6 +43,8 @@ const RankBadge = ({
 const PlayerCareer = () => {
 	const [data, setData] = useState<CareerData | null>(null);
 	const [tiers, setTiers] = useState<Map<number, TierAsset>>(new Map());
+	const [seasons, setSeasons] = useState<Map<string, SeasonAsset>>(new Map());
+	const [selectedSeasonId, setSelectedSeasonId] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const [loginRequired, setLoginRequired] = useState(false);
 	const [loading, setLoading] = useState(true);
@@ -45,8 +52,10 @@ const PlayerCareer = () => {
 
 	useEffect(() => {
 		let cancelled = false;
-		getTiers().then((assets) => {
-			if (!cancelled) setTiers(assets);
+		Promise.all([getTiers(), getSeasonAssets()]).then(([tierAssets, seasonAssets]) => {
+			if (cancelled) return;
+			setTiers(tierAssets);
+			setSeasons(seasonAssets);
 		});
 		return () => {
 			cancelled = true;
@@ -73,6 +82,8 @@ const PlayerCareer = () => {
 				mmr: response.mmr,
 				competitiveUpdates: response.competitiveUpdates,
 				matchHistory: response.matchHistory,
+				currentSeasonId: response.currentSeasonId ?? null,
+				competitiveSeasons: response.competitiveSeasons ?? [],
 			});
 			setLoading(false);
 		};
@@ -86,6 +97,14 @@ const PlayerCareer = () => {
 		() => normalizeCareerMatches(data?.matchHistory, data?.competitiveUpdates),
 		[data?.matchHistory, data?.competitiveUpdates],
 	);
+	const seasonStarts = useMemo(
+		() => new Map([...seasons].map(([id, season]) => [id, season.startMillis])),
+		[seasons],
+	);
+	useEffect(() => {
+		if (!data) return;
+		setSelectedSeasonId(initialSeasonId(data.competitiveSeasons, data.currentSeasonId, seasonStarts));
+	}, [data, seasonStarts]);
 	const latest = competitiveMatches[0];
 	const currentTier: number = latest?.TierAfterUpdate ?? 0;
 	const currentRR: number = latest?.RankedRatingAfterUpdate ?? 0;
@@ -149,6 +168,13 @@ const PlayerCareer = () => {
 								</div>
 							)}
 						</SectionCard>
+
+						<ActRankPanel
+							competitiveSeasons={data.competitiveSeasons}
+							assets={{ seasons }}
+							selectedSeasonId={selectedSeasonId}
+							onSeasonChange={setSelectedSeasonId}
+						/>
 
 						<FriendMatchHistory puuid={data.puuid} matches={matches} />
 					</>
