@@ -8,6 +8,7 @@ import {
 	initialSeasonId,
 	seasonFallbackLabel,
 	sortCompetitiveSeasons,
+	tierRangeFromWins,
 } from "./act-rank";
 
 const season = (seasonId: string): CompetitiveSeason => ({
@@ -40,6 +41,14 @@ describe("act rank badge", () => {
 		expect([0, 8, 9, 24, 25, 49, 50, 74, 75, 99, 100].map(borderIndexForWins)).toEqual([
 			0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5,
 		]);
+	});
+
+	test("finds the valid peak and lowest tiers", () => {
+		expect(tierRangeFromWins({ "20": 3, "24": 1, "2": 9, "28": 9, bad: 9 })).toEqual({
+			lowest: 20,
+			peak: 24,
+		});
+		expect(tierRangeFromWins({ "20": 0 })).toEqual({ lowest: 0, peak: 0 });
 	});
 });
 

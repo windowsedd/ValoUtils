@@ -3,9 +3,11 @@ import { localize, weaponSkinKey } from "@/util/valorant-assets";
 import { mapIcon, mapName } from "@/util/valorant-maps";
 import { queueLabel } from "@/util/valorant-queues";
 import { tierColor, tierName } from "@/util/valorant-ranks";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { FaArrowRotateRight, FaChevronDown, FaCrosshairs } from "react-icons/fa6";
 import { useTranslation } from "react-i18next";
+import { initialSeasonId } from "./act-rank";
+import { ActRankPanel } from "./act-rank-panel";
 import { buildTeamMatchup } from "./live-game-metrics";
 import { LivePlayerHistory } from "./live-player-history";
 import { LiveTeamMatchup } from "./live-team-matchup";
@@ -95,6 +97,23 @@ const PlayerRow = ({ player, assets, stats, expanded, onToggle, teamColor, teamL
 	const displayName = player.incognito || !player.gameName ? t("liveGame.hidden") : `${player.gameName}#${player.tagLine}`;
 	const peakAct = player.peakSeasonId ? assets.seasons.get(player.peakSeasonId.toLowerCase())?.label : null;
 	const detailsId = `live-player-${player.puuid.replace(/[^a-z0-9]/gi, "-")}`;
+	const seasonStarts = useMemo(
+		() => new Map([...assets.seasons].map(([id, season]) => [id, season.startMillis])),
+		[assets.seasons],
+	);
+	const defaultSeasonId = useMemo(
+		() => initialSeasonId(player.competitiveSeasons, player.currentSeasonId, seasonStarts),
+		[player.competitiveSeasons, player.currentSeasonId, seasonStarts],
+	);
+	const [selectedSeasonId, setSelectedSeasonId] = useState<string | null>(defaultSeasonId);
+	useEffect(() => {
+		if (
+			!selectedSeasonId ||
+			!player.competitiveSeasons.some((season) => season.seasonId === selectedSeasonId)
+		) {
+			setSelectedSeasonId(defaultSeasonId);
+		}
+	}, [defaultSeasonId, player.competitiveSeasons, selectedSeasonId]);
 	return (
 		<div className="border-b border-white/5 last:border-0" style={{ borderLeft: `3px solid ${teamColor}` }}>
 			<button
@@ -158,6 +177,14 @@ const PlayerRow = ({ player, assets, stats, expanded, onToggle, teamColor, teamL
 						<SkinCard weapon={player.loadout?.vandal ?? null} label={t("liveGame.vandal")} assets={assets} />
 						<SkinCard weapon={player.loadout?.phantom ?? null} label={t("liveGame.phantom")} assets={assets} />
 						<SkinCard weapon={player.loadout?.knife ?? null} label={t("liveGame.knife")} assets={assets} />
+					</div>
+					<div className="lg:col-span-2">
+						<ActRankPanel
+							player={player}
+							assets={assets}
+							selectedSeasonId={selectedSeasonId}
+							onSeasonChange={setSelectedSeasonId}
+						/>
 					</div>
 					{stats?.status === "ready" && <div className="lg:col-span-2"><LivePlayerHistory history={stats.stats.history} assets={assets} /></div>}
 				</div>

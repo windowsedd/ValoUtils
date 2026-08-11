@@ -160,7 +160,16 @@
     "win": "Win",
     "loss": "Loss",
     "score": "Score",
-    "noHistory": "No recent competitive match details available"
+    "noHistory": "No recent competitive match details available",
+    "actRank": "Act Rank",
+    "selectAct": "Select competitive act",
+    "rank": "Rank",
+    "rankedRating": "RR",
+    "wins": "Wins",
+    "games": "Games",
+    "lowest": "Lowest",
+    "finalRank": "Final",
+    "noActRank": "No competitive act data available"
   },
   "chat": {
     "title": "Chat",

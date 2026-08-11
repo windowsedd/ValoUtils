@@ -158,7 +158,16 @@
     "win": "勝利",
     "loss": "敗北",
     "score": "比分",
-    "noHistory": "沒有可用的近期競技對戰詳細資料"
+    "noHistory": "沒有可用的近期競技對戰詳細資料",
+    "actRank": "章節牌位",
+    "selectAct": "選擇競技章節",
+    "rank": "牌位",
+    "rankedRating": "RR",
+    "wins": "勝場",
+    "games": "場次",
+    "lowest": "最低",
+    "finalRank": "最終",
+    "noActRank": "沒有可用的競技章節資料"
   },
   "replays": {
     "selectParser": "選擇 ValorantReplayParser.exe",

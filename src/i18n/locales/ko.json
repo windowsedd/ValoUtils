@@ -158,7 +158,16 @@
     "win": "승리",
     "loss": "패배",
     "score": "스코어",
-    "noHistory": "최근 경쟁전 상세 기록이 없습니다"
+    "noHistory": "최근 경쟁전 상세 기록이 없습니다",
+    "actRank": "액트 랭크",
+    "selectAct": "경쟁전 액트 선택",
+    "rank": "랭크",
+    "rankedRating": "RR",
+    "wins": "승리",
+    "games": "게임",
+    "lowest": "최저",
+    "finalRank": "최종",
+    "noActRank": "경쟁전 액트 데이터를 불러올 수 없습니다"
   },
   "replays": {
     "selectParser": "ValorantReplayParser.exe 선택",

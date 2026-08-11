@@ -40,6 +40,18 @@ export const borderIndexForWins = (wins: number): number => {
 	return 0;
 };
 
+export const tierRangeFromWins = (
+	winsByTier: Record<string, number>,
+): { lowest: number; peak: number } => {
+	const tiers = Object.entries(winsByTier)
+		.filter(([, count]) => count > 0)
+		.map(([tier]) => Number(tier))
+		.filter((tier) => Number.isInteger(tier) && tier >= VALID_TIER_MIN && tier <= VALID_TIER_MAX);
+	return tiers.length
+		? { lowest: Math.min(...tiers), peak: Math.max(...tiers) }
+		: { lowest: 0, peak: 0 };
+};
+
 export const sortCompetitiveSeasons = (
 	seasons: CompetitiveSeason[],
 	starts: Map<string, number>,
