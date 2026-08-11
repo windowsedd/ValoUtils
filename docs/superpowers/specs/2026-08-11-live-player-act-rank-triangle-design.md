@@ -25,7 +25,7 @@ type CompetitiveSeason = {
   rankedRating: number;
   wins: number;
   games: number;
-  winsByTier: Record<number, number>;
+  winsByTier: Record<string, number>;
 };
 ```
 
@@ -81,7 +81,8 @@ The selector remains keyboard accessible and has a visible focus state. Images u
 
 ## Components
 
-- `ActRankPanel`: owns the selected season and renders the panel header, selector, statistics, and empty state.
+- `PlayerRow`: owns the selected season so the choice survives collapsing and reopening the row.
+- `ActRankPanel`: receives the selected season and change callback, then renders the panel header, selector, statistics, and empty state.
 - `ActRankTriangle`: maps sorted wins to triangle slots and chooses a border.
 - Live-game backend normalizer: converts Riot seasonal MMR data into `CompetitiveSeason` records.
 - Season asset metadata: retains each act's label and start time for chronological dropdown ordering.
