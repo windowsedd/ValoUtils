@@ -2,6 +2,7 @@ import { FriendIdentity } from "@/components/friends/friend-identity";
 import type { ChatFriend } from "@/types/chat";
 import { useEffect, useRef } from "react";
 import { FaComment, FaSignInAlt, FaTimes, FaUserPlus, FaUsers } from "react-icons/fa";
+import { resolveFriendGameStatus } from "./chat-model";
 
 type FriendsPanelLabels = {
 	title: string;
@@ -13,6 +14,8 @@ type FriendsPanelLabels = {
 	close: string;
 	online: string;
 	offline: string;
+	checking: string;
+	reconnecting: string;
 };
 
 type ChatFriendsPanelProps = {
@@ -150,6 +153,15 @@ const FriendsPanelContent = ({
 				<ul className="space-y-1">
 					{friends.map((friend) => {
 						const selected = selectedFriendPuuid === friend.puuid;
+						const statusKey = resolveFriendGameStatus(friend);
+						const syncing = statusKey === "checking" || statusKey === "reconnecting";
+						const statusLabel =
+							statusKey === "checking"
+								? labels.checking
+								: statusKey === "reconnecting"
+									? labels.reconnecting
+									: friend.statusMessage ||
+										(friend.isOnline ? labels.online : labels.offline);
 						return (
 							<li key={friend.puuid} className="rounded-lg bg-white/[0.025] p-1">
 								<button
@@ -161,13 +173,13 @@ const FriendsPanelContent = ({
 									onClick={() => onFriendSelect(selected ? null : friend.puuid)}
 								>
 									<span
-										className={`size-2 shrink-0 rounded-full ${friend.isOnline ? "bg-emerald-400" : "bg-gray-600"}`}
-										aria-label={friend.isOnline ? labels.online : labels.offline}
+										className={`size-2 shrink-0 rounded-full ${syncing ? "bg-amber-400" : friend.isOnline ? "bg-emerald-400" : "bg-gray-600"}`}
+										aria-label={statusLabel}
 									/>
 									<span className="min-w-0 flex-1">
 										<FriendIdentity person={friend} showNote />
 										<span className="block truncate text-[11px] text-gray-500">
-											{friend.statusMessage || (friend.isOnline ? labels.online : labels.offline)}
+											{statusLabel}
 										</span>
 									</span>
 								</button>

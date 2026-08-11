@@ -88,6 +88,8 @@
     "away": "離開",
     "online": "線上",
     "offline": "離線",
+    "checking": "正在確認…",
+    "reconnecting": "重新連線中…",
     "sent": "已送出",
     "partySize": "小隊 {{size}}/{{max}}",
     "others": "+{{count}} 位其他玩家",

@@ -88,6 +88,8 @@
     "away": "Away",
     "online": "Online",
     "offline": "Offline",
+    "checking": "Checking...",
+    "reconnecting": "Reconnecting...",
     "sent": "Sent",
     "partySize": "Party {{size}}/{{max}}",
     "others": "+{{count}} Other",

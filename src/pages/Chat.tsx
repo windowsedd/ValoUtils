@@ -27,6 +27,8 @@ const Chat = () => {
 	};
 	const friendStatusLabels: FriendStatusLabels = {
 		offline: t("friends.offline"),
+		checking: t("friends.checking"),
+		reconnecting: t("friends.reconnecting"),
 		inMatch: t("friends.inMatch"),
 		agentSelect: t("friends.agentSelect"),
 		inLobby: t("friends.inLobby"),
@@ -200,6 +202,8 @@ const Chat = () => {
 					close: t("chat.closeFriends"),
 					online: t("chat.online"),
 					offline: t("chat.offline"),
+					checking: t("friends.checking"),
+					reconnecting: t("friends.reconnecting"),
 				}}
 				canChat={controller.canOpenFriendChat}
 				canInvite={(friend) => friend.isOnline}

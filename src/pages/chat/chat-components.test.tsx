@@ -17,6 +17,8 @@ const channelLabels = {
 
 const statusLabels = {
 	offline: "Offline",
+	checking: "Checking...",
+	reconnecting: "Reconnecting...",
 	inMatch: "In Match",
 	agentSelect: "Agent Select",
 	inLobby: "In Lobby",
@@ -62,6 +64,7 @@ const friend: ChatFriend = {
 	partySize: 1,
 	maxPartySize: 5,
 	isOnline: true,
+	presenceState: "ready",
 };
 
 describe("Chat components", () => {
@@ -194,6 +197,8 @@ describe("Chat components", () => {
 					close: "Close friends",
 					online: "Online",
 					offline: "Offline",
+					checking: "Checking...",
+					reconnecting: "Reconnecting...",
 				}}
 				canChat={() => false}
 				canInvite={() => true}
@@ -220,5 +225,50 @@ describe("Chat components", () => {
 			querySelector: () => ({ focus: () => (focused = true) }),
 		} as unknown as HTMLElement);
 		expect(focused).toBe(true);
+	});
+
+	test("friends panel shows reconnecting without stale online detail", () => {
+		const markup = renderToStaticMarkup(
+			<ChatFriendsPanel
+				friends={[
+					{
+						...friend,
+						presenceState: "reconnecting",
+						isOnline: false,
+						statusMessage: "In Lobby",
+					},
+				]}
+				search=""
+				drawerOpen
+				selectedFriendPuuid={null}
+				pendingFriendPuuid={null}
+				labels={{
+					title: "Friends",
+					search: "Search friends",
+					empty: "No friends",
+					chat: "Chat",
+					invite: "Invite",
+					join: "Join",
+					close: "Close friends",
+					online: "Online",
+					offline: "Offline",
+					checking: "Checking...",
+					reconnecting: "Reconnecting...",
+				}}
+				canChat={() => true}
+				canInvite={() => false}
+				canJoin={() => false}
+				onSearchChange={() => {}}
+				onFriendSelect={() => {}}
+				onClose={() => {}}
+				onChat={() => {}}
+				onInvite={() => {}}
+				onJoin={() => {}}
+			/>,
+		);
+
+		expect(markup).toContain("Reconnecting...");
+		expect(markup).not.toContain("In Lobby");
+		expect(markup).not.toContain('aria-label="Online"');
 	});
 });
