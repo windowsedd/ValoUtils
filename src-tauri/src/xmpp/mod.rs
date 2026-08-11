@@ -550,6 +550,7 @@ mod tests {
                 session_loop_state: String::new(),
                 private: json!({}),
             },
+            replace_resource: false,
         });
 
         let second = runtime.begin_generation();

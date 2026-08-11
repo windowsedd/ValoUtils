@@ -33,6 +33,7 @@ pub enum PresenceSignal {
     Available {
         generation: u64,
         resource: FriendPresenceResource,
+        replace_resource: bool,
     },
     Unavailable {
         generation: u64,
@@ -101,7 +102,16 @@ impl PresenceReducer {
             PresenceSignal::RosterReceived { friends, .. } => {
                 self.roster = friends;
             }
-            PresenceSignal::Available { resource, .. } => {
+            PresenceSignal::Available {
+                resource,
+                replace_resource,
+                ..
+            } => {
+                if replace_resource {
+                    self.resources.retain(|(item_puuid, item_resource, _), _| {
+                        item_puuid != &resource.puuid || item_resource != &resource.resource
+                    });
+                }
                 let key = (
                     resource.puuid.clone(),
                     resource.resource.clone(),
@@ -253,7 +263,7 @@ fn parse_presence(element: &Element, generation: u64) -> Vec<PresenceSignal> {
     let Some(games) = element.get_child("games") else {
         return Vec::new();
     };
-    games
+    let resources: Vec<FriendPresenceResource> = games
         .children
         .iter()
         .filter_map(|node| match node {
@@ -280,18 +290,31 @@ fn parse_presence(element: &Element, generation: u64) -> Vec<PresenceSignal> {
                 .and_then(Value::as_str)
                 .unwrap_or_default()
                 .to_string();
-            Some(PresenceSignal::Available {
-                generation,
-                resource: FriendPresenceResource {
-                    puuid: puuid.clone(),
-                    resource: resource_name.clone(),
-                    product: product.to_string(),
-                    status,
-                    status_message: status_message.clone(),
-                    session_loop_state,
-                    private,
-                },
+            Some(FriendPresenceResource {
+                puuid: puuid.clone(),
+                resource: resource_name.clone(),
+                product: product.to_string(),
+                status,
+                status_message: status_message.clone(),
+                session_loop_state,
+                private,
             })
+        })
+        .collect();
+    if resources.is_empty() {
+        return vec![PresenceSignal::Unavailable {
+            generation,
+            puuid,
+            resource: resource_name,
+        }];
+    }
+    resources
+        .into_iter()
+        .enumerate()
+        .map(|(index, resource)| PresenceSignal::Available {
+            generation,
+            resource,
+            replace_resource: index == 0,
         })
         .collect()
 }
@@ -338,6 +361,7 @@ mod tests {
                 session_loop_state: String::new(),
                 private: json!({}),
             },
+            replace_resource: false,
         }
     }
 
@@ -393,10 +417,42 @@ mod tests {
     }
 
     #[test]
-    fn ignores_mobile_and_offline_product_states() {
+    fn clears_a_resource_with_only_mobile_and_offline_product_states() {
         let xml = r#"<presence from="friend@jp1.pvp.net/RC-1"><show>mobile</show><games><keystone><st>mobile</st></keystone><valorant><st>offline</st></valorant></games></presence>"#;
 
-        assert!(parse_presence_signals(xml, 3).is_empty());
+        assert!(matches!(
+            parse_presence_signals(xml, 3).as_slice(),
+            [PresenceSignal::Unavailable {
+                generation: 3,
+                puuid,
+                resource
+            }] if puuid == "friend" && resource == "RC-1"
+        ));
+    }
+
+    #[test]
+    fn replaces_products_when_a_raw_resource_updates() {
+        let mut reducer = PresenceReducer::default();
+        reducer.begin_generation(3);
+        for event in parse_presence_signals(
+            r#"<presence from="friend@jp1.pvp.net/RC-1"><show>chat</show><games><keystone><st>chat</st></keystone><valorant><st>chat</st></valorant></games></presence>"#,
+            3,
+        ) {
+            reducer.apply(event);
+        }
+        assert_eq!(reducer.snapshot().friends["friend"].len(), 2);
+
+        for event in parse_presence_signals(
+            r#"<presence from="friend@jp1.pvp.net/RC-1"><show>chat</show><games><keystone><st>chat</st></keystone></games></presence>"#,
+            3,
+        ) {
+            reducer.apply(event);
+            assert!(!reducer.snapshot().friends["friend"].is_empty());
+        }
+
+        let resources = &reducer.snapshot().friends["friend"];
+        assert_eq!(resources.len(), 1);
+        assert_eq!(resources[0].product, "riot_client");
     }
 
     #[test]
