@@ -36,6 +36,7 @@ export type ChatFriend = {
 	note: string;
 	status: string;
 	statusMessage: string;
+	sessionLoopState: string;
 	product: string;
 	queueId: string;
 	partyId: string;

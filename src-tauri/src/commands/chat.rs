@@ -421,6 +421,15 @@ fn normalize_friends(friends_payload: &[Value], presences_payload: &[Value]) -> 
                 .map(decode_presence_private)
                 .unwrap_or(json!({}));
             let party = priv_val.get("partyPresenceData").unwrap_or(&priv_val);
+            let match_data = priv_val.get("matchPresenceData").unwrap_or(&priv_val);
+            let session_loop_state = pick_string([
+                match_data
+                    .get("sessionLoopState")
+                    .and_then(|value| value.as_str()),
+                priv_val
+                    .get("sessionLoopState")
+                    .and_then(|value| value.as_str()),
+            ]);
 
             let game_name = pick_string(
                 [
@@ -515,6 +524,7 @@ fn normalize_friends(friends_payload: &[Value], presences_payload: &[Value]) -> 
                 "note": note,
                 "status": status_final,
                 "statusMessage": status_message,
+                "sessionLoopState": session_loop_state,
                 "product": product,
                 "queueId": queue_id,
                 "partyId": party_id,
@@ -1491,5 +1501,39 @@ mod tests {
         assert_eq!(result[0]["isOnline"], true);
         assert_eq!(result[0]["product"], "valorant");
         assert_eq!(result[0]["status"], "dnd");
+    }
+
+    #[test]
+    fn extracts_chat_friend_session_loop_state_from_match_presence() {
+        let private = base64::engine::general_purpose::STANDARD
+            .encode(json!({ "matchPresenceData": { "sessionLoopState": "INGAME" } }).to_string());
+        let result = normalize_friends(
+            &[json!({ "puuid": "friend", "game_name": "Friend" })],
+            &[json!({
+                "puuid": "friend",
+                "product": "valorant",
+                "state": "dnd",
+                "private": private
+            })],
+        );
+
+        assert_eq!(result[0]["sessionLoopState"], "INGAME");
+    }
+
+    #[test]
+    fn falls_back_to_legacy_root_session_loop_state() {
+        let private = base64::engine::general_purpose::STANDARD
+            .encode(json!({ "sessionLoopState": "MENUS" }).to_string());
+        let result = normalize_friends(
+            &[json!({ "puuid": "friend", "game_name": "Friend" })],
+            &[json!({
+                "puuid": "friend",
+                "product": "valorant",
+                "state": "chat",
+                "private": private
+            })],
+        );
+
+        assert_eq!(result[0]["sessionLoopState"], "MENUS");
     }
 }

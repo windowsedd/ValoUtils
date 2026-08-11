@@ -33,6 +33,7 @@ const friend: ChatFriend = {
 	note: "我能架住",
 	status: "chat",
 	statusMessage: "",
+	sessionLoopState: "",
 	product: "valorant",
 	queueId: "competitive",
 	partyId: "party-1",

@@ -46,6 +46,7 @@ const friend: ChatFriend = {
 	note: "Rank duo",
 	status: "available",
 	statusMessage: "In Lobby",
+	sessionLoopState: "",
 	product: "valorant",
 	queueId: "",
 	partyId: "party-id",
