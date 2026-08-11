@@ -1,7 +1,19 @@
 export type TranslatorProvider = "google" | "deepl";
 export type ChatScope = "friends" | "party" | "match";
+export type ChatChannel = "friends" | "party" | "team" | "all";
 export type ChatRoomKey = ChatScope | "matchTeam" | "matchAll";
 export type ChatRooms = Partial<Record<ChatRoomKey, string>> & { _partyXmppDebug?: Record<string, any> };
+
+export type ChatConversation = {
+	cid: string;
+	channel: ChatChannel;
+	type: "chat" | "groupchat";
+	title: string;
+	participantPuuid: string;
+	unreadCount: number;
+	messageHistory: boolean | null;
+	muted: boolean;
+};
 
 export type ChatMessage = {
 	id: string;
@@ -21,6 +33,7 @@ export type ChatFriend = {
 	gameName: string;
 	tagLine: string;
 	displayName: string;
+	note: string;
 	status: string;
 	statusMessage: string;
 	product: string;
@@ -32,14 +45,30 @@ export type ChatFriend = {
 };
 
 export type ChatResponse =
-	| { success: true; messages: ChatMessage[]; rooms: ChatRooms; friends: ChatFriend[]; fetchedAt: string }
+	| { success: true; messages: ChatMessage[]; rooms: ChatRooms; conversations: ChatConversation[]; friends: ChatFriend[]; fetchedAt: string }
 	| { success: false; code: "loginRequired" }
 	| { success: false; error: string };
+
+export type ChatHistoryResponse =
+	| { success: true; requestId: string; cid: string; messages: ChatMessage[] }
+	| {
+			success: false;
+			requestId: string;
+			cid: string;
+			code: "loginRequired" | "unavailable" | null;
+			error: string;
+	  };
 
 export type TranslateResponse =
 	| { success: true; translatedText: string; provider: TranslatorProvider; targetLanguage: string }
 	| { success: false; error: string };
 
 export type ChatSendResponse =
-	| { success: true }
-	| { success: false; error: string };
+	| {
+			success: true;
+			requestId: string;
+			cid: string;
+			type: "chat" | "groupchat";
+			transport: "rest" | "xmpp";
+	  }
+	| { success: false; requestId: string; cid: string; error: string };
