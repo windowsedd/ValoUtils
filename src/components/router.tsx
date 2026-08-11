@@ -1,15 +1,28 @@
-import React, { createContext, Key, useContext, useEffect, useState } from "react";
+import React, { createContext, Key, useContext, useEffect, useMemo, useState } from "react";
 import { Tabs } from "@heroui/react";
 import { Route } from "@/types/router";
 import RiotStatusBar from "@/components/riot-status-bar";
 import { useTranslation } from "react-i18next";
 import { navbarLayout } from "@/components/navbar-layout";
+import {
+	filterVisibleRoutes,
+	normalizeHiddenTabs,
+	resolveSelectedRouteId,
+} from "@/util/navigation-tabs";
 
 type RouterProps = {
 	routes: Route[];
 };
-// Create a context to store the routes
-const RouterContext = createContext<RouterProps>({ routes: [] });
+
+type RouterContextValue = {
+	routes: Route[];
+	allRoutes: Route[];
+};
+
+const RouterContext = createContext<RouterContextValue>({ routes: [], allRoutes: [] });
+
+export const useConfiguredRoutes = () => useContext(RouterContext).allRoutes;
+
 // Custom hook to use the router context
 const useRouter = () => {
 	const routerContext = useContext(RouterContext);
@@ -18,19 +31,18 @@ const useRouter = () => {
 		throw new Error("useRouter must be used within a RouterProvider");
 	}
 
-	const [selected, setSelected] = useState<number>(0);
-	const [selectedId, setSelectedId] = useState<string>(routerContext.routes[0]?.id || "");
-	const [body, setBody] = useState<React.ReactNode>();
+	const [selectedId, setSelectedId] = useState<string>(routerContext.routes[0]?.id ?? "");
+	const resolvedSelectedId = resolveSelectedRouteId(routerContext.routes, selectedId);
+	const body = routerContext.routes.find((route) => route.id === resolvedSelectedId)?.component;
 
 	useEffect(() => {
-		setBody(routerContext.routes[selected].component);
-	}, [routerContext.routes, selected]);
+		if (resolvedSelectedId !== selectedId) setSelectedId(resolvedSelectedId);
+	}, [resolvedSelectedId, selectedId]);
 
 	const goTo = (id: string) => {
 		const routeIndex = routerContext.routes.findIndex((route) => route.id === id);
 		if (routeIndex !== -1) {
 			console.log(`Going to route with id "${id}"`);
-			setSelected(routeIndex);
 			setSelectedId(id);
 		} else {
 			console.error(`Route with id "${id}" not found.`);
@@ -38,24 +50,56 @@ const useRouter = () => {
 	};
 
 	const goToIndex = (index: number) => {
-		// TODO: figure out why these don't work
-		if (index < routerContext.routes.length) {
-			console.log(`Going to route with index "${index}"`);
-			setSelected(index);
-			setBody(routerContext.routes[index].component);
+		const route = routerContext.routes[index];
+		if (route) {
+			setSelectedId(route.id);
 		} else {
 			console.error(`Route with index "${index}" not found.`);
 		}
 	};
 
-	return { selected, selectedId, body, goTo, goToIndex };
+	return { selectedId: resolvedSelectedId, body, goTo, goToIndex };
 };
 const RouterProvider: React.FC<
 	RouterProps & {
 		children: React.ReactNode | React.ReactNode[];
 	}
-> = ({ routes, children }) => {
-	return <RouterContext.Provider value={{ routes }}>{children}</RouterContext.Provider>;
+> = ({ routes: allRoutes, children }) => {
+	const [hiddenTabs, setHiddenTabs] = useState<string[]>([]);
+
+	useEffect(() => {
+		const onConfigLoaded = (message: string) => {
+			window.Main.removeListener("config:get-all", onConfigLoaded);
+			try {
+				setHiddenTabs(normalizeHiddenTabs(JSON.parse(message)?.hiddenTabs));
+			} catch {
+				setHiddenTabs([]);
+			}
+		};
+		window.Main.on("config:get-all", onConfigLoaded);
+		window.Main.send("config:get-all");
+		return () => window.Main.removeListener("config:get-all", onConfigLoaded);
+	}, []);
+
+	useEffect(() => {
+		const onConfigChanged = (event: Event) => {
+			const detail = (event as CustomEvent<{ key?: string; value?: unknown }>).detail;
+			if (detail?.key === "hiddenTabs") setHiddenTabs(normalizeHiddenTabs(detail.value));
+		};
+		window.addEventListener("valoutils:config-changed", onConfigChanged);
+		return () => window.removeEventListener("valoutils:config-changed", onConfigChanged);
+	}, []);
+
+	const routes = useMemo(
+		() => filterVisibleRoutes(allRoutes, hiddenTabs),
+		[allRoutes, hiddenTabs],
+	);
+
+	return (
+		<RouterContext.Provider value={{ routes, allRoutes }}>
+			{children}
+		</RouterContext.Provider>
+	);
 };
 
 const Router = () => {
