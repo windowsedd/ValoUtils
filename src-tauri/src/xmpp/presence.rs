@@ -268,6 +268,12 @@ fn parse_presence(element: &Element, generation: u64) -> Vec<PresenceSignal> {
             } else {
                 game_status
             };
+            if !matches!(
+                status.to_ascii_lowercase().as_str(),
+                "chat" | "away" | "dnd" | "online"
+            ) {
+                return None;
+            }
             let private = decode_private(&child_text(game, "p"));
             let session_loop_state = private
                 .pointer("/matchPresenceData/sessionLoopState")
@@ -384,6 +390,13 @@ mod tests {
                 resource
             }) if puuid == "friend" && resource == "RC-1"
         ));
+    }
+
+    #[test]
+    fn ignores_mobile_and_offline_product_states() {
+        let xml = r#"<presence from="friend@jp1.pvp.net/RC-1"><show>mobile</show><games><keystone><st>mobile</st></keystone><valorant><st>offline</st></valorant></games></presence>"#;
+
+        assert!(parse_presence_signals(xml, 3).is_empty());
     }
 
     #[test]

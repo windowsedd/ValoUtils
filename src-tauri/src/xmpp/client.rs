@@ -1,3 +1,4 @@
+use crate::xmpp::presence::{parse_presence_signals, PresenceSignal};
 use crate::xmpp::regions::{region_by_lookup_name, XmppRegion};
 use serde_json::Value;
 use std::collections::VecDeque;
@@ -259,6 +260,8 @@ pub async fn login(
     _entitlement_token: &str,
     puuid: &str,
     message_events: broadcast::Sender<ChatMessage>,
+    generation: u64,
+    presence_events: broadcast::Sender<PresenceSignal>,
 ) -> Result<LoginResult, String> {
     let pas_token = get_pas_token(access_token).await?;
     let claims = decode_jwt_payload(&pas_token)?;
@@ -371,6 +374,8 @@ pub async fn login(
             alive,
             messages,
             message_events,
+            presence_events,
+            generation,
             own_puuid,
             own_display_name,
             write_for_presence,
@@ -408,6 +413,8 @@ async fn run_background(
     alive: Arc<AtomicBool>,
     messages: Arc<std::sync::Mutex<VecDeque<ChatMessage>>>,
     message_events: broadcast::Sender<ChatMessage>,
+    presence_events: broadcast::Sender<PresenceSignal>,
+    generation: u64,
     own_puuid: String,
     own_display_name: String,
     handle: Arc<XmppHandle>,
@@ -429,6 +436,8 @@ async fn run_background(
                         &stanza,
                         &messages,
                         &message_events,
+                        &presence_events,
+                        generation,
                         &own_puuid,
                         &own_display_name,
                     ),
@@ -437,6 +446,7 @@ async fn run_background(
             }
         }
     }
+    let _ = presence_events.send(PresenceSignal::Disconnected { generation });
     alive.store(false, Ordering::SeqCst);
 }
 
@@ -444,9 +454,14 @@ fn handle_incoming_stanza(
     stanza: &str,
     messages: &Arc<std::sync::Mutex<VecDeque<ChatMessage>>>,
     message_events: &broadcast::Sender<ChatMessage>,
+    presence_events: &broadcast::Sender<PresenceSignal>,
+    generation: u64,
     own_puuid: &str,
     own_display_name: &str,
 ) {
+    for event in parse_presence_signals(stanza, generation) {
+        let _ = presence_events.send(event);
+    }
     for message_tag in split_top_level_tags(stanza, "message") {
         if extract_attr(&message_tag, "type").as_deref() != Some("groupchat") {
             continue;
@@ -538,10 +553,27 @@ mod tests {
     fn groupchat_stanza_is_buffered_and_published_once() {
         let messages = Arc::new(std::sync::Mutex::new(VecDeque::new()));
         let (events, mut receiver) = tokio::sync::broadcast::channel(8);
+        let (presence_events, _) = tokio::sync::broadcast::channel(8);
         let stanza = r#"<message from="room@ares-parties.ap/friend" id="m-1" type="groupchat"><body>hello</body></message>"#;
 
-        handle_incoming_stanza(stanza, &messages, &events, "self", "Self#NA1");
-        handle_incoming_stanza(stanza, &messages, &events, "self", "Self#NA1");
+        handle_incoming_stanza(
+            stanza,
+            &messages,
+            &events,
+            &presence_events,
+            1,
+            "self",
+            "Self#NA1",
+        );
+        handle_incoming_stanza(
+            stanza,
+            &messages,
+            &events,
+            &presence_events,
+            1,
+            "self",
+            "Self#NA1",
+        );
 
         assert_eq!(messages.lock().unwrap().len(), 1);
         let published = receiver.try_recv().unwrap();
@@ -558,13 +590,46 @@ mod tests {
     fn own_groupchat_echo_is_identified_before_publish() {
         let messages = Arc::new(std::sync::Mutex::new(VecDeque::new()));
         let (events, mut receiver) = tokio::sync::broadcast::channel(8);
+        let (presence_events, _) = tokio::sync::broadcast::channel(8);
         let stanza = r#"<message from="game-blue@ares-coregame.ap/self" id="m-2" type="groupchat"><body>rotate</body></message>"#;
 
-        handle_incoming_stanza(stanza, &messages, &events, "self", "Player#1234");
+        handle_incoming_stanza(
+            stanza,
+            &messages,
+            &events,
+            &presence_events,
+            1,
+            "self",
+            "Player#1234",
+        );
 
         let published = receiver.try_recv().unwrap();
         assert!(published.is_self);
         assert_eq!(published.sender_name, "Player#1234");
         assert_eq!(published.scope, "match");
+    }
+
+    #[test]
+    fn incoming_presence_is_published_without_affecting_group_messages() {
+        let messages = Arc::new(std::sync::Mutex::new(VecDeque::new()));
+        let (message_events, _) = tokio::sync::broadcast::channel(8);
+        let (presence_events, mut presence_receiver) = tokio::sync::broadcast::channel(8);
+        let stanza = r#"<presence from="friend@jp1.pvp.net/RC-1"><show>chat</show><games><keystone><st>chat</st></keystone></games></presence>"#;
+
+        handle_incoming_stanza(
+            stanza,
+            &messages,
+            &message_events,
+            &presence_events,
+            5,
+            "self",
+            "Self#1",
+        );
+
+        assert!(matches!(
+            presence_receiver.try_recv().unwrap(),
+            crate::xmpp::presence::PresenceSignal::Available { generation: 5, .. }
+        ));
+        assert!(messages.lock().unwrap().is_empty());
     }
 }

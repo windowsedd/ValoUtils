@@ -5,9 +5,12 @@ pub mod regions;
 use crate::riot::api;
 use crate::riot::client::RiotState;
 use client::{ChatMessage, XmppHandle};
+use presence::{PresenceReducer, PresenceSignal, PresenceSnapshot, PresenceSyncState};
 use serde_json::{json, Value};
 use std::collections::HashSet;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex as StdMutex};
+use std::time::Duration;
 use tokio::sync::{broadcast, Mutex};
 
 const PARTY_ROOM_MARKER: &str = "ares-parties";
@@ -22,6 +25,156 @@ pub fn message_publisher() -> broadcast::Sender<ChatMessage> {
 
 pub fn subscribe_messages() -> broadcast::Receiver<ChatMessage> {
     message_publisher().subscribe()
+}
+
+struct PresenceRuntime {
+    next_generation: AtomicU64,
+    settle_token: AtomicU64,
+    roster_generation: AtomicU64,
+    reducer: StdMutex<PresenceReducer>,
+    signal_tx: broadcast::Sender<PresenceSignal>,
+    snapshot_tx: broadcast::Sender<PresenceSnapshot>,
+}
+
+impl PresenceRuntime {
+    fn new() -> Self {
+        let (signal_tx, _) = broadcast::channel(2048);
+        let (snapshot_tx, _) = broadcast::channel(256);
+        Self {
+            next_generation: AtomicU64::new(0),
+            settle_token: AtomicU64::new(0),
+            roster_generation: AtomicU64::new(0),
+            reducer: StdMutex::new(PresenceReducer::default()),
+            signal_tx,
+            snapshot_tx,
+        }
+    }
+
+    fn begin_generation(&self) -> u64 {
+        let generation = self.next_generation.fetch_add(1, Ordering::AcqRel) + 1;
+        self.settle_token.fetch_add(1, Ordering::AcqRel);
+        self.roster_generation.store(0, Ordering::Release);
+        let snapshot = {
+            let mut reducer = self.reducer.lock().unwrap();
+            reducer.begin_generation(generation);
+            reducer.snapshot()
+        };
+        let _ = self.snapshot_tx.send(snapshot);
+        generation
+    }
+
+    fn apply_signal(&self, signal: PresenceSignal) -> bool {
+        let snapshot = {
+            let mut reducer = self.reducer.lock().unwrap();
+            if !reducer.apply(signal) {
+                return false;
+            }
+            reducer.snapshot()
+        };
+        let _ = self.snapshot_tx.send(snapshot);
+        true
+    }
+
+    fn mark_ready(&self, generation: u64) {
+        let snapshot = {
+            let mut reducer = self.reducer.lock().unwrap();
+            if !reducer.mark_ready(generation) {
+                return;
+            }
+            reducer.snapshot()
+        };
+        let _ = self.snapshot_tx.send(snapshot);
+    }
+
+    fn snapshot(&self) -> PresenceSnapshot {
+        self.reducer.lock().unwrap().snapshot()
+    }
+}
+
+static PRESENCE_RUNTIME: std::sync::OnceLock<PresenceRuntime> = std::sync::OnceLock::new();
+static PRESENCE_REDUCER_STARTED: AtomicBool = AtomicBool::new(false);
+
+fn presence_runtime() -> &'static PresenceRuntime {
+    PRESENCE_RUNTIME.get_or_init(PresenceRuntime::new)
+}
+
+fn signal_generation(signal: &PresenceSignal) -> u64 {
+    match signal {
+        PresenceSignal::RosterReceived { generation, .. }
+        | PresenceSignal::Available { generation, .. }
+        | PresenceSignal::Unavailable { generation, .. }
+        | PresenceSignal::Disconnected { generation } => *generation,
+    }
+}
+
+fn schedule_presence_ready(runtime: &'static PresenceRuntime, generation: u64) {
+    let token = runtime.settle_token.fetch_add(1, Ordering::AcqRel) + 1;
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        if runtime.settle_token.load(Ordering::Acquire) == token
+            && runtime.roster_generation.load(Ordering::Acquire) == generation
+        {
+            runtime.mark_ready(generation);
+        }
+    });
+}
+
+fn ensure_presence_reducer() {
+    if PRESENCE_REDUCER_STARTED
+        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+        .is_err()
+    {
+        return;
+    }
+    let runtime = presence_runtime();
+    let mut receiver = runtime.signal_tx.subscribe();
+    tauri::async_runtime::spawn(async move {
+        loop {
+            match receiver.recv().await {
+                Ok(signal) => {
+                    let generation = signal_generation(&signal);
+                    let is_roster = matches!(signal, PresenceSignal::RosterReceived { .. });
+                    let is_disconnect = matches!(signal, PresenceSignal::Disconnected { .. });
+                    if !runtime.apply_signal(signal) {
+                        continue;
+                    }
+                    if is_disconnect {
+                        runtime.settle_token.fetch_add(1, Ordering::AcqRel);
+                        runtime.roster_generation.store(0, Ordering::Release);
+                        continue;
+                    }
+                    if is_roster {
+                        runtime
+                            .roster_generation
+                            .store(generation, Ordering::Release);
+                    }
+                    let snapshot = runtime.snapshot();
+                    if snapshot.state == PresenceSyncState::Syncing
+                        && runtime.roster_generation.load(Ordering::Acquire) == generation
+                    {
+                        schedule_presence_ready(runtime, generation);
+                    }
+                }
+                Err(broadcast::error::RecvError::Lagged(skipped)) => {
+                    log::warn!("XMPP presence reducer lagged by {skipped} events");
+                }
+                Err(broadcast::error::RecvError::Closed) => break,
+            }
+        }
+    });
+}
+
+fn presence_signal_publisher() -> broadcast::Sender<PresenceSignal> {
+    ensure_presence_reducer();
+    presence_runtime().signal_tx.clone()
+}
+
+pub fn subscribe_presence() -> broadcast::Receiver<PresenceSnapshot> {
+    presence_runtime().snapshot_tx.subscribe()
+}
+
+pub fn presence_snapshot() -> PresenceSnapshot {
+    presence_runtime().snapshot()
 }
 
 #[derive(Default)]
@@ -67,7 +220,23 @@ async fn login_xmpp(riot: &RiotState, inner: &mut Inner) -> Result<Arc<XmppHandl
         .unwrap_or_default();
     inner.own_puuid = puuid.to_string();
 
-    let result = client::login(access_token, entitlement_token, puuid, message_publisher()).await?;
+    let generation = presence_runtime().begin_generation();
+    let result = match client::login(
+        access_token,
+        entitlement_token,
+        puuid,
+        message_publisher(),
+        generation,
+        presence_signal_publisher(),
+    )
+    .await
+    {
+        Ok(result) => result,
+        Err(error) => {
+            let _ = presence_signal_publisher().send(PresenceSignal::Disconnected { generation });
+            return Err(error);
+        }
+    };
     if let Some((name, tagline)) = &result.display_name {
         inner.own_display_name = if tagline.is_empty() {
             name.clone()
@@ -77,6 +246,11 @@ async fn login_xmpp(riot: &RiotState, inner: &mut Inner) -> Result<Arc<XmppHandl
     }
     inner.handle = Some(result.handle.clone());
     Ok(result.handle)
+}
+
+pub async fn ensure_connected(riot: &RiotState) -> Result<(), String> {
+    let mut inner = STATE.get_or_init(Default::default).inner.lock().await;
+    login_xmpp(riot, &mut inner).await.map(|_| ())
 }
 
 pub async fn disconnect_match_xmpp_chat() {
@@ -356,3 +530,50 @@ fn chrono_iso_now() -> String {
 // parameter threaded through — mirrors the original file's module-level
 // `state` object closely.
 static STATE: std::sync::OnceLock<ChatXmppState> = std::sync::OnceLock::new();
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn new_connection_generation_starts_with_empty_syncing_snapshot() {
+        let runtime = PresenceRuntime::new();
+        let first = runtime.begin_generation();
+        runtime.apply_signal(presence::PresenceSignal::Available {
+            generation: first,
+            resource: presence::FriendPresenceResource {
+                puuid: "friend".into(),
+                resource: "RC-1".into(),
+                product: "riot_client".into(),
+                status: "chat".into(),
+                status_message: String::new(),
+                session_loop_state: String::new(),
+                private: json!({}),
+            },
+        });
+
+        let second = runtime.begin_generation();
+        let snapshot = runtime.snapshot();
+        assert!(second > first);
+        assert_eq!(snapshot.generation, second);
+        assert_eq!(snapshot.state, presence::PresenceSyncState::Syncing);
+        assert!(snapshot.friends.is_empty());
+    }
+
+    #[test]
+    fn signal_channel_holds_a_full_multi_product_roster_burst() {
+        let runtime = PresenceRuntime::new();
+        let mut receiver = runtime.signal_tx.subscribe();
+        for index in 0..600 {
+            runtime
+                .signal_tx
+                .send(presence::PresenceSignal::Disconnected { generation: index })
+                .unwrap();
+        }
+
+        assert!(matches!(
+            receiver.try_recv(),
+            Ok(presence::PresenceSignal::Disconnected { generation: 0 })
+        ));
+    }
+}
