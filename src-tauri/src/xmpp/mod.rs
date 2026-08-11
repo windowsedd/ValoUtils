@@ -1,4 +1,5 @@
 pub mod client;
+pub mod presence;
 pub mod regions;
 
 use crate::riot::api;
