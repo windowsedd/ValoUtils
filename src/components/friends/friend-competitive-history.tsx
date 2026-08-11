@@ -1,6 +1,7 @@
 import { MatchScoreboard, useMatchAssets, useMatchDetails } from "@/components/match-scoreboard";
 import { SectionCard, SectionRow } from "@/components/section-card";
 import type { FriendMatch } from "@/types/friend-profile";
+import { localize } from "@/util/valorant-assets";
 import { mapIcon, mapName } from "@/util/valorant-maps";
 import { queueLabel } from "@/util/valorant-queues";
 import { tierColor, tierName } from "@/util/valorant-ranks";
@@ -66,6 +67,7 @@ export const FriendMatchHistory = ({
 				const demoted = tierAfter < tierBefore;
 				const matchDetails = details[matchId];
 				const player = matchDetails?.players.find((item) => item.subject.toLowerCase() === puuid.toLowerCase());
+				const agent = player ? assets.agents.get(player.characterId.toLowerCase()) : undefined;
 				const map = mapName(matchDetails?.mapId, assets.maps) || t("friends.profileUnknownMap");
 				const thumbnail = mapIcon(matchDetails?.mapId, assets.maps);
 				const tierIcon = tierAfter > 0 ? assets.tiers.get(tierAfter)?.icon : null;
@@ -86,6 +88,7 @@ export const FriendMatchHistory = ({
 							<SectionRow>
 								<span className="w-1 self-stretch rounded-full" style={{ background: accent }} />
 								{thumbnail ? <img src={thumbnail} alt="" className="h-9 w-16 shrink-0 rounded object-cover" /> : <span className="h-9 w-16 shrink-0 rounded bg-white/5" />}
+								{agent ? <img src={agent.icon} alt={localize(agent.name)} title={localize(agent.name)} className="h-9 w-9 shrink-0 rounded bg-white/5 object-contain" /> : <span className="h-9 w-9 shrink-0 rounded bg-white/5" />}
 								<div className="min-w-0 flex-1">
 									<p className="truncate text-sm font-semibold text-white">{map}</p>
 									<p className="flex items-center gap-2 text-xs text-gray-500"><span>{date}</span><span className="text-gray-600">{queueLabel(match.queueId)}</span></p>
