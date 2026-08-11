@@ -22,23 +22,46 @@ const season = (seasonId: string): CompetitiveSeason => ({
 });
 
 describe("act rank badge", () => {
-	test("keeps the nine highest tier wins and assigns the asymmetric reference cluster", () => {
-		const tiles = buildActRankTiles({ "20": 5, "24": 2, "22": 4, bad: 8, "28": 3 });
-		expect(tiles.map((tile) => tile.tier)).toEqual([24, 24, 22, 22, 22, 22, 20, 20, 20]);
+	test("renders all fourteen valid wins in tier order and fills the lattice row by row", () => {
+		const tiles = buildActRankTiles({ "20": 5, "24": 2, "22": 7, bad: 8, "28": 3, "18": -2 });
+		expect(tiles.map((tile) => tile.tier)).toEqual([
+			24, 24,
+			22, 22, 22, 22, 22, 22, 22,
+			20, 20, 20, 20, 20,
+		]);
 		expect(tiles.map((tile) => [tile.row, tile.column, tile.orientation])).toEqual([
+			[0, 0, "up"],
+			[1, 0, "up"],
+			[1, 1, "down"],
 			[1, 2, "up"],
+			[2, 0, "up"],
+			[2, 1, "down"],
 			[2, 2, "up"],
 			[2, 3, "down"],
+			[2, 4, "up"],
+			[3, 0, "up"],
+			[3, 1, "down"],
 			[3, 2, "up"],
 			[3, 3, "down"],
 			[3, 4, "up"],
-			[4, 3, "down"],
-			[4, 4, "up"],
-			[4, 5, "down"],
 		]);
 	});
 
-	test("builds a symmetric triangle that is taller than it is wide", () => {
+	test("fills the complete seven-row lattice and caps only beyond its 49 cells", () => {
+		const full = buildActRankTiles({ "20": 49 });
+		expect(full).toHaveLength(49);
+		expect(full.at(-1)).toMatchObject({ row: 6, column: 12, orientation: "up" });
+		expect(buildActRankTiles({ "20": 60 })).toHaveLength(49);
+	});
+
+	test("builds a symmetric near-equilateral reference triangle", () => {
+		expect(actRankGeometry.ACT_RANK_GEOMETRY).toMatchObject({
+			width: 512,
+			height: 512,
+			centerX: 256,
+			apexY: 48,
+			baseY: 464,
+		});
 		const outerTrianglePoints = (
 			actRankGeometry as typeof actRankGeometry & {
 				outerTrianglePoints?: () => readonly [readonly [number, number], readonly [number, number], readonly [number, number]];
@@ -47,8 +70,10 @@ describe("act rank badge", () => {
 		expect(outerTrianglePoints).toBeDefined();
 		if (!outerTrianglePoints) return;
 		const [apex, left, right] = outerTrianglePoints();
+		expect(apex).toEqual([256, 48]);
 		expect(apex[0]).toBe((left[0] + right[0]) / 2);
-		expect(right[0] - left[0]).toBeLessThan(left[1] - apex[1]);
+		expect((right[0] - left[0]) / (left[1] - apex[1])).toBeCloseTo(2 / Math.sqrt(3), 5);
+		expect(left[1]).toBe(464);
 		expect(left[1]).toBe(right[1]);
 	});
 
@@ -62,10 +87,10 @@ describe("act rank badge", () => {
 		if (!innerTrianglePoints) return;
 		const [apex, left, right] = innerTrianglePoints();
 		expect(apex[0]).toBe((left[0] + right[0]) / 2);
-		expect(left[0]).toBeGreaterThan(28);
-		expect(right[0]).toBeLessThan(272);
-		expect(apex[1]).toBeGreaterThan(12);
-		expect(left[1]).toBeLessThan(348);
+		expect(apex).toEqual([256, 96]);
+		expect(left[1]).toBe(411);
+		expect(right[1]).toBe(411);
+		expect((right[0] - left[0]) / (left[1] - apex[1])).toBeCloseTo(2 / Math.sqrt(3), 10);
 	});
 
 	test("builds one aligned lattice whose neighboring cells share vertices", () => {
@@ -84,7 +109,7 @@ describe("act rank badge", () => {
 		if (!geometry.actRankCellPoints || !geometry.buildLatticeCells || !geometry.pointInsideInnerTriangle) return;
 
 		const cells = geometry.buildLatticeCells();
-		expect(cells).toHaveLength(64);
+		expect(cells).toHaveLength(49);
 		for (const cell of cells) {
 			for (const point of cell.points) expect(geometry.pointInsideInnerTriangle(point)).toBe(true);
 		}
@@ -95,6 +120,12 @@ describe("act rank badge", () => {
 			rightCell.some(([otherX, otherY]) => Math.abs(x - otherX) < 1e-7 && Math.abs(y - otherY) < 1e-7),
 		);
 		expect(shared).toHaveLength(2);
+
+		const firstCell = geometry.actRankCellPoints(0, 0);
+		const [a, b, c] = firstCell;
+		const distance = ([x1, y1]: TestPoint, [x2, y2]: TestPoint) => Math.hypot(x2 - x1, y2 - y1);
+		expect(distance(a, b)).toBeCloseTo(distance(b, c), 10);
+		expect(distance(b, c)).toBeCloseTo(distance(c, a), 10);
 	});
 
 	test("maps every competitive tier band to its Valorant palette", () => {

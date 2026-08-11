@@ -44,33 +44,38 @@ export const actRankPalette = (tier: number): ActRankPalette => {
 };
 
 export const ACT_RANK_GEOMETRY = {
-	width: 300,
-	height: 360,
-	centerX: 150,
-	apexY: 12,
-	baseY: 348,
-	halfWidth: 122,
-	innerScale: 0.91,
-	rows: 8,
+	width: 512,
+	height: 512,
+	centerX: 256,
+	apexY: 48,
+	baseY: 464,
+	innerApexY: 96,
+	innerBaseY: 411,
+	rows: 7,
 } as const;
 
-export const outerTrianglePoints = (): readonly [Point, Point, Point] => [
-	[ACT_RANK_GEOMETRY.centerX, ACT_RANK_GEOMETRY.apexY],
-	[ACT_RANK_GEOMETRY.centerX - ACT_RANK_GEOMETRY.halfWidth, ACT_RANK_GEOMETRY.baseY],
-	[ACT_RANK_GEOMETRY.centerX + ACT_RANK_GEOMETRY.halfWidth, ACT_RANK_GEOMETRY.baseY],
-];
+const equilateralHalfWidth = (height: number) => height / Math.sqrt(3);
+
+export const outerTrianglePoints = (): readonly [Point, Point, Point] => {
+	const halfWidth = equilateralHalfWidth(
+		ACT_RANK_GEOMETRY.baseY - ACT_RANK_GEOMETRY.apexY,
+	);
+	return [
+		[ACT_RANK_GEOMETRY.centerX, ACT_RANK_GEOMETRY.apexY],
+		[ACT_RANK_GEOMETRY.centerX - halfWidth, ACT_RANK_GEOMETRY.baseY],
+		[ACT_RANK_GEOMETRY.centerX + halfWidth, ACT_RANK_GEOMETRY.baseY],
+	];
+};
 
 export const innerTrianglePoints = (): readonly [Point, Point, Point] => {
-	const outer = outerTrianglePoints();
-	const centroid: Point = [
-		(outer[0][0] + outer[1][0] + outer[2][0]) / 3,
-		(outer[0][1] + outer[1][1] + outer[2][1]) / 3,
+	const halfWidth = equilateralHalfWidth(
+		ACT_RANK_GEOMETRY.innerBaseY - ACT_RANK_GEOMETRY.innerApexY,
+	);
+	return [
+		[ACT_RANK_GEOMETRY.centerX, ACT_RANK_GEOMETRY.innerApexY],
+		[ACT_RANK_GEOMETRY.centerX - halfWidth, ACT_RANK_GEOMETRY.innerBaseY],
+		[ACT_RANK_GEOMETRY.centerX + halfWidth, ACT_RANK_GEOMETRY.innerBaseY],
 	];
-	const inset = ([x, y]: Point): Point => [
-		centroid[0] + (x - centroid[0]) * ACT_RANK_GEOMETRY.innerScale,
-		centroid[1] + (y - centroid[1]) * ACT_RANK_GEOMETRY.innerScale,
-	];
-	return [inset(outer[0]), inset(outer[1]), inset(outer[2])];
 };
 
 export const actRankCellPoints = (
@@ -119,18 +124,7 @@ export const pointInsideInnerTriangle = (point: Point): boolean => {
 
 const VALID_TIER_MIN = 3;
 const VALID_TIER_MAX = 27;
-const BADGE_TILE_COUNT = 9;
-const BADGE_SLOTS = [
-	[1, 2],
-	[2, 2],
-	[2, 3],
-	[3, 2],
-	[3, 3],
-	[3, 4],
-	[4, 3],
-	[4, 4],
-	[4, 5],
-] as const;
+const BADGE_SLOTS = buildLatticeCells().map(({ row, column }) => [row, column] as const);
 
 export const buildActRankTiles = (winsByTier: Record<string, number>): ActRankTile[] => {
 	const tiers = Object.entries(winsByTier)
@@ -142,7 +136,7 @@ export const buildActRankTiles = (winsByTier: Record<string, number>): ActRankTi
 				: [];
 		})
 		.sort((a, b) => b - a)
-		.slice(0, BADGE_TILE_COUNT);
+		.slice(0, BADGE_SLOTS.length);
 
 	return tiers.map((tier, index) => {
 		const [row, column] = BADGE_SLOTS[index];
