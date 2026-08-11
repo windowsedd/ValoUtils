@@ -5,7 +5,7 @@ import { useLiveGameAssets } from "@/components/live-game/use-live-game-assets";
 import { PageHeader } from "@/components/section-card";
 import type { LiveGameResponse, LivePlayer, RecentStatsEvent, RecentStatsState } from "@/types/live-game";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FaCrosshairs, FaDownload } from "react-icons/fa6";
+import { FaCrosshairs } from "react-icons/fa6";
 import { useTranslation } from "react-i18next";
 
 const POLL_MS = 5000;
@@ -137,17 +137,7 @@ const LiveGame = () => {
 
 	return (
 		<div className="h-full min-h-0 flex flex-col animate-fade-in motion-reduce:animate-none">
-			<PageHeader icon={<FaCrosshairs className="text-[#ff4655] text-lg" />} title={t("liveGame.title")}>
-				<button
-					type="button"
-					onClick={() => window.Main.send("live-game:dump")}
-					className="h-11 w-11 rounded-lg border border-white/10 text-gray-500 hover:text-white hover:bg-white/6 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 grid place-items-center transition-colors"
-					title="Dump raw pregame, coregame, and party data"
-					aria-label="Dump raw live-game data"
-				>
-					<FaDownload />
-				</button>
-			</PageHeader>
+			<PageHeader icon={<FaCrosshairs className="text-[#ff4655] text-lg" />} title={t("liveGame.title")} />
 
 			{loading && !snapshot && <LiveGameStatePanel kind="loading" />}
 			{!loading && loginRequired && <LiveGameStatePanel kind="login" />}
