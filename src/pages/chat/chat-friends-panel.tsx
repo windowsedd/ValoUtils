@@ -1,6 +1,6 @@
 import { FriendIdentity } from "@/components/friends/friend-identity";
 import type { ChatFriend } from "@/types/chat";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { FaComment, FaSignInAlt, FaTimes, FaUserPlus, FaUsers } from "react-icons/fa";
 
 type FriendsPanelLabels = {
@@ -31,6 +31,10 @@ type ChatFriendsPanelProps = {
 	onChat: (friend: ChatFriend) => void;
 	onInvite: (friend: ChatFriend) => void;
 	onJoin: (friend: ChatFriend) => void;
+};
+
+export const focusFriendsDrawer = (drawer: HTMLElement) => {
+	drawer.querySelector<HTMLInputElement>('input[type="search"]')?.focus();
 };
 
 const findFriendElement = (attribute: "friendTrigger" | "friendMenu", puuid: string) => {
@@ -190,6 +194,15 @@ const FriendsPanelContent = ({
 );
 
 export const ChatFriendsPanel = (props: ChatFriendsPanelProps) => {
+	const drawerRef = useRef<HTMLDivElement>(null);
+
+	useEffect(() => {
+		if (!props.drawerOpen) return;
+		requestAnimationFrame(() => {
+			if (drawerRef.current) focusFriendsDrawer(drawerRef.current);
+		});
+	}, [props.drawerOpen]);
+
 	useEffect(() => {
 		if (!props.selectedFriendPuuid) return;
 		const menu = findFriendElement("friendMenu", props.selectedFriendPuuid);
@@ -225,6 +238,7 @@ export const ChatFriendsPanel = (props: ChatFriendsPanelProps) => {
 		<>
 			{props.drawerOpen && (
 				<div
+					ref={drawerRef}
 					data-friends-drawer="true"
 					className="fixed inset-0 z-50 flex justify-end bg-black/70 xl:hidden"
 					onKeyDownCapture={handleEscape}

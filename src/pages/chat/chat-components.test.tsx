@@ -5,7 +5,7 @@ import { ChatChannelRail } from "./chat-channel-rail";
 import { ChatChannelContext } from "./chat-channel-context";
 import { ChatComposer, shouldRestoreComposerFocus } from "./chat-composer";
 import { ChatConversationList } from "./chat-conversation-list";
-import { ChatFriendsPanel } from "./chat-friends-panel";
+import { ChatFriendsPanel, focusFriendsDrawer } from "./chat-friends-panel";
 import { ChatThread } from "./chat-thread";
 
 const channelLabels = {
@@ -201,5 +201,10 @@ describe("Chat components", () => {
 		expect(markup).toContain('data-friends-drawer="true"');
 		expect(markup).toContain('role="dialog"');
 		expect(markup).toContain('aria-modal="true"');
+		let focused = false;
+		focusFriendsDrawer({
+			querySelector: () => ({ focus: () => (focused = true) }),
+		} as unknown as HTMLElement);
+		expect(focused).toBe(true);
 	});
 });

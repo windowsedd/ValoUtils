@@ -51,24 +51,28 @@ describe("chat controller state", () => {
 		const sending = {
 			...initialChatControllerState,
 			selectedCid: "room",
-			draft: "keep me",
+			draftByCid: { room: "keep me" },
 			pendingSendId: "send-1",
+			pendingSendCid: "room",
+			pendingSendBody: "keep me",
 		};
 		const result = chatControllerReducer(sending, {
 			type: "sendFailed",
 			requestId: "send-1",
 			error: "offline",
 		});
-		expect(result.draft).toBe("keep me");
+		expect(result.draftByCid.room).toBe("keep me");
 		expect(result.pendingSendId).toBeNull();
-		expect(result.sendError).toBe("offline");
+		expect(result.sendErrorByCid.room).toBe("offline");
 	});
 
 	test("clears draft only for the matching successful send", () => {
 		const sending = {
 			...initialChatControllerState,
-			draft: "sent",
+			draftByCid: { room: "sent" },
 			pendingSendId: "send-2",
+			pendingSendCid: "room",
+			pendingSendBody: "sent",
 		};
 		const ignored = chatControllerReducer(sending, {
 			type: "sendSucceeded",
@@ -81,7 +85,7 @@ describe("chat controller state", () => {
 			sentAt: "3000",
 		});
 		expect(ignored).toBe(sending);
-		expect(completed.draft).toBe("");
+		expect(completed.draftByCid.room).toBeUndefined();
 		expect(completed.pendingSendId).toBeNull();
 	});
 
@@ -128,6 +132,71 @@ describe("chat controller state", () => {
 		expect(reconciled.historyByCid["friend-cid"]?.map((item) => item.id)).toEqual([
 			"riot-message",
 		]);
+	});
+
+	test("keeps a new optimistic duplicate until history contains a nearby timestamp", () => {
+		const sending = chatControllerReducer(initialChatControllerState, {
+			type: "sendStarted",
+			requestId: "send-repeat",
+			cid: "friend-cid",
+			body: "same text",
+		});
+		const optimistic = chatControllerReducer(sending, {
+			type: "sendSucceeded",
+			requestId: "send-repeat",
+			sentAt: "100000",
+		});
+		const loading = chatControllerReducer(optimistic, {
+			type: "historyStarted",
+			cid: "friend-cid",
+			requestId: "history-repeat",
+		});
+		const history = chatControllerReducer(loading, {
+			type: "historySucceeded",
+			cid: "friend-cid",
+			requestId: "history-repeat",
+			messages: [
+				message({
+					id: "old-same-text",
+					conversationId: "friend-cid",
+					body: "same text",
+					isSelf: true,
+					timestamp: "1000",
+				}),
+			],
+		});
+		expect(history.historyByCid["friend-cid"]?.map((item) => item.id)).toEqual([
+			"old-same-text",
+			"optimistic:send-repeat",
+		]);
+	});
+
+	test("keeps drafts and send errors scoped to their originating cid", () => {
+		const drafted = chatControllerReducer(initialChatControllerState, {
+			type: "setDraft",
+			cid: "friend-cid",
+			draft: "private text",
+		});
+		const sending = chatControllerReducer(drafted, {
+			type: "sendStarted",
+			requestId: "send-private",
+			cid: "friend-cid",
+			body: "private text",
+		});
+		const switched = chatControllerReducer(sending, {
+			type: "selectChannel",
+			channel: "party",
+			cid: "party@ares-parties.ap",
+		});
+		const failed = chatControllerReducer(switched, {
+			type: "sendFailed",
+			requestId: "send-private",
+			error: "offline",
+		});
+		expect(failed.draftByCid["friend-cid"]).toBe("private text");
+		expect(failed.draftByCid["party@ares-parties.ap"]).toBeUndefined();
+		expect(failed.sendErrorByCid["friend-cid"]).toBe("offline");
+		expect(failed.sendErrorByCid["party@ares-parties.ap"]).toBeUndefined();
 	});
 
 	test("classifies an optimistic send from its cid after the user switches channels", () => {

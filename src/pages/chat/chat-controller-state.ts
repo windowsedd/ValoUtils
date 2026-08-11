@@ -7,11 +7,11 @@ export type ChatControllerState = {
 	historyByCid: Record<string, ChatMessage[]>;
 	historyLoadingByCid: Record<string, string | undefined>;
 	historyErrorByCid: Record<string, string | undefined>;
-	draft: string;
+	draftByCid: Record<string, string | undefined>;
 	pendingSendId: string | null;
 	pendingSendCid: string | null;
 	pendingSendBody: string | null;
-	sendError: string | null;
+	sendErrorByCid: Record<string, string | undefined>;
 };
 
 export const initialChatControllerState: ChatControllerState = {
@@ -20,11 +20,11 @@ export const initialChatControllerState: ChatControllerState = {
 	historyByCid: {},
 	historyLoadingByCid: {},
 	historyErrorByCid: {},
-	draft: "",
+	draftByCid: {},
 	pendingSendId: null,
 	pendingSendCid: null,
 	pendingSendBody: null,
-	sendError: null,
+	sendErrorByCid: {},
 };
 
 export type ChatControllerAction =
@@ -38,7 +38,7 @@ export type ChatControllerAction =
 			messages: ChatMessage[];
 	  }
 	| { type: "historyFailed"; cid: string; requestId: string; error: string }
-	| { type: "setDraft"; draft: string }
+	| { type: "setDraft"; cid: string; draft: string }
 	| { type: "sendStarted"; requestId: string; cid: string; body: string }
 	| { type: "sendSucceeded"; requestId: string; sentAt: string }
 	| { type: "sendFailed"; requestId: string; error: string }
@@ -55,12 +55,27 @@ const reconcileOptimisticMessages = (
 	existing: ChatMessage[],
 	incoming: ChatMessage[],
 ) => {
-	const selfBodies = incoming.filter((message) => message.isSelf).map((message) => message.body);
+	const selfMessages = incoming.filter((message) => message.isSelf);
+	const timestamp = (message: ChatMessage) => {
+		const numeric = Number(message.timestamp);
+		if (Number.isFinite(numeric)) return numeric;
+		const parsed = message.timestamp ? Date.parse(message.timestamp) : 0;
+		return Number.isNaN(parsed) ? 0 : parsed;
+	};
 	return existing.filter((message) => {
 		if (message._raw?.optimistic !== true) return true;
-		const match = selfBodies.indexOf(message.body);
+		const optimisticTime = timestamp(message);
+		const match = selfMessages.findIndex((candidate) => {
+			const candidateTime = timestamp(candidate);
+			return (
+				candidate.body === message.body &&
+				optimisticTime > 0 &&
+				candidateTime > 0 &&
+				Math.abs(candidateTime - optimisticTime) <= 30_000
+			);
+		});
 		if (match < 0) return true;
-		selfBodies.splice(match, 1);
+		selfMessages.splice(match, 1);
 		return false;
 	});
 };
@@ -75,10 +90,9 @@ export const chatControllerReducer = (
 				...state,
 				selectedChannel: action.channel,
 				selectedCid: action.cid,
-				sendError: null,
 			};
 		case "selectConversation":
-			return { ...state, selectedChannel: "friends", selectedCid: action.cid, sendError: null };
+			return { ...state, selectedChannel: "friends", selectedCid: action.cid };
 		case "historyStarted":
 			return {
 				...state,
@@ -116,7 +130,10 @@ export const chatControllerReducer = (
 				},
 			};
 		case "setDraft":
-			return { ...state, draft: action.draft };
+			return {
+				...state,
+				draftByCid: { ...state.draftByCid, [action.cid]: action.draft },
+			};
 		case "sendStarted":
 			if (state.pendingSendId) return state;
 			return {
@@ -124,18 +141,16 @@ export const chatControllerReducer = (
 				pendingSendId: action.requestId,
 				pendingSendCid: action.cid,
 				pendingSendBody: action.body,
-				sendError: null,
+				sendErrorByCid: withoutKey(state.sendErrorByCid, action.cid),
 			};
 		case "sendSucceeded":
 			if (state.pendingSendId !== action.requestId) return state;
 			if (!state.pendingSendCid || !state.pendingSendBody) {
 				return {
 					...state,
-					draft: "",
 					pendingSendId: null,
 					pendingSendCid: null,
 					pendingSendBody: null,
-					sendError: null,
 				};
 			}
 			const pendingChannel = channelForCid(state.pendingSendCid);
@@ -166,20 +181,30 @@ export const chatControllerReducer = (
 						],
 					),
 				},
-				draft: "",
+				draftByCid: withoutKey(state.draftByCid, state.pendingSendCid),
 				pendingSendId: null,
 				pendingSendCid: null,
 				pendingSendBody: null,
-				sendError: null,
+				sendErrorByCid: withoutKey(state.sendErrorByCid, state.pendingSendCid),
 			};
 		case "sendFailed":
 			if (state.pendingSendId !== action.requestId) return state;
+			if (!state.pendingSendCid) {
+				return {
+					...state,
+					pendingSendId: null,
+					pendingSendBody: null,
+				};
+			}
 			return {
 				...state,
+				sendErrorByCid: {
+					...state.sendErrorByCid,
+					[state.pendingSendCid]: action.error,
+				},
 				pendingSendId: null,
 				pendingSendCid: null,
 				pendingSendBody: null,
-				sendError: action.error,
 			};
 		case "summaryMessages": {
 			const grouped = new Map<string, ChatMessage[]>();

@@ -256,19 +256,22 @@ export const useChatController = () => {
 		if (state.selectedCid) requestHistory(state.selectedCid);
 	}, [requestHistory, state.selectedCid]);
 
-	const setDraft = useCallback((draft: string) => {
-		dispatch({ type: "setDraft", draft });
-	}, []);
+	const setDraft = useCallback(
+		(draft: string) => {
+			if (state.selectedCid) dispatch({ type: "setDraft", cid: state.selectedCid, draft });
+		},
+		[state.selectedCid],
+	);
 
 	const sendMessage = useCallback(() => {
 		if (state.pendingSendId) return;
-		const text = state.draft.trim();
 		const selectedCid = state.selectedCid;
+		const text = selectedCid ? (state.draftByCid[selectedCid] ?? "").trim() : "";
 		if (!text || !selectedCid) return;
 		const requestId = nextRequestId("send");
 		dispatch({ type: "sendStarted", requestId, cid: selectedCid, body: text });
 		window.Main.send("chat:send", requestId, selectedCid, text);
-	}, [state.draft, state.pendingSendId, state.selectedCid]);
+	}, [state.draftByCid, state.pendingSendId, state.selectedCid]);
 
 	const translateMessage = useCallback(
 		(message: ChatMessage) => {
@@ -346,6 +349,8 @@ export const useChatController = () => {
 	const selectedCid = state.selectedCid;
 	const historyLoading = selectedCid ? Boolean(state.historyLoadingByCid[selectedCid]) : false;
 	const historyError = selectedCid ? (state.historyErrorByCid[selectedCid] ?? null) : null;
+	const draft = selectedCid ? (state.draftByCid[selectedCid] ?? "") : "";
+	const sendError = selectedCid ? (state.sendErrorByCid[selectedCid] ?? null) : null;
 
 	return {
 		summary,
@@ -365,10 +370,10 @@ export const useChatController = () => {
 		visibleMessages,
 		historyLoading,
 		historyError,
-		draft: state.draft,
+		draft,
 		setDraft,
 		sending: Boolean(state.pendingSendId),
-		sendError: state.sendError,
+		sendError,
 		translatedByMessageId,
 		translationErrorByMessageId,
 		translatingMessageId,

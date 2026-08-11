@@ -274,7 +274,7 @@ fn merge_normalized_conversations(groups: impl IntoIterator<Item = Vec<Value>>) 
     result
 }
 
-fn room_conversation(cid: &str, channel: &str, title: &str) -> Option<Value> {
+fn room_conversation(cid: &str, channel: &str) -> Option<Value> {
     if cid.is_empty() {
         return None;
     }
@@ -282,7 +282,7 @@ fn room_conversation(cid: &str, channel: &str, title: &str) -> Option<Value> {
         "cid": cid,
         "channel": channel,
         "type": "groupchat",
-        "title": title,
+        "title": "",
         "participantPuuid": "",
         "unreadCount": 0,
         "messageHistory": Value::Null,
@@ -297,9 +297,9 @@ fn merge_room_conversations(
     all_cid: &str,
 ) -> Vec<Value> {
     let rooms = [
-        room_conversation(party_cid, "party", "Party"),
-        room_conversation(team_cid, "team", "Team"),
-        room_conversation(all_cid, "all", "All"),
+        room_conversation(party_cid, "party"),
+        room_conversation(team_cid, "team"),
+        room_conversation(all_cid, "all"),
     ]
     .into_iter()
     .flatten()
@@ -520,9 +520,11 @@ fn split_match_rooms(ids: &HashSet<String>) -> (String, String, String) {
         .iter()
         .find(|r| {
             let lower = r.to_lowercase();
-            lower.contains("-blue@ares-coregame") || lower.contains("-red@ares-coregame")
+            lower.contains("-blue@ares-coregame")
+                || lower.contains("-red@ares-coregame")
+                || lower.contains("-blue@ares-pregame")
+                || lower.contains("-red@ares-pregame")
         })
-        .or_else(|| rooms.iter().find(|r| Some(*r) != all.as_ref()))
         .cloned();
     let team_s = team.cloned().unwrap_or_default();
     let all_s = all.cloned().unwrap_or_default();
@@ -1290,6 +1292,10 @@ mod tests {
         assert_eq!(channel_for_cid("game-red@ares-pregame.ap"), "team");
         assert_eq!(channel_for_cid("game-all@ares-coregame.ap"), "all");
         assert_eq!(channel_for_cid("friend-cid"), "friends");
+        let unknown = HashSet::from(["unknown@ares-coregame.ap".to_string()]);
+        let (_, team, all) = split_match_rooms(&unknown);
+        assert!(team.is_empty());
+        assert!(all.is_empty());
     }
 
     #[test]
@@ -1355,6 +1361,7 @@ mod tests {
         assert!(result.iter().any(|item| item["channel"] == "party"));
         assert!(result.iter().any(|item| item["channel"] == "team"));
         assert!(result.iter().any(|item| item["channel"] == "all"));
+        assert!(result.iter().all(|item| item["title"] == ""));
     }
 
     #[test]
