@@ -312,6 +312,10 @@ export const useChatController = () => {
 		() => filterFriendConversations(conversations, summary.friends, conversationSearch),
 		[conversationSearch, conversations, summary.friends],
 	);
+	const selectedFriendConversation = useMemo(
+		() => conversations.find((item) => item.cid === state.selectedCid) ?? null,
+		[conversations, state.selectedCid],
+	);
 	const friends = useMemo(
 		() => filterChatFriends(summary.friends, friendSearch),
 		[friendSearch, summary.friends],
@@ -362,6 +366,7 @@ export const useChatController = () => {
 		selectedConversation,
 		availableChannels,
 		conversations: filteredConversations,
+		selectedFriendConversation,
 		conversationSearch,
 		setConversationSearch,
 		friends,

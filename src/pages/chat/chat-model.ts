@@ -9,9 +9,29 @@ export type FriendConversation = {
 	cid: string;
 	title: string;
 	participantPuuid: string;
+	statusKey: FriendGameStatus;
 	unreadCount: number;
 	latestTime: number;
 	messages: ChatMessage[];
+};
+
+export type FriendGameStatus =
+	| "offline"
+	| "inMatch"
+	| "agentSelect"
+	| "inLobby"
+	| "away"
+	| "online";
+
+export const resolveFriendGameStatus = (
+	friend: ChatFriend | undefined,
+): FriendGameStatus => {
+	if (!friend?.isOnline) return "offline";
+	if (friend.sessionLoopState === "INGAME") return "inMatch";
+	if (friend.sessionLoopState === "PREGAME") return "agentSelect";
+	if (friend.sessionLoopState === "MENUS") return "inLobby";
+	if (friend.status.toLocaleLowerCase() === "away") return "away";
+	return "online";
 };
 
 type ScrollMetrics = {
@@ -72,6 +92,7 @@ export const buildFriendConversations = (
 				title:
 					conversation?.title || friend?.displayName || other?.senderName || other?.sender || cid,
 				participantPuuid: conversation?.participantPuuid || "",
+				statusKey: resolveFriendGameStatus(friend),
 				unreadCount: conversation?.unreadCount ?? 0,
 				latestTime: Math.max(0, ...ordered.map(messageTime)),
 				messages: ordered,

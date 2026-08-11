@@ -8,6 +8,7 @@ import {
 	filterFriendConversations,
 	findFriendConversationCid,
 	mergeChatMessages,
+	resolveFriendGameStatus,
 	shouldStickToBottom,
 	shouldResetThreadPosition,
 } from "./chat-model";
@@ -119,6 +120,42 @@ describe("chat model", () => {
 			[friend],
 		);
 		expect(conversations[0]?.title).toBe("ALEKSANDAR#4830");
+	});
+
+	test("resolves localized friend game status keys in priority order", () => {
+		expect(resolveFriendGameStatus({ ...friend, isOnline: false })).toBe("offline");
+		expect(
+			resolveFriendGameStatus({ ...friend, sessionLoopState: "INGAME", status: "away" }),
+		).toBe("inMatch");
+		expect(
+			resolveFriendGameStatus({ ...friend, sessionLoopState: "PREGAME", status: "away" }),
+		).toBe("agentSelect");
+		expect(
+			resolveFriendGameStatus({ ...friend, sessionLoopState: "MENUS", status: "away" }),
+		).toBe("inLobby");
+		expect(resolveFriendGameStatus({ ...friend, status: "away" })).toBe("away");
+		expect(resolveFriendGameStatus({ ...friend, status: "chat" })).toBe("online");
+	});
+
+	test("attaches the matched friend's status to a direct conversation", () => {
+		const result = buildFriendConversations(
+			[],
+			[
+				{
+					cid: "friend-puuid@jp1.pvp.net",
+					channel: "friends",
+					type: "chat",
+					title: "",
+					participantPuuid: "friend-puuid",
+					unreadCount: 0,
+					messageHistory: true,
+					muted: false,
+				},
+			],
+			[{ ...friend, sessionLoopState: "INGAME" }],
+		);
+
+		expect(result[0]?.statusKey).toBe("inMatch");
 	});
 
 	test("searches friends by Riot ID and note", () => {
