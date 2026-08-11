@@ -97,6 +97,29 @@ describe("act rank badge", () => {
 		expect(shared).toHaveLength(2);
 	});
 
+	test("maps every competitive tier band to its Valorant palette", () => {
+		const actRankPalette = (
+			actRankGeometry as typeof actRankGeometry & {
+				actRankPalette?: (tier: number) => { name: string };
+			}
+		).actRankPalette;
+		expect(actRankPalette).toBeDefined();
+		if (!actRankPalette) return;
+		expect([3, 6, 9, 12, 15, 18, 21, 24, 27].map((tier) => actRankPalette(tier).name)).toEqual([
+			"iron",
+			"bronze",
+			"silver",
+			"gold",
+			"platinum",
+			"diamond",
+			"ascendant",
+			"immortal",
+			"radiant",
+		]);
+		expect(actRankPalette(20).name).toBe("diamond");
+		expect(actRankPalette(26).name).toBe("immortal");
+	});
+
 	test("selects borders at Riot win thresholds", () => {
 		expect([0, 8, 9, 24, 25, 49, 50, 74, 75, 99, 100].map(borderIndexForWins)).toEqual([
 			0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5,

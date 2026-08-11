@@ -9,6 +9,40 @@ export type ActRankTile = {
 
 export type Point = readonly [number, number];
 
+export type ActRankPalette = {
+	name:
+		| "iron"
+		| "bronze"
+		| "silver"
+		| "gold"
+		| "platinum"
+		| "diamond"
+		| "ascendant"
+		| "immortal"
+		| "radiant";
+	dark: string;
+	base: string;
+	light: string;
+	edge: string;
+};
+
+const ACT_RANK_PALETTES: readonly ActRankPalette[] = [
+	{ name: "iron", dark: "#454a50", base: "#707881", light: "#aeb5bb", edge: "#c8cdd1" },
+	{ name: "bronze", dark: "#70452f", base: "#a86d48", light: "#d79a69", edge: "#edb889" },
+	{ name: "silver", dark: "#66737e", base: "#9caab5", light: "#d9e1e6", edge: "#eef4f7" },
+	{ name: "gold", dark: "#9b681b", base: "#d6a12c", light: "#ffe17a", edge: "#fff0a4" },
+	{ name: "platinum", dark: "#167d83", base: "#27b4b6", light: "#80f0e5", edge: "#adfff4" },
+	{ name: "diamond", dark: "#6233a5", base: "#905ce0", light: "#cfadff", edge: "#eadcff" },
+	{ name: "ascendant", dark: "#176c50", base: "#27aa75", light: "#75e5ab", edge: "#a7f7cb" },
+	{ name: "immortal", dark: "#9d3152", base: "#dc5579", light: "#ff9ab2", edge: "#ffc1cf" },
+	{ name: "radiant", dark: "#8d6b28", base: "#d3ad55", light: "#fff0a7", edge: "#fff8cf" },
+];
+
+export const actRankPalette = (tier: number): ActRankPalette => {
+	const paletteIndex = Math.min(8, Math.max(0, Math.floor((tier - 3) / 3)));
+	return ACT_RANK_PALETTES[paletteIndex];
+};
+
 export const ACT_RANK_GEOMETRY = {
 	width: 300,
 	height: 360,
