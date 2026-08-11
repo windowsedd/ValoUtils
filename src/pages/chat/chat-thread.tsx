@@ -1,4 +1,4 @@
-import type { ChatChannel, ChatMessage } from "@/types/chat";
+import type { ChatMessage } from "@/types/chat";
 import { useEffect, useRef } from "react";
 import { FaBug, FaLanguage, FaRotate, FaUserGroup } from "react-icons/fa6";
 import {
@@ -28,8 +28,8 @@ const formatTime = (value: string | null) => {
 
 export const ChatThread = ({
 	title,
+	subtitle,
 	conversationId,
-	channel,
 	messages,
 	historyLoading,
 	historyError,
@@ -43,8 +43,8 @@ export const ChatThread = ({
 	onOpenFriends,
 }: {
 	title: string;
+	subtitle: string;
 	conversationId: string | null;
-	channel: ChatChannel;
 	messages: ChatMessage[];
 	historyLoading: boolean;
 	historyError: string | null;
@@ -82,7 +82,7 @@ export const ChatThread = ({
 			<div className="min-w-0 flex-1">
 				<h1 className="truncate text-sm font-semibold text-white">{title}</h1>
 				<p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-cyan-400/70">
-					{channel}
+					{subtitle}
 				</p>
 			</div>
 			<button

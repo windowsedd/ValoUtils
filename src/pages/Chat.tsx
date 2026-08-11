@@ -4,7 +4,10 @@ import { useTranslation } from "react-i18next";
 import { ChatChannelRail } from "./chat/chat-channel-rail";
 import { ChatChannelContext } from "./chat/chat-channel-context";
 import { ChatComposer } from "./chat/chat-composer";
-import { ChatConversationList } from "./chat/chat-conversation-list";
+import {
+	ChatConversationList,
+	type FriendStatusLabels,
+} from "./chat/chat-conversation-list";
 import { ChatFriendsPanel } from "./chat/chat-friends-panel";
 import { ChatThread } from "./chat/chat-thread";
 import { useChatController } from "./chat/use-chat-controller";
@@ -22,10 +25,21 @@ const Chat = () => {
 		team: t("chat.matchTeam"),
 		all: t("chat.matchAll"),
 	};
+	const friendStatusLabels: FriendStatusLabels = {
+		offline: t("friends.offline"),
+		inMatch: t("friends.inMatch"),
+		agentSelect: t("friends.agentSelect"),
+		inLobby: t("friends.inLobby"),
+		away: t("friends.away"),
+		online: t("friends.online"),
+	};
 	const selectedConversationTitle =
-		controller.selectedConversation?.title ||
-		controller.conversations.find((item) => item.cid === controller.selectedCid)?.title;
+		controller.selectedFriendConversation?.title || controller.selectedConversation?.title;
 	const threadTitle = selectedConversationTitle || channelLabels[controller.selectedChannel];
+	const threadSubtitle =
+		controller.selectedChannel === "friends" && controller.selectedFriendConversation
+			? friendStatusLabels[controller.selectedFriendConversation.statusKey]
+			: channelLabels[controller.selectedChannel];
 	const emptyLabel =
 		controller.selectedChannel === "friends"
 			? t("chat.emptyFriends")
@@ -76,6 +90,7 @@ const Chat = () => {
 				<ChatConversationList
 					conversations={controller.conversations}
 					selectedCid={controller.selectedCid}
+					statusLabels={friendStatusLabels}
 					search={controller.conversationSearch}
 					searchLabel={t("chat.searchConversations")}
 					emptyLabel={t("chat.noConversations")}
@@ -123,7 +138,7 @@ const Chat = () => {
 						<ChatThread
 							conversationId={controller.selectedCid}
 							title={threadTitle}
-							channel={controller.selectedChannel}
+							subtitle={threadSubtitle}
 							messages={controller.visibleMessages}
 							historyLoading={controller.historyLoading}
 							historyError={controller.historyError}

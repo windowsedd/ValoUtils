@@ -1,5 +1,7 @@
-import type { FriendConversation } from "./chat-model";
+import type { FriendConversation, FriendGameStatus } from "./chat-model";
 import { FaMagnifyingGlass } from "react-icons/fa6";
+
+export type FriendStatusLabels = Record<FriendGameStatus, string>;
 
 const formatTime = (timestamp: number) => {
 	if (!timestamp) return "";
@@ -11,6 +13,7 @@ const formatTime = (timestamp: number) => {
 export const ChatConversationList = ({
 	conversations,
 	selectedCid,
+	statusLabels,
 	search,
 	searchLabel,
 	emptyLabel,
@@ -19,6 +22,7 @@ export const ChatConversationList = ({
 }: {
 	conversations: FriendConversation[];
 	selectedCid: string | null;
+	statusLabels: FriendStatusLabels;
 	search: string;
 	searchLabel: string;
 	emptyLabel: string;
@@ -44,7 +48,6 @@ export const ChatConversationList = ({
 				<p className="px-3 py-8 text-center text-xs text-gray-600">{emptyLabel}</p>
 			) : (
 				conversations.map((conversation) => {
-					const latest = conversation.messages[conversation.messages.length - 1];
 					const selected = selectedCid === conversation.cid;
 					return (
 						<button
@@ -70,7 +73,7 @@ export const ChatConversationList = ({
 								</span>
 								<span className="mt-1 flex items-center gap-2">
 									<span className="min-w-0 flex-1 truncate text-xs text-gray-500">
-										{latest?.body ?? ""}
+										{statusLabels[conversation.statusKey]}
 									</span>
 									{conversation.unreadCount > 0 && (
 										<span

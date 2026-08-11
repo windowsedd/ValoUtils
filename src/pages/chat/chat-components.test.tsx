@@ -15,6 +15,15 @@ const channelLabels = {
 	all: "All",
 };
 
+const statusLabels = {
+	offline: "Offline",
+	inMatch: "In Match",
+	agentSelect: "Agent Select",
+	inLobby: "In Lobby",
+	away: "Away",
+	online: "Online",
+};
+
 const threadLabels = {
 	openFriends: "Open friends",
 	historyLoading: "Loading history",
@@ -81,12 +90,14 @@ describe("Chat components", () => {
 						cid: "friend-cid",
 						title: "ALEKSANDAR#4830",
 						participantPuuid: "friend",
+						statusKey: "inMatch",
 						unreadCount: 2,
 						latestTime: 2000,
 						messages: [message("m-1", "hello", "2000")],
 					},
 				]}
 				selectedCid="friend-cid"
+				statusLabels={statusLabels}
 				search=""
 				searchLabel="Search conversations"
 				emptyLabel="No conversations"
@@ -95,7 +106,8 @@ describe("Chat components", () => {
 			/>,
 		);
 		expect(markup).toContain("ALEKSANDAR#4830");
-		expect(markup).toContain("hello");
+		expect(markup).toContain("In Match");
+		expect(markup).not.toContain("hello");
 		expect(markup).toContain('data-unread-count="2"');
 		expect(markup).toContain('aria-current="true"');
 	});
@@ -105,7 +117,7 @@ describe("Chat components", () => {
 			<ChatThread
 				conversationId="party-cid"
 				title="Party"
-				channel="party"
+				subtitle="In Match"
 				messages={[message("old", "first", "1000"), message("new", "second", "2000")]}
 				historyLoading={false}
 				historyError={null}
@@ -120,6 +132,7 @@ describe("Chat components", () => {
 			/>,
 		);
 		expect(markup.indexOf("first")).toBeLessThan(markup.indexOf("second"));
+		expect(markup).toContain("In Match");
 		expect(markup).toContain('role="log"');
 		expect(markup).toContain("<details");
 		expect(markup).not.toContain("<details open");
