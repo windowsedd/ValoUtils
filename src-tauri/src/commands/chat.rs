@@ -103,6 +103,150 @@ fn normalize_conversation_map(payload: &Value) -> HashMap<String, String> {
     map
 }
 
+fn channel_for_cid(cid: &str) -> &'static str {
+    let value = cid.to_lowercase();
+    if value.contains("@ares-parties.") {
+        "party"
+    } else if value.contains("-blue@ares-coregame.")
+        || value.contains("-red@ares-coregame.")
+        || value.contains("-blue@ares-pregame.")
+        || value.contains("-red@ares-pregame.")
+    {
+        "team"
+    } else if value.contains("-all@ares-coregame.") {
+        "all"
+    } else {
+        "friends"
+    }
+}
+
+fn normalize_conversations(payload: &Value) -> Vec<Value> {
+    conversations_array(payload)
+        .into_iter()
+        .filter_map(|item| {
+            let cid = pick_string(
+                [
+                    item.get("cid"),
+                    item.get("id"),
+                    item.get("conversationId"),
+                    item.get("ConversationID"),
+                ]
+                .map(|value| value.and_then(|value| value.as_str())),
+            );
+            if cid.is_empty() {
+                return None;
+            }
+            let channel = channel_for_cid(&cid);
+            let default_type = if channel == "friends" {
+                "chat"
+            } else {
+                "groupchat"
+            };
+            let conversation_type = pick_string(
+                [item.get("type"), item.get("Type")]
+                    .map(|value| value.and_then(|value| value.as_str())),
+            );
+            let title = pick_string(
+                [
+                    item.get("name"),
+                    item.get("Name"),
+                    item.get("game_name"),
+                    item.get("displayName"),
+                ]
+                .map(|value| value.and_then(|value| value.as_str())),
+            );
+            let unread_count = item
+                .get("unread_count")
+                .or_else(|| item.get("unreadCount"))
+                .and_then(|value| value.as_u64())
+                .unwrap_or(0);
+            let message_history = item
+                .get("message_history")
+                .or_else(|| item.get("messageHistory"))
+                .cloned()
+                .unwrap_or(Value::Null);
+            let muted = item
+                .get("muted")
+                .and_then(|value| value.as_bool())
+                .unwrap_or(false);
+
+            Some(json!({
+                "cid": cid,
+                "channel": channel,
+                "type": if conversation_type.is_empty() { default_type } else { &conversation_type },
+                "title": title,
+                "participantPuuid": if channel == "friends" { id_root(&cid) } else { String::new() },
+                "unreadCount": unread_count,
+                "messageHistory": message_history,
+                "muted": muted,
+            }))
+        })
+        .collect()
+}
+
+fn merge_normalized_conversations(groups: impl IntoIterator<Item = Vec<Value>>) -> Vec<Value> {
+    let mut by_cid = HashMap::<String, Value>::new();
+    for conversation in groups.into_iter().flatten() {
+        let cid = conversation
+            .get("cid")
+            .and_then(|value| value.as_str())
+            .unwrap_or_default()
+            .to_string();
+        if cid.is_empty() {
+            continue;
+        }
+        match by_cid.get_mut(&cid) {
+            Some(existing) => {
+                let Some(existing_object) = existing.as_object_mut() else {
+                    continue;
+                };
+                let Some(incoming_object) = conversation.as_object() else {
+                    continue;
+                };
+                for (key, value) in incoming_object {
+                    let should_replace = match existing_object.get(key) {
+                        None | Some(Value::Null) => true,
+                        Some(Value::String(current)) => {
+                            current.is_empty() && !value.as_str().unwrap_or_default().is_empty()
+                        }
+                        Some(Value::Number(current)) => {
+                            current.as_u64().unwrap_or(0) == 0 && value.as_u64().unwrap_or(0) > 0
+                        }
+                        _ => false,
+                    };
+                    if should_replace {
+                        existing_object.insert(key.clone(), value.clone());
+                    }
+                }
+            }
+            None => {
+                by_cid.insert(cid, conversation);
+            }
+        }
+    }
+    let mut result: Vec<Value> = by_cid.into_values().collect();
+    result.sort_by(|a, b| {
+        a.get("cid")
+            .and_then(|value| value.as_str())
+            .unwrap_or_default()
+            .cmp(
+                b.get("cid")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or_default(),
+            )
+    });
+    result
+}
+
+fn history_error(request_id: &str, cid: &str, code: &str, error: &str) -> Value {
+    let code = if code.is_empty() {
+        Value::Null
+    } else {
+        json!(code)
+    };
+    json!({ "success": false, "requestId": request_id, "cid": cid, "code": code, "error": error })
+}
+
 fn decode_presence_private(value: &str) -> Value {
     base64::engine::general_purpose::STANDARD
         .decode(value)
@@ -183,6 +327,10 @@ fn normalize_friends(friends_payload: &[Value], presences_payload: &[Value]) -> 
                         .chain([Some(puuid.as_str())]),
                 )
             };
+            let note = pick_string(
+                [friend.get("note"), friend.get("Note")]
+                    .map(|value| value.and_then(|value| value.as_str())),
+            );
             let status = pick_string(
                 [
                     presence.get("status"),
@@ -229,6 +377,7 @@ fn normalize_friends(friends_payload: &[Value], presences_payload: &[Value]) -> 
                 "gameName": game_name,
                 "tagLine": tag_line,
                 "displayName": display_name,
+                "note": note,
                 "status": status_final,
                 "statusMessage": status_message,
                 "product": product,
@@ -263,6 +412,7 @@ struct RoomScopes {
     party: HashSet<String>,
     matches: HashSet<String>,
     rooms: Map<String, Value>,
+    conversations: Vec<Value>,
 }
 
 fn split_match_rooms(ids: &HashSet<String>) -> (String, String, String) {
@@ -349,6 +499,16 @@ async fn get_chat_room_scopes(
     let party_payload = riot_client::get_party_chat_info(riot).await.ok();
     let pregame_payload = riot_client::get_pre_game_chat_info(riot).await.ok();
     let current_game_payload = riot_client::get_current_game_chat_info(riot).await.ok();
+    let conversations = merge_normalized_conversations(
+        [
+            party_payload.as_ref(),
+            pregame_payload.as_ref(),
+            current_game_payload.as_ref(),
+        ]
+        .into_iter()
+        .flatten()
+        .map(normalize_conversations),
+    );
 
     let pregame = pregame_payload
         .as_ref()
@@ -394,6 +554,7 @@ async fn get_chat_room_scopes(
         party,
         matches,
         rooms,
+        conversations,
     }
 }
 
@@ -649,9 +810,7 @@ fn unique_messages(messages: Vec<Value>) -> Vec<Value> {
 }
 
 #[tauri::command]
-pub async fn chat_get(
-    riot: State<'_, RiotState>,
-) -> Result<String, ()> {
+pub async fn chat_get(riot: State<'_, RiotState>) -> Result<String, ()> {
     let result: Result<Value, String> = async {
         let base_payload = riot_client::get_chat_messages(&riot, None).await?;
         let conversations_payload = riot_client::get_chat_conversations(&riot).await.ok();
@@ -666,6 +825,13 @@ pub async fn chat_get(
             .unwrap_or_default();
         let friends = normalize_friends(&friends_payload, &presences_payload);
         let mut scopes = get_chat_room_scopes(&riot, conversations_payload.as_ref()).await;
+        let conversation_metadata = merge_normalized_conversations([
+            conversations_payload
+                .as_ref()
+                .map(normalize_conversations)
+                .unwrap_or_default(),
+            scopes.conversations.clone(),
+        ]);
         let match_player_ids = get_current_match_player_ids(&riot).await;
         let tokens = crate::riot::client::get_tokens(&riot, false).await.ok();
         let own_puuid = tokens
@@ -822,6 +988,7 @@ pub async fn chat_get(
                 "matchAll": match_all_final,
                 "_partyXmppDebug": party_debug,
             },
+            "conversations": conversation_metadata,
             "friends": friends,
             "fetchedAt": chrono_iso_now(),
         }))
@@ -837,6 +1004,59 @@ pub async fn chat_get(
                 Value::Null
             };
             json!({ "success": false, "code": code, "error": e }).to_string()
+        }
+    })
+}
+
+#[tauri::command]
+pub async fn chat_history(args: Vec<Value>, riot: State<'_, RiotState>) -> Result<String, ()> {
+    let request_id = arg(&args, 0).unwrap_or_default();
+    let cid = arg(&args, 1).unwrap_or_default().trim().to_string();
+    if cid.is_empty() {
+        return Ok(
+            history_error(&request_id, &cid, "unavailable", "No chat room selected.").to_string(),
+        );
+    }
+
+    let result: Result<Value, String> = async {
+        let payload = riot_client::get_chat_messages(&riot, Some(&cid)).await?;
+        let conversations_payload = riot_client::get_chat_conversations(&riot).await.ok();
+        let conversations = conversations_payload
+            .as_ref()
+            .map(normalize_conversation_map)
+            .unwrap_or_default();
+        let scopes = get_chat_room_scopes(&riot, conversations_payload.as_ref()).await;
+        let match_player_ids = get_current_match_player_ids(&riot).await;
+        let tokens = riot_client::get_tokens(&riot, false).await?;
+        let own_puuid = tokens
+            .get("subject")
+            .and_then(|value| value.as_str())
+            .unwrap_or("");
+        let messages = normalize_messages(
+            &payload,
+            &conversations,
+            &scopes,
+            &match_player_ids,
+            own_puuid,
+        );
+        Ok(json!({
+            "success": true,
+            "requestId": request_id,
+            "cid": cid,
+            "messages": unique_messages(messages),
+        }))
+    }
+    .await;
+
+    Ok(match result {
+        Ok(value) => value.to_string(),
+        Err(error) => {
+            let code = if error.contains("lockfile") {
+                "loginRequired"
+            } else {
+                ""
+            };
+            history_error(&request_id, &cid, code, &error).to_string()
         }
     })
 }
@@ -874,10 +1094,7 @@ pub async fn chat_translate(
 }
 
 #[tauri::command]
-pub async fn chat_send(
-    args: Vec<Value>,
-    riot: State<'_, RiotState>,
-) -> Result<String, ()> {
+pub async fn chat_send(args: Vec<Value>, riot: State<'_, RiotState>) -> Result<String, ()> {
     let Some(conversation_id) = arg(&args, 0).filter(|s| !s.trim().is_empty()) else {
         return Ok(json!({ "success": false, "error": "No chat room selected." }).to_string());
     };
@@ -981,4 +1198,41 @@ fn chrono_iso_now() -> String {
         .unwrap_or(0);
     let (y, m, d, h, mi, s) = crate::util_time::civil_from_unix_secs(secs);
     format!("{y:04}-{m:02}-{d:02}T{h:02}:{mi:02}:{s:02}Z")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn classifies_party_team_all_without_substitution() {
+        assert_eq!(channel_for_cid("party@ares-parties.ap"), "party");
+        assert_eq!(channel_for_cid("game-blue@ares-coregame.ap"), "team");
+        assert_eq!(channel_for_cid("game-red@ares-pregame.ap"), "team");
+        assert_eq!(channel_for_cid("game-all@ares-coregame.ap"), "all");
+        assert_eq!(channel_for_cid("friend-cid"), "friends");
+    }
+
+    #[test]
+    fn preserves_history_and_unread_metadata() {
+        let payload = json!({"conversations": [{
+            "cid": "party@ares-parties.ap",
+            "type": "groupchat",
+            "message_history": true,
+            "unread_count": 3,
+            "muted": false
+        }]});
+        let result = normalize_conversations(&payload);
+        assert_eq!(result[0]["channel"], "party");
+        assert_eq!(result[0]["unreadCount"], 3);
+        assert_eq!(result[0]["messageHistory"], true);
+    }
+
+    #[test]
+    fn history_error_keeps_request_identity() {
+        let value = history_error("request-7", "room-7", "unavailable", "No room");
+        assert_eq!(value["requestId"], "request-7");
+        assert_eq!(value["cid"], "room-7");
+        assert_eq!(value["code"], "unavailable");
+    }
 }

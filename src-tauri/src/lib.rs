@@ -158,6 +158,7 @@ pub fn run() {
             commands::matches::match_details,
             commands::matches::match_summaries,
             commands::chat::chat_get,
+            commands::chat::chat_history,
             commands::chat::chat_translate,
             commands::chat::chat_send,
             commands::chat::chat_friend_action,
