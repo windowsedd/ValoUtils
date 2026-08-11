@@ -283,6 +283,20 @@ fn history_error(request_id: &str, cid: &str, code: &str, error: &str) -> Value 
     json!({ "success": false, "requestId": request_id, "cid": cid, "code": code, "error": error })
 }
 
+fn send_success(request_id: &str, cid: &str, message_type: &str, transport: &str) -> Value {
+    json!({
+        "success": true,
+        "requestId": request_id,
+        "cid": cid,
+        "type": message_type,
+        "transport": transport,
+    })
+}
+
+fn send_error(request_id: &str, cid: &str, error: &str) -> Value {
+    json!({ "success": false, "requestId": request_id, "cid": cid, "error": error })
+}
+
 fn decode_presence_private(value: &str) -> Value {
     base64::engine::general_purpose::STANDARD
         .decode(value)
@@ -1132,40 +1146,37 @@ pub async fn chat_translate(
 
 #[tauri::command]
 pub async fn chat_send(args: Vec<Value>, riot: State<'_, RiotState>) -> Result<String, ()> {
-    let Some(conversation_id) = arg(&args, 0).filter(|s| !s.trim().is_empty()) else {
-        return Ok(json!({ "success": false, "error": "No chat room selected." }).to_string());
-    };
-    let Some(message) = arg(&args, 1).filter(|s| !s.trim().is_empty()) else {
-        return Ok(json!({ "success": false, "error": "Message is empty." }).to_string());
+    let request_id = arg(&args, 0).unwrap_or_default();
+    let Some(conversation_id) = arg(&args, 1).filter(|s| !s.trim().is_empty()) else {
+        return Ok(send_error(&request_id, "", "No chat room selected.").to_string());
     };
     let cid = conversation_id.trim().to_string();
+    let Some(message) = arg(&args, 2).filter(|s| !s.trim().is_empty()) else {
+        return Ok(send_error(&request_id, &cid, "Message is empty.").to_string());
+    };
     let body = message.trim().to_string();
     let msg_type = get_send_type(&cid);
 
-    // Answered locally and never forwarded — Riot has no record of this puuid,
-    // so sending upstream would only draw an error the frontend can't match.
-    let mut transport = "local";
+    // Riot Local API is authoritative; group rooms retain the existing XMPP fallback.
+    let mut transport = "rest";
     let rest_result = riot_client::send_chat_message(&riot, &cid, &body, msg_type).await;
     if let Err(rest_err) = rest_result {
         if cid.contains("@ares-parties.") {
             transport = "xmpp";
             if let Err(e) = xmpp::send_party_xmpp_message(&riot, &cid, &body).await {
-                return Ok(json!({ "success": false, "error": e }).to_string());
+                return Ok(send_error(&request_id, &cid, &e).to_string());
             }
         } else if cid.contains("@ares-coregame.") {
             transport = "xmpp";
             if let Err(e) = xmpp::send_match_xmpp_message(&riot, &cid, &body).await {
-                return Ok(json!({ "success": false, "error": e }).to_string());
+                return Ok(send_error(&request_id, &cid, &e).to_string());
             }
         } else {
-            return Ok(json!({ "success": false, "error": rest_err }).to_string());
+            return Ok(send_error(&request_id, &cid, &rest_err).to_string());
         }
     }
 
-    Ok(
-        json!({ "success": true, "cid": cid, "type": msg_type, "transport": transport })
-            .to_string(),
-    )
+    Ok(send_success(&request_id, &cid, msg_type, transport).to_string())
 }
 
 #[tauri::command]
@@ -1278,5 +1289,26 @@ mod tests {
         let started = std::sync::atomic::AtomicBool::new(false);
         assert!(mark_chat_forwarder_started(&started));
         assert!(!mark_chat_forwarder_started(&started));
+    }
+
+    #[test]
+    fn send_payloads_keep_request_identity_and_transport() {
+        let success = send_success("send-7", "party@ares-parties.ap", "groupchat", "xmpp");
+        assert_eq!(success["requestId"], "send-7");
+        assert_eq!(success["cid"], "party@ares-parties.ap");
+        assert_eq!(success["type"], "groupchat");
+        assert_eq!(success["transport"], "xmpp");
+
+        let failure = send_error("send-8", "friend-cid", "offline");
+        assert_eq!(failure["requestId"], "send-8");
+        assert_eq!(failure["cid"], "friend-cid");
+        assert_eq!(failure["error"], "offline");
+    }
+
+    #[test]
+    fn derives_supported_send_type_from_riot_cid() {
+        assert_eq!(get_send_type("friend-cid"), "chat");
+        assert_eq!(get_send_type("party@ares-parties.ap"), "groupchat");
+        assert_eq!(get_send_type("game-blue@ares-coregame.ap"), "groupchat");
     }
 }
