@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Restore Chat as a hideable navigation tab with the approved Riot-style dense UI, on-demand CID-specific history, and reliable sending for Friends, Party, Team, and All channels.
+**Goal:** Restore Chat as a hideable navigation tab with the approved Riot-style dense UI, on-demand CID-specific history, reliable sending, and immediate incoming Party/Team/All messages.
 
-**Architecture:** Keep `chat:get` as the five-second summary, add a correlated `chat:history` IPC request for the selected CID, and extend `chat:send` with correlation and normalized response metadata. A frontend controller owns listeners, polling, per-CID caches, and mutations; pure selectors handle grouping, CID/channel mapping, message merge/sort, search, and scroll decisions; focused components render the four-panel desktop layout and responsive Friends drawer.
+**Architecture:** Keep `chat:get` as the five-second summary, add a correlated `chat:history` IPC request for the selected CID, and extend `chat:send` with correlation and normalized response metadata. The XMPP parser publishes each buffered Party/Team/All message to an internal Rust broadcast channel; one idempotent Tauri forwarder emits `chat:message`; the frontend controller merges it into the matching CID cache without changing selection. Pure selectors handle grouping, CID/channel mapping, message merge/sort, search, and scroll decisions; focused components render the four-panel desktop layout and responsive Friends drawer.
 
 **Tech Stack:** Tauri 2, Rust 2021, React 19, TypeScript 6, Tailwind CSS 4, react-i18next, Bun test, Cargo test/check.
 
@@ -16,6 +16,9 @@
 - Use `chat` for Friend messages and `groupchat` for Party, Team, and All; never send `system`.
 - Use Riot-provided unread metadata only; do not fabricate unread counts.
 - Keep cached/live messages visible when a history refresh fails.
+- Push mounted Party, Team, and All messages through `chat:message` immediately; retain five-second polling as recovery and metadata synchronization.
+- Never auto-switch channel or conversation after a real-time message.
+- After Chat has initialized XMPP, unmounting the page removes renderer listeners but does not disconnect the app-lifetime XMPP buffer/forwarder.
 - Preserve a failed send draft and prevent duplicate pending sends.
 - Keep Riot credentials, authorization headers, and lockfile secrets out of frontend payloads and debug UI.
 - Maintain English, Korean, and Traditional Chinese localization.
@@ -39,6 +42,8 @@
 - `src/pages/chat/chat-components.test.tsx` — server-rendered component and accessibility contract tests.
 - `src/pages/Chat.tsx` — thin page shell composing the controller and UI regions.
 - `src-tauri/src/commands/chat.rs` — CID metadata normalization, history command, send response enrichment, note propagation, and Rust tests.
+- `src-tauri/src/xmpp/client.rs` — parse, buffer, and publish normalized incoming group messages.
+- `src-tauri/src/xmpp/mod.rs` — process-wide broadcast sender/subscriber shared across XMPP reconnects.
 - `src-tauri/src/lib.rs` — register `chat_history`.
 - `src/main.tsx` — restore Chat route immediately after Friends.
 - `src/i18n/locales/en.json`, `ko.json`, `zh-TW.json` — complete Chat labels, states, actions, and accessible names.
@@ -437,7 +442,197 @@ git commit -m "feat: expose chat history by conversation"
 
 ---
 
-### Task 3: Correlate sends and preserve drafts in controller state
+### Task 3: Publish incoming XMPP messages as one real-time Tauri event
+
+**Files:**
+- Modify: `src-tauri/src/xmpp/client.rs`
+- Modify: `src-tauri/src/xmpp/mod.rs`
+- Modify: `src-tauri/src/commands/chat.rs`
+
+**Interfaces:**
+- Consumes: `client::ChatMessage`, XMPP `handle_incoming_stanza`, Tauri `AppHandle`, and `tauri::Emitter`.
+- Produces: `xmpp::message_publisher() -> broadcast::Sender<ChatMessage>`, `xmpp::subscribe_messages() -> broadcast::Receiver<ChatMessage>`, and one `chat:message` renderer event carrying a serialized normalized `ChatMessage`.
+
+- [ ] **Step 1: Write failing parser/broadcast tests**
+
+Add tests beside the existing XMPP parser helpers in `client.rs`:
+
+```rust
+#[test]
+fn groupchat_stanza_is_buffered_and_published_once() {
+    let messages = Arc::new(std::sync::Mutex::new(VecDeque::new()));
+    let (events, mut receiver) = tokio::sync::broadcast::channel(8);
+    let stanza = r#"<message from="room@ares-parties.ap/friend" id="m-1" type="groupchat"><body>hello</body></message>"#;
+
+    handle_incoming_stanza(stanza, &messages, &events, "self", "Self#NA1");
+    handle_incoming_stanza(stanza, &messages, &events, "self", "Self#NA1");
+
+    assert_eq!(messages.lock().unwrap().len(), 1);
+    let published = receiver.try_recv().unwrap();
+    assert_eq!(published.id, "m-1");
+    assert_eq!(published.conversation_id, "room@ares-parties.ap");
+    assert_eq!(published.scope, "party");
+    assert!(matches!(receiver.try_recv(), Err(tokio::sync::broadcast::error::TryRecvError::Empty)));
+}
+
+#[test]
+fn own_groupchat_echo_is_identified_before_publish() {
+    let messages = Arc::new(std::sync::Mutex::new(VecDeque::new()));
+    let (events, mut receiver) = tokio::sync::broadcast::channel(8);
+    let stanza = r#"<message from="game-blue@ares-coregame.ap/self" id="m-2" type="groupchat"><body>rotate</body></message>"#;
+
+    handle_incoming_stanza(stanza, &messages, &events, "self", "Player#1234");
+
+    let published = receiver.try_recv().unwrap();
+    assert!(published.is_self);
+    assert_eq!(published.sender_name, "Player#1234");
+    assert_eq!(published.scope, "match");
+}
+```
+
+Add a forwarder guard test in `chat.rs`:
+
+```rust
+#[test]
+fn forwarder_guard_only_starts_once() {
+    let started = std::sync::atomic::AtomicBool::new(false);
+    assert!(mark_chat_forwarder_started(&started));
+    assert!(!mark_chat_forwarder_started(&started));
+}
+```
+
+- [ ] **Step 2: Run focused Rust tests and verify failure**
+
+Run: `cargo test --manifest-path src-tauri/Cargo.toml xmpp::client::tests --lib`
+
+Expected: FAIL because the stanza handler has no publisher/identity parameters.
+
+Run: `cargo test --manifest-path src-tauri/Cargo.toml commands::chat::tests --lib`
+
+Expected: FAIL because the forwarder guard does not exist.
+
+- [ ] **Step 3: Add a process-wide broadcast publisher in `xmpp/mod.rs`**
+
+Add a sender that survives XMPP reconnects and exposes a fresh receiver per subscriber:
+
+```rust
+use tokio::sync::{broadcast, Mutex};
+
+static MESSAGE_EVENTS: std::sync::OnceLock<broadcast::Sender<ChatMessage>> = std::sync::OnceLock::new();
+
+pub fn message_publisher() -> broadcast::Sender<ChatMessage> {
+    MESSAGE_EVENTS
+        .get_or_init(|| broadcast::channel(256).0)
+        .clone()
+}
+
+pub fn subscribe_messages() -> broadcast::Receiver<ChatMessage> {
+    message_publisher().subscribe()
+}
+```
+
+Change the only `client::login` call to pass `message_publisher()` into the client. The sender remains valid when the current `XmppHandle` disconnects, so the Tauri forwarder does not need to restart.
+
+- [ ] **Step 4: Publish each accepted stanza after buffering**
+
+Extend `client::login` with `message_events: broadcast::Sender<ChatMessage>`. Derive `own_display_name` from the already parsed `display_name`, and pass the publisher, `puuid`, and display name to `run_background` and `handle_incoming_stanza`.
+
+Build one `ChatMessage`, determine `is_self` before buffering, and publish only after the duplicate check succeeds:
+
+```rust
+let is_self = sender_nick == own_puuid;
+let message = ChatMessage {
+    id,
+    conversation_id: room,
+    sender: sender_nick.clone(),
+    sender_name: if is_self && !own_display_name.is_empty() {
+        own_display_name.to_string()
+    } else {
+        sender_nick
+    },
+    body,
+    timestamp: iso8601_now(),
+    msg_type: "groupchat".into(),
+    scope: scope.into(),
+    is_self,
+};
+{
+    let mut buffer = messages.lock().unwrap();
+    if buffer.iter().any(|item| item.id == message.id) {
+        continue;
+    }
+    buffer.push_back(message.clone());
+    while buffer.len() > MAX_BUFFERED_MESSAGES {
+        buffer.pop_front();
+    }
+}
+let _ = message_events.send(message);
+```
+
+Non-groupchat stanzas and duplicate IDs publish nothing. Buffering remains authoritative even when there are no broadcast receivers.
+
+- [ ] **Step 5: Add one idempotent Tauri forwarder in `chat.rs`**
+
+Import `tauri::{AppHandle, Emitter}` and atomics. Add:
+
+```rust
+static CHAT_FORWARDER_STARTED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+fn mark_chat_forwarder_started(flag: &std::sync::atomic::AtomicBool) -> bool {
+    flag.compare_exchange(false, true, std::sync::atomic::Ordering::AcqRel, std::sync::atomic::Ordering::Acquire).is_ok()
+}
+
+fn ensure_chat_message_forwarder(app: &AppHandle) {
+    if !mark_chat_forwarder_started(&CHAT_FORWARDER_STARTED) {
+        return;
+    }
+    let app = app.clone();
+    let mut receiver = xmpp::subscribe_messages();
+    tauri::async_runtime::spawn(async move {
+        loop {
+            match receiver.recv().await {
+                Ok(message) => {
+                    if let Ok(payload) = serde_json::to_string(&message) {
+                        let _ = app.emit("chat:message", payload);
+                    }
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
+                    log::warn!("chat message forwarder lagged by {skipped} messages");
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+            }
+        }
+    });
+}
+```
+
+Add `app: AppHandle` to `chat_get` and call `ensure_chat_message_forwarder(&app)` before the existing summary work. Repeated polling and React Strict Mode mounts must hit the guard and reuse the same forwarder.
+
+- [ ] **Step 6: Run formatting and focused Rust tests**
+
+Run: `cargo fmt --manifest-path src-tauri/Cargo.toml`
+
+Expected: command succeeds.
+
+Run: `cargo test --manifest-path src-tauri/Cargo.toml xmpp::client::tests --lib`
+
+Expected: parser publication and identity tests PASS.
+
+Run: `cargo test --manifest-path src-tauri/Cargo.toml commands::chat::tests --lib`
+
+Expected: singleton guard and Chat command-helper tests PASS.
+
+- [ ] **Step 7: Commit real-time group message publishing**
+
+```bash
+git add src-tauri/src/xmpp/client.rs src-tauri/src/xmpp/mod.rs src-tauri/src/commands/chat.rs
+git commit -m "feat: push realtime group chat messages"
+```
+
+---
+
+### Task 4: Correlate sends and preserve drafts in controller state
 
 **Files:**
 - Modify: `src-tauri/src/commands/chat.rs`
@@ -476,6 +671,27 @@ describe("chat controller state", () => {
 		expect(result.pendingSendId).toBeNull();
 		expect(result.sendError).toBe("offline");
 	});
+
+	test("merges a realtime message into its cid without switching selection", () => {
+		const selected = { ...initialChatControllerState, selectedChannel: "friends" as const, selectedCid: "friend-cid" };
+		const result = chatControllerReducer(selected, {
+			type: "realtimeMessage",
+			message: {
+				id: "party-1",
+				conversationId: "party@ares-parties.ap",
+				sender: "friend",
+				senderName: "Friend",
+				body: "queue?",
+				timestamp: "2000",
+				type: "groupchat",
+				scope: "party",
+				isSelf: false,
+			},
+		});
+		expect(result.selectedChannel).toBe("friends");
+		expect(result.selectedCid).toBe("friend-cid");
+		expect(result.historyByCid["party@ares-parties.ap"]?.map((item) => item.id)).toEqual(["party-1"]);
+	});
 });
 ```
 
@@ -513,7 +729,7 @@ export const initialChatControllerState: ChatControllerState = {
 };
 ```
 
-The reducer must ignore `historySucceeded`, `historyFailed`, `sendSucceeded`, and `sendFailed` actions whose request ID does not match the stored pending ID for that operation. `sendSucceeded` clears the draft only for the matching request; `sendFailed` clears only the pending marker and retains the draft.
+The reducer must ignore `historySucceeded`, `historyFailed`, `sendSucceeded`, and `sendFailed` actions whose request ID does not match the stored pending ID for that operation. `sendSucceeded` clears the draft only for the matching request; `sendFailed` clears only the pending marker and retains the draft. `realtimeMessage` calls `mergeChatMessages` for `historyByCid[message.conversationId]` and updates no selection field or Riot unread count.
 
 - [ ] **Step 4: Update `chat_send` correlation and transport**
 
@@ -552,14 +768,14 @@ git commit -m "feat: correlate chat history and sends"
 
 ---
 
-### Task 4: Build the Chat IPC controller
+### Task 5: Build the Chat IPC controller
 
 **Files:**
 - Create: `src/pages/chat/use-chat-controller.ts`
 - Create: `src/pages/chat/use-chat-controller.test.ts`
 
 **Interfaces:**
-- Consumes: reducer/actions from Task 3; `window.Main.send/on/removeListener`; Chat response types.
+- Consumes: reducer/actions from Task 4; `window.Main.send/on/removeListener`; Chat response types and the Task 3 `chat:message` event.
 - Produces: `useChatController()` returning summary state, selected channel/CID, cached visible messages, selection actions, refresh/retry, send, translate, and friend actions.
 
 - [ ] **Step 1: Write a failing source-contract test for listener ownership**
@@ -578,7 +794,10 @@ describe("useChatController IPC lifecycle", () => {
 		expect(source).toContain('window.Main.removeListener("chat:get", onSummary)');
 		expect(source).toContain('window.Main.on("chat:history", onHistory)');
 		expect(source).toContain('window.Main.removeListener("chat:history", onHistory)');
+		expect(source).toContain('window.Main.on("chat:message", onRealtimeMessage)');
+		expect(source).toContain('window.Main.removeListener("chat:message", onRealtimeMessage)');
 		expect(source).not.toContain("removeAllListeners");
+		expect(source).not.toContain('window.Main.send("chat:disconnect")');
 	});
 
 	test("requests history and sends with request ids", () => {
@@ -596,9 +815,21 @@ Expected: FAIL because the controller does not exist.
 
 - [ ] **Step 3: Implement one listener set and five-second polling**
 
-Implement `useChatController` with `useReducer`, `useEffect`, `useMemo`, `useCallback`, and refs for current request IDs. Register stable callbacks once for `chat:get`, `chat:history`, `chat:send`, `chat:translate`, and `chat:friend-action`. Parse each JSON payload inside a guarded helper that converts invalid JSON to a scoped error instead of throwing from the event callback.
+Implement `useChatController` with `useReducer`, `useEffect`, `useMemo`, `useCallback`, and refs for current request IDs. Register stable callbacks once for `chat:get`, `chat:history`, `chat:message`, `chat:send`, `chat:translate`, and `chat:friend-action`. Parse each JSON payload inside a guarded helper that converts invalid JSON to a scoped error instead of throwing from the event callback.
 
-On mount, send `chat:get`, start a 5000 ms interval, and on unmount clear the interval, remove each exact callback with `removeListener`, and send `chat:disconnect`.
+The real-time callback parses one normalized `ChatMessage` and dispatches only the cache action:
+
+```ts
+const onRealtimeMessage = (payload: string) => {
+	const message = parsePayload<ChatMessage>(payload);
+	if (!message?.conversationId || !message.id) return;
+	dispatch({ type: "realtimeMessage", message });
+};
+```
+
+It must not call `selectChannel`, `selectConversation`, or mutate unread metadata. Conversation previews may reorder because they derive from the merged message cache.
+
+On mount, send `chat:get` and start a 5000 ms interval. On unmount, clear the interval and remove each exact callback—including `chat:message`—with `removeListener`. Do not call `chat:disconnect` from the page lifecycle: after the first Chat initialization, the app-lifetime XMPP reader, bounded buffer, and singleton forwarder remain available while the user visits another tab. A dead Riot/XMPP connection is still replaced by the existing `is_alive`/login path on the next Chat summary operation.
 
 Use this request-ID generator so tests and logs remain understandable:
 
@@ -671,7 +902,7 @@ git commit -m "feat: add chat ipc controller"
 
 ---
 
-### Task 5: Build the channel, conversation, thread, and composer components
+### Task 6: Build the channel, conversation, thread, and composer components
 
 **Files:**
 - Create: `src/pages/chat/chat-channel-rail.tsx`
@@ -681,7 +912,7 @@ git commit -m "feat: add chat ipc controller"
 - Create: `src/pages/chat/chat-components.test.tsx`
 
 **Interfaces:**
-- Consumes: Task 1 types/helpers and Task 4 controller callbacks.
+- Consumes: Task 1 types/helpers and Task 5 controller callbacks.
 - Produces: keyboard-accessible visual components used by `Chat.tsx`.
 
 - [ ] **Step 1: Write failing server-rendered component tests**
@@ -775,7 +1006,7 @@ git commit -m "feat: build chat channels and thread ui"
 
 ---
 
-### Task 6: Build the Friends panel and responsive drawer
+### Task 7: Build the Friends panel and responsive drawer
 
 **Files:**
 - Create: `src/pages/chat/chat-friends-panel.tsx`
@@ -824,7 +1055,7 @@ git commit -m "feat: add chat friends drawer and actions"
 
 ---
 
-### Task 7: Compose the rewritten Chat page and restore navigation
+### Task 8: Compose the rewritten Chat page and restore navigation
 
 **Files:**
 - Modify: `src/pages/Chat.tsx`
@@ -832,7 +1063,7 @@ git commit -m "feat: add chat friends drawer and actions"
 - Create: `tests/chat-navigation-and-locales.test.ts`
 
 **Interfaces:**
-- Consumes: all controller and component interfaces from Tasks 1–6.
+- Consumes: all controller and component interfaces from Tasks 1–7.
 - Produces: restored route and complete Chat page shell.
 
 - [ ] **Step 1: Write failing navigation/source integration tests**
@@ -911,7 +1142,7 @@ git commit -m "feat: restore redesigned chat tab"
 
 ---
 
-### Task 8: Complete localization and scoped failure states
+### Task 9: Complete localization and scoped failure states
 
 **Files:**
 - Modify: `src/i18n/locales/en.json`
@@ -976,13 +1207,13 @@ git commit -m "feat: localize chat states and actions"
 
 ---
 
-### Task 9: Full verification and cleanup
+### Task 10: Full verification and cleanup
 
 **Files:**
-- Modify only files from Tasks 1–8 if verification exposes a defect.
+- Modify only files from Tasks 1–9 if verification exposes a defect.
 
 **Interfaces:**
-- Consumes: the complete implementation.
+- Consumes: the complete implementation from Tasks 1–9.
 - Produces: verified frontend and Rust build with no legacy listener or old-style regressions.
 
 - [ ] **Step 1: Run all focused Chat/frontend tests**
@@ -1007,6 +1238,10 @@ Run: `cargo fmt --manifest-path src-tauri/Cargo.toml -- --check`
 
 Expected: PASS with no formatting diff.
 
+Run: `cargo test --manifest-path src-tauri/Cargo.toml xmpp::client::tests --lib`
+
+Expected: all XMPP publication tests PASS.
+
 Run: `cargo test --manifest-path src-tauri/Cargo.toml commands::chat::tests --lib`
 
 Expected: all Chat Rust tests PASS.
@@ -1028,16 +1263,16 @@ Expected: no `removeAllListeners`, no legacy brown page colors, and no Chat send
 Run:
 
 ```powershell
-rg -n "chat_history|chat:history|message_history|unreadCount|@ares-parties|-all@ares-coregame|groupchat" src src-tauri/src/commands/chat.rs src-tauri/src/lib.rs
+rg -n "chat_history|chat:history|chat:message|message_history|unreadCount|subscribe_messages|MESSAGE_EVENTS|CHAT_FORWARDER_STARTED|@ares-parties|-all@ares-coregame|groupchat" src src-tauri/src/xmpp src-tauri/src/commands/chat.rs src-tauri/src/lib.rs
 ```
 
-Expected: history IPC, real metadata, exact channel recognition, and group-send behavior are present.
+Expected: history IPC, real metadata, one broadcast/forwarder path, renderer real-time listener, exact channel recognition, and group-send behavior are present.
 
 - [ ] **Step 5: Inspect the final diff without touching unrelated work**
 
 Run: `git status --short`
 
-Expected: unrelated pre-existing modifications may remain, but no uncommitted files from Tasks 1–8 remain.
+Expected: unrelated pre-existing modifications may remain, but no uncommitted files from Tasks 1–9 remain.
 
 Run: `git log --oneline -9`
 
