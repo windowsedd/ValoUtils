@@ -1,5 +1,5 @@
 import { ActRankPanel } from "@/components/live-game/act-rank-panel";
-import { initialSeasonId } from "@/components/live-game/act-rank";
+import { initialSeasonId, seasonFallbackLabel } from "@/components/live-game/act-rank";
 import { PageHeader, SectionCard } from "@/components/section-card";
 import type { FriendProfileData, FriendProfileResponse } from "@/types/friend-profile";
 import type { Friend } from "@/types/friends";
@@ -85,6 +85,9 @@ export const FriendProfile = ({ friend, card, tiers, presenceLabel, cachedProfil
 	const peakTier = profile?.peakTier ?? 0;
 	const peakRankIcon = peakTier > 0 ? tiers.get(peakTier)?.largeIcon ?? tiers.get(peakTier)?.icon : null;
 	const peakColor = peakTier > 0 ? tierColor(peakTier) : "#6b7280";
+	const peakSeasonLabel = profile?.peakSeasonId
+		? seasons.get(profile.peakSeasonId.toLowerCase())?.label ?? seasonFallbackLabel(profile.peakSeasonId)
+		: null;
 	const displayName = friend.gameName ? `${friend.gameName}${friend.tagLine ? `#${friend.tagLine}` : ""}` : friend.displayName;
 
 	return (
@@ -137,6 +140,7 @@ export const FriendProfile = ({ friend, card, tiers, presenceLabel, cachedProfil
 									<div className="min-w-0">
 										<p className="text-[9px] uppercase tracking-widest text-gray-600">{t("friends.profilePeakRank")}</p>
 										<p className="truncate text-sm font-semibold" style={{ color: peakColor }}>{peakTier > 0 ? tierName(peakTier) : t("career.unranked")}</p>
+										{peakSeasonLabel && <p className="mt-0.5 text-[10px] text-gray-500">{t("friends.profileEpisodeAct")}: {peakSeasonLabel}</p>}
 									</div>
 								</div>
 							</div>

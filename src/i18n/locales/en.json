@@ -99,6 +99,7 @@
     "profileRetry": "Retry",
     "profileCurrentRank": "Current Rank",
     "profilePeakRank": "Peak Rank",
+    "profileEpisodeAct": "Episode / Act",
     "profileRecentMatches": "Recent Matches",
     "profileNoMatches": "No recent matches found for this mode",
     "profileModeFilter": "Filter matches by mode",

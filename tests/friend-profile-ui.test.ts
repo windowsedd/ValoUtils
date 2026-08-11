@@ -12,6 +12,11 @@ describe("Friend profile rank summary", () => {
 		expect(profile).toContain('t("friends.profilePeakRank")');
 	});
 
+	test("renders the episode and act for the peak rank", () => {
+		expect(profile).toMatch(/profile\??\.peakSeasonId/);
+		expect(profile).toContain('t("friends.profileEpisodeAct")');
+	});
+
 	for (const locale of locales) {
 		test(`${locale} provides the Peak Rank label`, () => {
 			const messages = JSON.parse(
@@ -19,6 +24,8 @@ describe("Friend profile rank summary", () => {
 			);
 			expect(messages.friends.profilePeakRank).toBeString();
 			expect(messages.friends.profilePeakRank.trim().length).toBeGreaterThan(0);
+			expect(messages.friends.profileEpisodeAct).toBeString();
+			expect(messages.friends.profileEpisodeAct.trim().length).toBeGreaterThan(0);
 		});
 	}
 });
