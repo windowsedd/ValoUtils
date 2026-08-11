@@ -2,7 +2,9 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { FaGlobe, FaRocket, FaCode, FaChartBar, FaLanguage, FaKey, FaArrowUpRightFromSquare, FaCopy, FaCheck, FaGear, FaEye, FaEyeSlash, FaRobot, FaBook } from "react-icons/fa6";
 import { PageHeader, SectionCard } from "@/components/section-card";
+import { useConfiguredRoutes } from "@/components/router";
 import SwaggerPage from "@/pages/SwaggerPage";
+import { normalizeHiddenTabs, setTabHidden } from "@/util/navigation-tabs";
 
 const LANGUAGES = [
 	{ code: "en", label: "EN", name: "English" },
@@ -20,6 +22,7 @@ type AppConfig = {
 	translatorProvider: "google" | "deepl";
 	translatorTargetLanguage: string;
 	deeplApiKey: string;
+	hiddenTabs: string[];
 };
 
 const Toggle = ({
@@ -75,6 +78,8 @@ const SettingRow = ({ icon, label, description, badge, right }: SettingRowProps)
 
 const Settings = () => {
 	const { t, i18n } = useTranslation();
+	const configuredRoutes = useConfiguredRoutes();
+	const configurableRoutes = configuredRoutes.filter((route) => route.id !== "settings");
 	const [currentLang, setCurrentLang] = useState(i18n.language);
 	const [clientPort, setClientPort] = useState<number | null>(null);
 	const [clientPassword, setClientPassword] = useState<string | null>(null);
@@ -91,17 +96,28 @@ const Settings = () => {
 		translatorProvider: "google",
 		translatorTargetLanguage: "en",
 		deeplApiKey: "",
+		hiddenTabs: [],
 	});
 	const [analytics, setAnalytics] = useState(() => localStorage.getItem("valoutils-analytics") !== "false");
 
 	useEffect(() => {
 		if (!window.Main) return;
-		window.Main.on("config:get-all", (msg: string) => {
-			window.Main.removeAllListeners("config:get-all");
-			setAppConfig(JSON.parse(msg));
-		});
+		const onConfigLoaded = (msg: string) => {
+			window.Main.removeListener("config:get-all", onConfigLoaded);
+			try {
+				const config = JSON.parse(msg) as Partial<AppConfig>;
+				setAppConfig((current) => ({
+					...current,
+					...config,
+					hiddenTabs: normalizeHiddenTabs(config.hiddenTabs),
+				}));
+			} catch {
+				setAppConfig((current) => ({ ...current, hiddenTabs: [] }));
+			}
+		};
+		window.Main.on("config:get-all", onConfigLoaded);
 		window.Main.send("config:get-all");
-		return () => { window.Main.removeAllListeners("config:get-all"); };
+		return () => { window.Main.removeListener("config:get-all", onConfigLoaded); };
 	}, []);
 
 	useEffect(() => {
@@ -124,12 +140,17 @@ const Settings = () => {
 		setCurrentLang(code);
 	};
 
-	const setConfig = (key: string, value: boolean | string) => {
+	const setConfig = (key: string, value: boolean | string | string[]) => {
 		window.Main.send("config:set", key, value);
 		setAppConfig((prev) => ({ ...prev, [key]: value }));
-		// `config:set` has no push event behind it, so tell the nav directly —
-		// this is what makes the Dummy Bot tab appear without a restart.
-		window.dispatchEvent(new CustomEvent("valoutils:config-changed"));
+		window.dispatchEvent(
+			new CustomEvent("valoutils:config-changed", { detail: { key, value } }),
+		);
+	};
+
+	const setRouteHidden = (routeId: string, hidden: boolean) => {
+		const nextHiddenTabs = setTabHidden(appConfig.hiddenTabs, routeId, hidden);
+		setConfig("hiddenTabs", nextHiddenTabs);
 	};
 
 	const setAnalyticsOpt = (enabled: boolean) => {
@@ -267,6 +288,25 @@ const Settings = () => {
 						/>
 					}
 				/>
+					</div>
+				</SectionCard>
+
+				<SectionCard title={t("settings.sectionNavigation")} accent="#22d3ee">
+					<div className="flex flex-col px-1">
+						{configurableRoutes.map((route) => (
+							<SettingRow
+								key={route.id}
+								icon={route.icon ?? <FaEyeSlash />}
+								label={t("settings.hideTab", { tab: t(route.title) })}
+								description={t("settings.hideTabDesc")}
+								right={
+									<Toggle
+										checked={appConfig.hiddenTabs.includes(route.id)}
+										onChange={(hidden) => setRouteHidden(route.id, hidden)}
+									/>
+								}
+							/>
+						))}
 					</div>
 				</SectionCard>
 
