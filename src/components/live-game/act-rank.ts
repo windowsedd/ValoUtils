@@ -121,9 +121,9 @@ const VALID_TIER_MIN = 3;
 const VALID_TIER_MAX = 27;
 const BADGE_TILE_COUNT = 9;
 const BADGE_SLOTS = [
-	[1, 1],
-	[2, 1],
+	[1, 2],
 	[2, 2],
+	[2, 3],
 	[3, 2],
 	[3, 3],
 	[3, 4],

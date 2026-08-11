@@ -43,8 +43,8 @@ The first seven cells reproduce the reference cluster:
 Number each horizontal lattice strip from `row = 0`, with columns `0..2r`. Even columns point up and odd columns point down. Assign wins in this order:
 
 ```text
-(1,1),
-(2,1), (2,2),
+(1,2),
+(2,2), (2,3),
 (3,2), (3,3), (3,4),
 (4,3), (4,4), (4,5)
 ```

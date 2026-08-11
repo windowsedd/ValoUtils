@@ -26,9 +26,9 @@ describe("act rank badge", () => {
 		const tiles = buildActRankTiles({ "20": 5, "24": 2, "22": 4, bad: 8, "28": 3 });
 		expect(tiles.map((tile) => tile.tier)).toEqual([24, 24, 22, 22, 22, 22, 20, 20, 20]);
 		expect(tiles.map((tile) => [tile.row, tile.column, tile.orientation])).toEqual([
-			[1, 1, "down"],
-			[2, 1, "down"],
+			[1, 2, "up"],
 			[2, 2, "up"],
+			[2, 3, "down"],
 			[3, 2, "up"],
 			[3, 3, "down"],
 			[3, 4, "up"],
