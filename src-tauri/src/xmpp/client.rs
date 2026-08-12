@@ -61,19 +61,7 @@ impl XmppHandle {
         muc_jid: &str,
         match_token: Option<&str>,
     ) -> Result<(), String> {
-        let token_el = match match_token {
-            Some(t) if !t.is_empty() => format!(
-                r#"<token xmlns="urn:riotgames:match:token">{}</token>"#,
-                escape_xml(t)
-            ),
-            _ => String::new(),
-        };
-        let stanza = format!(
-            r#"<presence to="{}/{}"><x xmlns="http://jabber.org/protocol/muc"><history maxstanzas="0"/></x>{}</presence>"#,
-            escape_xml(muc_jid),
-            escape_xml(&self.puuid),
-            token_el
-        );
+        let stanza = muc_join_stanza(muc_jid, &self.puuid, match_token);
         self.send_raw(&stanza).await
     }
 
@@ -101,6 +89,22 @@ impl XmppHandle {
         let mut write = self.write.lock().await;
         let _ = write.shutdown().await;
     }
+}
+
+fn muc_join_stanza(muc_jid: &str, puuid: &str, match_token: Option<&str>) -> String {
+    let token_el = match match_token {
+        Some(token) if !token.is_empty() => format!(
+            r#"<token xmlns="urn:riotgames:match:token">{}</token>"#,
+            escape_xml(token)
+        ),
+        _ => String::new(),
+    };
+    format!(
+        r#"<presence to="{}/{}"><x xmlns="http://jabber.org/protocol/muc"><history maxstanzas="100"/></x>{}</presence>"#,
+        escape_xml(muc_jid),
+        escape_xml(puuid),
+        token_el
+    )
 }
 
 fn epoch_secs() -> u64 {
@@ -548,6 +552,14 @@ fn iso8601_now() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn muc_join_requests_the_latest_hundred_messages() {
+        let stanza = muc_join_stanza("room@ares-coregame.ap", "self", Some("token"));
+
+        assert!(stanza.contains(r#"<history maxstanzas="100"/>"#));
+        assert!(stanza.contains(r#"<token xmlns="urn:riotgames:match:token">token</token>"#));
+    }
 
     #[test]
     fn groupchat_stanza_is_buffered_and_published_once() {
