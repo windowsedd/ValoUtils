@@ -139,7 +139,7 @@ bun --cwd package/ts-replay-parser test       # run parser parity/unit tests
 bun --cwd package/ts-replay-parser run build   # rebuild parser dist/
 ```
 
-Note: `bun run lint` references eslint but eslint is not installed (pre-existing).
+`bun run lint` runs Oxlint against the React and TypeScript frontend in `src/`.
 
 ## Build / Release
 
