@@ -32,7 +32,7 @@ const RiotClientWatcher = ({ children }: RiotClientWatcherProps) => {
                 window.Main.removeAllListeners("riot_client:disconnect");
             }
         }
-    }, []);
+    }, [showModal, closeModal]);
     return (
         <>
             {children}

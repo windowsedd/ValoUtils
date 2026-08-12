@@ -26,7 +26,7 @@ export type LiveGameAssets = {
 };
 
 async function pooled<T>(tasks: (() => Promise<T>)[], concurrency = 4): Promise<T[]> {
-	const results: T[] = new Array(tasks.length);
+	const results: T[] = Array(tasks.length);
 	let next = 0;
 	const worker = async () => {
 		while (next < tasks.length) {

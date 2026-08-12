@@ -131,7 +131,7 @@ const Matches = () => {
 		});
 		window.Main.send("match:list", 0, PAGE_SIZE);
 		return () => window.Main.removeAllListeners("match:list");
-	}, []);
+	}, [t]);
 
 	useEffect(() => {
 		const ids = entries.map((e) => e.matchId).filter(Boolean);

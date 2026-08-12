@@ -290,17 +290,17 @@ export function generateCrosshairFromCode(code: string): CrosshairSettings {
   const settings: any = deepClone(DEFAULT_SETTINGS);
   const parts = code.split(/(P|A|S|NAME);/g);
 
-  if (!!parts.indexOf('P')) {
+  if (parts.indexOf('P')) {
     const primary = parts[parts.indexOf('P') + 1].split(';');
     setPrimarySettings('primary', primary);
   }
 
-  if (!!parts.indexOf('A')) {
+  if (parts.indexOf('A')) {
     const ads = parts[parts.indexOf('A') + 1].split(';');
     setPrimarySettings('ads', ads);
   }
 
-  if (!!parts.indexOf('S')) {
+  if (parts.indexOf('S')) {
     const sniper = parts[parts.indexOf('S') + 1];
     const sniperSettings = settings.sniper;
     const sniperParts = sniper.split(';');
@@ -407,7 +407,7 @@ export function generateCrosshair(s: CrosshairSettings, withName = false): strin
       appendSetting(SniperCenterDotMapping.OPACITY, sniper[SniperCenterDotMapping.OPACITY]);
       appendSetting(SniperCenterDotMapping.THICKNESS, sniper[SniperCenterDotMapping.THICKNESS]);
       const color = '#' + s.sniper[SniperCenterDotMapping.CUSTOM_COLOR];
-      if (!!CROSSHAIR_COLORS[color as keyof typeof CROSSHAIR_COLORS]) {
+      if (CROSSHAIR_COLORS[color as keyof typeof CROSSHAIR_COLORS]) {
         appendSetting(SniperCenterDotMapping.COLOR, Object.keys(CROSSHAIR_COLORS).indexOf(color));
       } else {
         appendSetting(SniperCenterDotMapping.COLOR, 8);
@@ -499,7 +499,7 @@ export function generateCrosshair(s: CrosshairSettings, withName = false): strin
 
   function addCrosshairColor(x: 'primary' | 'ads') {
     const color = '#' + s[x][PrimaryMapping.CUSTOM_COLOR];
-    if (!!CROSSHAIR_COLORS[color as keyof typeof CROSSHAIR_COLORS]) {
+    if (CROSSHAIR_COLORS[color as keyof typeof CROSSHAIR_COLORS]) {
       if (color !== '#FFFFFF') {
         appendSetting(
           PrimaryMapping.CROSSHAIR_COLOR,

@@ -30,7 +30,7 @@ function IPCTest() {
         window.Main.removeAllListeners("client_info:get");
       }
     }
-  }, []);
+  }, [showModal, closeModal]);
   return (
     <>
       <h1 className={"text-4xl font-bold text-center mt-4"}>Hello World</h1>

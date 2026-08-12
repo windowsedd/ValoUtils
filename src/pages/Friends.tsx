@@ -144,7 +144,7 @@ const Friends = () => {
 			clearInterval(interval);
 			window.Main.removeAllListeners("friends:get");
 		};
-	}, []);
+	}, [t]);
 
 	// Player cards are per-friend lookups, so resolve only the ids we haven't
 	// seen yet — the poll re-runs this effect every 10s.

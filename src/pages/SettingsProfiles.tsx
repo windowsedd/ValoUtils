@@ -139,78 +139,71 @@ const SettingsProfiles = () => {
 							</TextField>
 							<CustomButton
 								className={"shrink-0"}
-								onClickLoading={() => {
-									return new Promise<void>(async (resolve, reject) => {
-										if (window.Main) {
-											window.Main.send("analytics:track", "profile:add:load_share", "{}");
-											const input = window.document.getElementById("share-code") as HTMLInputElement;
-											const inputData = input.value;
-											if (!inputData) {
-												reject(t("profiles.noInputData"));
-												return;
-											}
-											if (inputData.length != 10) {
-												reject(t("profiles.invalidShareCode"));
-												return;
-											}
-											const data = await getData(inputData);
-											if (!data) {
-												reject(t("profiles.invalidDataReturned"));
-											}
-											const save = () => {
-												window.Main.on("settings:profile:add", (message: string) => {
-													window.Main.removeAllListeners("settings:profile:add");
-													const rawData = JSON.parse(message);
-													if (rawData.error) {
-														reject(rawData.error);
-														reject_1();
-														return;
-													}
-													refreshProfiles();
-													resolve();
-													closeModal();
-													resolve_1();
-												});
-												window.Main.send("settings:profile:add", "clipboard");
-											};
-											const match = !data.match(/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/);
-											if (data.length < 2500 || match) {
-												window.Main.send(
-													"analytics:track",
-													"profile:add:load_clipboard:error",
-													JSON.stringify({ length: data.length, match }),
-												);
-												showModal({
-													title: t("profiles.doesntLookLikeProfile"),
-													body: t("profiles.doesntLookLikeProfileBody"),
-													footer: (
-														<>
-															<CustomButton
-																className={"mr-4"}
-																color={"danger"}
-																onPress={() => {
-																	closeModal();
-																	reject();
-																	reject_1();
-																}}
-															>
-																{t("common.cancel")}
-															</CustomButton>
-															<CustomButton onPress={() => { save(); }}>
-																{t("common.continue")}
-															</CustomButton>
-														</>
-													),
-													onClose: () => {
-														reject();
-														reject_1();
-													},
-												});
-											} else {
-												save();
-											}
+								onClickLoading={async () => {
+									if (!window.Main) throw "No window.Main";
+
+									window.Main.send("analytics:track", "profile:add:load_share", "{}");
+									const input = window.document.getElementById("share-code") as HTMLInputElement;
+									const inputData = input.value;
+									if (!inputData) throw t("profiles.noInputData");
+									if (inputData.length != 10) throw t("profiles.invalidShareCode");
+
+									const data = await getData(inputData);
+									if (!data) throw t("profiles.invalidDataReturned");
+
+									return new Promise<void>((resolve, reject) => {
+										const save = () => {
+											window.Main.on("settings:profile:add", (message: string) => {
+												window.Main.removeAllListeners("settings:profile:add");
+												const rawData = JSON.parse(message);
+												if (rawData.error) {
+													reject(rawData.error);
+													reject_1();
+													return;
+												}
+												refreshProfiles();
+												resolve();
+												closeModal();
+												resolve_1();
+											});
+											window.Main.send("settings:profile:add", "clipboard");
+										};
+
+										const match = !data.match(/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/);
+										if (data.length < 2500 || match) {
+											window.Main.send(
+												"analytics:track",
+												"profile:add:load_clipboard:error",
+												JSON.stringify({ length: data.length, match }),
+											);
+											showModal({
+												title: t("profiles.doesntLookLikeProfile"),
+												body: t("profiles.doesntLookLikeProfileBody"),
+												footer: (
+													<>
+														<CustomButton
+															className={"mr-4"}
+															color={"danger"}
+															onPress={() => {
+																closeModal();
+																reject();
+																reject_1();
+															}}
+														>
+															{t("common.cancel")}
+														</CustomButton>
+														<CustomButton onPress={save}>
+															{t("common.continue")}
+														</CustomButton>
+													</>
+												),
+												onClose: () => {
+													reject();
+													reject_1();
+												},
+											});
 										} else {
-											reject("No window.Main");
+											save();
 										}
 									});
 								}}

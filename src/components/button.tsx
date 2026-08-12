@@ -32,7 +32,7 @@ type CustomButtonProps = {
   children?: React.ReactNode;
 } & Omit<ComponentProps<typeof HeroButton>, "color" | "onClick" | "onPress" | "variant" | "children">;
 
-const CustomButton = ({ modalOnError = true, showStatusColor = false, ...props }: CustomButtonProps) => {
+const CustomButton = ({ modalOnError: _modalOnError = true, showStatusColor = false, ...props }: CustomButtonProps) => {
   const { showModal, closeModal } = useDynamicModal();
   const [loading, setLoading] = React.useState(false);
   const [statusIcon, setStatusIcon] = React.useState<React.ReactNode | null>(null);

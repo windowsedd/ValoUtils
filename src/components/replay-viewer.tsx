@@ -159,7 +159,7 @@ function buildActorIndex(posData: PositionsData, maxActors = 14): ActorIndex {
     const guidIdx = new Map(posData.meta.uniqueGuids.map((g, i) => [g, i]));
     const numActors = posData.meta.uniqueGuids.length;
 
-    const counts = new Array<number>(numActors).fill(0);
+    const counts = Array<number>(numActors).fill(0);
     for (let s = 0; s < N; s++) {
         const ai = guidIdx.get(posData.samples[s][1]);
         if (ai !== undefined) counts[ai]++;
@@ -168,7 +168,7 @@ function buildActorIndex(posData: PositionsData, maxActors = 14): ActorIndex {
     const sampleIdxs = counts.map(c => new Uint32Array(c));
     const xs = counts.map(c => new Float32Array(c));
     const ys = counts.map(c => new Float32Array(c));
-    const w = new Array<number>(numActors).fill(0);
+    const w = Array<number>(numActors).fill(0);
 
     for (let s = 0; s < N; s++) {
         const ai = guidIdx.get(posData.samples[s][1]);
@@ -219,7 +219,7 @@ function buildActorIndex(posData: PositionsData, maxActors = 14): ActorIndex {
     // Team split: lower half by initial Y = team 0, upper half = team 1.
     const half = Math.ceil(playerIdxs.length / 2);
     const sorted = [...playerIdxs].sort((a, b) => (ys[a][0] ?? 0) - (ys[b][0] ?? 0));
-    const teamOf = new Array<number>(numActors).fill(-1);
+    const teamOf = Array<number>(numActors).fill(-1);
     sorted.slice(0, half).forEach(ai => { teamOf[ai] = 0; });
     sorted.slice(half).forEach(ai => { teamOf[ai] = 1; });
 
@@ -378,17 +378,22 @@ function bridgeMatchPlayers(matchDetails: MatchDetailsData | null | undefined, i
 
 function useImageCache(urls: string[]) {
     const [, forceRender] = useState(0);
-    return useMemo(() => {
-        const cache: Record<string, HTMLImageElement> = {};
-        for (const url of [...new Set(urls.filter(Boolean))]) {
+    // Callers create URL arrays during render, so object identity would rebuild
+    // the cache on every image load. URL values define the cache identity.
+    // oxlint-disable react-hooks/exhaustive-deps
+    const cache = useMemo(() => {
+        const next: Record<string, HTMLImageElement> = {};
+        for (const url of new Set(urls.filter(Boolean))) {
             const img = new Image();
             img.crossOrigin = 'anonymous';
             img.onload = () => forceRender(v => v + 1);
             img.src = url;
-            cache[url] = img;
+            next[url] = img;
         }
-        return cache;
+        return next;
     }, [urls.join('|')]);
+    // oxlint-enable react-hooks/exhaustive-deps
+    return cache;
 }
 
 // ── Coordinate projection ─────────────────────────────────────────────────────
@@ -1052,7 +1057,7 @@ export default function ReplayViewer({ replayId, positions, events, meta, abilit
             ctx.fillText(`s[0]:[${sample0?.[0]},${sample0?.[1]?.slice(0,8)},${sample0?.[2]},${sample0?.[3]}]`, 10, 100);
             ctx.fillText(`player0: ${fp ? `${fp.x.toFixed(0)},${fp.y.toFixed(0)}` : 'null'} canvas:${fpc ? `${fpc.x.toFixed(0)},${fpc.y.toFixed(0)}` : 'null'}`, 10, 116);
         }
-    }, [abilityIconCache, actorToPuuid, agentByUuid, agentIconCache, debug, deathsByActor, mapImg, mapImgBounds, mapInfo, playerByPuuid, positions, abilities, round, roundOutcomes, roundStartSamples, roundStarts, showAbilities, showCallouts, spikeImg, teamOfActor, wallZeroMs]);
+    }, [abilityIconCache, actorIdx, actorToPuuid, agentByUuid, agentIconCache, debug, deathsByActor, mapImg, mapImgBounds, mapInfo, playerByPuuid, positions, abilities, round, roundOutcomes, roundStartSamples, roundStarts, showAbilities, showCallouts, spikeImg, teamOfActor, wallZeroMs]);
 
     useEffect(() => { render(); }, [render]);
 
@@ -1250,7 +1255,7 @@ export default function ReplayViewer({ replayId, positions, events, meta, abilit
             window.Main.removeAllListeners('replay:export-json');
         });
         window.Main.send('replay:export-json', jsonStr, defaultName);
-    }, [positions, events, meta, abilities, matchDetails]);
+    }, [positions, events, meta, abilities, matchDetails, replayId]);
 
     // Playback loop: draw every frame, but update React state only occasionally.
     useEffect(() => {
