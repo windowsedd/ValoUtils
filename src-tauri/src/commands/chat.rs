@@ -650,11 +650,9 @@ async fn add_party_room_from_active_party(riot: &RiotState, party: &mut HashSet<
     if party_id.is_empty() {
         return;
     }
-    if let Ok(token) = api.party_get_chat_token(&party_id).await {
-        let room =
-            pick_string([token.get("Room"), token.get("room")].map(|v| v.and_then(|v| v.as_str())));
-        if !room.is_empty() {
-            party.insert(room);
+    if let Ok(details) = api.party_get(&party_id).await {
+        if let Some(room) = api::party_muc_name(&details) {
+            party.insert(room.to_string());
         }
     }
 }

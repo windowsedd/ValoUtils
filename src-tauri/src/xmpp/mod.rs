@@ -358,10 +358,16 @@ pub async fn ensure_party_xmpp_chat(riot: &RiotState) -> (String, Value) {
 
     let mut state_guard = STATE.get_or_init(Default::default).inner.lock().await;
 
-    let party_player = api.party_get_by_player(&api.puuid).await.ok();
+    let party_player = match api.party_get_by_player(&api.puuid).await {
+        Ok(player) => player,
+        Err(error) => {
+            debug.insert("error".into(), json!(error));
+            return (String::new(), Value::Object(debug));
+        }
+    };
     let party_id = party_player
-        .as_ref()
-        .and_then(|p| p.get("CurrentPartyID").or_else(|| p.get("PartyID")))
+        .get("CurrentPartyID")
+        .or_else(|| party_player.get("PartyID"))
         .and_then(|v| v.as_str())
         .unwrap_or_default()
         .to_string();
@@ -381,20 +387,22 @@ pub async fn ensure_party_xmpp_chat(riot: &RiotState) -> (String, Value) {
         return (state_guard.party_room.clone(), Value::Object(debug));
     }
 
-    let chat_token = api.party_get_chat_token(&party_id).await.ok();
-    let room = chat_token
-        .as_ref()
-        .and_then(|c| c.get("Room").or_else(|| c.get("room")))
-        .and_then(|v| v.as_str())
+    let party_details = match api.party_get(&party_id).await {
+        Ok(details) => details,
+        Err(error) => {
+            debug.insert("error".into(), json!(error));
+            return (String::new(), Value::Object(debug));
+        }
+    };
+    let room = api::party_muc_name(&party_details)
         .unwrap_or_default()
         .to_string();
-    let token = chat_token
-        .as_ref()
-        .and_then(|c| c.get("Token").or_else(|| c.get("token")))
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string());
 
     if room.is_empty() {
+        debug.insert(
+            "error".into(),
+            json!("Party details did not include a MUCName."),
+        );
         state_guard.party_id = party_id;
         return (String::new(), Value::Object(debug));
     }
@@ -411,7 +419,7 @@ pub async fn ensure_party_xmpp_chat(riot: &RiotState) -> (String, Value) {
         }
     };
     if !state_guard.joined_rooms.contains(&room) {
-        if let Err(e) = handle.join_match_muc(&room, token.as_deref()).await {
+        if let Err(e) = handle.join_match_muc(&room, None).await {
             debug.insert("error".into(), json!(e));
             return (String::new(), Value::Object(debug));
         }

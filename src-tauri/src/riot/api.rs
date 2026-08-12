@@ -78,6 +78,14 @@ fn competitive_leaderboard_path(region: &str, season_id: &str) -> String {
     )
 }
 
+pub fn party_muc_name(party: &Value) -> Option<&str> {
+    party
+        .get("MUCName")
+        .or_else(|| party.get("mucName"))
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+}
+
 /// Authenticated client for Riot's `pd`/`glz` game APIs, built from local
 /// Riot Client tokens. Mirrors electron/util/riot/create-api.ts.
 #[derive(Clone)]
@@ -390,5 +398,18 @@ mod tests {
             competitive_leaderboard_path("ap", "act/current"),
             "/mmr/v1/leaderboards/affinity/ap/queue/competitive/season/act%2Fcurrent?startIndex=0&size=1"
         );
+    }
+
+    #[test]
+    fn extracts_party_muc_name_from_party_details() {
+        let party = serde_json::json!({ "MUCName": "party@ares-parties.ap" });
+
+        assert_eq!(party_muc_name(&party), Some("party@ares-parties.ap"));
+    }
+
+    #[test]
+    fn rejects_missing_or_empty_party_muc_name() {
+        assert_eq!(party_muc_name(&serde_json::json!({})), None);
+        assert_eq!(party_muc_name(&serde_json::json!({ "MUCName": "" })), None);
     }
 }
