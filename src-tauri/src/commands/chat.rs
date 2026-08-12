@@ -337,6 +337,10 @@ fn merge_room_conversations(
     merge_normalized_conversations([metadata, rooms])
 }
 
+fn confirmed_party_room(joined_room: &str) -> String {
+    joined_room.to_string()
+}
+
 fn is_login_required_error(error: &str) -> bool {
     let value = error.to_lowercase();
     value.contains("lockfile")
@@ -1038,12 +1042,6 @@ pub async fn chat_get(app: AppHandle, riot: State<'_, RiotState>) -> Result<Stri
             }
         }
 
-        let party_room_str = scopes
-            .rooms
-            .get("party")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string();
         let needs_xmpp_match_rooms = scopes
             .rooms
             .get("matchTeam")
@@ -1081,11 +1079,7 @@ pub async fn chat_get(app: AppHandle, riot: State<'_, RiotState>) -> Result<Stri
         messages.extend(xmpp_messages);
         let messages = unique_messages(messages);
 
-        let final_party_room = if !party_room.is_empty() {
-            party_room
-        } else {
-            party_room_str
-        };
+        let final_party_room = confirmed_party_room(&party_room);
         let match_team = scopes
             .rooms
             .get("matchTeam")
@@ -1520,9 +1514,16 @@ mod tests {
         assert!(result.iter().any(|item| item["channel"] == "team"));
         assert!(result.iter().any(|item| item["channel"] == "all"));
         assert!(result.iter().all(|item| item["title"] == ""));
-        assert!(result
-            .iter()
-            .all(|item| item["supportsHistory"] == false));
+        assert!(result.iter().all(|item| item["supportsHistory"] == false));
+    }
+
+    #[test]
+    fn exposes_party_room_only_after_xmpp_join() {
+        assert_eq!(
+            confirmed_party_room("joined@ares-parties.ap"),
+            "joined@ares-parties.ap"
+        );
+        assert_eq!(confirmed_party_room(""), "");
     }
 
     #[test]
