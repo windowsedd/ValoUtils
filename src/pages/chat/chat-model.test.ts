@@ -10,6 +10,7 @@ import {
 	findFriendConversationCid,
 	mergeChatMessages,
 	resolveFriendGameStatus,
+	supportsConversationHistory,
 	shouldStickToBottom,
 	shouldResetThreadPosition,
 } from "./chat-model";
@@ -90,6 +91,7 @@ describe("chat model", () => {
 				unreadCount: 0,
 				messageHistory: true,
 				muted: false,
+				supportsHistory: true,
 			},
 		]);
 		expect(conversations).toHaveLength(1);
@@ -117,6 +119,7 @@ describe("chat model", () => {
 					unreadCount: 0,
 					messageHistory: true,
 					muted: false,
+					supportsHistory: true,
 				},
 			],
 			[friend],
@@ -192,6 +195,7 @@ describe("chat model", () => {
 					unreadCount: 0,
 					messageHistory: true,
 					muted: false,
+					supportsHistory: true,
 				},
 			],
 			[{ ...friend, sessionLoopState: "INGAME" }],
@@ -217,6 +221,7 @@ describe("chat model", () => {
 				unreadCount: 0,
 				messageHistory: true,
 				muted: false,
+				supportsHistory: true,
 			},
 		];
 		expect(findFriendConversationCid(friend, conversations)).toBe("friend-puuid@chat.ap");
@@ -236,6 +241,7 @@ describe("chat model", () => {
 					unreadCount: 0,
 					messageHistory: true,
 					muted: false,
+					supportsHistory: true,
 				},
 			],
 		);
@@ -249,6 +255,35 @@ describe("chat model", () => {
 		expect(channelForCid("match-red@ares-pregame.ap")).toBe("team");
 		expect(channelForCid("match-all@ares-coregame.ap")).toBe("all");
 		expect(channelForCid("friend-cid")).toBe("friends");
+	});
+
+	test("requests REST history only for supported direct conversations", () => {
+		expect(
+			supportsConversationHistory({
+				cid: "friend@jp1.pvp.net",
+				channel: "friends",
+				type: "chat",
+				title: "",
+				participantPuuid: "friend",
+				unreadCount: 0,
+				messageHistory: true,
+				muted: false,
+				supportsHistory: true,
+			}),
+		).toBe(true);
+		expect(
+			supportsConversationHistory({
+				cid: "game-blue@ares-coregame.jp1.pvp.net",
+				channel: "team",
+				type: "groupchat",
+				title: "",
+				participantPuuid: "",
+				unreadCount: 0,
+				messageHistory: null,
+				muted: false,
+				supportsHistory: false,
+			}),
+		).toBe(false);
 	});
 
 	test("sticks only near the bottom or after own send", () => {

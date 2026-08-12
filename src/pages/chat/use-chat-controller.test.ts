@@ -27,6 +27,8 @@ describe("useChatController IPC lifecycle", () => {
 	test("requests history and sends with request ids", () => {
 		expect(source).toContain('window.Main.send("chat:history", requestId, cid)');
 		expect(source).toContain('window.Main.send("chat:send", requestId, selectedCid, text)');
+		expect(source).toContain("if (!cid || !supportsHistory) return");
+		expect(source).toContain('requestHistory(response.cid, response.type === "chat")');
 	});
 
 	test("realtime messages update cache without selecting a channel", () => {

@@ -19,6 +19,7 @@ import {
 	filterFriendConversations,
 	findFriendConversationCid,
 	mergeChatMessages,
+	supportsConversationHistory,
 } from "./chat-model";
 
 const POLL_MS = 5000;
@@ -73,8 +74,8 @@ export const useChatController = () => {
 		window.Main?.send("chat:get");
 	}, []);
 
-	const requestHistory = useCallback((cid: string) => {
-		if (!cid) return;
+	const requestHistory = useCallback((cid: string, supportsHistory: boolean) => {
+		if (!cid || !supportsHistory) return;
 		const requestId = nextRequestId("history");
 		dispatch({ type: "historyStarted", cid, requestId });
 		window.Main.send("chat:history", requestId, cid);
@@ -154,7 +155,7 @@ export const useChatController = () => {
 					requestId: response.requestId,
 					sentAt: new Date().toISOString(),
 				});
-				requestHistory(response.cid);
+				requestHistory(response.cid, response.type === "chat");
 				return;
 			}
 			dispatch({
@@ -243,11 +244,12 @@ export const useChatController = () => {
 				dispatch({ type: "selectChannel", channel, cid });
 				return;
 			}
-			const cid =
-				summary.conversations.find((conversation) => conversation.channel === channel)?.cid ??
-				null;
+			const conversation = summary.conversations.find(
+				(item) => item.channel === channel,
+			);
+			const cid = conversation?.cid ?? null;
 			dispatch({ type: "selectChannel", channel, cid });
-			if (cid) requestHistory(cid);
+			if (cid) requestHistory(cid, supportsConversationHistory(conversation));
 		},
 		[requestHistory, state.selectedChannel, state.selectedCid, summary.conversations],
 	);
@@ -255,9 +257,10 @@ export const useChatController = () => {
 	const selectConversation = useCallback(
 		(cid: string) => {
 			dispatch({ type: "selectConversation", cid });
-			requestHistory(cid);
+			const conversation = summary.conversations.find((item) => item.cid === cid);
+			requestHistory(cid, supportsConversationHistory(conversation));
 		},
-		[requestHistory],
+		[requestHistory, summary.conversations],
 	);
 
 	const openFriendChat = useCallback(
@@ -274,8 +277,16 @@ export const useChatController = () => {
 	);
 
 	const retryHistory = useCallback(() => {
-		if (state.selectedCid) requestHistory(state.selectedCid);
-	}, [requestHistory, state.selectedCid]);
+		if (state.selectedCid) {
+			const conversation = summary.conversations.find(
+				(item) => item.cid === state.selectedCid,
+			);
+			requestHistory(
+				state.selectedCid,
+				supportsConversationHistory(conversation),
+			);
+		}
+	}, [requestHistory, state.selectedCid, summary.conversations]);
 
 	const setDraft = useCallback(
 		(draft: string) => {

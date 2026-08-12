@@ -243,6 +243,7 @@ fn normalize_conversations(payload: &Value) -> Vec<Value> {
                 "unreadCount": unread_count,
                 "messageHistory": message_history,
                 "muted": muted,
+                "supportsHistory": channel == "friends",
             }))
         })
         .collect()
@@ -315,6 +316,7 @@ fn room_conversation(cid: &str, channel: &str) -> Option<Value> {
         "unreadCount": 0,
         "messageHistory": Value::Null,
         "muted": false,
+        "supportsHistory": false,
     }))
 }
 
@@ -1441,16 +1443,17 @@ mod tests {
     #[test]
     fn preserves_history_and_unread_metadata() {
         let payload = json!({"conversations": [{
-            "cid": "party@ares-parties.ap",
-            "type": "groupchat",
+            "cid": "friend@jp1.pvp.net",
+            "type": "chat",
             "message_history": true,
             "unread_count": 3,
             "muted": false
         }]});
         let result = normalize_conversations(&payload);
-        assert_eq!(result[0]["channel"], "party");
+        assert_eq!(result[0]["channel"], "friends");
         assert_eq!(result[0]["unreadCount"], 3);
         assert_eq!(result[0]["messageHistory"], true);
+        assert_eq!(result[0]["supportsHistory"], true);
     }
 
     #[test]
@@ -1517,6 +1520,9 @@ mod tests {
         assert!(result.iter().any(|item| item["channel"] == "team"));
         assert!(result.iter().any(|item| item["channel"] == "all"));
         assert!(result.iter().all(|item| item["title"] == ""));
+        assert!(result
+            .iter()
+            .all(|item| item["supportsHistory"] == false));
     }
 
     #[test]

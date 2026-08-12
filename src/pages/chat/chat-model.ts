@@ -201,6 +201,10 @@ export const channelForCid = (cid: string): ChatChannel => {
 	return "friends";
 };
 
+export const supportsConversationHistory = (
+	conversation: ChatConversation | null | undefined,
+) => conversation?.supportsHistory === true;
+
 export const shouldStickToBottom = (metrics: ScrollMetrics, sentBySelf: boolean) =>
 	sentBySelf || metrics.scrollHeight - metrics.scrollTop - metrics.clientHeight <= 64;
 

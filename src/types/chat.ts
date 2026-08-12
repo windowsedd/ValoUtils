@@ -14,6 +14,7 @@ export type ChatConversation = {
 	unreadCount: number;
 	messageHistory: boolean | null;
 	muted: boolean;
+	supportsHistory: boolean;
 };
 
 export type ChatMessage = {
