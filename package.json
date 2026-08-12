@@ -14,7 +14,7 @@
 		"release": "bun run build",
 		"version": "bun scripts/release-version.ts",
 		"version:check": "bun scripts/release-version.ts --check",
-		"lint": "eslint src --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+		"lint": "oxlint src",
 		"preview": "vite preview"
 	},
 	"overrides": {
@@ -44,6 +44,7 @@
 		"@types/react-dom": "^19.2.4",
 		"@types/swagger-ui-react": "^5.18.0",
 		"@vitejs/plugin-react": "^6.0.5",
+		"oxlint": "1.76.0",
 		"postcss": "^8.5.26",
 		"tailwindcss": "^4.3.3",
 		"typescript": "^6.0.3",
