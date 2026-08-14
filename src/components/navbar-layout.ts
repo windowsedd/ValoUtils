@@ -22,6 +22,9 @@ export const navbarLayout = {
 	overflowMenu: "fixed z-50 max-h-48 w-48 overflow-y-auto rounded-lg border border-white/10 bg-[#111820] p-1.5 shadow-2xl",
 	overflowItem: "flex min-h-10 w-full items-center gap-2 rounded-md px-3 text-left text-sm text-gray-300 outline-none hover:bg-white/5 focus-visible:ring-2 focus-visible:ring-cyan-400",
 	overflowItemActive: "bg-white/8 text-white",
+	statusTrigger: "flex h-10 max-w-56 items-center gap-2 rounded-md border border-transparent px-2 text-sm text-gray-300 transition-colors hover:border-white/10 hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400",
+	statusTriggerCompact: "group navbar-motion relative grid h-11 w-11 place-items-center rounded-xl border border-transparent text-gray-500 outline-none transition-[color,background-color,border-color] duration-200 hover:border-white/10 hover:bg-white/5 hover:text-white focus-visible:ring-2 focus-visible:ring-cyan-400",
 	statusMenu: "absolute right-0 top-11 z-50 w-60 max-w-[calc(100vw-1rem)] rounded-lg border border-white/10 bg-[#111318] p-1.5 shadow-2xl",
+	statusMenuCompact: "absolute bottom-0 left-full z-50 ml-3 w-60 max-w-[calc(100vw-5rem)] rounded-lg border border-white/10 bg-[#111318] p-1.5 shadow-2xl",
 	statusMessage: "mt-1 whitespace-normal break-words border-t border-white/10 px-2.5 pt-2 text-[11px] leading-4",
 } as const;

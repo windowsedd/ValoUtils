@@ -24,6 +24,10 @@ type PresenceInfo = {
 	lastWarning: string | null;
 };
 
+type RiotStatusBarProps = {
+	compact?: boolean;
+};
+
 const presenceColor: Record<PresenceMode, string> = {
 	online: "text-green-400",
 	offline: "text-gray-400",
@@ -42,7 +46,7 @@ const dot: Record<Status, string> = {
 	online: "bg-green-400",
 };
 
-const RiotStatusBar = () => {
+const RiotStatusBar = ({ compact = false }: RiotStatusBarProps) => {
 	const [info, setInfo] = useState<StatusInfo>({ status: "loading" });
 	const [presence, setPresence] = useState<PresenceInfo | null>(null);
 	const [menuOpen, setMenuOpen] = useState(false);
@@ -167,25 +171,43 @@ const RiotStatusBar = () => {
 		: t("riotStatus.presence.offline");
 
 	return (
-		<div ref={menuRef} className="relative select-none whitespace-nowrap">
+		<div
+			ref={menuRef}
+			className="relative select-none whitespace-nowrap"
+			data-status-layout={compact ? "compact" : "full"}
+		>
 			<button
 				type="button"
 				onClick={() => setMenuOpen((open) => !open)}
 				aria-haspopup="menu"
 				aria-expanded={menuOpen}
-				className="flex h-10 max-w-56 items-center gap-2 rounded-md border border-transparent px-2 text-sm text-gray-300 transition-colors hover:border-white/10 hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400"
+				aria-label={compact ? accountLabel : undefined}
+				data-tooltip={compact ? accountLabel : undefined}
+				className={compact ? navbarLayout.statusTriggerCompact : navbarLayout.statusTrigger}
 				title={accountLabel}
 			>
-				<span className={`h-2 w-2 shrink-0 rounded-full ${dot[info.status]}`} />
-				<span className="max-w-28 truncate xl:max-w-40">{accountLabel}</span>
-				<span className={`grid h-6 w-6 shrink-0 place-items-center text-xs ${presence ? presenceColor[presence.mode] : "text-gray-600"}`}>
-					{presence ? presenceIcon[presence.mode] : <FaUserSlash />}
-				</span>
-				<FaChevronDown className={`h-2.5 w-2.5 shrink-0 text-gray-600 transition-transform ${menuOpen ? "rotate-180" : ""}`} />
+				{compact ? (
+					<>
+						<span className="grid h-7 w-7 place-items-center rounded-full bg-white/5 text-sm" aria-hidden="true">
+							{info.status === "online" ? <FaUser /> : <FaUserSlash />}
+						</span>
+						<span className={`absolute bottom-2 right-2 h-2.5 w-2.5 rounded-full border-2 border-[#0b1016] ${dot[info.status]}`} aria-hidden="true" />
+						<span className={navbarLayout.tooltip} role="tooltip">{accountLabel}</span>
+					</>
+				) : (
+					<>
+						<span className={`h-2 w-2 shrink-0 rounded-full ${dot[info.status]}`} />
+						<span className="max-w-28 truncate xl:max-w-40">{accountLabel}</span>
+						<span className={`grid h-6 w-6 shrink-0 place-items-center text-xs ${presence ? presenceColor[presence.mode] : "text-gray-600"}`}>
+							{presence ? presenceIcon[presence.mode] : <FaUserSlash />}
+						</span>
+						<FaChevronDown className={`h-2.5 w-2.5 shrink-0 text-gray-600 transition-transform ${menuOpen ? "rotate-180" : ""}`} />
+					</>
+				)}
 			</button>
 
 			{menuOpen && (
-				<div className={navbarLayout.statusMenu} role="menu">
+				<div className={compact ? navbarLayout.statusMenuCompact : navbarLayout.statusMenu} role="menu">
 					<div className="px-2.5 py-2">
 						<p className="truncate text-sm font-semibold text-white">{accountLabel}</p>
 						<p className={`mt-0.5 text-xs ${presence ? presenceColor[presence.mode] : "text-gray-600"}`}>
