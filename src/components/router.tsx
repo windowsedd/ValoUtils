@@ -1,9 +1,10 @@
-import React, { createContext, Key, useContext, useEffect, useMemo, useState } from "react";
-import { Tabs } from "@heroui/react";
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Route } from "@/types/router";
 import RiotStatusBar from "@/components/riot-status-bar";
+import { NavbarDock } from "@/components/navbar-dock";
 import { useTranslation } from "react-i18next";
 import { navbarLayout } from "@/components/navbar-layout";
+import { shouldDismissNavbarOverflow, splitNavbarRoutes } from "@/util/navbar-routes";
 import {
 	filterVisibleRoutes,
 	normalizeHiddenTabs,
@@ -106,48 +107,55 @@ const Router = () => {
 	const { routes } = useContext(RouterContext);
 	const { selectedId, body, goTo } = useRouter();
 	const { t } = useTranslation();
+	const [overflowOpen, setOverflowOpen] = useState(false);
+	const overflowRef = useRef<HTMLDivElement>(null);
+	const overflowMenuRef = useRef<HTMLDivElement>(null);
+	const { dockRoutes, overflowRoutes } = splitNavbarRoutes(routes);
+
+	const selectRoute = (routeId: string) => {
+		goTo(routeId);
+		setOverflowOpen(false);
+		window.Main.send("analytics:track", "tab_change", JSON.stringify({ tab: routeId }));
+	};
+
+	useEffect(() => {
+		if (!overflowOpen) return;
+		const closeOutside = (event: PointerEvent) => {
+			const target = event.target as Node;
+			if (
+				!overflowRef.current?.contains(target) &&
+				!overflowMenuRef.current?.contains(target)
+			) {
+				setOverflowOpen(false);
+			}
+		};
+		const closeOnEscape = (event: KeyboardEvent) => {
+			if (!event.defaultPrevented && shouldDismissNavbarOverflow(event.key)) {
+				setOverflowOpen(false);
+			}
+		};
+		document.addEventListener("pointerdown", closeOutside);
+		document.addEventListener("keydown", closeOnEscape);
+		return () => {
+			document.removeEventListener("pointerdown", closeOutside);
+			document.removeEventListener("keydown", closeOnEscape);
+		};
+	}, [overflowOpen]);
 
 	return (
 		<>
-			<div className={navbarLayout.root}>
-				<div className={navbarLayout.tabsViewport}>
-				<Tabs
-					variant="secondary"
-					selectedKey={selectedId}
-					onSelectionChange={(key: Key) => {
-						const routeId = key as string;
-						goTo(routeId);
-						window.Main.send(
-							"analytics:track",
-							"tab_change",
-							JSON.stringify({
-								tab: routeId,
-							})
-						);
-					}}
-				>
-					<Tabs.ListContainer>
-						<Tabs.List
-							aria-label="Options"
-							className={navbarLayout.tabsList}
-						>
-							{routes.map((route) => (
-								<Tabs.Tab key={route.id} id={route.id} className={navbarLayout.tab}>
-									<div className="flex items-center space-x-2">
-										{route.icon}
-										<span>{t(route.title)}</span>
-									</div>
-									<Tabs.Indicator className="w-full bg-[#22d3ee]!" />
-								</Tabs.Tab>
-							))}
-						</Tabs.List>
-					</Tabs.ListContainer>
-				</Tabs>
+			<header className={navbarLayout.root}>
+				<div className={navbarLayout.utilityRow}>
+					<div className={navbarLayout.wordmark} aria-label="ValoUtils">
+						<span className={navbarLayout.wordmarkBadge} aria-hidden="true">V</span>
+						<span>VALOUTILS</span>
+					</div>
+					<div className={navbarLayout.status}><RiotStatusBar /></div>
 				</div>
-				<div className={navbarLayout.status}>
-					<RiotStatusBar />
+				<div className={navbarLayout.dockViewport}>
+					<NavbarDock dockRoutes={dockRoutes} overflowRoutes={overflowRoutes} selectedId={selectedId} overflowOpen={overflowOpen} overflowRef={overflowRef} overflowMenuRef={overflowMenuRef} moreLabel={t("nav.more")} translate={t} onSelect={selectRoute} onOverflowOpenChange={setOverflowOpen} />
 				</div>
-			</div>
+			</header>
 			<div className="flex-1 overflow-y-auto">{body}</div>
 		</>
 	);

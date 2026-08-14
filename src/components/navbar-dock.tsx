@@ -1,7 +1,8 @@
 import { navbarLayout } from "@/components/navbar-layout";
 import type { Route } from "@/types/router";
 import { isOverflowRouteSelected } from "@/util/navbar-routes";
-import { useEffect, useRef, useState, type RefObject } from "react";
+import { createPortal } from "react-dom";
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { FaEllipsis } from "react-icons/fa6";
 
 type NavbarDockProps = {
@@ -10,11 +11,27 @@ type NavbarDockProps = {
   selectedId: string;
   overflowOpen: boolean;
   overflowRef: RefObject<HTMLDivElement | null>;
+  overflowMenuRef?: RefObject<HTMLDivElement | null>;
   moreLabel: string;
   translate: (key: string) => string;
   onSelect: (id: string) => void;
   onOverflowOpenChange: (open: boolean) => void;
 };
+
+const overflowMenuWidth = 192;
+const overflowMenuMargin = 8;
+const useIsomorphicLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
+
+export const getOverflowMenuPosition = (
+  anchor: Pick<DOMRect, "bottom" | "right">,
+  viewportWidth: number,
+) => ({
+  top: anchor.bottom + overflowMenuMargin,
+  left: Math.max(
+    overflowMenuMargin,
+    Math.min(anchor.right - overflowMenuWidth, viewportWidth - overflowMenuWidth - overflowMenuMargin),
+  ),
+});
 
 export const getOverflowMenuFocusIndex = (key: string, focusIndex: number, itemCount: number) => {
   if (itemCount === 0) return null;
@@ -39,6 +56,7 @@ export const NavbarDock = ({
   selectedId,
   overflowOpen,
   overflowRef,
+  overflowMenuRef,
   moreLabel,
   translate,
   onSelect,
@@ -48,6 +66,26 @@ export const NavbarDock = ({
   const moreTriggerRef = useRef<HTMLButtonElement>(null);
   const menuItemRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const previousOverflowOpen = useRef(overflowOpen);
+  const [overflowMenuPosition, setOverflowMenuPosition] = useState({ top: 0, left: 0 });
+
+  useIsomorphicLayoutEffect(() => {
+    if (!overflowOpen) return;
+
+    const updateOverflowMenuPosition = () => {
+      const triggerBounds = moreTriggerRef.current?.getBoundingClientRect();
+      if (triggerBounds) {
+        setOverflowMenuPosition(getOverflowMenuPosition(triggerBounds, window.innerWidth));
+      }
+    };
+
+    updateOverflowMenuPosition();
+    window.addEventListener("resize", updateOverflowMenuPosition);
+    window.addEventListener("scroll", updateOverflowMenuPosition, true);
+    return () => {
+      window.removeEventListener("resize", updateOverflowMenuPosition);
+      window.removeEventListener("scroll", updateOverflowMenuPosition, true);
+    };
+  }, [overflowOpen]);
 
   useEffect(() => {
     const opening = overflowOpen && !previousOverflowOpen.current;
@@ -68,6 +106,52 @@ export const NavbarDock = ({
   const overflowSelected = isOverflowRouteSelected(overflowRoutes, selectedId);
   const tabClass = (active: boolean) =>
     `${navbarLayout.dockTab} ${active ? navbarLayout.dockTabActive : navbarLayout.dockTabInactive}`;
+  const overflowMenu = overflowOpen && (
+    <div
+      ref={overflowMenuRef}
+      className={navbarLayout.overflowMenu}
+      role="menu"
+      style={overflowMenuPosition}
+    >
+      {overflowRoutes.map((route, index) => (
+        <button
+          key={route.id}
+          type="button"
+          role="menuitem"
+          aria-current={route.id === selectedId ? "page" : undefined}
+          className={`${navbarLayout.overflowItem} ${route.id === selectedId ? navbarLayout.overflowItemActive : ""}`}
+          onClick={() => onSelect(route.id)}
+          onFocus={() => setOverflowFocusIndex(index)}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              event.preventDefault();
+              onOverflowOpenChange(false);
+              moreTriggerRef.current?.focus();
+              return;
+            }
+
+            const nextFocusIndex = getOverflowMenuFocusIndex(
+              event.key,
+              index,
+              overflowRoutes.length,
+            );
+
+            if (nextFocusIndex !== null) {
+              event.preventDefault();
+              setOverflowFocusIndex(nextFocusIndex);
+            }
+          }}
+          ref={(element) => {
+            menuItemRefs.current[index] = element;
+          }}
+          tabIndex={index === overflowFocusIndex ? 0 : -1}
+        >
+          {route.icon}
+          <span>{translate(route.title)}</span>
+        </button>
+      ))}
+    </div>
+  );
 
   return (
     <nav className={navbarLayout.dock} aria-label="Primary navigation">
@@ -97,47 +181,7 @@ export const NavbarDock = ({
             <FaEllipsis aria-hidden="true" />
             <span>{moreLabel}</span>
           </button>
-          {overflowOpen && (
-            <div className={navbarLayout.overflowMenu} role="menu">
-              {overflowRoutes.map((route, index) => (
-                <button
-                  key={route.id}
-                  type="button"
-                  role="menuitem"
-                  aria-current={route.id === selectedId ? "page" : undefined}
-                  className={`${navbarLayout.overflowItem} ${route.id === selectedId ? navbarLayout.overflowItemActive : ""}`}
-                  onClick={() => onSelect(route.id)}
-                  onFocus={() => setOverflowFocusIndex(index)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Escape") {
-                      event.preventDefault();
-                      onOverflowOpenChange(false);
-                      moreTriggerRef.current?.focus();
-                      return;
-                    }
-
-                    const nextFocusIndex = getOverflowMenuFocusIndex(
-                      event.key,
-                      index,
-                      overflowRoutes.length,
-                    );
-
-                    if (nextFocusIndex !== null) {
-                      event.preventDefault();
-                      setOverflowFocusIndex(nextFocusIndex);
-                    }
-                  }}
-                  ref={(element) => {
-                    menuItemRefs.current[index] = element;
-                  }}
-                  tabIndex={index === overflowFocusIndex ? 0 : -1}
-                >
-                  {route.icon}
-                  <span>{translate(route.title)}</span>
-                </button>
-              ))}
-            </div>
-          )}
+          {overflowMenu && (typeof document === "undefined" ? overflowMenu : createPortal(overflowMenu, document.body))}
         </div>
       )}
     </nav>

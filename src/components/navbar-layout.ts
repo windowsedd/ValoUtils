@@ -9,7 +9,7 @@ export const navbarLayout = {
 	dockTabActive: "bg-[#ff4655] text-white shadow-lg shadow-[#ff4655]/20",
 	dockTabInactive: "text-gray-400 hover:bg-white/5 hover:text-white",
 	status: "relative shrink-0 flex items-center",
-	overflowMenu: "absolute right-0 top-full z-50 mt-2 w-48 rounded-lg border border-white/10 bg-[#111820] p-1.5 shadow-2xl",
+	overflowMenu: "fixed z-50 w-48 rounded-lg border border-white/10 bg-[#111820] p-1.5 shadow-2xl",
 	overflowItem: "flex min-h-10 w-full items-center gap-2 rounded-md px-3 text-left text-sm text-gray-300 outline-none hover:bg-white/5 focus-visible:ring-2 focus-visible:ring-cyan-400",
 	overflowItemActive: "bg-white/8 text-white",
 	statusMenu: "absolute right-0 top-11 z-50 w-60 max-w-[calc(100vw-1rem)] rounded-lg border border-white/10 bg-[#111318] p-1.5 shadow-2xl",

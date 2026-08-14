@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import type { Route } from "@/types/router";
-import { isOverflowRouteSelected, splitNavbarRoutes } from "./navbar-routes";
+import {
+  isOverflowRouteSelected,
+  shouldDismissNavbarOverflow,
+  splitNavbarRoutes,
+} from "./navbar-routes";
 
 const route = (id: string): Route => ({ id, title: `nav.${id}`, component: null });
 const routes = ["profiles", "career", "matches", "live", "friends", "chat", "settings"].map(route);
@@ -21,5 +25,10 @@ describe("floating navbar route groups", () => {
     const { overflowRoutes } = splitNavbarRoutes(routes);
     expect(isOverflowRouteSelected(overflowRoutes, "chat")).toBe(true);
     expect(isOverflowRouteSelected(overflowRoutes, "profiles")).toBe(false);
+  });
+
+  test("dismisses overflow only for Escape", () => {
+    expect(shouldDismissNavbarOverflow("Escape")).toBe(true);
+    expect(shouldDismissNavbarOverflow("Enter")).toBe(false);
   });
 });

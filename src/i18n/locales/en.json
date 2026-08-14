@@ -10,7 +10,8 @@
     "about": "About",
     "apiReference": "API Reference",
     "dummyBot": "Bot",
-    "matches": "Matches"
+    "matches": "Matches",
+    "more": "More"
   },
   "common": {
     "close": "Close",

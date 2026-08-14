@@ -10,7 +10,8 @@
     "about": "정보",
     "apiReference": "API 문서",
     "dummyBot": "봇",
-    "matches": "매치"
+    "matches": "매치",
+    "more": "더보기"
   },
   "common": {
     "close": "닫기",

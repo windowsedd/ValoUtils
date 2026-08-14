@@ -151,6 +151,12 @@ h6 {
 	display: none;
 }
 
+@media (prefers-reduced-motion: reduce) {
+	.navbar-motion {
+		transition-duration: 0.01ms !important;
+	}
+}
+
 /* Glassmorphism effect */
 .glass {
 	background: rgba(255, 255, 255, 0.05);
