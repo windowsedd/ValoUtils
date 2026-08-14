@@ -1,10 +1,9 @@
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Route } from "@/types/router";
 import RiotStatusBar from "@/components/riot-status-bar";
-import { NavbarDock } from "@/components/navbar-dock";
+import { NavbarRail } from "@/components/navbar-rail";
 import { useTranslation } from "react-i18next";
-import { navbarLayout } from "@/components/navbar-layout";
-import { shouldDismissNavbarOverflow, splitNavbarRoutes } from "@/util/navbar-routes";
+import { partitionNavbarRoutes, shouldDismissNavbarOverflow } from "@/util/navbar-routes";
 import {
 	filterVisibleRoutes,
 	normalizeHiddenTabs,
@@ -110,7 +109,7 @@ const Router = () => {
 	const [overflowOpen, setOverflowOpen] = useState(false);
 	const overflowRef = useRef<HTMLDivElement>(null);
 	const overflowMenuRef = useRef<HTMLDivElement>(null);
-	const { dockRoutes, overflowRoutes } = splitNavbarRoutes(routes);
+	const { directRoutes, overflowRoutes, settingsRoute } = partitionNavbarRoutes(routes);
 
 	const selectRoute = (routeId: string) => {
 		goTo(routeId);
@@ -143,21 +142,26 @@ const Router = () => {
 	}, [overflowOpen]);
 
 	return (
-		<>
-			<header className={navbarLayout.root}>
-				<div className={navbarLayout.utilityRow}>
-					<div className={navbarLayout.wordmark} aria-label="ValoUtils">
-						<span className={navbarLayout.wordmarkBadge} aria-hidden="true">V</span>
-						<span>VALOUTILS</span>
-					</div>
-					<div className={navbarLayout.status}><RiotStatusBar /></div>
-				</div>
-				<div className={navbarLayout.dockViewport}>
-					<NavbarDock dockRoutes={dockRoutes} overflowRoutes={overflowRoutes} selectedId={selectedId} overflowOpen={overflowOpen} overflowRef={overflowRef} overflowMenuRef={overflowMenuRef} moreLabel={t("nav.more")} translate={t} onSelect={selectRoute} onOverflowOpenChange={setOverflowOpen} />
-				</div>
-			</header>
-			<div className="flex-1 overflow-y-auto">{body}</div>
-		</>
+		<div
+			className="flex h-full min-h-0 w-full overflow-hidden"
+			data-router-layout="command-rail"
+		>
+			<NavbarRail
+				directRoutes={directRoutes}
+				overflowRoutes={overflowRoutes}
+				settingsRoute={settingsRoute}
+				selectedId={selectedId}
+				overflowOpen={overflowOpen}
+				overflowRef={overflowRef}
+				overflowMenuRef={overflowMenuRef}
+				moreLabel={t("nav.more")}
+				translate={t}
+				onSelect={selectRoute}
+				onOverflowOpenChange={setOverflowOpen}
+				statusControl={<RiotStatusBar compact />}
+			/>
+			<main className="min-w-0 flex-1 overflow-y-auto">{body}</main>
+		</div>
 	);
 };
 

@@ -143,14 +143,6 @@ h6 {
 	background: var(--valo-dark-red);
 }
 
-.nav-tabs-scroll {
-	scrollbar-width: none;
-}
-
-.nav-tabs-scroll::-webkit-scrollbar {
-	display: none;
-}
-
 @media (prefers-reduced-motion: reduce) {
 	.navbar-motion {
 		transition-duration: 0.01ms !important;

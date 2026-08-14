@@ -34,7 +34,6 @@ type RailRouteButtonProps = {
   onSelect: (id: string) => void;
 };
 
-const overflowMenuWidth = 192;
 const overflowMenuMaxHeight = 192;
 const overflowMenuMargin = 8;
 const useIsomorphicLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
