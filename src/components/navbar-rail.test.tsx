@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { Route } from "@/types/router";
 import { navbarLayout } from "./navbar-layout";
-import { NavbarRail } from "./navbar-rail";
+import { getRailTooltipPosition, NavbarRail } from "./navbar-rail";
 
 const route = (id: string): Route => ({
   id,
@@ -68,7 +68,17 @@ describe("NavbarRail", () => {
   test("keeps only the middle route list scrollable", () => {
     expect(navbarLayout.railRoutes).toContain("overflow-y-auto");
     expect(navbarLayout.railRoutes).toContain("command-rail-scroll");
+    expect(navbarLayout.tooltip).toContain("fixed");
+    expect(navbarLayout.tooltip).not.toContain("absolute");
+    expect(navbarLayout.railSelectionMarker).not.toContain("-left-");
     expect(navbarLayout.railBottom).not.toContain("overflow");
     expect(navbarLayout.railStatus).not.toContain("overflow");
+  });
+
+  test("positions portaled tooltips beside their rail button", () => {
+    expect(getRailTooltipPosition({ top: 80, right: 56, height: 44 })).toEqual({
+      top: 102,
+      left: 68,
+    });
   });
 });

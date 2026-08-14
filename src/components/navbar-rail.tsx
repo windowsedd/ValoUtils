@@ -1,6 +1,14 @@
 import { navbarLayout } from "@/components/navbar-layout";
 import type { Route } from "@/types/router";
-import type { ReactNode } from "react";
+import { createPortal } from "react-dom";
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import valoUtilsIcon from "../../src-tauri/icons/icon.png";
 
 type NavbarRailProps = {
@@ -19,21 +27,70 @@ type RailRouteButtonProps = {
   onSelect: (id: string) => void;
 };
 
+const tooltipGap = 12;
+const useIsomorphicLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
+
+export const getRailTooltipPosition = (
+  anchor: Pick<DOMRect, "top" | "right" | "height">,
+) => ({
+  top: anchor.top + anchor.height / 2,
+  left: anchor.right + tooltipGap,
+});
+
 const RailRouteButton = ({ route, active, translate, onSelect }: RailRouteButtonProps) => {
   const label = translate(route.title);
+  const tooltipId = useId();
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const [tooltipVisible, setTooltipVisible] = useState(false);
+  const [tooltipPosition, setTooltipPosition] = useState({ top: 0, left: 0 });
+
+  useIsomorphicLayoutEffect(() => {
+    if (!tooltipVisible) return;
+
+    const updateTooltipPosition = () => {
+      const buttonBounds = buttonRef.current?.getBoundingClientRect();
+      if (buttonBounds) setTooltipPosition(getRailTooltipPosition(buttonBounds));
+    };
+
+    updateTooltipPosition();
+    window.addEventListener("resize", updateTooltipPosition);
+    window.addEventListener("scroll", updateTooltipPosition, true);
+    return () => {
+      window.removeEventListener("resize", updateTooltipPosition);
+      window.removeEventListener("scroll", updateTooltipPosition, true);
+    };
+  }, [tooltipVisible]);
+
+  const tooltip = (
+    <span
+      id={tooltipId}
+      className={`${navbarLayout.tooltip} ${tooltipVisible ? navbarLayout.tooltipVisible : navbarLayout.tooltipHidden}`}
+      role="tooltip"
+      aria-hidden={!tooltipVisible}
+      style={tooltipPosition}
+    >
+      {label}
+    </span>
+  );
 
   return (
     <button
+      ref={buttonRef}
       type="button"
       aria-label={label}
       aria-current={active ? "page" : undefined}
+      aria-describedby={tooltipVisible ? tooltipId : undefined}
       data-tooltip={label}
       className={`${navbarLayout.railButton} ${active ? navbarLayout.railButtonActive : navbarLayout.railButtonInactive}`}
       onClick={() => onSelect(route.id)}
+      onPointerEnter={() => setTooltipVisible(true)}
+      onPointerLeave={() => setTooltipVisible(false)}
+      onFocus={() => setTooltipVisible(true)}
+      onBlur={() => setTooltipVisible(false)}
     >
       {active && <span className={navbarLayout.railSelectionMarker} aria-hidden="true" />}
       <span className={navbarLayout.railIcon} aria-hidden="true">{route.icon}</span>
-      <span className={navbarLayout.tooltip} role="tooltip">{label}</span>
+      {typeof document === "undefined" ? tooltip : createPortal(tooltip, document.body)}
     </button>
   );
 };

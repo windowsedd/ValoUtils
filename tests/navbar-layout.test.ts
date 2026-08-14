@@ -8,19 +8,22 @@ const statusBar = readFileSync(join(root, "src/components/riot-status-bar.tsx"),
 const locales = ["en", "ko", "zh-TW"] as const;
 
 describe("navbarLayout", () => {
-	test("allows the status dropdown to extend below the navbar", () => {
-		expect(navbarLayout.root).not.toContain("overflow-hidden");
+	test("keeps the fixed rail surface open for portaled controls", () => {
+		expect(navbarLayout.rail).toContain("w-16");
+		expect(navbarLayout.rail).toContain("overflow-visible");
 	});
 
-	test("keeps account controls visible while tabs scroll horizontally", () => {
-		expect(navbarLayout.tabsViewport).toContain("min-w-0");
-		expect(navbarLayout.tabsViewport).toContain("overflow-x-auto");
-		expect(navbarLayout.status).toContain("shrink-0");
+	test("keeps Settings and account controls visible while routes scroll vertically", () => {
+		expect(navbarLayout.railRoutes).toContain("min-h-0");
+		expect(navbarLayout.railRoutes).toContain("overflow-y-auto");
+		expect(navbarLayout.railBottom).toContain("shrink-0");
+		expect(navbarLayout.railStatus).toContain("shrink-0");
 	});
 
-	test("uses compact tab spacing", () => {
-		expect(navbarLayout.tabsList).toContain("gap-3");
-		expect(navbarLayout.tab).toContain("whitespace-nowrap");
+	test("uses compact direct-route spacing", () => {
+		expect(navbarLayout.railRoutes).toContain("gap-1");
+		expect(navbarLayout.railButton).toContain("h-11");
+		expect(navbarLayout.railButton).toContain("w-11");
 	});
 
 	test("contains status menu content within the viewport", () => {
