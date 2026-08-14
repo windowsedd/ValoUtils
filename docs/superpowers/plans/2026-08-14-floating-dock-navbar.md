@@ -141,6 +141,7 @@ Expected: FAIL because `NavbarDock` does not exist.
 ```tsx
 import { navbarLayout } from "@/components/navbar-layout";
 import type { Route } from "@/types/router";
+import { isOverflowRouteSelected } from "@/util/navbar-routes";
 import type { RefObject } from "react";
 import { FaEllipsis } from "react-icons/fa6";
 
@@ -158,7 +159,7 @@ type NavbarDockProps = {
 
 export const NavbarDock = ({ dockRoutes, overflowRoutes, selectedId, overflowOpen, overflowRef, moreLabel, translate, onSelect, onOverflowOpenChange }: NavbarDockProps) => {
   if (dockRoutes.length === 0) return null;
-  const overflowSelected = overflowRoutes.some(({ id }) => id === selectedId);
+  const overflowSelected = isOverflowRouteSelected(overflowRoutes, selectedId);
   const tabClass = (active: boolean) => `${navbarLayout.dockTab} ${active ? navbarLayout.dockTabActive : navbarLayout.dockTabInactive}`;
 
   return (
@@ -234,7 +235,7 @@ git commit -m "feat: add floating navbar dock"
 - Modify: `src/index.css`
 
 **Interfaces:**
-- Consumes: `NavbarDock`, `splitNavbarRoutes`, `isOverflowRouteSelected`, the existing router context, and `RiotStatusBar`.
+- Consumes: `NavbarDock`, `splitNavbarRoutes`, `shouldDismissNavbarOverflow`, the existing router context, and `RiotStatusBar`.
 - Produces: the complete two-row header and unchanged page selection/analytics behavior.
 
 - [ ] **Step 1: Add a failing dismissal-policy test to `navbar-routes.test.ts`**
