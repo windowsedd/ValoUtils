@@ -21,9 +21,21 @@ const route = (id: string): Route => ({
 
 describe("Router command rail layout", () => {
   test("renders the compact rail beside the selected page", () => {
+    const routes = [
+      "profiles",
+      "career",
+      "matches",
+      "live-game",
+      "friends",
+      "chat",
+      "replays",
+      "settings",
+      "about",
+      "fake-player",
+    ].map(route);
     const markup = renderToStaticMarkup(
       <RouterProvider
-        routes={[route("profiles"), route("settings")]}
+        routes={routes}
       >
         <Router />
       </RouterProvider>,
@@ -34,5 +46,8 @@ describe("Router command rail layout", () => {
     expect(markup).toContain('data-status-layout="compact"');
     expect(markup).toContain("profiles page");
     expect(markup).not.toContain("VALOUTILS");
+    expect(markup).toContain('aria-label="nav.about"');
+    expect(markup).toContain('aria-label="nav.fake-player"');
+    expect(markup).not.toContain('aria-label="nav.more"');
   });
 });

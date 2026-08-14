@@ -1,9 +1,9 @@
-import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { Route } from "@/types/router";
 import RiotStatusBar from "@/components/riot-status-bar";
 import { NavbarRail } from "@/components/navbar-rail";
 import { useTranslation } from "react-i18next";
-import { partitionNavbarRoutes, shouldDismissNavbarOverflow } from "@/util/navbar-routes";
+import { partitionNavbarRoutes } from "@/util/navbar-routes";
 import {
 	filterVisibleRoutes,
 	normalizeHiddenTabs,
@@ -106,40 +106,12 @@ const Router = () => {
 	const { routes } = useContext(RouterContext);
 	const { selectedId, body, goTo } = useRouter();
 	const { t } = useTranslation();
-	const [overflowOpen, setOverflowOpen] = useState(false);
-	const overflowRef = useRef<HTMLDivElement>(null);
-	const overflowMenuRef = useRef<HTMLDivElement>(null);
-	const { directRoutes, overflowRoutes, settingsRoute } = partitionNavbarRoutes(routes);
+	const { directRoutes, settingsRoute } = partitionNavbarRoutes(routes);
 
 	const selectRoute = (routeId: string) => {
 		goTo(routeId);
-		setOverflowOpen(false);
 		window.Main.send("analytics:track", "tab_change", JSON.stringify({ tab: routeId }));
 	};
-
-	useEffect(() => {
-		if (!overflowOpen) return;
-		const closeOutside = (event: PointerEvent) => {
-			const target = event.target as Node;
-			if (
-				!overflowRef.current?.contains(target) &&
-				!overflowMenuRef.current?.contains(target)
-			) {
-				setOverflowOpen(false);
-			}
-		};
-		const closeOnEscape = (event: KeyboardEvent) => {
-			if (!event.defaultPrevented && shouldDismissNavbarOverflow(event.key)) {
-				setOverflowOpen(false);
-			}
-		};
-		document.addEventListener("pointerdown", closeOutside);
-		document.addEventListener("keydown", closeOnEscape);
-		return () => {
-			document.removeEventListener("pointerdown", closeOutside);
-			document.removeEventListener("keydown", closeOnEscape);
-		};
-	}, [overflowOpen]);
 
 	return (
 		<div
@@ -148,16 +120,10 @@ const Router = () => {
 		>
 			<NavbarRail
 				directRoutes={directRoutes}
-				overflowRoutes={overflowRoutes}
 				settingsRoute={settingsRoute}
 				selectedId={selectedId}
-				overflowOpen={overflowOpen}
-				overflowRef={overflowRef}
-				overflowMenuRef={overflowMenuRef}
-				moreLabel={t("nav.more")}
 				translate={t}
 				onSelect={selectRoute}
-				onOverflowOpenChange={setOverflowOpen}
 				statusControl={<RiotStatusBar compact />}
 			/>
 			<main className="min-w-0 flex-1 overflow-y-auto">{body}</main>

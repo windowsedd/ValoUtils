@@ -2,12 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { Route } from "@/types/router";
 import { navbarLayout } from "./navbar-layout";
-import {
-  getOverflowMenuFocusIndex,
-  getOverflowMenuPosition,
-  getRelativeFocusableIndex,
-  NavbarRail,
-} from "./navbar-rail";
+import { NavbarRail } from "./navbar-rail";
 
 const route = (id: string): Route => ({
   id,
@@ -20,15 +15,10 @@ const renderRail = (overrides: Partial<React.ComponentProps<typeof NavbarRail>> 
   renderToStaticMarkup(
     <NavbarRail
       directRoutes={[route("profiles")]}
-      overflowRoutes={[]}
       settingsRoute={route("settings")}
       selectedId="profiles"
-      overflowOpen={false}
-      overflowRef={{ current: null }}
-      moreLabel="More"
       translate={(key) => key}
       onSelect={() => {}}
-      onOverflowOpenChange={() => {}}
       statusControl={<button type="button">Account</button>}
       {...overrides}
     />,
@@ -48,6 +38,8 @@ describe("NavbarRail", () => {
     expect(navbarLayout.rail).not.toContain("hover:w-");
     expect(navbarLayout.rail).not.toContain("group-hover:w-");
     expect(navbarLayout.tooltip).toContain("navbar-motion");
+    expect(markup).toContain('data-brand-mark="valoutils-icon"');
+    expect(markup).not.toContain(">V</span>");
   });
 
   test("pins Settings at the bottom and marks a direct route current", () => {
@@ -60,54 +52,23 @@ describe("NavbarRail", () => {
     expect(markup).not.toContain('aria-haspopup="menu"');
   });
 
-  test("styles More as selected while only the exact overflow route is current", () => {
+  test("renders About and Bot directly without a More menu", () => {
     const markup = renderRail({
-      overflowRoutes: [route("about")],
+      directRoutes: [route("about"), route("fake-player")],
       selectedId: "about",
-      overflowOpen: true,
     });
 
-    expect(markup).toContain('aria-label="More"');
-    expect(markup).toContain('aria-expanded="true"');
-    expect(markup).toContain('role="menu"');
+    expect(markup).toContain('aria-label="about"');
+    expect(markup).toContain('aria-label="fake-player"');
     expect(markup.match(/aria-current="page"/g)).toHaveLength(1);
-    expect(markup).toMatch(/role="menuitem" aria-current="page"/);
+    expect(markup).not.toContain('aria-label="More"');
+    expect(markup).not.toContain('aria-haspopup="menu"');
   });
 
-  test("keeps the first overflow item as the initial tab stop", () => {
-    const markup = renderRail({
-      overflowRoutes: [route("about"), route("dummy")],
-      overflowOpen: true,
-    });
-
-    expect(markup).toMatch(/role="menuitem"[^>]*tabindex="0"/);
-    expect(markup).toMatch(/role="menuitem"[^>]*tabindex="-1"/);
-  });
-
-  test("calculates cyclic menu focus for navigation keys", () => {
-    expect(getOverflowMenuFocusIndex("ArrowDown", 1, 3)).toBe(2);
-    expect(getOverflowMenuFocusIndex("ArrowDown", 2, 3)).toBe(0);
-    expect(getOverflowMenuFocusIndex("ArrowUp", 0, 3)).toBe(2);
-    expect(getOverflowMenuFocusIndex("Home", 2, 3)).toBe(0);
-    expect(getOverflowMenuFocusIndex("End", 0, 3)).toBe(2);
-    expect(getOverflowMenuFocusIndex("Tab", 1, 3)).toBeNull();
-  });
-
-  test("positions the portaled menu beside its trigger within the viewport", () => {
-    expect(getOverflowMenuPosition({ top: 80, right: 64 }, 560)).toEqual({
-      top: 80,
-      left: 72,
-    });
-    expect(getOverflowMenuPosition({ top: 500, right: 64 }, 560)).toEqual({
-      top: 360,
-      left: 72,
-    });
-  });
-
-  test("finds adjacent focusable controls without wrapping", () => {
-    expect(getRelativeFocusableIndex(2, 5, 1)).toBe(3);
-    expect(getRelativeFocusableIndex(2, 5, -1)).toBe(1);
-    expect(getRelativeFocusableIndex(0, 5, -1)).toBeNull();
-    expect(getRelativeFocusableIndex(4, 5, 1)).toBeNull();
+  test("keeps only the middle route list scrollable", () => {
+    expect(navbarLayout.railRoutes).toContain("overflow-y-auto");
+    expect(navbarLayout.railRoutes).toContain("command-rail-scroll");
+    expect(navbarLayout.railBottom).not.toContain("overflow");
+    expect(navbarLayout.railStatus).not.toContain("overflow");
   });
 });
