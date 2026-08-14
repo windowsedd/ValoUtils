@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { Route } from "@/types/router";
-import { NavbarDock } from "./navbar-dock";
+import { getOverflowMenuFocusIndex, NavbarDock } from "./navbar-dock";
 
 const route = (id: string): Route => ({
   id,
@@ -50,5 +50,33 @@ describe("NavbarDock", () => {
     expect(markup).toContain('role="menu"');
     expect(markup).toContain('aria-current="page"');
     expect(markup).toContain("settings");
+  });
+
+  test("keeps the first overflow item as the initial tab stop", () => {
+    const markup = renderToStaticMarkup(
+      <NavbarDock
+        dockRoutes={[route("profiles")]}
+        overflowRoutes={[route("settings"), route("about")]}
+        selectedId="profiles"
+        overflowOpen
+        overflowRef={{ current: null }}
+        moreLabel="More"
+        translate={(key) => key}
+        onSelect={() => {}}
+        onOverflowOpenChange={() => {}}
+      />,
+    );
+
+    expect(markup).toMatch(/role="menuitem"[^>]*tabindex="0"/);
+    expect(markup).toMatch(/role="menuitem"[^>]*tabindex="-1"/);
+  });
+
+  test("calculates cyclic menu focus for navigation keys", () => {
+    expect(getOverflowMenuFocusIndex("ArrowDown", 1, 3)).toBe(2);
+    expect(getOverflowMenuFocusIndex("ArrowDown", 2, 3)).toBe(0);
+    expect(getOverflowMenuFocusIndex("ArrowUp", 0, 3)).toBe(2);
+    expect(getOverflowMenuFocusIndex("Home", 2, 3)).toBe(0);
+    expect(getOverflowMenuFocusIndex("End", 0, 3)).toBe(2);
+    expect(getOverflowMenuFocusIndex("Tab", 1, 3)).toBeNull();
   });
 });
