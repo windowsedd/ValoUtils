@@ -192,7 +192,7 @@ const RiotStatusBar = ({ compact = false }: RiotStatusBarProps) => {
 							{info.status === "online" ? <FaUser /> : <FaUserSlash />}
 						</span>
 						<span className={`absolute bottom-2 right-2 h-2.5 w-2.5 rounded-full border-2 border-[#0b1016] ${dot[info.status]}`} aria-hidden="true" />
-						<span className={navbarLayout.tooltip} role="tooltip">{accountLabel}</span>
+						<span className={navbarLayout.statusTooltip} role="tooltip">{accountLabel}</span>
 					</>
 				) : (
 					<>

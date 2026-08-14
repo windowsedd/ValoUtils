@@ -13,6 +13,7 @@ export const navbarLayout = {
 	tooltip: "navbar-motion pointer-events-none fixed z-[60] -translate-y-1/2 whitespace-nowrap rounded-md border border-white/10 bg-[#111820] px-2.5 py-1.5 text-xs font-medium text-white shadow-xl transition-[opacity,transform] duration-150",
 	tooltipVisible: "translate-x-0 opacity-100",
 	tooltipHidden: "translate-x-1 opacity-0",
+	statusTooltip: "navbar-motion pointer-events-none absolute left-full top-1/2 z-[60] ml-3 -translate-y-1/2 translate-x-1 whitespace-nowrap rounded-md border border-white/10 bg-[#111820] px-2.5 py-1.5 text-xs font-medium text-white opacity-0 shadow-xl transition-[opacity,transform] duration-150 group-hover:translate-x-0 group-hover:opacity-100 group-focus-visible:translate-x-0 group-focus-visible:opacity-100",
 	statusTrigger: "flex h-10 max-w-56 items-center gap-2 rounded-md border border-transparent px-2 text-sm text-gray-300 transition-colors hover:border-white/10 hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400",
 	statusTriggerCompact: "group navbar-motion relative grid h-11 w-11 place-items-center rounded-xl border border-transparent text-gray-500 outline-none transition-[color,background-color,border-color] duration-200 hover:border-white/10 hover:bg-white/5 hover:text-white focus-visible:ring-2 focus-visible:ring-cyan-400",
 	statusMenu: "absolute right-0 top-11 z-50 w-60 max-w-[calc(100vw-1rem)] rounded-lg border border-white/10 bg-[#111318] p-1.5 shadow-2xl",
