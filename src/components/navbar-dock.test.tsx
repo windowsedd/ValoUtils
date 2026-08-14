@@ -4,6 +4,7 @@ import type { Route } from "@/types/router";
 import {
   getOverflowMenuFocusIndex,
   getOverflowMenuPosition,
+  getRelativeFocusableIndex,
   NavbarDock,
 } from "./navbar-dock";
 
@@ -34,7 +35,7 @@ describe("NavbarDock", () => {
     expect(markup).not.toContain('aria-haspopup="menu"');
   });
 
-  test("marks More selected and exposes selected overflow item", () => {
+  test("keeps More styled as selected while only the overflow route is current", () => {
     const markup = renderToStaticMarkup(
       <NavbarDock
         dockRoutes={[route("profiles")]}
@@ -52,7 +53,8 @@ describe("NavbarDock", () => {
     expect(markup).toContain('aria-haspopup="menu"');
     expect(markup).toContain('aria-expanded="true"');
     expect(markup).toContain('role="menu"');
-    expect(markup).toContain('aria-current="page"');
+    expect(markup.match(/aria-current="page"/g)).toHaveLength(1);
+    expect(markup).toMatch(/role="menuitem" aria-current="page"/);
     expect(markup).toContain("settings");
   });
 
@@ -93,5 +95,12 @@ describe("NavbarDock", () => {
       top: 108,
       left: 8,
     });
+  });
+
+  test("finds the next or previous focusable control without wrapping", () => {
+    expect(getRelativeFocusableIndex(2, 5, 1)).toBe(3);
+    expect(getRelativeFocusableIndex(2, 5, -1)).toBe(1);
+    expect(getRelativeFocusableIndex(0, 5, -1)).toBeNull();
+    expect(getRelativeFocusableIndex(4, 5, 1)).toBeNull();
   });
 });

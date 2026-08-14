@@ -59,3 +59,22 @@
 ## Commit
 
 - `feat: restyle navbar as floating dock` (includes the portal correction and this report)
+
+## Whole-branch review follow-up
+
+- Selecting an overflow route now closes through the existing selection callback and immediately restores focus to the More trigger before the selected item unmounts.
+- Tab and Shift+Tab from an overflow item now close the portal menu and focus the adjacent normally tabbable control relative to More, without trapping focus or requiring an extra key press. Escape behavior remains unchanged.
+- More retains its selected visual style for an active overflow route but no longer receives `aria-current`; the active overflow route is the only current page.
+
+### Follow-up TDD evidence
+
+1. RED: added focused tests for a single `aria-current="page"` on the actual menu item and for non-wrapping relative focus indices. `bun test src/components/navbar-dock.test.tsx` exited 1 because `getRelativeFocusableIndex` was not exported.
+2. GREEN: implemented the pure relative-focus helper, selection focus restoration, and Tab/Shift+Tab handoff. `bun test src/components/navbar-dock.test.tsx src/util/navbar-routes.test.ts src/util/navigation-tabs.test.ts` passed: 14 tests, 0 failures.
+
+### Follow-up verification
+
+| Command | Result |
+| --- | --- |
+| `bun test src/components/navbar-dock.test.tsx src/util/navbar-routes.test.ts src/util/navigation-tabs.test.ts` | 14 pass, 0 fail. |
+| `bun run lint` | Exit 0; no Oxlint errors. |
+| `bun run build:vite` | Exit 0; TypeScript and Vite build succeeded. The existing config-native and bundle-size warnings remain. |

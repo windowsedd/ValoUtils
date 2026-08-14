@@ -21,6 +21,14 @@ type NavbarDockProps = {
 const overflowMenuWidth = 192;
 const overflowMenuMargin = 8;
 const useIsomorphicLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
+const focusableSelector = [
+  'button:not([disabled])',
+  '[href]',
+  'input:not([disabled]):not([type="hidden"])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
+  '[tabindex]:not([tabindex="-1"])',
+].join(",");
 
 export const getOverflowMenuPosition = (
   anchor: Pick<DOMRect, "bottom" | "right">,
@@ -48,6 +56,15 @@ export const getOverflowMenuFocusIndex = (key: string, focusIndex: number, itemC
     default:
       return null;
   }
+};
+
+export const getRelativeFocusableIndex = (
+  currentIndex: number,
+  itemCount: number,
+  direction: 1 | -1,
+) => {
+  const nextIndex = currentIndex + direction;
+  return nextIndex >= 0 && nextIndex < itemCount ? nextIndex : null;
 };
 
 export const NavbarDock = ({
@@ -106,6 +123,18 @@ export const NavbarDock = ({
   const overflowSelected = isOverflowRouteSelected(overflowRoutes, selectedId);
   const tabClass = (active: boolean) =>
     `${navbarLayout.dockTab} ${active ? navbarLayout.dockTabActive : navbarLayout.dockTabInactive}`;
+  const selectOverflowRoute = (routeId: string) => {
+    onSelect(routeId);
+    moreTriggerRef.current?.focus();
+  };
+  const focusRelativeToMoreTrigger = (direction: 1 | -1) => {
+    const focusableElements = Array.from(document.querySelectorAll<HTMLElement>(focusableSelector))
+      .filter((element) => !overflowMenuRef?.current?.contains(element));
+    const triggerIndex = focusableElements.indexOf(moreTriggerRef.current as HTMLButtonElement);
+    const nextIndex = getRelativeFocusableIndex(triggerIndex, focusableElements.length, direction);
+
+    focusableElements[nextIndex ?? -1]?.focus();
+  };
   const overflowMenu = overflowOpen && (
     <div
       ref={overflowMenuRef}
@@ -120,13 +149,20 @@ export const NavbarDock = ({
           role="menuitem"
           aria-current={route.id === selectedId ? "page" : undefined}
           className={`${navbarLayout.overflowItem} ${route.id === selectedId ? navbarLayout.overflowItemActive : ""}`}
-          onClick={() => onSelect(route.id)}
+          onClick={() => selectOverflowRoute(route.id)}
           onFocus={() => setOverflowFocusIndex(index)}
           onKeyDown={(event) => {
             if (event.key === "Escape") {
               event.preventDefault();
               onOverflowOpenChange(false);
               moreTriggerRef.current?.focus();
+              return;
+            }
+
+            if (event.key === "Tab") {
+              event.preventDefault();
+              onOverflowOpenChange(false);
+              focusRelativeToMoreTrigger(event.shiftKey ? -1 : 1);
               return;
             }
 
@@ -173,7 +209,6 @@ export const NavbarDock = ({
             ref={moreTriggerRef}
             type="button"
             className={tabClass(overflowSelected)}
-            aria-current={overflowSelected ? "page" : undefined}
             aria-haspopup="menu"
             aria-expanded={overflowOpen}
             onClick={() => onOverflowOpenChange(!overflowOpen)}
