@@ -259,19 +259,20 @@ export const NavbarRail = ({
             )}
           </div>
         )}
+
+        <div className={navbarLayout.railBottom} data-rail-section="bottom">
+          {settingsRoute && (
+            <RailRouteButton
+              route={settingsRoute}
+              active={settingsRoute.id === selectedId}
+              translate={translate}
+              onSelect={onSelect}
+            />
+          )}
+        </div>
       </nav>
 
-      <div className={navbarLayout.railBottom} data-rail-section="bottom">
-        {settingsRoute && (
-          <RailRouteButton
-            route={settingsRoute}
-            active={settingsRoute.id === selectedId}
-            translate={translate}
-            onSelect={onSelect}
-          />
-        )}
-        {statusControl}
-      </div>
+      <div className={navbarLayout.railStatus}>{statusControl}</div>
     </aside>
   );
 };

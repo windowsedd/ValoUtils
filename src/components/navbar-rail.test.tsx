@@ -47,6 +47,7 @@ describe("NavbarRail", () => {
     expect(navbarLayout.rail).toContain("max-w-16");
     expect(navbarLayout.rail).not.toContain("hover:w-");
     expect(navbarLayout.rail).not.toContain("group-hover:w-");
+    expect(navbarLayout.tooltip).toContain("navbar-motion");
   });
 
   test("pins Settings at the bottom and marks a direct route current", () => {
@@ -54,6 +55,7 @@ describe("NavbarRail", () => {
 
     expect(markup).toContain('data-rail-section="bottom"');
     expect(markup).toContain('aria-label="settings"');
+    expect(markup).toMatch(/<nav[^>]*>[\s\S]*aria-label="settings"[\s\S]*<\/nav>/);
     expect(markup.match(/aria-current="page"/g)).toHaveLength(1);
     expect(markup).not.toContain('aria-haspopup="menu"');
   });
