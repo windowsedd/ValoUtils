@@ -22,7 +22,9 @@ const route = (id: string): Route => ({
 describe("Router command rail layout", () => {
   test("renders the compact rail beside the selected page", () => {
     const markup = renderToStaticMarkup(
-      <RouterProvider routes={[route("profiles"), route("settings")]}> 
+      <RouterProvider
+        routes={[route("profiles"), route("settings")]}
+      >
         <Router />
       </RouterProvider>,
     );
