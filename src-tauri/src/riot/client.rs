@@ -321,11 +321,129 @@ pub async fn get_chat_messages(
     state: &RiotState,
     conversation_id: Option<&str>,
 ) -> Result<Value, String> {
-    let path = match conversation_id {
-        Some(cid) => format!("/chat/v6/messages?cid={}", urlencoding_encode(cid)),
-        None => "/chat/v6/messages".to_string(),
+    match conversation_id {
+        None => send_internal_request(state, "/chat/v6/messages", reqwest::Method::GET, None).await,
+        Some(cid) => specific_history_or_fallback(state, cid).await,
+    }
+}
+
+fn channel_hint(cid: &str) -> crate::riot::models::ChatChannel {
+    crate::riot::models::ChatChannel::EVERY
+        .into_iter()
+        .find(|channel| channel.matches_cid(cid))
+        .unwrap_or(crate::riot::models::ChatChannel::Party)
+}
+
+fn conversation_entries(payload: &Value) -> Vec<Value> {
+    payload
+        .get("conversations")
+        .or_else(|| payload.get("Conversations"))
+        .or_else(|| payload.get("data"))
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+}
+
+async fn find_listed_conversation(state: &RiotState, cid: &str) -> Result<Option<Value>, String> {
+    let mut payloads = vec![get_chat_conversations(state).await.unwrap_or(Value::Null)];
+    if cid.contains("@ares-parties") {
+        payloads.push(get_party_chat_info(state).await.unwrap_or(Value::Null));
+    } else if cid.contains("@ares-pregame") {
+        payloads.push(get_pre_game_chat_info(state).await.unwrap_or(Value::Null));
+    } else if cid.contains("@ares-coregame") {
+        payloads.push(
+            get_current_game_chat_info(state)
+                .await
+                .unwrap_or(Value::Null),
+        );
+    }
+    for payload in payloads {
+        for item in conversation_entries(&payload) {
+            if item.get("cid").and_then(Value::as_str) == Some(cid) {
+                return Ok(Some(item));
+            }
+        }
+    }
+    Ok(None)
+}
+
+async fn all_history_filtered(state: &RiotState, cid: &str) -> Result<Value, String> {
+    let payload =
+        send_internal_request(state, "/chat/v6/messages", reqwest::Method::GET, None).await?;
+    let messages = payload
+        .get("messages")
+        .or_else(|| payload.get("Messages"))
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let filtered: Vec<Value> = messages
+        .into_iter()
+        .filter(|message| message.get("cid").and_then(Value::as_str) == Some(cid))
+        .collect();
+    Ok(serde_json::json!({ "messages": filtered }))
+}
+
+fn is_rpc_not_found(error: &str) -> bool {
+    let lower = error.to_ascii_lowercase();
+    if lower.contains("resource_not_found") || lower.contains("invalid uri") {
+        return false;
+    }
+    (lower.contains("404") || lower.contains("not found")) && lower.contains("not_found")
+}
+
+async fn specific_history_or_fallback(state: &RiotState, raw_cid: &str) -> Result<Value, String> {
+    let cid = crate::riot::models::validate_riot_cid(raw_cid).map_err(|error| error.to_string())?;
+    let listed = match find_listed_conversation(state, cid).await? {
+        Some(item) => item,
+        None => {
+            tokio::time::sleep(if cfg!(test) {
+                std::time::Duration::ZERO
+            } else {
+                std::time::Duration::from_millis(1500)
+            })
+            .await;
+            find_listed_conversation(state, cid).await?.ok_or_else(|| {
+                crate::riot::error::RiotError::StaleConversation {
+                    channel: channel_hint(cid),
+                }
+                .to_string()
+            })?
+        }
     };
-    send_internal_request(state, &path, reqwest::Method::GET, None).await
+    let history_enabled = listed
+        .get("message_history")
+        .or_else(|| listed.get("messageHistory"))
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    if !history_enabled {
+        log::info!(
+            "GET /chat/v6/messages channel={} cid={} fallback=true reason=message_history_false",
+            channel_hint(cid).as_str(),
+            crate::riot::models::sanitize_cid_for_log(cid)
+        );
+        return all_history_filtered(state, cid).await;
+    }
+
+    let path =
+        crate::riot::models::messages_path_for_cid(cid).map_err(|error| error.to_string())?;
+    match send_internal_request(state, &path, reqwest::Method::GET, None).await {
+        Ok(payload) => Ok(payload),
+        Err(error) if is_rpc_not_found(&error) => {
+            if find_listed_conversation(state, cid).await?.is_none() {
+                return Err(crate::riot::error::RiotError::StaleConversation {
+                    channel: channel_hint(cid),
+                }
+                .to_string());
+            }
+            log::info!(
+                "GET /chat/v6/messages status=404 channel={} cid={} fallback=true",
+                channel_hint(cid).as_str(),
+                crate::riot::models::sanitize_cid_for_log(cid)
+            );
+            all_history_filtered(state, cid).await
+        }
+        Err(error) => Err(error),
+    }
 }
 
 pub async fn get_chat_conversations(state: &RiotState) -> Result<Value, String> {

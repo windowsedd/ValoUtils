@@ -19,3 +19,20 @@ describe("API Reference navigation ownership", () => {
 		expect(swagger).toContain("onBack?: () => void");
 	});
 });
+
+describe("Test Lab", () => {
+	test("is a primary navbar route and stays in Developer settings", async () => {
+		const lab = await Bun.file("src/pages/ChatLab.tsx").text();
+		expect(main).toContain('id: "test-lab"');
+		expect(main).toContain('title: "nav.testLab"');
+		expect(settings).toContain('import ChatLab, { TestLabPanel } from "@/pages/ChatLab"');
+		expect(settings).toContain("<TestLabPanel");
+		expect(settings).toContain('setView("chat-lab")');
+		expect(lab).toContain("chat:lab-info");
+		expect(lab).toContain("chat:lab-send");
+		expect(lab).toContain("chatLab.partyInfo");
+		expect(lab).toContain("chatLab.pregameInfo");
+		expect(lab).toContain("chatLab.currentInfo");
+		expect(lab).toContain("chatLab.allInfo");
+	});
+});

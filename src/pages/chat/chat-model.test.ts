@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { ChatFriend, ChatMessage } from "@/types/chat";
+import type { ChatConversation, ChatFriend, ChatMessage } from "@/types/chat";
 import * as chatModel from "./chat-model";
 import {
 	buildFriendConversations,
@@ -9,7 +9,9 @@ import {
 	filterFriendConversations,
 	findFriendConversationCid,
 	formatClock,
+	isComposerCommand,
 	mergeChatMessages,
+	resolveChannelCid,
 	resolveFriendGameStatus,
 	supportsConversationHistory,
 	shouldStickToBottom,
@@ -309,6 +311,30 @@ describe("chat model", () => {
 				supportsHistory: false,
 			}),
 		).toBe(false);
+		// Live party rooms 404 `/chat/v6/messages?cid=`. Even if a stale backend
+		// still flags them as back-fillable, the UI must not ask.
+		expect(
+			supportsConversationHistory({
+				cid: "27ccdf36-57e7-4eee-b111-96a9b0deb638@ares-parties.jp1.pvp.net",
+				channel: "party",
+				type: "groupchat",
+				title: "",
+				participantPuuid: "",
+				unreadCount: 0,
+				messageHistory: null,
+				muted: false,
+				supportsHistory: true,
+			}),
+		).toBe(false);
+	});
+
+	test("hides the party MUC REST 404 instead of showing the RPC string", () => {
+		expect(
+			chatModel.isIgnorableHistoryError(
+				'Riot Client request failed (404 Not Found) for /chat/v6/messages?cid=27ccdf36-57e7-4eee-b111-96a9b0deb638%40ares-parties.jp1.pvp.net: {"errorCode":"RPC_ERROR","httpStatus":404,"implementationDetails":{},"message":"not_found"}',
+			),
+		).toBe(true);
+		expect(chatModel.isIgnorableHistoryError("message history payload was malformed")).toBe(false);
 	});
 
 	test("sticks only near the bottom or after own send", () => {
@@ -365,5 +391,159 @@ describe("chat model", () => {
 
 		expect(startsMessageGroup(first, backwards)).toBe(true);
 		expect(startsMessageGroup(first, undated)).toBe(true);
+	});
+});
+
+describe("resolveChannelCid", () => {
+	const conversation = (cid: string, channel: ChatConversation["channel"]): ChatConversation => ({
+		cid,
+		channel,
+		type: "groupchat",
+		title: channel,
+		participantPuuid: "",
+		unreadCount: 0,
+		messageHistory: true,
+		muted: false,
+		supportsHistory: true,
+	});
+
+	const PARTY = "party-1@ares-parties.ap1.pvp.net";
+
+	test("adopts a room that appears after the channel was already selected", () => {
+		// The ordering that actually happens: open Chat, click Party, *then*
+		// party up. The room shows as available but nothing was ever selected,
+		// which left the composer dead with "No party chat room detected".
+		expect(resolveChannelCid("party", null, [])).toBe(null);
+		expect(resolveChannelCid("party", null, [conversation(PARTY, "party")])).toBe(PARTY);
+	});
+
+	test("keeps the current room while it is still listed", () => {
+		const conversations = [conversation(PARTY, "party"), conversation("other@ares-parties.ap1.pvp.net", "party")];
+		expect(resolveChannelCid("party", PARTY, conversations)).toBe(PARTY);
+	});
+
+	test("drops a room that has gone away and takes the replacement", () => {
+		const next = "party-2@ares-parties.ap1.pvp.net";
+		expect(resolveChannelCid("party", PARTY, [conversation(next, "party")])).toBe(next);
+		expect(resolveChannelCid("party", PARTY, [])).toBe(null);
+	});
+
+	test("never crosses channels", () => {
+		const team = conversation("m-1-blue@ares-coregame.ap1.pvp.net", "team");
+		expect(resolveChannelCid("party", null, [team])).toBe(null);
+		expect(resolveChannelCid("team", null, [team])).toBe(team.cid);
+	});
+
+	test("leaves the friends channel alone, since the user picks the conversation", () => {
+		const friend = conversation("friend-cid", "friends");
+		expect(resolveChannelCid("friends", "friend-cid", [friend])).toBe("friend-cid");
+		// A direct conversation not yet in the summary must not be cleared.
+		expect(resolveChannelCid("friends", "friend-cid", [])).toBe("friend-cid");
+		expect(resolveChannelCid("friends", null, [friend])).toBe(null);
+	});
+});
+
+describe("resolveChannelCid prefers the backend's resolved room", () => {
+	const conversation = (cid: string, channel: ChatConversation["channel"]): ChatConversation => ({
+		cid,
+		channel,
+		type: "groupchat",
+		title: channel,
+		participantPuuid: "",
+		unreadCount: 0,
+		messageHistory: true,
+		muted: false,
+		supportsHistory: true,
+	});
+
+	const BLUE = "m-1-blue@ares-coregame.ap1.pvp.net";
+	const RED = "m-1-red@ares-coregame.ap1.pvp.net";
+
+	test("picks our own side when both team rooms are listed", () => {
+		// The backend maps blue and red alike to `team`, so both can arrive in
+		// one summary. Taking the first would put us in the enemy's room.
+		const both = [conversation(RED, "team"), conversation(BLUE, "team")];
+		expect(resolveChannelCid("team", null, both, { matchTeam: BLUE })).toBe(BLUE);
+		expect(resolveChannelCid("team", null, both, { matchTeam: RED })).toBe(RED);
+	});
+
+	test("the resolved room wins over a stale selection", () => {
+		// Pregame ends and the coregame room opens: follow the backend rather
+		// than sitting in the room that is about to disappear.
+		const pregame = "m-1-blue@ares-pregame.ap1.pvp.net";
+		const conversations = [conversation(pregame, "team"), conversation(BLUE, "team")];
+		expect(resolveChannelCid("team", pregame, conversations, { matchTeam: BLUE })).toBe(BLUE);
+	});
+
+	test("ignores a resolved room that the summary does not list", () => {
+		// Never hand back a cid the conversation list has no entry for, or the
+		// channel renders "unavailable" while something is selected.
+		expect(resolveChannelCid("team", null, [], { matchTeam: BLUE })).toBe(null);
+		expect(resolveChannelCid("party", null, [conversation(BLUE, "team")], { party: "ghost" })).toBe(null);
+	});
+
+	test("falls back to the listed room when no room was resolved", () => {
+		const party = "p-1@ares-parties.ap1.pvp.net";
+		expect(resolveChannelCid("party", null, [conversation(party, "party")], {})).toBe(party);
+	});
+
+	test("uses the listed party cid when rooms.party is only an XMPP alias", () => {
+		// Party API MUCName is often `id@ares-parties.ap`. The Riot Client
+		// conversation that actually carries the lines is `id@ares-parties.ap1.pvp.net`.
+		// Selecting the short name left the thread empty while Valorant showed `sb`.
+		const rest = "p-1@ares-parties.ap1.pvp.net";
+		const xmpp = "p-1@ares-parties.ap";
+		expect(resolveChannelCid("party", null, [conversation(rest, "party")], { party: xmpp })).toBe(
+			rest,
+		);
+	});
+});
+
+describe("sameRoomCid", () => {
+	test("treats a party MUC alias as the same room", () => {
+		expect(chatModel.sameRoomCid("p-1@ares-parties.ap", "p-1@ares-parties.ap1.pvp.net")).toBe(true);
+		expect(chatModel.sameRoomCid("p-1@ares-parties.ap1.pvp.net", "p-1@ares-parties.ap1.pvp.net")).toBe(
+			true,
+		);
+		expect(chatModel.sameRoomCid("p-1@ares-parties.ap", "p-2@ares-parties.ap")).toBe(false);
+	});
+
+	test("does not collapse opposite team rooms", () => {
+		expect(
+			chatModel.sameRoomCid(
+				"m-1-blue@ares-coregame.ap1.pvp.net",
+				"m-1-red@ares-coregame.ap1.pvp.net",
+			),
+		).toBe(false);
+	});
+});
+
+describe("messagesForConversation", () => {
+	test("includes a party line whose cid is an alias of the selected room", () => {
+		const selected = "p-1@ares-parties.ap";
+		const rest = "p-1@ares-parties.ap1.pvp.net";
+		const visible = chatModel.messagesForConversation(
+			selected,
+			{},
+			[message({ id: "sb", conversationId: rest, body: "sb" })],
+		);
+		expect(visible.map((item) => item.body)).toEqual(["sb"]);
+	});
+});
+
+describe("isComposerCommand", () => {
+	test("treats a dotted line as a command", () => {
+		expect(isComposerCommand(".send team fr gl hf")).toBe(true);
+		expect(isComposerCommand("  .tran 2")).toBe(true);
+		expect(isComposerCommand(".gg")).toBe(true);
+	});
+
+	test("leaves ordinary messages alone, bare trigger words included", () => {
+		// In-game a bare `gg` fires the trigger. In the composer it has to stay
+		// a message, or the word could never be said.
+		expect(isComposerCommand("gg")).toBe(false);
+		expect(isComposerCommand("nice one")).toBe(false);
+		expect(isComposerCommand("...")).toBe(true);
+		expect(isComposerCommand("")).toBe(false);
 	});
 });

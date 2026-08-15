@@ -5,10 +5,12 @@
     "friends": "好友",
     "liveGame": "即時對戰",
     "chat": "聊天",
+    "store": "商店",
     "settings": "設定",
     "about": "關於",
     "apiReference": "API 參考",
     "dummyBot": "機器人",
+    "testLab": "測試實驗室",
     "matches": "對戰紀錄",
     "more": "更多"
   },
@@ -107,6 +109,19 @@
     "profileModeFilter": "依模式篩選對戰",
     "profileAllModes": "所有模式",
     "profileUnknownMap": "未知地圖"
+  },
+  "store": {
+    "title": "商店",
+    "loading": "正在載入商店...",
+    "failedToLoad": "無法載入商店",
+    "loginRequired": "Riot 客戶端未執行",
+    "loginRequiredDesc": "請啟動 Riot 客戶端並登入以查看你的商店。",
+    "dailyOffers": "每日商品",
+    "featuredBundle": "精選套裝",
+    "nightMarket": "夜市",
+    "accessoryStore": "配件商店",
+    "hiddenCard": "尚未揭曉",
+    "unknownItem": "未知項目"
   },
   "career": {
     "title": "戰績",
@@ -271,6 +286,7 @@
     "analyticsDesc": "傳送匿名使用統計以協助改善 ValoUtils",
     "restartRequired": "需要重新啟動",
     "sectionDeveloper": "開發者",
+    "chatApiLabel": "Riot 客戶端聊天 API",
     "swaggerLabel": "Riot 客戶端 Swagger API",
     "clientNotRunning": "請啟動 Riot 客戶端以取得連接埠",
     "clientNotRunningShort": "請啟動 Riot 客戶端",
@@ -280,6 +296,25 @@
     "copied": "已複製",
     "reveal": "顯示密碼",
     "hide": "隱藏密碼"
+  },
+  "chatLab": {
+    "title": "測試實驗室",
+    "subtitle": "探測本機 Riot 客戶端 API",
+    "sendTitle": "本機傳送聊天",
+    "sendDesc": "對 lockfile 連接埠發送 POST /chat/v6/messages。小隊、賽前、隊伍與全體各自進入自己的房間。",
+    "channel": "頻道",
+    "pregameChannel": "賽前",
+    "messagePlaceholder": "輸入本機聊天訊息",
+    "send": "傳送",
+    "working": "處理中…",
+    "infoTitle": "對話資訊",
+    "infoDesc": "從 Riot 客戶端讀取即時對話清單。",
+    "partyInfo": "小隊聊天資訊",
+    "pregameInfo": "賽前聊天資訊",
+    "currentInfo": "目前對局聊天資訊",
+    "allInfo": "全部聊天資訊",
+    "resultTitle": "回應",
+    "resultEmpty": "執行探測後，JSON 會顯示在這裡。"
   },
   "settingsViewer": {
     "modalTitle": "設定 — {{name}}",

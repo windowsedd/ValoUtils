@@ -6,14 +6,16 @@ import PlayerCareer from "@/pages/PlayerCareer.tsx";
 import Friends from "@/pages/Friends.tsx";
 import Chat from "@/pages/Chat.tsx";
 import Matches from "@/pages/Matches.tsx";
+import Store from "@/pages/Store.tsx";
 import Settings from "@/pages/Settings.tsx";
 import { fetcher } from "@/util/swr";
 import { Toast } from "@heroui/react";
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { FaCogs, FaComments, FaQuestion, FaTrophy } from "react-icons/fa";
-import { FaGear, FaUserGroup, FaClockRotateLeft, FaRobot, FaCrosshairs } from "react-icons/fa6";
+import { FaGear, FaUserGroup, FaClockRotateLeft, FaRobot, FaCrosshairs, FaStore, FaFlask } from "react-icons/fa6";
 import DummyBotPage from "@/pages/DummyBot.tsx";
+import ChatLab from "@/pages/ChatLab";
 import LiveGame from "@/pages/LiveGame.tsx";
 import { SWRConfig } from "swr";
 import { DynamicModalProvider } from "./components/dynamic-modal";
@@ -86,6 +88,12 @@ const AppShell = () => {
 								component: <Chat />,
 							},
 							{
+								title: "nav.store",
+								id: "store",
+								icon: <FaStore />,
+								component: <Store />,
+							},
+							{
 								title: "nav.settings",
 								id: "settings",
 								icon: <FaGear />,
@@ -102,6 +110,12 @@ const AppShell = () => {
 								id: "fake-player",
 								icon: <FaRobot />,
 								component: <DummyBotPage />,
+							},
+							{
+								title: "nav.testLab",
+								id: "test-lab",
+								icon: <FaFlask />,
+								component: <ChatLab />,
 							},
 						]}
 					>

@@ -5,10 +5,12 @@
     "friends": "친구",
     "liveGame": "라이브 게임",
     "chat": "채팅",
+    "store": "상점",
     "settings": "설정",
     "about": "정보",
     "apiReference": "API 문서",
     "dummyBot": "봇",
+    "testLab": "테스트 랩",
     "matches": "매치",
     "more": "더보기"
   },
@@ -107,6 +109,19 @@
     "profileModeFilter": "모드별 매치 필터",
     "profileAllModes": "모든 모드",
     "profileUnknownMap": "알 수 없는 맵"
+  },
+  "store": {
+    "title": "상점",
+    "loading": "상점을 불러오는 중...",
+    "failedToLoad": "상점을 불러오지 못했습니다",
+    "loginRequired": "Riot 클라이언트가 실행 중이 아닙니다",
+    "loginRequiredDesc": "Riot 클라이언트를 실행하고 로그인하면 상점을 볼 수 있습니다.",
+    "dailyOffers": "일일 상품",
+    "featuredBundle": "추천 번들",
+    "nightMarket": "야시장",
+    "accessoryStore": "액세서리 상점",
+    "hiddenCard": "공개되지 않음",
+    "unknownItem": "알 수 없는 항목"
   },
   "career": {
     "title": "전적",
@@ -271,6 +286,7 @@
     "analyticsDesc": "ValoUtils 개선을 위해 익명 사용 통계를 전송합니다",
     "restartRequired": "재시작 필요",
     "sectionDeveloper": "개발자",
+    "chatApiLabel": "라이엇 클라이언트 채팅 API",
     "swaggerLabel": "라이엇 클라이언트 Swagger API",
     "clientNotRunning": "포트를 가져오려면 라이엇 클라이언트를 실행하세요",
     "clientNotRunningShort": "라이엇 클라이언트를 실행하세요",
@@ -280,6 +296,25 @@
     "copied": "복사됨",
     "reveal": "비밀번호 표시",
     "hide": "비밀번호 숨기기"
+  },
+  "chatLab": {
+    "title": "테스트 랩",
+    "subtitle": "로컬 라이엇 클라이언트 API를 확인합니다",
+    "sendTitle": "로컬호스트 채팅 전송",
+    "sendDesc": "잠금 파일 포트로 POST /chat/v6/messages 를 보냅니다. 파티, 프리게임, 팀, 전체는 각각 자기 방으로만 갑니다.",
+    "channel": "채널",
+    "pregameChannel": "프리게임",
+    "messagePlaceholder": "로컬호스트 채팅 메시지를 입력하세요",
+    "send": "보내기",
+    "working": "처리 중…",
+    "infoTitle": "대화 정보",
+    "infoDesc": "라이엇 클라이언트의 실시간 대화 목록을 가져옵니다.",
+    "partyInfo": "파티 채팅 정보",
+    "pregameInfo": "프리게임 채팅 정보",
+    "currentInfo": "현재 게임 채팅 정보",
+    "allInfo": "전체 채팅 정보",
+    "resultTitle": "응답",
+    "resultEmpty": "프로브를 실행하면 JSON이 여기에 표시됩니다."
   },
   "settingsViewer": {
     "modalTitle": "설정 — {{name}}",

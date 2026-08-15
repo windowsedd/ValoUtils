@@ -18,7 +18,12 @@ import {
 	filterChatFriends,
 	filterFriendConversations,
 	findFriendConversationCid,
+	isComposerCommand,
 	mergeChatMessages,
+	channelForCid,
+	isIgnorableHistoryError,
+	messagesForConversation,
+	resolveChannelCid,
 	supportsConversationHistory,
 	withResolvedSenderNames,
 } from "./chat-model";
@@ -30,6 +35,7 @@ type FriendAction = "invite" | "join";
 type FriendActionResponse =
 	| { success: true; action: FriendAction }
 	| { success: false; error: string };
+type CommandResponse = { success: true; reply: string } | { success: false; error: string };
 
 const emptySummary: ChatSummary = {
 	success: true,
@@ -41,7 +47,7 @@ const emptySummary: ChatSummary = {
 };
 
 let requestSequence = 0;
-const nextRequestId = (kind: "history" | "send" | "translate") =>
+const nextRequestId = (kind: "history" | "send" | "translate" | "command") =>
 	`${kind}-${Date.now()}-${++requestSequence}`;
 
 const parsePayload = <T>(payload: string): T | null => {
@@ -70,13 +76,14 @@ export const useChatController = () => {
 	const [friendActionError, setFriendActionError] = useState<string | null>(null);
 	const [pendingFriendAction, setPendingFriendAction] = useState<string | null>(null);
 	const translationMessageRef = useRef<string | null>(null);
+	const commandRef = useRef<{ cid: string; command: string } | null>(null);
 
 	const refreshSummary = useCallback(() => {
 		window.Main?.send("chat:get");
 	}, []);
 
 	const requestHistory = useCallback((cid: string, supportsHistory: boolean) => {
-		if (!cid || !supportsHistory) return;
+		if (!cid || !supportsHistory || channelForCid(cid) !== "friends") return;
 		const requestId = nextRequestId("history");
 		dispatch({ type: "historyStarted", cid, requestId });
 		window.Main.send("chat:history", requestId, cid);
@@ -113,6 +120,15 @@ export const useChatController = () => {
 					cid: response.cid,
 					requestId: response.requestId,
 					messages: response.messages,
+				});
+				return;
+			}
+			if (isIgnorableHistoryError(response.error)) {
+				dispatch({
+					type: "historySucceeded",
+					cid: response.cid,
+					requestId: response.requestId,
+					messages: [],
 				});
 				return;
 			}
@@ -205,11 +221,33 @@ export const useChatController = () => {
 			refreshSummary();
 		};
 
+		const onCommand = (payload: string) => {
+			// The command that produced this reply — the reply itself carries no
+			// room, and the player may have switched channels while it ran.
+			const pending = commandRef.current;
+			commandRef.current = null;
+			if (!pending) return;
+			const response = parsePayload<CommandResponse>(payload);
+			dispatch({
+				type: "commandResult",
+				cid: pending.cid,
+				id: nextRequestId("command"),
+				command: pending.command,
+				body: response
+					? response.success
+						? response.reply
+						: response.error
+					: "Invalid command response.",
+				failed: !response?.success,
+			});
+		};
+
 		window.Main.on("chat:get", onSummary);
 		window.Main.on("chat:history", onHistory);
 		window.Main.on("chat:message", onRealtimeMessage);
 		window.Main.on("chat:presence", onPresence);
 		window.Main.on("chat:send", onSend);
+		window.Main.on("chat:command", onCommand);
 		window.Main.on("chat:translate", onTranslate);
 		window.Main.on("chat:friend-action", onFriendAction);
 		refreshSummary();
@@ -222,21 +260,37 @@ export const useChatController = () => {
 			window.Main.removeListener("chat:message", onRealtimeMessage);
 			window.Main.removeListener("chat:presence", onPresence);
 			window.Main.removeListener("chat:send", onSend);
+			window.Main.removeListener("chat:command", onCommand);
 			window.Main.removeListener("chat:translate", onTranslate);
 			window.Main.removeListener("chat:friend-action", onFriendAction);
 		};
 	}, [refreshSummary, requestHistory]);
 
+	// Room channels re-derive their conversation whenever the summary changes,
+	// so a room that appears after the channel was selected gets adopted and a
+	// room that ends gets dropped. Resolving only on click handled the second
+	// case and silently missed the first.
 	useEffect(() => {
-		if (state.selectedChannel === "friends" || !state.selectedCid) return;
-		const cidStillExists = summary.conversations.some(
-			(conversation) =>
-				conversation.channel === state.selectedChannel && conversation.cid === state.selectedCid,
+		if (state.selectedChannel === "friends") return;
+		const cid = resolveChannelCid(
+			state.selectedChannel,
+			state.selectedCid,
+			summary.conversations,
+			summary.rooms,
 		);
-		if (!cidStillExists) {
-			dispatch({ type: "selectChannel", channel: state.selectedChannel, cid: null });
+		if (cid === state.selectedCid) return;
+		dispatch({ type: "selectChannel", channel: state.selectedChannel, cid });
+		if (cid) {
+			const conversation = summary.conversations.find((item) => item.cid === cid);
+			requestHistory(cid, supportsConversationHistory(conversation));
 		}
-	}, [state.selectedChannel, state.selectedCid, summary.conversations]);
+	}, [
+		requestHistory,
+		state.selectedChannel,
+		state.selectedCid,
+		summary.conversations,
+		summary.rooms,
+	]);
 
 	const selectChannel = useCallback(
 		(channel: ChatChannel) => {
@@ -245,14 +299,18 @@ export const useChatController = () => {
 				dispatch({ type: "selectChannel", channel, cid });
 				return;
 			}
-			const conversation = summary.conversations.find(
-				(item) => item.channel === channel,
-			);
-			const cid = conversation?.cid ?? null;
+			const cid = resolveChannelCid(channel, null, summary.conversations, summary.rooms);
+			const conversation = summary.conversations.find((item) => item.cid === cid);
 			dispatch({ type: "selectChannel", channel, cid });
 			if (cid) requestHistory(cid, supportsConversationHistory(conversation));
 		},
-		[requestHistory, state.selectedChannel, state.selectedCid, summary.conversations],
+		[
+			requestHistory,
+			state.selectedChannel,
+			state.selectedCid,
+			summary.conversations,
+			summary.rooms,
+		],
 	);
 
 	const selectConversation = useCallback(
@@ -301,6 +359,15 @@ export const useChatController = () => {
 		const selectedCid = state.selectedCid;
 		const text = selectedCid ? (state.draftByCid[selectedCid] ?? "").trim() : "";
 		if (!text || !selectedCid) return;
+		// A command is routed to its executor instead of being posted. Sending
+		// it as a message would leak the raw line to the room and then have the
+		// poller run it a second time when it read our own message back.
+		if (isComposerCommand(text)) {
+			commandRef.current = { cid: selectedCid, command: text };
+			dispatch({ type: "setDraft", cid: selectedCid, draft: "" });
+			window.Main.send("chat:command", text);
+			return;
+		}
 		const requestId = nextRequestId("send");
 		dispatch({ type: "sendStarted", requestId, cid: selectedCid, body: text });
 		window.Main.send("chat:send", requestId, selectedCid, text);
@@ -363,17 +430,14 @@ export const useChatController = () => {
 	);
 	const visibleMessages = useMemo(
 		() =>
-			state.selectedCid
-				? withResolvedSenderNames(
-						mergeChatMessages(
-							state.historyByCid[state.selectedCid] ?? [],
-							summary.messages.filter(
-								(message) => message.conversationId === state.selectedCid,
-							),
-						),
-						summary.friends,
-					)
-				: [],
+			withResolvedSenderNames(
+				messagesForConversation(
+					state.selectedCid,
+					state.historyByCid,
+					summary.messages,
+				),
+				summary.friends,
+			),
 		[state.historyByCid, state.selectedCid, summary.friends, summary.messages],
 	);
 	const availableChannels = useMemo(
@@ -387,8 +451,10 @@ export const useChatController = () => {
 	);
 
 	const selectedCid = state.selectedCid;
+	const systemLines = selectedCid ? (state.systemByCid[selectedCid] ?? []) : [];
 	const historyLoading = selectedCid ? Boolean(state.historyLoadingByCid[selectedCid]) : false;
-	const historyError = selectedCid ? (state.historyErrorByCid[selectedCid] ?? null) : null;
+	const rawHistoryError = selectedCid ? (state.historyErrorByCid[selectedCid] ?? null) : null;
+	const historyError = isIgnorableHistoryError(rawHistoryError) ? null : rawHistoryError;
 	const draft = selectedCid ? (state.draftByCid[selectedCid] ?? "") : "";
 	const sendError = selectedCid ? (state.sendErrorByCid[selectedCid] ?? null) : null;
 
@@ -396,7 +462,7 @@ export const useChatController = () => {
 		summary,
 		loading,
 		loginRequired,
-		summaryError,
+		summaryError: isIgnorableHistoryError(summaryError) ? null : summaryError,
 		selectedChannel: state.selectedChannel,
 		selectedCid,
 		selectedConversation,
@@ -409,6 +475,7 @@ export const useChatController = () => {
 		friendSearch,
 		setFriendSearch,
 		visibleMessages,
+		systemLines,
 		historyLoading,
 		historyError,
 		draft,

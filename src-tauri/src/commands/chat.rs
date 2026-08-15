@@ -243,6 +243,9 @@ fn normalize_conversations(payload: &Value) -> Vec<Value> {
                 "unreadCount": unread_count,
                 "messageHistory": message_history,
                 "muted": muted,
+                // Party/match MUCs 404 `/chat/v6/messages?cid=`. Direct chats
+                // still have a REST store; rooms are filled from XMPP + the
+                // unfiltered poll instead.
                 "supportsHistory": channel == "friends",
             }))
         })
@@ -320,16 +323,76 @@ fn room_conversation(cid: &str, channel: &str) -> Option<Value> {
     }))
 }
 
+fn same_room_cid(left: &str, right: &str) -> bool {
+    if left.is_empty() || right.is_empty() {
+        return false;
+    }
+    if left.eq_ignore_ascii_case(right) {
+        return true;
+    }
+    let channel = channel_for_cid(left);
+    channel != "friends" && channel == channel_for_cid(right) && id_root(left) == id_root(right)
+}
+
+fn canonical_room_cid(wanted: &str, metadata: &[Value]) -> String {
+    if wanted.is_empty() {
+        return String::new();
+    }
+    metadata
+        .iter()
+        .find_map(|item| {
+            let cid = item.get("cid").and_then(Value::as_str).unwrap_or("");
+            same_room_cid(cid, wanted).then(|| cid.to_string())
+        })
+        .unwrap_or_else(|| wanted.to_string())
+}
+
+fn attach_messages_to_rooms(
+    messages: Vec<Value>,
+    party_cid: &str,
+    team_cid: &str,
+    all_cid: &str,
+) -> Vec<Value> {
+    messages
+        .into_iter()
+        .map(|mut message| {
+            let Some(cid) = message
+                .get("conversationId")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+            else {
+                return message;
+            };
+            let rewritten = if same_room_cid(&cid, party_cid) {
+                party_cid
+            } else if same_room_cid(&cid, team_cid) {
+                team_cid
+            } else if same_room_cid(&cid, all_cid) {
+                all_cid
+            } else {
+                return message;
+            };
+            if let Some(object) = message.as_object_mut() {
+                object.insert("conversationId".into(), json!(rewritten));
+            }
+            message
+        })
+        .collect()
+}
+
 fn merge_room_conversations(
     metadata: Vec<Value>,
     party_cid: &str,
     team_cid: &str,
     all_cid: &str,
 ) -> Vec<Value> {
+    let party_cid = canonical_room_cid(party_cid, &metadata);
+    let team_cid = canonical_room_cid(team_cid, &metadata);
+    let all_cid = canonical_room_cid(all_cid, &metadata);
     let rooms = [
-        room_conversation(party_cid, "party"),
-        room_conversation(team_cid, "team"),
-        room_conversation(all_cid, "all"),
+        room_conversation(&party_cid, "party"),
+        room_conversation(&team_cid, "team"),
+        room_conversation(&all_cid, "all"),
     ]
     .into_iter()
     .flatten()
@@ -339,6 +402,36 @@ fn merge_room_conversations(
 
 fn confirmed_party_room(joined_room: &str) -> String {
     joined_room.to_string()
+}
+
+fn is_missing_conversation_history(error: &str) -> bool {
+    // Party/match MUCs are live in XMPP but often have no Riot Client REST
+    // store. That comes back as RPC 404 `not_found`, which is "empty", not
+    // "history failed". The stale-lockfile 404 (`RESOURCE_NOT_FOUND` /
+    // Invalid URI) is a different condition and must stay a real error.
+    let lower = error.to_ascii_lowercase();
+    if lower.contains("resource_not_found") || lower.contains("invalid uri") {
+        return false;
+    }
+    (lower.contains("404") || lower.contains("not found")) && lower.contains("not_found")
+}
+
+fn history_from_fetch_error(request_id: &str, cid: &str, error: &str) -> Value {
+    if is_missing_conversation_history(error) {
+        json!({
+            "success": true,
+            "requestId": request_id,
+            "cid": cid,
+            "messages": [],
+        })
+    } else {
+        let code = if is_login_required_error(error) {
+            "loginRequired"
+        } else {
+            ""
+        };
+        history_error(request_id, cid, code, error)
+    }
 }
 
 fn history_error(request_id: &str, cid: &str, code: &str, error: &str) -> Value {
@@ -819,12 +912,80 @@ fn messages_array(payload: &Value) -> Vec<Value> {
         .unwrap_or_default()
 }
 
+/// PUUID root -> display name, for filling in the names Riot sends as ids.
+///
+/// Covers the local player as well as the friends list. The local player is
+/// the case that matters most: they are never in their own friends list, so
+/// their own party lines had nothing to resolve against at all.
+async fn display_names(
+    riot: &RiotState,
+    friends: &[Value],
+    own_puuid: &str,
+) -> HashMap<String, String> {
+    let mut names = HashMap::new();
+    for friend in friends {
+        let puuid = friend.get("puuid").and_then(Value::as_str).unwrap_or("");
+        let name = friend
+            .get("displayName")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        if !puuid.is_empty() && !name.is_empty() {
+            names.insert(id_root(puuid), name.to_string());
+        }
+    }
+
+    if !own_puuid.is_empty() {
+        if let Ok(info) = riot_client::get_user_info(riot).await {
+            let game_name = info
+                .get("game_name")
+                .or_else(|| info.get("gameName"))
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            let tag_line = info
+                .get("tag_line")
+                .or_else(|| info.get("tagLine"))
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            if !game_name.is_empty() {
+                let display = if tag_line.is_empty() {
+                    game_name.to_string()
+                } else {
+                    format!("{game_name}#{tag_line}")
+                };
+                names.insert(id_root(own_puuid), display);
+            }
+        }
+    }
+    names
+}
+
+/// Whether a name slot is really just a PUUID.
+///
+/// Riot fills the sender name with the PUUID in party and match rooms, so the
+/// value has to be inspected rather than trusted. Matched by shape - 8-4-4-4-12
+/// hex - because a Riot ID may legitimately contain hyphens.
+fn looks_like_puuid(value: &str) -> bool {
+    let groups: Vec<&str> = value.trim().split('-').collect();
+    if groups.len() != 5 {
+        return false;
+    }
+    let widths = [8, 4, 4, 4, 12];
+    groups
+        .iter()
+        .zip(widths)
+        .all(|(group, width)| group.len() == width && group.bytes().all(|b| b.is_ascii_hexdigit()))
+}
+
+/// `names` maps a PUUID root to a display name and covers the local player as
+/// well as friends - a self-sent party line has no friend entry to resolve
+/// against, which is exactly the case that used to render as a raw uuid.
 fn normalize_messages(
     payload: &Value,
     conversations: &HashMap<String, String>,
     scopes: &RoomScopes,
     match_player_ids: &HashSet<String>,
     own_puuid: &str,
+    names: &HashMap<String, String>,
 ) -> Vec<Value> {
     messages_array(payload)
         .iter()
@@ -899,10 +1060,19 @@ fn normalize_messages(
                 ]
                 .map(|v| v.and_then(|v| v.as_str())),
             );
-            let sender_name_final = if sender_name.is_empty() {
-                sender.clone()
-            } else {
+            // A name Riot actually supplied wins. Only a blank or a bare PUUID
+            // goes to the lookup, so a live name is never replaced by a cached
+            // one.
+            let sender_name_final = if !sender_name.is_empty() && !looks_like_puuid(&sender_name) {
                 sender_name
+            } else {
+                names.get(&sender_root).cloned().unwrap_or_else(|| {
+                    if sender_name.is_empty() {
+                        sender.clone()
+                    } else {
+                        sender_name
+                    }
+                })
             };
             let timestamp_final = if timestamp.is_empty() {
                 Value::Null
@@ -1058,17 +1228,19 @@ pub async fn chat_get(app: AppHandle, riot: State<'_, RiotState>) -> Result<Stri
             .map(|m| serde_json::to_value(m).unwrap())
             .collect();
 
+        let names = display_names(&riot, &friends, &own_puuid).await;
         let mut messages = normalize_messages(
             &base_payload,
             &conversations,
             &scopes,
             &match_player_ids,
             &own_puuid,
+            &names,
         );
         messages.extend(xmpp_messages);
-        let messages = unique_messages(messages);
 
-        let final_party_room = confirmed_party_room(&party_room);
+        let final_party_room =
+            canonical_room_cid(&confirmed_party_room(&party_room), &conversation_metadata);
         let match_team = scopes
             .rooms
             .get("matchTeam")
@@ -1088,26 +1260,41 @@ pub async fn chat_get(app: AppHandle, riot: State<'_, RiotState>) -> Result<Stri
             .unwrap_or("")
             .to_string();
 
-        let match_team_final = xmpp_match_rooms
-            .0
-            .clone()
-            .filter(|s| !s.is_empty())
-            .unwrap_or(match_team.clone());
-        let match_all_final = xmpp_match_rooms
-            .1
-            .clone()
-            .filter(|s| !s.is_empty())
-            .unwrap_or(match_all.clone());
-        let match_final = xmpp_match_rooms
-            .0
-            .filter(|s| !s.is_empty())
-            .or_else(|| Some(match_team).filter(|s| !s.is_empty()))
-            .or(xmpp_match_rooms.1.filter(|s| !s.is_empty()))
-            .unwrap_or(if !match_all.is_empty() {
-                match_all
-            } else {
-                base_match
-            });
+        let match_team_final = canonical_room_cid(
+            &xmpp_match_rooms
+                .0
+                .clone()
+                .filter(|s| !s.is_empty())
+                .unwrap_or(match_team.clone()),
+            &conversation_metadata,
+        );
+        let match_all_final = canonical_room_cid(
+            &xmpp_match_rooms
+                .1
+                .clone()
+                .filter(|s| !s.is_empty())
+                .unwrap_or(match_all.clone()),
+            &conversation_metadata,
+        );
+        let match_final = canonical_room_cid(
+            &xmpp_match_rooms
+                .0
+                .filter(|s| !s.is_empty())
+                .or_else(|| Some(match_team).filter(|s| !s.is_empty()))
+                .or(xmpp_match_rooms.1.filter(|s| !s.is_empty()))
+                .unwrap_or(if !match_all.is_empty() {
+                    match_all
+                } else {
+                    base_match
+                }),
+            &conversation_metadata,
+        );
+        let messages = unique_messages(attach_messages_to_rooms(
+            messages,
+            &final_party_room,
+            &match_team_final,
+            &match_all_final,
+        ));
 
         let conversation_metadata = merge_room_conversations(
             conversation_metadata,
@@ -1170,12 +1357,17 @@ pub async fn chat_history(args: Vec<Value>, riot: State<'_, RiotState>) -> Resul
             .get("subject")
             .and_then(|value| value.as_str())
             .unwrap_or("");
+        // History is fetched per room, so the friends list is not already in
+        // hand here — the local player's own name is the one that matters, and
+        // it is the one the friends list could never have supplied anyway.
+        let names = display_names(&riot, &[], own_puuid).await;
         let messages = normalize_messages(
             &payload,
             &conversations,
             &scopes,
             &match_player_ids,
             own_puuid,
+            &names,
         );
         Ok(json!({
             "success": true,
@@ -1188,14 +1380,7 @@ pub async fn chat_history(args: Vec<Value>, riot: State<'_, RiotState>) -> Resul
 
     Ok(match result {
         Ok(value) => value.to_string(),
-        Err(error) => {
-            let code = if is_login_required_error(&error) {
-                "loginRequired"
-            } else {
-                ""
-            };
-            history_error(&request_id, &cid, code, &error).to_string()
-        }
+        Err(error) => history_from_fetch_error(&request_id, &cid, &error).to_string(),
     })
 }
 
@@ -1448,6 +1633,37 @@ mod tests {
     }
 
     #[test]
+    fn a_party_muc_without_rest_history_is_empty_not_an_error() {
+        // The Riot Client 404s `/chat/v6/messages?cid=` for live party rooms.
+        // That is "this MUC has no REST store", not a failed load — the thread
+        // still has XMPP + the unfiltered poll. Surfacing the RPC string hid
+        // the `sb` line behind a red banner.
+        let error = "Riot Client request failed (404 Not Found) for \
+            /chat/v6/messages?cid=27ccdf36-57e7-4eee-b111-96a9b0deb638%40ares-parties.jp1.pvp.net: \
+            {\"errorCode\":\"RPC_ERROR\",\"httpStatus\":404,\"implementationDetails\":{},\"message\":\"not_found\"}";
+        assert!(is_missing_conversation_history(error));
+        let value = history_from_fetch_error(
+            "hist-1",
+            "27ccdf36-57e7-4eee-b111-96a9b0deb638@ares-parties.jp1.pvp.net",
+            error,
+        );
+        assert_eq!(value["success"], true);
+        assert_eq!(value["messages"], json!([]));
+        assert_eq!(
+            value["cid"],
+            "27ccdf36-57e7-4eee-b111-96a9b0deb638@ares-parties.jp1.pvp.net"
+        );
+        assert!(!is_missing_conversation_history(
+            "Riot Client request failed (404 Not Found) for /chat/v4/friends: \
+             {\"errorCode\":\"RESOURCE_NOT_FOUND\"}"
+        ));
+        assert!(!is_missing_conversation_history(
+            "Riot Client request failed (503 Service Unavailable) for /chat/v6/messages: \
+             {\"message\":\"not connected to chat, service unavailable\"}"
+        ));
+    }
+
+    #[test]
     fn forwarder_guard_only_starts_once() {
         let started = std::sync::atomic::AtomicBool::new(false);
         assert!(mark_chat_forwarder_started(&started));
@@ -1503,7 +1719,36 @@ mod tests {
         assert!(result.iter().any(|item| item["channel"] == "team"));
         assert!(result.iter().any(|item| item["channel"] == "all"));
         assert!(result.iter().all(|item| item["title"] == ""));
+        // Party/match MUCs 404 `/chat/v6/messages?cid=`. Asking anyway painted
+        // the raw RPC string over the thread. Rooms are filled from XMPP.
         assert!(result.iter().all(|item| item["supportsHistory"] == false));
+    }
+
+    #[test]
+    fn only_direct_conversations_ask_riot_for_rest_history() {
+        let payload = json!({"conversations": [
+            { "cid": "party@ares-parties.ap", "type": "groupchat" },
+            { "cid": "game-blue@ares-coregame.ap", "type": "groupchat" },
+            { "cid": "game-all@ares-coregame.ap", "type": "groupchat" },
+            { "cid": "friend@ap1.pvp.net", "type": "chat" }
+        ]});
+        let result = normalize_conversations(&payload);
+        assert_eq!(result.len(), 4);
+        assert_eq!(
+            result
+                .iter()
+                .map(|item| (
+                    item["channel"].as_str().unwrap(),
+                    item["supportsHistory"].as_bool().unwrap()
+                ))
+                .collect::<Vec<_>>(),
+            vec![
+                ("party", false),
+                ("team", false),
+                ("all", false),
+                ("friends", true),
+            ]
+        );
     }
 
     #[test]
@@ -1513,6 +1758,48 @@ mod tests {
             "joined@ares-parties.ap"
         );
         assert_eq!(confirmed_party_room(""), "");
+    }
+
+    #[test]
+    fn prefers_the_riot_client_party_cid_over_an_xmpp_alias() {
+        // Party details give `id@ares-parties.ap`. The conversation the local
+        // client actually stores messages under is `id@ares-parties.ap1.pvp.net`.
+        // Keeping both made the UI select the empty XMPP name while `sb` sat
+        // on the REST cid.
+        let rest = "p-1@ares-parties.ap1.pvp.net";
+        let xmpp = "p-1@ares-parties.ap";
+        let metadata = vec![json!({
+            "cid": rest,
+            "channel": "party",
+            "type": "groupchat",
+            "title": "",
+            "participantPuuid": "",
+            "unreadCount": 0,
+            "messageHistory": Value::Null,
+            "muted": false,
+            "supportsHistory": true,
+        })];
+        let merged = merge_room_conversations(metadata, xmpp, "", "");
+        let party_rooms: Vec<&str> = merged
+            .iter()
+            .filter(|item| item["channel"] == "party")
+            .filter_map(|item| item["cid"].as_str())
+            .collect();
+        assert_eq!(party_rooms, vec![rest]);
+        assert_eq!(canonical_room_cid(xmpp, &merged), rest);
+    }
+
+    #[test]
+    fn rewrites_alias_party_messages_onto_the_selected_room() {
+        let rest = "p-1@ares-parties.ap1.pvp.net";
+        let messages = vec![json!({
+            "id": "m-1",
+            "conversationId": "p-1@ares-parties.ap",
+            "body": "sb",
+        })];
+        let rewritten = attach_messages_to_rooms(messages, rest, "", "");
+        assert_eq!(rewritten[0]["conversationId"], rest);
+        assert_eq!(rewritten[0]["body"], "sb");
     }
 
     #[test]
@@ -1560,12 +1847,114 @@ mod tests {
             &RoomScopes::default(),
             &HashSet::new(),
             "self",
+            &HashMap::new(),
         );
         assert_eq!(messages[0]["id"], "");
         assert_eq!(
             unique_messages(vec![messages[0].clone(), messages[0].clone()]).len(),
             1
         );
+    }
+
+    /// Riot labels party messages with the sender's PUUID rather than a name,
+    /// so anything the app cannot look up renders as a raw uuid in the thread.
+    #[test]
+    fn a_puuid_sender_name_is_replaced_by_the_known_display_name() {
+        let own = "869d5298-db1d-54cc-bcaf-6c2a8bb1b6a1";
+        let mate = "0f8b1a2c-1111-2222-3333-444455556666";
+        let payload = json!({"messages": [
+            {
+                "cid": "party@ares-parties.ap",
+                "sender": own,
+                // Riot echoes the puuid in the name slot for party rooms.
+                "name": own,
+                "message": "e",
+                "timestamp": "2000"
+            },
+            {
+                "cid": "party@ares-parties.ap",
+                "sender": mate,
+                "name": mate,
+                "message": "queue?",
+                "timestamp": "2100"
+            }
+        ]});
+        let names = HashMap::from([
+            (own.to_string(), "習慣被依賴づ#JP1".to_string()),
+            (mate.to_string(), "ALEKSANDAR#4830".to_string()),
+        ]);
+
+        let messages = normalize_messages(
+            &payload,
+            &HashMap::new(),
+            &RoomScopes::default(),
+            &HashSet::new(),
+            own,
+            &names,
+        );
+
+        // Our own line is the one that had nothing to resolve against before:
+        // the local player is never in their own friends list.
+        assert_eq!(messages[0]["senderName"], "習慣被依賴づ#JP1");
+        assert_eq!(messages[0]["isSelf"], true);
+        assert_eq!(messages[1]["senderName"], "ALEKSANDAR#4830");
+    }
+
+    #[test]
+    fn a_real_display_name_is_never_overwritten_by_the_lookup() {
+        let sender = "869d5298-db1d-54cc-bcaf-6c2a8bb1b6a1";
+        let payload = json!({"messages": [{
+            "cid": "friend-cid",
+            "sender": sender,
+            "name": "Riot Provided Name",
+            "message": "hello",
+            "timestamp": "2000"
+        }]});
+        let names = HashMap::from([(sender.to_string(), "Stale Cached Name".to_string())]);
+
+        let messages = normalize_messages(
+            &payload,
+            &HashMap::new(),
+            &RoomScopes::default(),
+            &HashSet::new(),
+            "self",
+            &names,
+        );
+
+        assert_eq!(messages[0]["senderName"], "Riot Provided Name");
+    }
+
+    #[test]
+    fn an_unknown_puuid_still_falls_back_to_the_id_rather_than_going_blank() {
+        let sender = "869d5298-db1d-54cc-bcaf-6c2a8bb1b6a1";
+        let payload = json!({"messages": [{
+            "cid": "party@ares-parties.ap",
+            "sender": sender,
+            "name": sender,
+            "message": "e",
+            "timestamp": "2000"
+        }]});
+
+        let messages = normalize_messages(
+            &payload,
+            &HashMap::new(),
+            &RoomScopes::default(),
+            &HashSet::new(),
+            "self",
+            &HashMap::new(),
+        );
+
+        assert_eq!(messages[0]["senderName"], sender);
+    }
+
+    #[test]
+    fn puuid_shaped_names_are_told_apart_from_real_ones() {
+        assert!(looks_like_puuid("869d5298-db1d-54cc-bcaf-6c2a8bb1b6a1"));
+        assert!(looks_like_puuid("869D5298-DB1D-54CC-BCAF-6C2A8BB1B6A1"));
+        // A Riot ID with hyphens in it must not be mistaken for an id.
+        assert!(!looks_like_puuid("習慣被依賴づ#JP1"));
+        assert!(!looks_like_puuid("Some-Player#NA1"));
+        assert!(!looks_like_puuid(""));
     }
 
     #[test]

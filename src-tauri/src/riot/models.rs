@@ -18,7 +18,8 @@ pub const PATH_CONVERSATIONS_PARTIES: &str = "/chat/v6/conversations/ares-partie
 pub const PATH_CONVERSATIONS_PREGAME: &str = "/chat/v6/conversations/ares-pregame";
 pub const PATH_CONVERSATIONS_COREGAME: &str = "/chat/v6/conversations/ares-coregame";
 pub const PATH_CONVERSATIONS: &str = "/chat/v6/conversations";
-/// GET history. The CID goes through `.query()`, never string interpolation.
+/// GET history. Specific-cid requests interpolate a validated raw CID so `@`
+/// stays `@` — Riot's local RPC compares the query value literally.
 pub const PATH_MESSAGES: &str = "/chat/v6/messages";
 /// POST a message. The trailing slash is what the Riot Client expects here.
 pub const PATH_SEND_MESSAGE: &str = "/chat/v6/messages/";
@@ -341,6 +342,52 @@ pub struct Conversation {
     pub cid: String,
     #[serde(default, rename = "type", alias = "Type")]
     pub kind: String,
+    #[serde(default, alias = "messageHistory")]
+    pub message_history: Option<bool>,
+}
+
+/// Characters Riot uses in chat CIDs. Anything else is rejected before the
+/// value is interpolated into a query string.
+pub fn is_valid_riot_cid(cid: &str) -> bool {
+    let cid = cid.trim();
+    !cid.is_empty()
+        && cid
+            .bytes()
+            .all(|byte| matches!(byte, b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'@'))
+}
+
+pub fn validate_riot_cid(cid: &str) -> Result<&str, crate::riot::error::RiotError> {
+    let cid = cid.trim();
+    if is_valid_riot_cid(cid) {
+        Ok(cid)
+    } else {
+        Err(crate::riot::error::RiotError::InvalidCid)
+    }
+}
+
+/// `GET /chat/v6/messages?cid=` with the exact CID Riot returned. `@` is not
+/// percent-encoded — the local RPC looks the conversation up by the raw query.
+pub fn messages_path_for_cid(cid: &str) -> Result<String, crate::riot::error::RiotError> {
+    let cid = validate_riot_cid(cid)?;
+    Ok(format!("{PATH_MESSAGES}?cid={cid}"))
+}
+
+/// Safe fragment for logs: keep the domain, shorten the local part.
+pub fn sanitize_cid_for_log(cid: &str) -> String {
+    match cid.split_once('@') {
+        Some((local, domain)) => {
+            let prefix: String = local.chars().take(8).collect();
+            format!("{prefix}…@{domain}")
+        }
+        None => "cid:<none>".into(),
+    }
+}
+
+pub fn filter_messages_by_cid(messages: Vec<RawMessage>, requested_cid: &str) -> Vec<RawMessage> {
+    messages
+        .into_iter()
+        .filter(|message| message.cid == requested_cid)
+        .collect()
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -516,7 +563,10 @@ mod tests {
             ]
         });
         assert_eq!(local_match_side("me", &match_data), Some(MatchSide::Red));
-        assert_eq!(local_match_side("other", &match_data), Some(MatchSide::Blue));
+        assert_eq!(
+            local_match_side("other", &match_data),
+            Some(MatchSide::Blue)
+        );
     }
 
     #[test]
@@ -537,10 +587,7 @@ mod tests {
 
     #[test]
     fn pick_team_cid_prefers_the_player_side() {
-        let cids = [
-            "match-red@ares-coregame.ap",
-            "match-blue@ares-coregame.ap",
-        ];
+        let cids = ["match-red@ares-coregame.ap", "match-blue@ares-coregame.ap"];
         assert_eq!(
             pick_team_cid(cids, Some(MatchSide::Blue)).as_deref(),
             Some("match-blue@ares-coregame.ap")
@@ -630,6 +677,48 @@ mod tests {
     }
 
     #[test]
+    fn a_coregame_cid_is_interpolated_with_a_raw_at_sign() {
+        let cid = "cf38b5a9-5ca2-4d17-ae45-d7c3bf4f126c-blue@ares-coregame.jp1.pvp.net";
+        let path = messages_path_for_cid(cid).unwrap();
+        assert_eq!(
+            path,
+            "/chat/v6/messages?cid=cf38b5a9-5ca2-4d17-ae45-d7c3bf4f126c-blue@ares-coregame.jp1.pvp.net"
+        );
+        assert!(path.contains("@ares-coregame"));
+        assert!(!path.contains("%40"));
+    }
+
+    #[test]
+    fn unexpected_cid_characters_are_rejected() {
+        assert!(validate_riot_cid("has space@ares-coregame.jp1.pvp.net").is_err());
+        assert!(validate_riot_cid("blue%40ares-coregame.jp1.pvp.net").is_err());
+        assert!(validate_riot_cid("").is_err());
+        assert!(validate_riot_cid("evil.com?x=1").is_err());
+        assert!(validate_riot_cid("ok-id_1.2@ares-coregame.jp1.pvp.net").is_ok());
+    }
+
+    #[test]
+    fn all_history_fallback_filters_with_exact_cid_equality() {
+        let wanted = "match-blue@ares-coregame.jp1.pvp.net";
+        let messages = vec![
+            RawMessage {
+                cid: wanted.into(),
+                body: "us".into(),
+                ..RawMessage::default()
+            },
+            RawMessage {
+                cid: "match-all@ares-coregame.jp1.pvp.net".into(),
+                body: "everyone".into(),
+                ..RawMessage::default()
+            },
+        ];
+        let filtered = filter_messages_by_cid(messages, wanted);
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].body, "us");
+        assert!(filter_messages_by_cid(Vec::new(), wanted).is_empty());
+    }
+
+    #[test]
     fn channel_round_trips_through_serde_as_lowercase() {
         for channel in ChatChannel::EVERY {
             let json = serde_json::to_string(&channel).unwrap();
@@ -652,10 +741,7 @@ mod tests {
         .unwrap();
         let message = ChatMessage::from_raw(raw, ChatChannel::Party);
 
-        assert_eq!(
-            message.sender_puuid,
-            "869d5298-db1d-54cc-bcaf-6c2a8bb1b6a1"
-        );
+        assert_eq!(message.sender_puuid, "869d5298-db1d-54cc-bcaf-6c2a8bb1b6a1");
         assert_eq!(message.body, ".send party french hello everyone");
     }
 

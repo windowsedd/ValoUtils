@@ -1,6 +1,7 @@
 pub mod app;
 pub mod career;
 pub mod chat;
+pub mod chat_lab;
 pub mod fake_player;
 pub mod friend_profile;
 pub mod friends;
@@ -11,3 +12,4 @@ pub mod profiles;
 pub mod riot;
 pub mod riot_chat;
 pub mod riot_launch;
+pub mod store;

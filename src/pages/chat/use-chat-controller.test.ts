@@ -27,12 +27,18 @@ describe("useChatController IPC lifecycle", () => {
 	test("requests history and sends with request ids", () => {
 		expect(source).toContain('window.Main.send("chat:history", requestId, cid)');
 		expect(source).toContain('window.Main.send("chat:send", requestId, selectedCid, text)');
-		expect(source).toContain("if (!cid || !supportsHistory) return");
+		expect(source).toContain('if (!cid || !supportsHistory || channelForCid(cid) !== "friends") return');
+		expect(source).toContain("isIgnorableHistoryError(response.error)");
 		expect(source).toContain('requestHistory(response.cid, response.type === "chat")');
 	});
 
 	test("realtime messages update cache without selecting a channel", () => {
 		expect(source).toContain('dispatch({ type: "realtimeMessage", message })');
 		expect(source).not.toContain('selectChannel(channelForCid(message.conversationId))');
+	});
+
+	test("party thread includes lines stored under a MUC alias of the selected room", () => {
+		expect(source).toContain("messagesForConversation(");
+		expect(source).not.toContain("message.conversationId === state.selectedCid");
 	});
 });

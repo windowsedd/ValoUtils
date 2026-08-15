@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { FaGlobe, FaRocket, FaCode, FaChartBar, FaLanguage, FaKey, FaArrowUpRightFromSquare, FaCopy, FaCheck, FaGear, FaEye, FaEyeSlash, FaRobot, FaBook } from "react-icons/fa6";
+import { FaGlobe, FaRocket, FaCode, FaChartBar, FaLanguage, FaKey, FaArrowUpRightFromSquare, FaCopy, FaCheck, FaGear, FaEye, FaEyeSlash, FaRobot, FaBook, FaComments } from "react-icons/fa6";
 import { PageHeader, SectionCard } from "@/components/section-card";
 import { useConfiguredRoutes } from "@/components/router";
 import SwaggerPage from "@/pages/SwaggerPage";
+import ChatLab, { TestLabPanel } from "@/pages/ChatLab";
 import { normalizeHiddenTabs, setTabHidden } from "@/util/navigation-tabs";
 import {
 	displayTranslationLanguage,
@@ -93,7 +94,7 @@ const Settings = () => {
 	const [clientPassword, setClientPassword] = useState<string | null>(null);
 	const [copied, setCopied] = useState<string | null>(null);
 	const [revealPassword, setRevealPassword] = useState(false);
-	const [view, setView] = useState<"settings" | "api-reference">("settings");
+	const [view, setView] = useState<"settings" | "api-reference" | "chat-lab">("settings");
 	const [appConfig, setAppConfig] = useState<AppConfig>({
 		autoUpdate: true,
 		openDevTools: false,
@@ -225,12 +226,17 @@ const Settings = () => {
 	};
 
 	if (view === "api-reference") return <SwaggerPage onBack={() => setView("settings")} />;
+	if (view === "chat-lab") return <ChatLab onBack={() => setView("settings")} />;
 
 	return (
 		<div className="h-full flex flex-col animate-fade-in">
 			<PageHeader icon={<FaGear className="text-[#ff4655] text-lg" />} title={t("settings.title")} />
 
 			<div className="flex-1 min-h-0 overflow-y-auto px-6 pb-6 flex flex-col gap-4">
+
+			<SectionCard title={t("chatLab.title", { defaultValue: "Test Lab" })} accent="#22d3ee">
+				<TestLabPanel />
+			</SectionCard>
 
 			<SectionCard title={t("settings.sectionGeneral")} accent="#ff4655">
 					<div className="flex flex-col px-1">
@@ -411,6 +417,19 @@ const Settings = () => {
 
 				<SectionCard title={t("settings.sectionDeveloper")} accent="#6b7280">
 					<div className="flex flex-col px-1">
+				<SettingRow
+					icon={<FaComments />}
+					label={t("chatLab.title")}
+					description={t("chatLab.subtitle")}
+					right={
+						<button
+							onClick={() => setView("chat-lab")}
+							className="rounded border border-cyan-400/30 bg-cyan-400/10 px-3 py-1.5 text-xs font-semibold text-cyan-300 hover:bg-cyan-400/20"
+						>
+							{t("settings.open")}
+						</button>
+					}
+				/>
 				<SettingRow icon={<FaRobot />} label="Presence masking" description="Allow Bot commands to rewrite your Riot presence." right={<Toggle checked={appConfig.presenceEnabled} onChange={v => setPresence(v ? "enable" : "disable")} />} />
 				<SettingRow icon={<FaRobot />} label="Lobby / MUC forwarding" description="Forward lobby presence while masking is active." right={<Toggle checked={appConfig.presenceMucEnabled} onChange={v => setPresence("muc", v)} />} />
 				<SettingRow icon={<FaRobot />} label="Startup presence" description="Choose the status used when the relay starts." right={<select value={appConfig.presenceStartup} onChange={event => setPresence("startup", event.target.value)} className="rounded border border-white/10 bg-[#111] px-2 py-1 text-xs text-gray-200"><option value="last">Remember last</option><option value="online">Online</option><option value="offline">Offline</option><option value="mobile">Mobile</option></select>} />
@@ -419,6 +438,47 @@ const Settings = () => {
 					label={t("nav.apiReference")}
 					description={t("apiReference.subtitle")}
 					right={<button onClick={() => setView("api-reference")} className="rounded border border-cyan-400/30 bg-cyan-400/10 px-3 py-1.5 text-xs font-semibold text-cyan-300 hover:bg-cyan-400/20">{t("settings.open")}</button>}
+				/>
+
+				<SettingRow
+					icon={<FaComments />}
+					label={t("settings.chatApiLabel")}
+					description={
+						clientPort
+							? `https://127.0.0.1:${clientPort}/chat/v6/messages`
+							: t("settings.clientNotRunning")
+					}
+					right={
+						<div className="flex gap-2 items-center">
+							<code className="text-xs text-gray-300 bg-black/30 border border-white/10 px-2 py-1 rounded">
+								{clientPort ?? "—"}
+							</code>
+							<button
+								onClick={() => {
+									if (!clientPort) return;
+									window.Main.send("open_url", `https://127.0.0.1:${clientPort}/chat/v6/messages`);
+								}}
+								disabled={!clientPort}
+								className="flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold border border-white/10 text-gray-400 hover:text-gray-200 hover:border-white/25 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+							>
+								<FaArrowUpRightFromSquare className="w-3 h-3" />
+								{t("settings.open")}
+							</button>
+							<button
+								onClick={() => {
+									if (!clientPort) return;
+									window.Main.send("clipboard:set", `https://127.0.0.1:${clientPort}/chat/v6/messages`);
+									setCopied("chat");
+									setTimeout(() => setCopied(null), 2000);
+								}}
+								disabled={!clientPort}
+								className="flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold border border-white/10 text-gray-400 hover:text-gray-200 hover:border-white/25 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+							>
+								{copied === "chat" ? <FaCheck className="w-3 h-3 text-green-400" /> : <FaCopy className="w-3 h-3" />}
+								{copied === "chat" ? t("settings.copied") : t("common.copy")}
+							</button>
+						</div>
+					}
 				/>
 
 				<SettingRow

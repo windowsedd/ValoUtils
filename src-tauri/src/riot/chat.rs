@@ -32,10 +32,12 @@
 use crate::riot::error::RiotError;
 use crate::riot::lockfile::{self, Lockfile};
 use crate::riot::models::{
-    pick_team_cid, ChatChannel, ChatMessage, ConversationsResponse, MessagesResponse,
-    SendMessageRequest, PATH_CONVERSATIONS, PATH_MESSAGES, PATH_SEND_MESSAGE,
+    filter_messages_by_cid, messages_path_for_cid, pick_team_cid, sanitize_cid_for_log,
+    validate_riot_cid, ChatChannel, ChatMessage, Conversation, ConversationsResponse,
+    MessagesResponse, SendMessageRequest, PATH_CONVERSATIONS, PATH_MESSAGES, PATH_SEND_MESSAGE,
 };
 use serde::de::DeserializeOwned;
+use std::time::Duration;
 
 #[derive(Clone)]
 pub struct RiotChatClient {
@@ -62,6 +64,24 @@ impl std::fmt::Debug for RiotChatClient {
 /// construction; this exists so that the test seam - the one place an arbitrary
 /// URL can be supplied - cannot be misused to send Basic credentials to a
 /// remote host.
+fn conversation_init_retry() -> Duration {
+    if cfg!(test) {
+        Duration::ZERO
+    } else {
+        Duration::from_millis(1500)
+    }
+}
+
+fn stamp_messages(
+    messages: Vec<crate::riot::models::RawMessage>,
+    channel: ChatChannel,
+) -> Vec<ChatMessage> {
+    messages
+        .into_iter()
+        .map(|raw| ChatMessage::from_raw(raw, channel))
+        .collect()
+}
+
 fn is_loopback_base(base_url: &str) -> bool {
     let Some(rest) = base_url
         .strip_prefix("https://")
@@ -152,7 +172,9 @@ impl RiotChatClient {
 
     /// Finds the CID for `channel`, searching every returned conversation.
     pub async fn resolve_cid(&self, channel: ChatChannel) -> Result<String, RiotError> {
-        let dedicated = self.listed_cids(channel.conversations_path(), channel).await?;
+        let dedicated = self
+            .listed_cids(channel.conversations_path(), channel)
+            .await?;
         let all = self.listed_cids(PATH_CONVERSATIONS, channel).await?;
         let mut cids = dedicated;
         for cid in all {
@@ -180,18 +202,55 @@ impl RiotChatClient {
         Err(RiotError::ChannelUnavailable { channel })
     }
 
+    async fn listed_conversations(&self, path: &str) -> Result<Vec<Conversation>, RiotError> {
+        let response: ConversationsResponse = self.get_json(path, &[]).await?;
+        Ok(response
+            .conversations
+            .into_iter()
+            .filter(|conversation| !conversation.cid.is_empty())
+            .collect())
+    }
+
     async fn listed_cids(
         &self,
         path: &str,
         channel: ChatChannel,
     ) -> Result<Vec<String>, RiotError> {
-        let response: ConversationsResponse = self.get_json(path, &[]).await?;
-        Ok(response
-            .conversations
+        Ok(self
+            .listed_conversations(path)
+            .await?
             .into_iter()
             .map(|conversation| conversation.cid)
-            .filter(|cid| !cid.is_empty() && channel.matches_cid(cid))
+            .filter(|cid| channel.matches_cid(cid))
             .collect())
+    }
+
+    async fn lookup_conversation(
+        &self,
+        cid: &str,
+        channel: ChatChannel,
+    ) -> Result<Option<Conversation>, RiotError> {
+        let mut listed = self
+            .listed_conversations(channel.conversations_path())
+            .await?;
+        listed.extend(self.listed_conversations(PATH_CONVERSATIONS).await?);
+        Ok(listed
+            .into_iter()
+            .find(|conversation| conversation.cid == cid && channel.matches_cid(&conversation.cid)))
+    }
+
+    async fn require_active_conversation(
+        &self,
+        cid: &str,
+        channel: ChatChannel,
+    ) -> Result<Conversation, RiotError> {
+        if let Some(found) = self.lookup_conversation(cid, channel).await? {
+            return Ok(found);
+        }
+        tokio::time::sleep(conversation_init_retry()).await;
+        self.lookup_conversation(cid, channel)
+            .await?
+            .ok_or(RiotError::StaleConversation { channel })
     }
 
     async fn active_party_muc(&self) -> Option<String> {
@@ -263,10 +322,10 @@ impl RiotChatClient {
     /// History for an already-resolved CID.
     ///
     /// The poller uses this so it can resolve each channel once per tick rather
-    /// than twice. The CID goes through `.query()`, so an `@` or `.` in it is
-    /// percent-encoded rather than pasted into the URL.
+    /// than twice. The specific-history URL interpolates a validated CID so `@`
+    /// stays `@`; a 404 falls back to the unfiltered list and exact-cid filter.
     pub async fn get_recent_messages(&self) -> Result<Vec<ChatMessage>, RiotError> {
-        let response: MessagesResponse = self.get_json(PATH_MESSAGES, &[]).await?;
+        let response = self.get_messages_payload(PATH_MESSAGES).await?;
         Ok(response
             .messages
             .into_iter()
@@ -284,12 +343,85 @@ impl RiotChatClient {
         cid: &str,
         channel: ChatChannel,
     ) -> Result<Vec<ChatMessage>, RiotError> {
-        let response: MessagesResponse = self.get_json(PATH_MESSAGES, &[("cid", cid)]).await?;
-        Ok(response
-            .messages
-            .into_iter()
-            .map(|raw| ChatMessage::from_raw(raw, channel))
-            .collect())
+        let cid = validate_riot_cid(cid)?.to_string();
+        if !channel.matches_cid(&cid) {
+            return Err(RiotError::ChannelUnavailable { channel });
+        }
+        let conversation = self.require_active_conversation(&cid, channel).await?;
+        if conversation.message_history == Some(false) {
+            log::info!(
+                "GET {PATH_MESSAGES} channel={} cid={} fallback=true reason=message_history_false",
+                channel.as_str(),
+                sanitize_cid_for_log(&cid)
+            );
+            return self.fallback_messages_for_cid(&cid, channel).await;
+        }
+
+        match self
+            .get_messages_payload(&messages_path_for_cid(&cid)?)
+            .await
+        {
+            Ok(payload) => Ok(stamp_messages(payload.messages, channel)),
+            Err(RiotError::ConversationNotFound) => {
+                if self
+                    .require_active_conversation(&cid, channel)
+                    .await
+                    .is_err()
+                {
+                    return Err(RiotError::StaleConversation { channel });
+                }
+                log::info!(
+                    "GET {PATH_MESSAGES} status=404 channel={} cid={} fallback=true",
+                    channel.as_str(),
+                    sanitize_cid_for_log(&cid)
+                );
+                self.fallback_messages_for_cid(&cid, channel).await
+            }
+            Err(error) => Err(error),
+        }
+    }
+
+    async fn fallback_messages_for_cid(
+        &self,
+        cid: &str,
+        channel: ChatChannel,
+    ) -> Result<Vec<ChatMessage>, RiotError> {
+        let payload = self.get_messages_payload(PATH_MESSAGES).await?;
+        Ok(stamp_messages(
+            filter_messages_by_cid(payload.messages, cid),
+            channel,
+        ))
+    }
+
+    async fn get_messages_payload(&self, path: &str) -> Result<MessagesResponse, RiotError> {
+        let url = format!("{}{path}", self.base_url.trim_end_matches('/'));
+        let response = self
+            .http
+            .get(&url)
+            .basic_auth("riot", Some(self.lockfile.password()))
+            .send()
+            .await
+            .map_err(RiotError::from_transport)?;
+        let status = response.status();
+        if status == reqwest::StatusCode::NOT_FOUND {
+            let text = response.text().await.unwrap_or_default();
+            if text.contains("RESOURCE_NOT_FOUND") || text.contains("Invalid URI") {
+                return Err(RiotError::RiotClientUnavailable);
+            }
+            return Err(RiotError::ConversationNotFound);
+        }
+        if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
+            return Err(RiotError::AuthenticationFailed {
+                status: status.as_u16(),
+            });
+        }
+        if !status.is_success() {
+            return Err(RiotError::RequestFailed {
+                status: status.as_u16(),
+            });
+        }
+        let bytes = response.bytes().await.map_err(RiotError::from_transport)?;
+        serde_json::from_slice(&bytes).map_err(|_| RiotError::UnreadableResponse)
     }
 
     pub async fn send_message(&self, channel: ChatChannel, message: &str) -> Result<(), RiotError> {
@@ -805,7 +937,7 @@ mod tests {
                 (200, conversations(&[ALL_CID, TEAM_BLUE_CID]))
             }
             "/chat/v6/messages" => {
-                let body = if query.contains("all%40ares") {
+                let body = if query.contains("all@ares") {
                     json!({ "messages": [{ "cid": ALL_CID, "id": "m-all", "body": "gg all" }] })
                 } else {
                     json!({ "messages": [{ "cid": TEAM_BLUE_CID, "id": "m-team", "body": "go b" }] })
@@ -830,7 +962,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn the_cid_is_percent_encoded_into_the_query_not_pasted_into_the_url() {
+    async fn a_coregame_cid_is_sent_without_percent_encoding_the_at_sign() {
         let mock = full_session_mock().await;
         let client = client_for(&mock);
 
@@ -842,11 +974,241 @@ mod tests {
             .find(|request| request.path == "/chat/v6/messages")
             .expect("history request");
         assert!(
-            history.query.contains("all%40ares-coregame"),
-            "expected an encoded @, got {:?}",
+            history.query.contains("all@ares-coregame"),
+            "expected a raw @, got {:?}",
             history.query
         );
-        assert!(!history.query.contains('@'));
+        assert!(
+            !history.query.contains("%40"),
+            "Riot compares the query literally; %40 must not appear: {:?}",
+            history.query
+        );
+    }
+
+    #[tokio::test]
+    async fn specific_history_returns_the_room_payload() {
+        let mock = spawn_mock(|_method, path, query| match path {
+            "/chat/v6/conversations/ares-coregame" | "/chat/v6/conversations" => {
+                (200, conversations(&[ALL_CID]))
+            }
+            "/chat/v6/messages" if query.contains(ALL_CID) => (
+                200,
+                json!({ "messages": [{ "cid": ALL_CID, "id": "m-1", "body": "hello" }] })
+                    .to_string(),
+            ),
+            "/chat/v6/messages" => (500, json!({ "message": "should not fallback" }).to_string()),
+            _ => (200, conversations(&[])),
+        })
+        .await;
+        let client = client_for(&mock);
+        let messages = client
+            .get_messages_for_cid(ALL_CID, ChatChannel::All)
+            .await
+            .unwrap();
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].body, "hello");
+        assert_eq!(messages[0].channel, ChatChannel::All);
+    }
+
+    #[tokio::test]
+    async fn a_not_found_specific_request_falls_back_to_all_history() {
+        let mock = spawn_mock(|_method, path, query| match path {
+            "/chat/v6/conversations/ares-coregame" | "/chat/v6/conversations" => {
+                (200, conversations(&[TEAM_BLUE_CID, ALL_CID]))
+            }
+            "/chat/v6/messages" if query.contains("cid=") => (
+                404,
+                json!({
+                    "errorCode": "RPC_ERROR",
+                    "httpStatus": 404,
+                    "implementationDetails": {},
+                    "message": "not_found"
+                })
+                .to_string(),
+            ),
+            "/chat/v6/messages" => (
+                200,
+                json!({
+                    "messages": [
+                        { "cid": TEAM_BLUE_CID, "id": "m-team", "body": "rotate" },
+                        { "cid": ALL_CID, "id": "m-all", "body": "gg" }
+                    ]
+                })
+                .to_string(),
+            ),
+            _ => (200, conversations(&[])),
+        })
+        .await;
+        let client = client_for(&mock);
+        let messages = client
+            .get_messages_for_cid(TEAM_BLUE_CID, ChatChannel::Team)
+            .await
+            .unwrap();
+        assert_eq!(
+            messages
+                .iter()
+                .map(|item| item.body.as_str())
+                .collect::<Vec<_>>(),
+            vec!["rotate"]
+        );
+        assert!(messages
+            .iter()
+            .all(|item| item.channel == ChatChannel::Team));
+        assert!(
+            mock.requests()
+                .iter()
+                .any(|request| request.path == "/chat/v6/messages" && request.query.is_empty()),
+            "expected the unfiltered fallback GET"
+        );
+    }
+
+    #[tokio::test]
+    async fn empty_filtered_history_is_not_a_network_error() {
+        let mock = spawn_mock(|_method, path, query| match path {
+            "/chat/v6/conversations/ares-coregame" | "/chat/v6/conversations" => {
+                (200, conversations(&[TEAM_BLUE_CID]))
+            }
+            "/chat/v6/messages" if query.contains("cid=") => {
+                (404, json!({ "message": "not_found" }).to_string())
+            }
+            "/chat/v6/messages" => (200, json!({ "messages": [] }).to_string()),
+            _ => (200, conversations(&[])),
+        })
+        .await;
+        let client = client_for(&mock);
+        let messages = client
+            .get_messages_for_cid(TEAM_BLUE_CID, ChatChannel::Team)
+            .await
+            .unwrap();
+        assert!(messages.is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_stale_cid_is_detected_after_refreshing_conversations() {
+        let generation = Arc::new(Mutex::new(0u8));
+        let seen = generation.clone();
+        let mock = spawn_mock(move |_method, path, query| {
+            let gen = *seen.lock().unwrap();
+            match path {
+                "/chat/v6/conversations/ares-coregame" | "/chat/v6/conversations" => {
+                    let cid = if gen == 0 {
+                        TEAM_BLUE_CID
+                    } else {
+                        "next-blue@ares-coregame.eu1.pvp.net"
+                    };
+                    (200, conversations(&[cid]))
+                }
+                "/chat/v6/messages" if query.contains("cid=") => {
+                    *seen.lock().unwrap() = 1;
+                    (404, json!({ "message": "not_found" }).to_string())
+                }
+                "/chat/v6/messages" => (500, json!({ "message": "must not fallback" }).to_string()),
+                _ => (200, conversations(&[])),
+            }
+        })
+        .await;
+        let client = client_for(&mock);
+        let error = client
+            .get_messages_for_cid(TEAM_BLUE_CID, ChatChannel::Team)
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            RiotError::StaleConversation {
+                channel: ChatChannel::Team
+            }
+        ));
+    }
+
+    #[tokio::test]
+    async fn message_history_false_skips_the_specific_endpoint() {
+        let mock = spawn_mock(|_method, path, query| match path {
+            "/chat/v6/conversations/ares-coregame" | "/chat/v6/conversations" => (
+                200,
+                json!({
+                    "conversations": [{
+                        "cid": TEAM_BLUE_CID,
+                        "type": "groupchat",
+                        "message_history": false
+                    }]
+                })
+                .to_string(),
+            ),
+            "/chat/v6/messages" if query.contains("cid=") => (
+                500,
+                json!({ "message": "must not call specific" }).to_string(),
+            ),
+            "/chat/v6/messages" => (
+                200,
+                json!({ "messages": [{ "cid": TEAM_BLUE_CID, "id": "m-1", "body": "hi" }] })
+                    .to_string(),
+            ),
+            _ => (200, conversations(&[])),
+        })
+        .await;
+        let client = client_for(&mock);
+        let messages = client
+            .get_messages_for_cid(TEAM_BLUE_CID, ChatChannel::Team)
+            .await
+            .unwrap();
+        assert_eq!(messages[0].body, "hi");
+        assert!(mock
+            .requests()
+            .iter()
+            .filter(|request| request.path == "/chat/v6/messages")
+            .all(|request| request.query.is_empty()));
+    }
+
+    #[tokio::test]
+    async fn a_new_match_invalidates_the_previous_cached_cid() {
+        let generation = Arc::new(Mutex::new(0u8));
+        let seen = generation.clone();
+        let mock = spawn_mock(move |_method, path, _query| {
+            let cid = if *seen.lock().unwrap() == 0 {
+                "match-a-blue@ares-coregame.eu1.pvp.net"
+            } else {
+                "match-b-blue@ares-coregame.eu1.pvp.net"
+            };
+            if path.contains("ares-coregame") || path == "/chat/v6/conversations" {
+                return (200, conversations(&[cid]));
+            }
+            (200, conversations(&[]))
+        })
+        .await;
+        let client = client_for(&mock);
+        assert_eq!(
+            client.resolve_cid(ChatChannel::Team).await.unwrap(),
+            "match-a-blue@ares-coregame.eu1.pvp.net"
+        );
+        *generation.lock().unwrap() = 1;
+        assert_eq!(
+            client.resolve_cid(ChatChannel::Team).await.unwrap(),
+            "match-b-blue@ares-coregame.eu1.pvp.net"
+        );
+    }
+
+    #[tokio::test]
+    async fn unexpected_cid_characters_are_rejected_before_the_request() {
+        let mock = full_session_mock().await;
+        let client = client_for(&mock);
+        let before = mock.requests().len();
+        let error = client
+            .get_messages_for_cid("blue%40ares-coregame.jp1.pvp.net", ChatChannel::Team)
+            .await
+            .unwrap_err();
+        assert!(matches!(error, RiotError::InvalidCid));
+        assert_eq!(mock.requests().len(), before);
+    }
+
+    #[tokio::test]
+    async fn sending_puts_the_exact_cid_in_the_json_body() {
+        let mock = full_session_mock().await;
+        let client = client_for(&mock);
+        client.send_to_team("push").await.unwrap();
+        let post = mock.posts().pop().unwrap();
+        assert_eq!(post.body.unwrap()["cid"], json!(TEAM_BLUE_CID));
+        assert!(TEAM_BLUE_CID.contains('@'));
+        assert!(!TEAM_BLUE_CID.contains("%40"));
     }
 
     #[tokio::test]

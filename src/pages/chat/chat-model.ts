@@ -4,6 +4,8 @@ import type {
 	ChatFriend,
 	ChatMessage,
 	ChatPresenceSnapshot,
+	ChatRoomKey,
+	ChatRooms,
 } from "@/types/chat";
 
 export type FriendConversation = {
@@ -260,9 +262,121 @@ export const channelForCid = (cid: string): ChatChannel => {
 	return "friends";
 };
 
+/**
+ * Party/team/all rooms are the same conversation when the local part matches,
+ * even if one side is the short MUCName (`id@ares-parties.ap`) and the other
+ * is the Riot Client cid (`id@ares-parties.ap1.pvp.net`). Exact string compare
+ * left the thread empty while Valorant still showed the line.
+ */
+export const sameRoomCid = (left: string, right: string) => {
+	if (!left || !right) return false;
+	if (left.toLocaleLowerCase() === right.toLocaleLowerCase()) return true;
+	const channel = channelForCid(left);
+	return channel !== "friends" && channel === channelForCid(right) && idRoot(left) === idRoot(right);
+};
+
+/** Transcript for a room, including lines stored under an alias of the same MUC. */
+export const messagesForConversation = (
+	cid: string | null,
+	historyByCid: Record<string, ChatMessage[]>,
+	summaryMessages: ChatMessage[],
+) => {
+	if (!cid) return [];
+	const fromHistory = Object.entries(historyByCid)
+		.filter(([key]) => sameRoomCid(key, cid))
+		.flatMap(([, messages]) => messages);
+	return mergeChatMessages(
+		fromHistory,
+		summaryMessages.filter((message) => sameRoomCid(message.conversationId, cid)),
+	);
+};
+
+/**
+ * Whether a composed line is a command rather than a message.
+ *
+ * Deliberately the whole of the frontend's command knowledge: which command it
+ * is, whether a custom trigger matches, and how to parse it all stay in Rust,
+ * where the trigger list actually lives. This only decides who to hand it to.
+ *
+ * The leading dot is required. In-game a bare trigger fires, but the composer
+ * is where ordinary messages get written, and matching bare words there would
+ * make it impossible to ever send "gg".
+ */
+export const isComposerCommand = (text: string) => text.trim().startsWith(".");
+
+/** The `rooms` key holding the backend's resolved CID for each room channel. */
+const ROOM_KEY: Record<Exclude<ChatChannel, "friends">, ChatRoomKey> = {
+	party: "party",
+	team: "matchTeam",
+	all: "matchAll",
+};
+
+/**
+ * Which conversation a room channel should be showing, given what the summary
+ * currently lists.
+ *
+ * Room channels (party/team/all) hold exactly one conversation at a time and
+ * the player never picks it — it appears when they party up or a match starts,
+ * and vanishes when it ends. So the selection has to be re-derived every time
+ * the summary changes, in both directions: resolving it only at click time
+ * left the channel reporting "available" with nothing selected whenever the
+ * room showed up *after* the channel did, which is the normal ordering.
+ *
+ * `rooms` decides which one, because the conversation list cannot. The backend
+ * labels both `-blue@` and `-red@` as `team`, so a summary can carry the enemy
+ * team's room alongside our own, and a pregame room alongside the coregame one
+ * that replaces it. Picking the first match would eventually put the player in
+ * the wrong room; `rooms.matchTeam` is the side-aware answer the backend
+ * already computed. A resolved room the summary does not list is ignored
+ * rather than returned, so the channel can never read "unavailable" while
+ * something is selected.
+ *
+ * `friends` is the exception and passes through untouched: those conversations
+ * are chosen explicitly, and a direct conversation that has not yet appeared
+ * in the summary must not be cleared out from under the player.
+ */
+export const resolveChannelCid = (
+	channel: ChatChannel,
+	selectedCid: string | null,
+	conversations: ChatConversation[],
+	rooms: ChatRooms = {},
+): string | null => {
+	if (channel === "friends") return selectedCid;
+	const forChannel = conversations.filter((conversation) => conversation.channel === channel);
+	const listed = (cid: string | null | undefined): cid is string =>
+		Boolean(cid) && forChannel.some((conversation) => conversation.cid === cid);
+	const listedAlias = (cid: string | null | undefined) =>
+		cid ? (forChannel.find((conversation) => sameRoomCid(conversation.cid, cid))?.cid ?? null) : null;
+
+	// The backend's pick wins even over a live selection: when pregame gives way
+	// to coregame, following it beats sitting in the room about to disappear.
+	const resolved = rooms[ROOM_KEY[channel]];
+	if (listed(resolved)) return resolved;
+	const aliased = listedAlias(resolved);
+	if (aliased) return aliased;
+	if (listed(selectedCid)) return selectedCid;
+	return forChannel[0]?.cid ?? null;
+};
+
 export const supportsConversationHistory = (
 	conversation: ChatConversation | null | undefined,
-) => conversation?.supportsHistory === true;
+) => conversation?.channel === "friends" && conversation.supportsHistory === true;
+
+/**
+ * Party/match MUCs 404 `/chat/v6/messages?cid=`. That is "no REST store",
+ * not a failed history load. A stale backend still returns the RPC string;
+ * the thread must not paint it.
+ */
+export const isIgnorableHistoryError = (error: string | null | undefined) => {
+	if (!error) return false;
+	const lower = error.toLocaleLowerCase();
+	if (lower.includes("resource_not_found") || lower.includes("invalid uri")) return false;
+	return (
+		(lower.includes("404") || lower.includes("not found")) &&
+		lower.includes("not_found") &&
+		lower.includes("/chat/v6/messages")
+	);
+};
 
 export const shouldStickToBottom = (metrics: ScrollMetrics, sentBySelf: boolean) =>
 	sentBySelf || metrics.scrollHeight - metrics.scrollTop - metrics.clientHeight <= 64;

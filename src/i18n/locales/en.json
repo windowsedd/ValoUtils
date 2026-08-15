@@ -5,10 +5,12 @@
     "friends": "Friends",
     "liveGame": "Live Game",
     "chat": "Chat",
+    "store": "Store",
     "settings": "Settings",
     "about": "About",
     "apiReference": "API Reference",
     "dummyBot": "Bot",
+    "testLab": "Test Lab",
     "matches": "Matches",
     "more": "More"
   },
@@ -108,6 +110,19 @@
     "profileModeFilter": "Filter matches by mode",
     "profileAllModes": "All Modes",
     "profileUnknownMap": "Unknown Map"
+  },
+  "store": {
+    "title": "Store",
+    "loading": "Loading store...",
+    "failedToLoad": "Failed to load the store",
+    "loginRequired": "Riot Client not running",
+    "loginRequiredDesc": "Start the Riot Client and sign in to see your store.",
+    "dailyOffers": "Daily Offers",
+    "featuredBundle": "Featured Bundle",
+    "nightMarket": "Night Market",
+    "accessoryStore": "Accessory Store",
+    "hiddenCard": "Not revealed",
+    "unknownItem": "Unknown item"
   },
   "career": {
     "title": "Career",
@@ -279,6 +294,7 @@
     "analyticsDesc": "Send anonymous usage stats to help improve ValoUtils",
     "restartRequired": "Restart required",
     "sectionDeveloper": "Developer",
+    "chatApiLabel": "Riot Client chat API",
     "swaggerLabel": "Riot Client Swagger API",
     "clientNotRunning": "Start the Riot Client to get the port",
     "clientNotRunningShort": "Start the Riot Client",
@@ -288,6 +304,25 @@
     "copied": "Copied",
     "reveal": "Show password",
     "hide": "Hide password"
+  },
+  "chatLab": {
+    "title": "Test Lab",
+    "subtitle": "Probe local Riot Client APIs",
+    "sendTitle": "Localhost send chat",
+    "sendDesc": "POST /chat/v6/messages on the lockfile port. Party, pregame, team and all stay on their own rooms.",
+    "channel": "Channel",
+    "pregameChannel": "Pregame",
+    "messagePlaceholder": "Type a localhost chat message",
+    "send": "Send",
+    "working": "Working…",
+    "infoTitle": "Conversation info",
+    "infoDesc": "GET the live conversation listings from the Riot Client.",
+    "partyInfo": "Party Chat Info",
+    "pregameInfo": "Pre-Game Chat Info",
+    "currentInfo": "Current Game Chat Info",
+    "allInfo": "All Chat Info",
+    "resultTitle": "Response",
+    "resultEmpty": "Run a probe to see the JSON here."
   },
   "settingsViewer": {
     "modalTitle": "Settings — {{name}}",

@@ -37,6 +37,27 @@ pub enum RiotError {
     #[error("{channel} chat is not available right now.")]
     ChannelUnavailable { channel: ChatChannel },
 
+    #[error("Chat conversation id is not a valid Riot CID.")]
+    InvalidCid,
+
+    #[error("Chat conversation was not found.")]
+    ConversationNotFound,
+
+    #[error("{channel} chat conversation is no longer active.")]
+    StaleConversation { channel: ChatChannel },
+
+    #[error("Message history is not available for this conversation.")]
+    MessageHistoryUnavailable,
+
+    #[error("Riot Client is not running.")]
+    RiotClientUnavailable,
+
+    #[error("Riot Client rejected the chat request (HTTP {status}).")]
+    AuthenticationFailed { status: u16 },
+
+    #[error("Riot Client rejected the chat request (HTTP {status}).")]
+    RequestFailed { status: u16 },
+
     #[error("Message is empty.")]
     EmptyMessage,
 
@@ -65,10 +86,14 @@ impl RiotError {
     pub fn is_login_required(&self) -> bool {
         match self {
             RiotError::RiotClientNotRunning
+            | RiotError::RiotClientUnavailable
             | RiotError::MalformedLockfile
             | RiotError::Transport(_)
-            | RiotError::NotConnected => true,
-            RiotError::Http { status } => *status == 401 || *status == 403 || *status == 503,
+            | RiotError::NotConnected
+            | RiotError::AuthenticationFailed { .. } => true,
+            RiotError::Http { status } | RiotError::RequestFailed { status } => {
+                *status == 401 || *status == 403 || *status == 503
+            }
             _ => false,
         }
     }
@@ -96,5 +121,25 @@ mod tests {
             "Riot Client rejected the chat request (HTTP 401)."
         );
         assert!(!http.to_string().contains("127.0.0.1"));
+    }
+
+    #[test]
+    fn typed_history_errors_do_not_embed_cids_or_bodies() {
+        let stale = RiotError::StaleConversation {
+            channel: ChatChannel::Team,
+        };
+        assert_eq!(
+            stale.to_string(),
+            "Team chat conversation is no longer active."
+        );
+        assert!(!stale.to_string().contains('@'));
+        assert_eq!(
+            RiotError::InvalidCid.to_string(),
+            "Chat conversation id is not a valid Riot CID."
+        );
+        assert_eq!(
+            RiotError::ConversationNotFound.to_string(),
+            "Chat conversation was not found."
+        );
     }
 }

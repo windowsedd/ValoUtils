@@ -15,6 +15,12 @@ describe("navigation tab settings", () => {
 		expect(settings).toContain('detail: { key, value }');
 	});
 
+	test("shows the live Riot chat API URL and lockfile port", () => {
+		expect(settings).toContain("/chat/v6/messages");
+		expect(settings).toContain("settings.chatApiLabel");
+		expect(settings).toContain("clientPort");
+	});
+
 	for (const locale of locales) {
 		test(`${locale} contains navigation visibility copy`, () => {
 			const messages = JSON.parse(
@@ -23,6 +29,7 @@ describe("navigation tab settings", () => {
 			expect(messages.sectionNavigation).toBeString();
 			expect(messages.hideTab).toBeString();
 			expect(messages.hideTabDesc).toBeString();
+			expect(messages.chatApiLabel).toBeString();
 		});
 	}
 });
