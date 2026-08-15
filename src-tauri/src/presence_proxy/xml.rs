@@ -10,6 +10,8 @@ pub enum BotCommand {
     SetEnabled(bool),
     Status,
     Help,
+    Translate,
+    TranslateHistory,
     Unknown,
     Consume,
 }
@@ -27,14 +29,70 @@ pub fn parse_bot_command(value: &str) -> Option<BotCommand> {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LiveChatLine {
+    pub id: String,
+    pub cid: String,
+    pub sender: String,
+    pub body: String,
+    pub timestamp: String,
+}
+
+pub fn parse_groupchat_line(stanza: &str) -> Option<LiveChatLine> {
+    let root = Element::parse(stanza.as_bytes()).ok()?;
+    if root.name != "message" {
+        return None;
+    }
+    let kind = root.attributes.get("type").map(String::as_str).unwrap_or("");
+    if !kind.eq_ignore_ascii_case("groupchat") {
+        return None;
+    }
+    let body = root
+        .get_child("body")
+        .and_then(Element::get_text)?
+        .into_owned();
+    if body.trim().is_empty() {
+        return None;
+    }
+    let from = root.attributes.get("from").cloned().unwrap_or_default();
+    let to = root.attributes.get("to").cloned().unwrap_or_default();
+    let (cid, sender) = if let Some((room, nick)) = from.split_once('/') {
+        (room.to_string(), nick.to_string())
+    } else if !from.is_empty() && from.contains('@') {
+        (from, String::new())
+    } else {
+        (to.split('/').next().unwrap_or(&to).to_string(), String::new())
+    };
+    if cid.is_empty() {
+        return None;
+    }
+    let id = root.attributes.get("id").cloned().unwrap_or_else(|| {
+        format!("{cid}:{sender}:{}", body.chars().take(24).collect::<String>())
+    });
+    Some(LiveChatLine {
+        id,
+        cid,
+        sender,
+        body,
+        timestamp: unix_millis().to_string(),
+    })
+}
+
 pub fn bot_message_body(stanza: &str) -> Option<String> {
-    Element::parse(stanza.as_bytes()).ok()?
-        .get_child("body")?.get_text().map(|body| body.into_owned())
+    Element::parse(stanza.as_bytes())
+        .ok()?
+        .get_child("body")?
+        .get_text()
+        .map(|body| body.into_owned())
 }
 
 pub fn is_muc_presence(stanza: &str) -> bool {
-    let Ok(root) = Element::parse(stanza.as_bytes()) else { return false };
-    if root.name != "presence" { return false; }
+    let Ok(root) = Element::parse(stanza.as_bytes()) else {
+        return false;
+    };
+    if root.name != "presence" {
+        return false;
+    }
     root.attributes.get("to").is_some_and(|to| to.contains("@ares-parties."))
         || root.children.iter().any(|node| matches!(node, XMLNode::Element(child) if child.namespace.as_deref() == Some("http://jabber.org/protocol/muc")))
 }
@@ -54,10 +112,14 @@ pub fn parse_bot_message(stanza: &str) -> Result<Option<(String, BotCommand)>, S
     let Some(body) = root.get_child("body").and_then(Element::get_text) else {
         return Ok(Some((jid.clone(), BotCommand::Consume)));
     };
-    Ok(Some((
-        jid.clone(),
-        parse_bot_command(&body).unwrap_or(BotCommand::Unknown),
-    )))
+    let command = if crate::riot::chat_command::is_history_translate_command(&body) {
+        BotCommand::TranslateHistory
+    } else if crate::riot::chat_command::is_translation_command(&body) {
+        BotCommand::Translate
+    } else {
+        parse_bot_command(&body).unwrap_or(BotCommand::Unknown)
+    };
+    Ok(Some((jid.clone(), command)))
 }
 
 pub fn inject_bot_roster(stanza: &str, account_domain: &str) -> Result<Option<String>, String> {
@@ -271,7 +333,7 @@ fn riot_timestamp() -> String {
     )
 }
 
-fn escape_xml(value: &str) -> String {
+pub(crate) fn escape_xml(value: &str) -> String {
     value
         .replace('&', "&amp;")
         .replace('<', "&lt;")
@@ -527,8 +589,12 @@ mod tests {
 
     #[test]
     fn identifies_riot_party_presence() {
-        assert!(is_muc_presence(r#"<presence to="room@ares-parties.na1.pvp.net/me"/>"#));
-        assert!(!is_muc_presence(r#"<presence><show>chat</show></presence>"#));
+        assert!(is_muc_presence(
+            r#"<presence to="room@ares-parties.na1.pvp.net/me"/>"#
+        ));
+        assert!(!is_muc_presence(
+            r#"<presence><show>chat</show></presence>"#
+        ));
     }
 
     #[test]
@@ -564,8 +630,14 @@ mod tests {
         );
         assert_eq!(parse_bot_command("$status"), Some(BotCommand::Status));
         assert_eq!(parse_bot_command("$help"), Some(BotCommand::Help));
-        assert_eq!(parse_bot_command("enable"), Some(BotCommand::SetEnabled(true)));
-        assert_eq!(parse_bot_command("$disable"), Some(BotCommand::SetEnabled(false)));
+        assert_eq!(
+            parse_bot_command("enable"),
+            Some(BotCommand::SetEnabled(true))
+        );
+        assert_eq!(
+            parse_bot_command("$disable"),
+            Some(BotCommand::SetEnabled(false))
+        );
         assert_eq!(parse_bot_command("$rank 27"), None);
     }
 
@@ -589,6 +661,42 @@ mod tests {
         assert_eq!(
             parse_bot_message(&stanza).unwrap(),
             Some((jid, BotCommand::Help))
+        );
+    }
+
+    #[test]
+    fn parses_incoming_party_groupchat_for_history() {
+        let stanza = r#"<message from="abc@ares-parties.ap/friend" type="groupchat" id="m-9"><body>Haha, stultusne es?</body></message>"#;
+        let line = parse_groupchat_line(stanza).expect("groupchat");
+        assert_eq!(line.cid, "abc@ares-parties.ap");
+        assert_eq!(line.body, "Haha, stultusne es?");
+        assert!(parse_groupchat_line(
+            r#"<message to="bot@na1.pvp.net" type="chat"><body>.tran</body></message>"#
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn intercepts_history_translate_whispers_to_the_bot() {
+        let jid = format!("{}@na1.pvp.net", crate::fake_player::PUUID);
+        let stanza = format!(
+            r#"<message to="{jid}" type="chat"><body>.tran [5]</body></message>"#
+        );
+        assert_eq!(
+            parse_bot_message(&stanza).unwrap(),
+            Some((jid, BotCommand::TranslateHistory))
+        );
+    }
+
+    #[test]
+    fn intercepts_translation_whispers_to_the_bot() {
+        let jid = format!("{}@na1.pvp.net", crate::fake_player::PUUID);
+        let stanza = format!(
+            r#"<message to="{jid}" type="chat"><body>.send all french hello everyone</body></message>"#
+        );
+        assert_eq!(
+            parse_bot_message(&stanza).unwrap(),
+            Some((jid, BotCommand::Translate))
         );
     }
 

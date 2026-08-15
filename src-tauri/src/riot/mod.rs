@@ -1,3 +1,9 @@
 pub mod api;
+pub mod chat;
+pub mod chat_command;
 pub mod client;
+pub mod dedup;
+pub mod error;
+pub mod lockfile;
+pub mod models;
 pub mod settings;

@@ -98,6 +98,45 @@ const fallbackKey = (message: ChatMessage) =>
 export const chatMessageKey = (message: ChatMessage) =>
 	message.id ? `${message.conversationId}:${message.id}` : fallbackKey(message);
 
+/**
+ * Clock reading for the transcript gutter and the conversation list.
+ *
+ * Always 24-hour. A log column has to be one fixed width or the whole ruler
+ * bends, and localised 12-hour time is 8 characters ("09:24 PM") against 5
+ * ("21:24") — it wrapped the gutter onto two lines and doubled every row.
+ */
+export const formatClock = (value: string | number | null | undefined) => {
+	// A conversation with no messages carries latestTime 0. Epoch zero is never a
+	// real chat timestamp, so it reads as "no time" rather than "00:00".
+	if (value === null || value === undefined || value === "" || value === 0) return "";
+	const numeric = Number(value);
+	const date = new Date(Number.isFinite(numeric) ? numeric : String(value));
+	if (Number.isNaN(date.getTime())) return "";
+	return date.toLocaleTimeString([], {
+		hour: "2-digit",
+		minute: "2-digit",
+		hour12: false,
+	});
+};
+
+/** Messages closer together than this read as one burst from the same speaker. */
+const groupWindowMs = 5 * 60 * 1000;
+
+/**
+ * Whether a message opens a new group in the transcript — i.e. whether it needs
+ * its own sender header. Consecutive messages from one person inside the group
+ * window hang under the first, so a burst reads as a burst.
+ */
+export const startsMessageGroup = (
+	previous: ChatMessage | undefined,
+	current: ChatMessage,
+) => {
+	if (!previous) return true;
+	if (previous.sender !== current.sender) return true;
+	const gap = messageTime(current) - messageTime(previous);
+	return !(gap >= 0 && gap < groupWindowMs);
+};
+
 export const mergeChatMessages = (...sets: ChatMessage[][]) => {
 	const byKey = new Map<string, ChatMessage>();
 	for (const item of sets.flat()) {
@@ -157,6 +196,26 @@ export const filterChatFriends = (friends: ChatFriend[], search: string) => {
 };
 
 const idRoot = (value: string) => value.split("@")[0].toLocaleLowerCase();
+
+const looksLikePuuid = (value: string) =>
+	/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+		idRoot(value),
+	);
+
+/** Party/team/all MUC nicks are PUUIDs. Prefer a friend's Riot id when we have one. */
+export const resolveSenderName = (message: ChatMessage, friends: ChatFriend[]) => {
+	const labeled = message.senderName.trim();
+	if (labeled && !looksLikePuuid(labeled)) return labeled;
+	const root = idRoot(message.sender || labeled);
+	const friend = friends.find((item) => idRoot(item.puuid) === root);
+	return friend?.displayName || labeled || message.sender;
+};
+
+export const withResolvedSenderNames = (messages: ChatMessage[], friends: ChatFriend[]) =>
+	messages.map((message) => ({
+		...message,
+		senderName: resolveSenderName(message, friends),
+	}));
 
 export const filterFriendConversations = (
 	conversations: FriendConversation[],

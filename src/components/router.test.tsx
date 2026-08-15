@@ -28,7 +28,6 @@ describe("Router command rail layout", () => {
       "live-game",
       "friends",
       "chat",
-      "replays",
       "settings",
       "about",
       "fake-player",

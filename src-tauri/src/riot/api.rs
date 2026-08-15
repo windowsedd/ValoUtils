@@ -3,7 +3,7 @@ use base64::Engine;
 use serde_json::Value;
 use std::sync::OnceLock;
 
-fn region_to_shard(region: &str) -> String {
+pub(crate) fn region_to_shard(region: &str) -> String {
     match region.to_uppercase().as_str() {
         "NA" => "na",
         "LATAM" => "latam",
@@ -76,6 +76,85 @@ fn competitive_leaderboard_path(region: &str, season_id: &str) -> String {
         "/mmr/v1/leaderboards/affinity/{region}/queue/competitive/season/{}?startIndex=0&size=1",
         client::urlencoding_encode(season_id)
     )
+}
+
+/// Live party MUC when the local conversation listing has not caught up yet.
+pub async fn active_party_muc(
+    access_token: &str,
+    entitlement_token: &str,
+    puuid: &str,
+    region: &str,
+) -> Option<String> {
+    if access_token.is_empty() || puuid.is_empty() {
+        return None;
+    }
+    let client_version = fallback_client_version().await.unwrap_or_default();
+    let api = RiotApiClient {
+        puuid: puuid.to_string(),
+        region: region_to_shard(region),
+        client_version,
+        access_token: access_token.to_string(),
+        entitlement_token: entitlement_token.to_string(),
+    };
+    let player = api.party_get_by_player(puuid).await.ok()?;
+    let party_id = player
+        .get("CurrentPartyID")
+        .or_else(|| player.get("PartyID"))
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())?;
+    let details = api.party_get(party_id).await.ok()?;
+    party_muc_name(&details)
+        .filter(|cid| crate::riot::models::ChatChannel::Party.matches_cid(cid))
+        .map(str::to_string)
+}
+
+fn glz_client(
+    access_token: &str,
+    entitlement_token: &str,
+    puuid: &str,
+    region: &str,
+    client_version: String,
+) -> RiotApiClient {
+    RiotApiClient {
+        puuid: puuid.to_string(),
+        region: region_to_shard(region),
+        client_version,
+        access_token: access_token.to_string(),
+        entitlement_token: entitlement_token.to_string(),
+    }
+}
+
+/// Blue/Red of the signed-in player in the current pregame or live match.
+pub async fn local_team_side(
+    access_token: &str,
+    entitlement_token: &str,
+    puuid: &str,
+    region: &str,
+) -> Option<crate::riot::models::MatchSide> {
+    if access_token.is_empty() || puuid.is_empty() {
+        return None;
+    }
+    let client_version = fallback_client_version().await.unwrap_or_default();
+    let api = glz_client(
+        access_token,
+        entitlement_token,
+        puuid,
+        region,
+        client_version,
+    );
+    if let Ok(core) = api.coregame_get_player(puuid).await {
+        if let Some(match_id) = core.get("MatchID").and_then(Value::as_str) {
+            if let Ok(match_data) = api.coregame_get_match(match_id).await {
+                if let Some(side) = crate::riot::models::local_match_side(puuid, &match_data) {
+                    return Some(side);
+                }
+            }
+        }
+    }
+    let pre = api.pregame_get_player(puuid).await.ok()?;
+    let match_id = pre.get("MatchID").and_then(Value::as_str)?;
+    let match_data = api.pregame_get_match(match_id).await.ok()?;
+    crate::riot::models::local_match_side(puuid, &match_data)
 }
 
 pub fn party_muc_name(party: &Value) -> Option<&str> {
@@ -411,5 +490,11 @@ mod tests {
     fn rejects_missing_or_empty_party_muc_name() {
         assert_eq!(party_muc_name(&serde_json::json!({})), None);
         assert_eq!(party_muc_name(&serde_json::json!({ "MUCName": "" })), None);
+    }
+
+    #[tokio::test]
+    async fn active_party_muc_skips_without_tokens() {
+        assert!(active_party_muc("", "ent", "player", "ap").await.is_none());
+        assert!(active_party_muc("access", "ent", "", "ap").await.is_none());
     }
 }

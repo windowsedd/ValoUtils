@@ -1,14 +1,8 @@
 import type { FriendConversation, FriendGameStatus } from "./chat-model";
+import { formatClock } from "./chat-model";
 import { FaMagnifyingGlass } from "react-icons/fa6";
 
 export type FriendStatusLabels = Record<FriendGameStatus, string>;
-
-const formatTime = (timestamp: number) => {
-	if (!timestamp) return "";
-	const date = new Date(timestamp);
-	if (Number.isNaN(date.getTime())) return "";
-	return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-};
 
 export const ChatConversationList = ({
 	conversations,
@@ -29,23 +23,23 @@ export const ChatConversationList = ({
 	onSearchChange: (value: string) => void;
 	onSelect: (cid: string) => void;
 }) => (
-	<aside className="flex w-[268px] shrink-0 flex-col border-r border-white/8 bg-[#0b0e14]">
-		<div className="p-3">
-			<label className="flex min-h-10 items-center gap-2 rounded-xl border border-white/8 bg-white/4 px-3 text-gray-500 focus-within:border-cyan-300/35 focus-within:ring-1 focus-within:ring-cyan-300/20">
-				<FaMagnifyingGlass aria-hidden="true" />
+	<aside className="flex w-[268px] shrink-0 flex-col border-r border-(--line) bg-(--panel)">
+		<div className="p-2">
+			<label className="flex min-h-9 items-center gap-2 rounded-sm border border-(--line) bg-(--ground) px-2.5 text-(--ink-faint) focus-within:border-(--signal-focus)/50">
+				<FaMagnifyingGlass aria-hidden="true" className="text-xs" />
 				<span className="sr-only">{searchLabel}</span>
 				<input
 					type="search"
 					value={search}
 					onChange={(event) => onSearchChange(event.target.value)}
 					placeholder={searchLabel}
-					className="min-w-0 flex-1 bg-transparent text-sm text-gray-200 outline-none placeholder:text-gray-600"
+					className="min-w-0 flex-1 bg-transparent text-sm text-(--ink) outline-none placeholder:text-(--ink-faint)"
 				/>
 			</label>
 		</div>
-		<div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
+		<div className="min-h-0 flex-1 overflow-y-auto px-1 pb-2">
 			{conversations.length === 0 ? (
-				<p className="px-3 py-8 text-center text-xs text-gray-600">{emptyLabel}</p>
+				<p className="px-3 py-8 text-center text-xs text-(--ink-faint)">{emptyLabel}</p>
 			) : (
 				conversations.map((conversation) => {
 					const selected = selectedCid === conversation.cid;
@@ -55,35 +49,34 @@ export const ChatConversationList = ({
 							type="button"
 							aria-current={selected || undefined}
 							onClick={() => onSelect(conversation.cid)}
-							className={`mb-1 flex min-h-16 w-full items-center gap-3 rounded-xl px-3 py-2 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-cyan-300/80 ${
-								selected ? "bg-white/9" : "hover:bg-white/5"
+							className={`relative flex w-full flex-col gap-0.5 rounded-sm px-2.5 py-2 text-left outline-none transition-colors focus-visible:ring-1 focus-visible:ring-(--signal-focus) ${
+								selected
+									? "bg-(--panel-raised) before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-0.5 before:bg-(--ink)"
+									: "hover:bg-white/4"
 							}`}
 						>
-							<span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-950 to-slate-800 text-xs font-bold text-cyan-200">
-								{conversation.title.slice(0, 2).toUpperCase()}
+							<span className="flex items-baseline gap-2">
+								<span className="min-w-0 flex-1 truncate text-sm font-semibold text-(--ink)">
+									{conversation.title}
+								</span>
+								<span className="shrink-0 whitespace-nowrap text-[10px] tabular-nums text-(--ink-faint)">
+									{formatClock(conversation.latestTime)}
+								</span>
 							</span>
-							<span className="min-w-0 flex-1">
-								<span className="flex items-center gap-2">
-									<span className="min-w-0 flex-1 truncate text-sm font-semibold text-gray-100">
-										{conversation.title}
-									</span>
-									<span className="shrink-0 text-[10px] tabular-nums text-gray-600">
-										{formatTime(conversation.latestTime)}
-									</span>
+							<span className="flex items-baseline gap-2">
+								<span className="min-w-0 flex-1 truncate text-xs text-(--ink-faint)">
+									{statusLabels[conversation.statusKey]}
 								</span>
-								<span className="mt-1 flex items-center gap-2">
-									<span className="min-w-0 flex-1 truncate text-xs text-gray-500">
-										{statusLabels[conversation.statusKey]}
+								{/* Unread is pending attention, not danger — the warn signal, and a
+								    block rather than a pill so it lines up with the timestamp above. */}
+								{conversation.unreadCount > 0 && (
+									<span
+										data-unread-count={conversation.unreadCount}
+										className="min-w-4 shrink-0 rounded-xs bg-(--signal-warn) px-1 text-center text-[10px] font-bold tabular-nums text-(--ground)"
+									>
+										{conversation.unreadCount}
 									</span>
-									{conversation.unreadCount > 0 && (
-										<span
-											data-unread-count={conversation.unreadCount}
-											className="min-w-5 shrink-0 rounded-full bg-[#ff4655] px-1.5 py-0.5 text-center text-[10px] font-bold text-white"
-										>
-											{conversation.unreadCount}
-										</span>
-									)}
-								</span>
+								)}
 							</span>
 						</button>
 					);

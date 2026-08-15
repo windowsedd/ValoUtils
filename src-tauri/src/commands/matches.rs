@@ -293,7 +293,7 @@ pub async fn match_list(args: Vec<Value>, riot: State<'_, RiotState>) -> Result<
     Ok(match result {
         Ok(value) => value.to_string(),
         Err(e) => {
-            let code = if e.contains("lockfile") {
+            let code = if crate::riot::client::is_login_required_error(&e) {
                 json!("loginRequired")
             } else {
                 Value::Null

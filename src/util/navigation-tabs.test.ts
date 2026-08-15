@@ -8,12 +8,12 @@ import {
 } from "./navigation-tabs";
 
 const route = (id: string): Route => ({ id, title: `nav.${id}`, component: null });
-const routes = [route("profiles"), route("replays"), route("settings"), route("about")];
+const routes = [route("profiles"), route("matches"), route("settings"), route("about")];
 
 describe("navigation tab preferences", () => {
 	test("normalizes config to unique string route ids", () => {
-		expect(normalizeHiddenTabs(["replays", 7, "about", "replays", null])).toEqual([
-			"replays",
+		expect(normalizeHiddenTabs(["matches", 7, "about", "matches", null])).toEqual([
+			"matches",
 			"about",
 		]);
 		expect(normalizeHiddenTabs(null)).toEqual([]);
@@ -21,13 +21,13 @@ describe("navigation tab preferences", () => {
 
 	test("filters requested routes but always retains Settings", () => {
 		expect(filterVisibleRoutes(routes, ["profiles", "settings", "missing"]).map(({ id }) => id))
-			.toEqual(["replays", "settings", "about"]);
+			.toEqual(["matches", "settings", "about"]);
 	});
 
 	test("adds and removes ids without duplicates", () => {
-		expect(setTabHidden(["replays"], "about", true)).toEqual(["replays", "about"]);
-		expect(setTabHidden(["replays"], "replays", true)).toEqual(["replays"]);
-		expect(setTabHidden(["replays", "about"], "replays", false)).toEqual(["about"]);
+		expect(setTabHidden(["matches"], "about", true)).toEqual(["matches", "about"]);
+		expect(setTabHidden(["matches"], "matches", true)).toEqual(["matches"]);
+		expect(setTabHidden(["matches", "about"], "matches", false)).toEqual(["about"]);
 		expect(setTabHidden([], "settings", true)).toEqual([]);
 	});
 

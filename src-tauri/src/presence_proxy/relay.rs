@@ -175,10 +175,16 @@ async fn client_to_remote(
     let mut buffer = vec![0u8; 16 * 1024];
     let mut last_presence: Option<String> = None;
     let mut states = crate::presence_proxy::controller().subscribe_state();
+    let mut outbound = crate::presence_proxy::subscribe_outbound();
     let mut reply_sequence = 0u64;
 
     loop {
         tokio::select! {
+            inject = outbound.recv() => {
+                if let Ok(stanza) = inject {
+                    write_frame(&remote_write, stanza.as_bytes()).await?;
+                }
+            }
             read_result = read.read(&mut buffer) => {
                 let count = read_result.map_err(|error| error.to_string())?;
                 if count == 0 { return Ok(()); }
@@ -188,13 +194,53 @@ async fn client_to_remote(
                         write_frame(&remote_write, &frame).await?;
                         continue;
                     };
+                    crate::presence_proxy::record_live_chat(stanza);
                     if stanza.to_ascii_lowercase().contains(crate::fake_player::PUUID) {
                         if let Some((bot_jid, command)) = parse_bot_message(stanza).map_err(|error| format!("Bot command parse failed: {error}"))? {
                             if command != BotCommand::Consume {
                                 reply_sequence += 1;
                                 let body = bot_message_body(stanza).unwrap_or_default();
                                 crate::fake_player::record_message(&body, true);
-                                let reply = crate::presence_proxy::apply_command(crate::fake_player::parse_command(&body));
+                                let reply = if command == BotCommand::Translate {
+                                    match crate::commands::riot_chat::execute_typed_translation(
+                                        &body,
+                                        crate::presence_proxy::app_handle(),
+                                    )
+                                    .await
+                                    {
+                                        Ok(outcome) => {
+                                            crate::commands::riot_chat::format_translation_reply(
+                                                &outcome,
+                                            )
+                                        }
+                                        Err(error) => error.to_string(),
+                                    }
+                                } else if command == BotCommand::TranslateHistory {
+                                    match crate::commands::riot_chat::execute_history_translation(
+                                        &body,
+                                        crate::presence_proxy::app_handle(),
+                                    )
+                                    .await
+                                    {
+                                        Ok(reply) => reply,
+                                        Err(error) => error.to_string(),
+                                    }
+                                } else if let Some(custom) =
+                                    crate::commands::riot_chat::execute_maybe_custom_command(
+                                        &body,
+                                        crate::presence_proxy::app_handle(),
+                                    )
+                                    .await
+                                {
+                                    match custom {
+                                        Ok(reply) => reply,
+                                        Err(error) => error.to_string(),
+                                    }
+                                } else {
+                                    crate::presence_proxy::apply_command(
+                                        crate::fake_player::parse_command(&body),
+                                    )
+                                };
                                 crate::fake_player::record_message(&reply, false);
                                 let version = bot_version.lock().await.clone();
                                 for client_frame in bot_command_frames(
@@ -318,6 +364,9 @@ async fn remote_to_client(
                     }
                 }
             }
+            if let Ok(stanza) = std::str::from_utf8(&frame) {
+                crate::presence_proxy::record_live_chat(stanza);
+            }
             write_frame(&local_write, &frame).await?;
         }
     }
@@ -336,7 +385,9 @@ async fn write_frame<T: AsyncWriteExt + Unpin>(
 }
 
 fn presence_for_state(stanza: &str, state: MaskingState) -> Result<Option<String>, String> {
-    if !state.enabled { return Ok(Some(stanza.to_string())); }
+    if !state.enabled {
+        return Ok(Some(stanza.to_string()));
+    }
     rewrite_presence(stanza, state.mode)
 }
 
@@ -409,7 +460,14 @@ mod tests {
     #[test]
     fn disabled_masking_forwards_the_original_presence() {
         let original = "<presence><show>chat</show></presence>";
-        let state = MaskingState { enabled: false, mode: PresenceMode::Offline, connect_to_muc: true };
-        assert_eq!(presence_for_state(original, state).unwrap(), Some(original.into()));
+        let state = MaskingState {
+            enabled: false,
+            mode: PresenceMode::Offline,
+            connect_to_muc: true,
+        };
+        assert_eq!(
+            presence_for_state(original, state).unwrap(),
+            Some(original.into())
+        );
     }
 }

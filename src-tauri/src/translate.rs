@@ -5,7 +5,11 @@ use std::sync::OnceLock;
 #[derive(Debug, Deserialize)]
 struct LanguageEntry {
     provider: String,
+    #[serde(rename = "canonicalId")]
+    canonical_id: String,
     code: String,
+    #[serde(rename = "englishName")]
+    english_name: String,
     source: bool,
     target: bool,
 }
@@ -41,6 +45,62 @@ fn normalize_language(provider: &str, role: &str, code: &str) -> Result<String, 
         })
         .map(|entry| entry.code.clone())
         .ok_or_else(|| format!("Unsupported {role} language '{code}' for {provider}."))
+}
+
+/// Resolves a human-typed target language to a provider code.
+///
+/// The `.send {channel} {language} {message}` command is typed by a player
+/// mid-match, so it accepts the English name (`german`, `Brazilian Portuguese`)
+/// as well as the code (`de`, `pt-BR`). Matching is case- and separator-
+/// insensitive because nobody types `pt-BR` correctly under fire.
+pub fn resolve_target_language(provider: &str, input: &str) -> Option<String> {
+    let wanted = fold_language_key(input);
+    if wanted.is_empty() {
+        return None;
+    }
+    if let Some(code) = match_provider_target(provider, &wanted) {
+        return Some(code);
+    }
+    // `zh_tw` is Google's `zh-TW` and DeepL's `zh-HANT`. If the typed token
+    // only exists on the other provider, map through the shared canonical id.
+    let matched = language_catalog().iter().find(|entry| {
+        fold_language_key(&entry.code) == wanted
+            || fold_language_key(&entry.english_name) == wanted
+    })?;
+    match_provider_canonical(provider, &matched.canonical_id)
+}
+
+fn match_provider_target(provider: &str, wanted: &str) -> Option<String> {
+    language_catalog()
+        .iter()
+        .find(|entry| {
+            entry.provider == provider
+                && entry.target
+                && (fold_language_key(&entry.code) == wanted
+                    || fold_language_key(&entry.english_name) == wanted)
+        })
+        .map(|entry| entry.code.clone())
+}
+
+fn match_provider_canonical(provider: &str, canonical_id: &str) -> Option<String> {
+    language_catalog()
+        .iter()
+        .find(|entry| {
+            entry.provider == provider
+                && entry.target
+                && entry.canonical_id.eq_ignore_ascii_case(canonical_id)
+        })
+        .map(|entry| entry.code.clone())
+}
+
+/// Lowercases and drops separators so `pt-BR`, `pt br` and `ptbr` all agree,
+/// as do `Chinese (Traditional)` and `chinese traditional`.
+fn fold_language_key(value: &str) -> String {
+    value
+        .chars()
+        .filter(|c| c.is_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect()
 }
 
 fn google_query(text: &str, source: &str, target: &str) -> Vec<(&'static str, String)> {
@@ -179,6 +239,65 @@ mod tests {
         assert!(normalize_language("google", "target", "auto").is_err());
         assert!(normalize_language("google", "target", "not-real").is_err());
         assert!(normalize_language("unknown", "target", "en").is_err());
+    }
+
+    #[test]
+    fn target_language_accepts_english_names_and_codes_alike() {
+        assert_eq!(resolve_target_language("google", "german").unwrap(), "de");
+        assert_eq!(resolve_target_language("google", "German").unwrap(), "de");
+        assert_eq!(resolve_target_language("google", "de").unwrap(), "de");
+        assert_eq!(resolve_target_language("google", "french").unwrap(), "fr");
+        assert_eq!(resolve_target_language("google", "japanese").unwrap(), "ja");
+        // Separator-insensitive, so a hyphen typed as a space still resolves.
+        assert_eq!(
+            resolve_target_language("google", "zh tw"),
+            resolve_target_language("google", "zh-TW")
+        );
+        assert_eq!(
+            resolve_target_language("google", "zh_tw").unwrap(),
+            "zh-TW"
+        );
+        assert_eq!(
+            resolve_target_language("google", "zh_cn").unwrap(),
+            "zh-CN"
+        );
+        assert_eq!(
+            resolve_target_language("google", "zhtw").unwrap(),
+            "zh-TW"
+        );
+        assert_eq!(
+            resolve_target_language("google", "zhcn").unwrap(),
+            "zh-CN"
+        );
+        assert_eq!(
+            resolve_target_language("google", "zh/tw").unwrap(),
+            "zh-TW"
+        );
+        assert_eq!(
+            resolve_target_language("google", "zh/cn").unwrap(),
+            "zh-CN"
+        );
+        // DeepL uses a different code for the same Chinese variants.
+        assert_eq!(
+            resolve_target_language("deepl", "zh_tw").unwrap(),
+            "zh-HANT"
+        );
+        assert_eq!(
+            resolve_target_language("deepl", "zh_cn").unwrap(),
+            "zh-HANS"
+        );
+        assert_eq!(
+            resolve_target_language("deepl", "zh-TW").unwrap(),
+            "zh-HANT"
+        );
+    }
+
+    #[test]
+    fn target_language_rejects_unknown_and_source_only_values() {
+        assert!(resolve_target_language("google", "klingon").is_none());
+        assert!(resolve_target_language("google", "").is_none());
+        // `auto` is a source-side concept only; it must never be a target.
+        assert!(resolve_target_language("google", "auto").is_none());
     }
 
     #[test]

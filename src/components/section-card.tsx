@@ -1,12 +1,15 @@
-import type { ReactNode } from "react";
+import { Children, type ReactNode } from "react";
 
 /**
- * The card that carries every list in the app — Friends, Replays, Profiles,
+ * The card that carries every list in the app — Friends, Profiles, Matches,
  * Competitive. One definition so the pages can't drift apart.
  *
- * Anatomy: a glass card, an uppercase accent-coloured eyebrow naming the group,
- * and a right slot that defaults to the item count. Rows go in the body with a
- * consistent 6px gutter; use `<SectionRow>` for the standard row shell.
+ * Anatomy: a flat panel, a hairline-ruled header with a micro label naming the
+ * group, and a right slot that defaults to the item count. Rows go in the body.
+ *
+ * `accent` is a marker, not paint. It renders as a short tick beside the label
+ * and never colors the type — a tier color says something, a section color
+ * doesn't, and the component can't tell them apart, so it whispers either way.
  */
 export const SectionCard = ({
 	title,
@@ -23,33 +26,56 @@ export const SectionCard = ({
 	children: ReactNode;
 	className?: string;
 }) => (
-	<section className={`glass rounded-2xl px-4 py-4 ${className}`}>
-		<header className="flex items-center justify-between gap-3 px-1 mb-3">
-			<h2 className="text-xs font-bold uppercase tracking-widest truncate" style={{ color: accent }}>
-				{title}
-			</h2>
-			<div className="shrink-0 text-xs text-gray-600 tabular-nums">
+	<section className={`panel ${className}`}>
+		<header className="flex items-center justify-between gap-3 border-b border-(--line) px-3 py-2">
+			<div className="flex min-w-0 items-center gap-2">
+				<span aria-hidden="true" className="h-3 w-0.5 shrink-0" style={{ background: accent }} />
+				<h2 className="truncate text-[11px] font-semibold uppercase tracking-[0.08em] text-(--ink-dim)">
+					{title}
+				</h2>
+			</div>
+			<div className="shrink-0 text-xs tabular-nums text-(--ink-faint)">
 				{right ?? (typeof count === "number" ? count : null)}
 			</div>
 		</header>
-		<div className="flex flex-col gap-1.5">{children}</div>
+		<div className="flex flex-col px-1.5 py-1.5">{children}</div>
 	</section>
 );
 
-/** Standard row inside a SectionCard. `muted` drops the fill for nested rows. */
+/**
+ * Standard row inside a SectionCard.
+ *
+ * A row given exactly two children is treated as a readout — label, dotted
+ * leader, value — which is the app's signature device. Pass `leader={false}` for
+ * rows that aren't a name/value pair. `muted` drops the hover fill for nested rows.
+ */
 export const SectionRow = ({
 	children,
 	muted = false,
+	leader = true,
 	className = "",
-}: { children: ReactNode; muted?: boolean; className?: string }) => (
-	<div
-		className={`flex items-center gap-3 rounded-xl px-3 py-2.5 transition-colors ${
-			muted ? "hover:bg-white/4" : "bg-white/2 hover:bg-white/6"
-		} ${className}`}
-	>
-		{children}
-	</div>
-);
+}: { children: ReactNode; muted?: boolean; leader?: boolean; className?: string }) => {
+	const items = Children.toArray(children);
+	const isReadout = leader && items.length === 2;
+
+	return (
+		<div
+			className={`readout gap-3 rounded-sm px-2.5 py-2 transition-colors ${
+				muted ? "hover:bg-white/4" : "hover:bg-white/[0.035]"
+			} ${className}`}
+		>
+			{isReadout ? (
+				<>
+					{items[0]}
+					<span aria-hidden="true" className="readout-leader" />
+					{items[1]}
+				</>
+			) : (
+				children
+			)}
+		</div>
+	);
+};
 
 /**
  * Page header used above the section stack: an accent icon, the page name, and
@@ -61,12 +87,14 @@ export const PageHeader = ({
 	subtitle,
 	children,
 }: { icon: ReactNode; title: string; subtitle?: string; children?: ReactNode }) => (
-	<div className="shrink-0 px-6 pt-5 pb-3 flex items-center justify-between gap-4">
-		<div className="flex items-center gap-2 min-w-0">
-			{icon}
-			<span className="text-white font-semibold truncate">{title}</span>
-			{subtitle && <span className="text-gray-500 text-sm truncate">{subtitle}</span>}
+	<div className="shrink-0 flex items-center justify-between gap-4 border-b border-(--line) px-6 py-3">
+		<div className="flex min-w-0 items-baseline gap-2.5">
+			{/* Forces page icons to ink even when the call site hands them a hue —
+			    an icon that's always red isn't telling you anything. */}
+			<span className="self-center text-(--ink-dim) [&_svg]:text-(--ink-dim)">{icon}</span>
+			<h1 className="truncate text-[15px] font-semibold text-(--ink)">{title}</h1>
+			{subtitle && <span className="truncate text-sm text-(--ink-faint)">{subtitle}</span>}
 		</div>
-		{children && <div className="flex items-center gap-3 shrink-0">{children}</div>}
+		{children && <div className="flex shrink-0 items-center gap-3">{children}</div>}
 	</div>
 );

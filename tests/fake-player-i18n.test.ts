@@ -22,6 +22,31 @@ const requiredKeys = [
 	"conversationDescription",
 	"fallbackName",
 	"empty",
+	"commandsTitle",
+	"command.online",
+	"command.offline",
+	"command.mobile",
+	"command.enable",
+	"command.disable",
+	"command.status",
+	"command.help",
+	"translateSyntax",
+	"translateDesc",
+	"translateExample",
+	"historySyntax",
+	"historyDesc",
+	"historyExample",
+	"customTitle",
+	"customDesc",
+	"customAdd",
+	"customRemove",
+	"customActionSend",
+	"customActionTran",
+	"customMessagePlaceholder",
+	"customTriggerRequired",
+	"customTriggerReserved",
+	"customTriggerExists",
+	"customMessageRequired",
 	"mode.online",
 	"mode.offline",
 	"mode.mobile",
@@ -62,6 +87,10 @@ describe("FakePlayer localization", () => {
 	test("the page resolves visible copy through i18next", () => {
 		expect(page).toContain("useTranslation");
 		expect(page).toContain('t("dummyBot.title")');
+		expect(page).toContain('t("dummyBot.commandsTitle")');
+		expect(page).toContain('t("dummyBot.translateSyntax")');
+		expect(page).toContain('t("dummyBot.translateExample")');
+		expect(page).toContain('t("dummyBot.customTitle")');
 		expect(page).not.toContain('title="In-game FakePlayer"');
 		expect(page).not.toContain(">Launch</button>");
 		expect(page).not.toContain("No relay messages yet.");

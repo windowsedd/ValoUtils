@@ -78,7 +78,7 @@ const FriendActions = ({
 		<div
 			role="menu"
 			data-friend-menu={friend.puuid}
-			className="mt-2 grid grid-cols-3 gap-1 rounded-lg border border-white/10 bg-black/30 p-1"
+			className="mt-1.5 grid grid-cols-3 gap-px border border-(--line) bg-(--line)"
 		>
 			{actions.map((action) => {
 				const Icon = action.icon;
@@ -90,7 +90,7 @@ const FriendActions = ({
 						role="menuitem"
 						disabled={disabled}
 						data-chat-available={action.key === "chat" ? String(action.enabled) : undefined}
-						className="flex min-h-9 items-center justify-center gap-1 rounded-md px-2 text-[11px] font-semibold text-gray-300 transition-colors hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-35"
+						className="flex min-h-8 items-center justify-center gap-1 bg-(--panel-raised) px-2 text-[11px] font-semibold text-(--ink-dim) transition-colors hover:bg-white/8 hover:text-(--ink) disabled:cursor-not-allowed disabled:opacity-35"
 						onClick={action.run}
 					>
 						<Icon aria-hidden="true" />
@@ -120,37 +120,37 @@ const FriendsPanelContent = ({
 	showClose,
 }: ChatFriendsPanelProps & { showClose: boolean }) => (
 	<>
-		<header className="flex h-14 shrink-0 items-center justify-between border-b border-white/10 px-4">
-			<div className="flex items-center gap-2 text-sm font-bold uppercase tracking-[0.16em] text-gray-200">
-				<FaUsers className="text-[#ff4655]" aria-hidden="true" />
+		<header className="flex min-h-13 shrink-0 items-center justify-between gap-2 border-b border-(--line) px-3 py-3">
+			<div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-(--ink-dim)">
+				<FaUsers className="text-(--ink-faint)" aria-hidden="true" />
 				{labels.title}
 			</div>
 			{showClose && (
 				<button
 					type="button"
 					aria-label={labels.close}
-					className="flex size-9 items-center justify-center rounded-md text-gray-400 hover:bg-white/10 hover:text-white"
+					className="flex size-8 items-center justify-center rounded-sm text-(--ink-faint) hover:bg-white/8 hover:text-(--ink)"
 					onClick={onClose}
 				>
 					<FaTimes aria-hidden="true" />
 				</button>
 			)}
 		</header>
-		<div className="p-3">
+		<div className="p-2">
 			<input
 				type="search"
 				value={search}
 				aria-label={labels.search}
 				placeholder={labels.search}
-				className="h-9 w-full rounded-md border border-white/10 bg-black/30 px-3 text-sm text-white outline-none placeholder:text-gray-600 focus:border-[#ff4655]/70"
+				className="h-9 w-full rounded-sm border border-(--line) bg-(--ground) px-2.5 text-sm text-(--ink) outline-none placeholder:text-(--ink-faint) focus:border-(--signal-focus)/50"
 				onChange={(event) => onSearchChange(event.currentTarget.value)}
 			/>
 		</div>
-		<div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
+		<div className="min-h-0 flex-1 overflow-y-auto px-1 pb-2">
 			{friends.length === 0 ? (
-				<p className="px-3 py-8 text-center text-sm text-gray-500">{labels.empty}</p>
+				<p className="px-3 py-8 text-center text-sm text-(--ink-faint)">{labels.empty}</p>
 			) : (
-				<ul className="space-y-1">
+				<ul>
 					{friends.map((friend) => {
 						const selected = selectedFriendPuuid === friend.puuid;
 						const statusKey = resolveFriendGameStatus(friend);
@@ -163,22 +163,22 @@ const FriendsPanelContent = ({
 									: friend.statusMessage ||
 										(friend.isOnline ? labels.online : labels.offline);
 						return (
-							<li key={friend.puuid} className="rounded-lg bg-white/[0.025] p-1">
+							<li key={friend.puuid} className="mb-0.5 p-1">
 								<button
 									type="button"
 									data-friend-trigger={friend.puuid}
 									aria-expanded={selected}
 									aria-haspopup="menu"
-									className="flex min-h-12 w-full items-center gap-2 rounded-md px-2 text-left hover:bg-white/[0.06]"
+									className={`flex min-h-11 w-full items-center gap-2.5 rounded-sm px-2 text-left transition-colors ${selected ? "bg-(--panel-raised)" : "hover:bg-white/4"}`}
 									onClick={() => onFriendSelect(selected ? null : friend.puuid)}
 								>
 									<span
-										className={`size-2 shrink-0 rounded-full ${syncing ? "bg-amber-400" : friend.isOnline ? "bg-emerald-400" : "bg-gray-600"}`}
+										className={`size-1.5 shrink-0 ${syncing ? "bg-(--signal-warn)" : friend.isOnline ? "bg-(--signal-pos)" : "bg-(--ink-faint)"}`}
 										aria-label={statusLabel}
 									/>
 									<span className="min-w-0 flex-1">
 										<FriendIdentity person={friend} showNote />
-										<span className="block truncate text-[11px] text-gray-500">
+										<span className="block truncate text-[11px] text-(--ink-faint)">
 											{statusLabel}
 										</span>
 									</span>
@@ -260,7 +260,7 @@ export const ChatFriendsPanel = (props: ChatFriendsPanelProps) => {
 						role="dialog"
 						aria-modal="true"
 						aria-label={props.labels.title}
-						className="flex h-full w-[min(22rem,88vw)] flex-col border-l border-white/10 bg-[#111214] shadow-2xl"
+						className="flex h-full w-[min(22rem,88vw)] flex-col border-l border-(--line) bg-(--panel) shadow-2xl"
 					>
 						<FriendsPanelContent
 							{...props}
@@ -273,7 +273,7 @@ export const ChatFriendsPanel = (props: ChatFriendsPanelProps) => {
 				</div>
 			)}
 			<aside
-				className="hidden h-full w-72 shrink-0 flex-col border-l border-white/10 bg-[#111214] xl:flex"
+				className="hidden h-full w-72 shrink-0 flex-col border-l border-(--line) bg-(--panel) xl:flex"
 				onKeyDownCapture={handleEscape}
 			>
 				<FriendsPanelContent

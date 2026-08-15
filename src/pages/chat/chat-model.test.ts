@@ -8,11 +8,13 @@ import {
 	filterChatFriends,
 	filterFriendConversations,
 	findFriendConversationCid,
+	formatClock,
 	mergeChatMessages,
 	resolveFriendGameStatus,
 	supportsConversationHistory,
 	shouldStickToBottom,
 	shouldResetThreadPosition,
+	startsMessageGroup,
 } from "./chat-model";
 
 const message = (overrides: Partial<ChatMessage>): ChatMessage => ({
@@ -47,6 +49,29 @@ const friend: ChatFriend = {
 };
 
 describe("chat model", () => {
+	test("resolves a party PUUID sender to the friend's Riot id", () => {
+		const named = chatModel.resolveSenderName(
+			message({
+				sender: "869d5298-db1d-54cc-bcaf-6c2a8bb1b6a1",
+				senderName: "869d5298-db1d-54cc-bcaf-6c2a8bb1b6a1",
+			}),
+			[
+				{
+					...friend,
+					puuid: "869d5298-db1d-54cc-bcaf-6c2a8bb1b6a1",
+					displayName: "習慣被依賴づ#JP1",
+				},
+			],
+		);
+		expect(named).toBe("習慣被依賴づ#JP1");
+	});
+
+	test("keeps a real game name instead of looking it up", () => {
+		expect(chatModel.resolveSenderName(message({ senderName: "Friend" }), [])).toBe(
+			"Friend",
+		);
+	});
+
 	test("merges REST and XMPP messages by cid and id in chronological order", () => {
 		const result = mergeChatMessages(
 			[message({ id: "older", timestamp: "1000" })],
@@ -301,5 +326,44 @@ describe("chat model", () => {
 	test("resets thread position only when the selected cid changes", () => {
 		expect(shouldResetThreadPosition("friend-a", "friend-b")).toBe(true);
 		expect(shouldResetThreadPosition("friend-a", "friend-a")).toBe(false);
+	});
+
+	test("clock readings stay one fixed width so the transcript gutter can't wrap", () => {
+		const morning = formatClock(Date.UTC(2026, 7, 15, 4, 5));
+		const evening = formatClock(Date.UTC(2026, 7, 15, 21, 24));
+
+		expect(morning).toMatch(/^\d{2}:\d{2}$/);
+		expect(evening).toMatch(/^\d{2}:\d{2}$/);
+		expect(evening.length).toBe(morning.length);
+		expect(evening).not.toContain("M");
+	});
+
+	test("clock reading is empty for missing or unparseable timestamps", () => {
+		expect(formatClock(null)).toBe("");
+		expect(formatClock(undefined)).toBe("");
+		expect(formatClock("")).toBe("");
+		expect(formatClock(0)).toBe("");
+		expect(formatClock("not a date")).toBe("");
+	});
+
+	test("groups consecutive messages from one sender inside the burst window", () => {
+		const first = message({ id: "m-1", timestamp: "1000000" });
+		const soon = message({ id: "m-2", timestamp: "1060000" });
+		const late = message({ id: "m-3", timestamp: "1400000" });
+		const other = message({ id: "m-4", sender: "other-puuid", timestamp: "1060000" });
+
+		expect(startsMessageGroup(undefined, first)).toBe(true);
+		expect(startsMessageGroup(first, soon)).toBe(false);
+		expect(startsMessageGroup(first, late)).toBe(true);
+		expect(startsMessageGroup(first, other)).toBe(true);
+	});
+
+	test("starts a new group when timestamps are missing or run backwards", () => {
+		const first = message({ id: "m-1", timestamp: "1000000" });
+		const backwards = message({ id: "m-2", timestamp: "900000" });
+		const undated = message({ id: "m-3", timestamp: "" });
+
+		expect(startsMessageGroup(first, backwards)).toBe(true);
+		expect(startsMessageGroup(first, undated)).toBe(true);
 	});
 });

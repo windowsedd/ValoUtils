@@ -143,9 +143,7 @@ fn normalize_request(request: &Value) -> Option<Value> {
 }
 
 #[tauri::command]
-pub async fn friends_get(
-    riot: State<'_, RiotState>,
-) -> Result<String, ()> {
+pub async fn friends_get(riot: State<'_, RiotState>) -> Result<String, ()> {
     let result: Result<Value, String> = async {
         // The roster is the only hard requirement; presences and requests are
         // best-effort so a hiccup in either still renders a usable list.
@@ -254,7 +252,7 @@ pub async fn friends_get(
     Ok(match result {
         Ok(value) => value.to_string(),
         Err(e) => {
-            let code = if e.contains("lockfile") {
+            let code = if riot_client::is_login_required_error(&e) {
                 json!("loginRequired")
             } else {
                 Value::Null

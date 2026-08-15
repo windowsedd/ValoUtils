@@ -1,8 +1,8 @@
 use crate::presence_proxy::PresenceMode;
+use crate::store::ConfigStore;
 use serde_json::json;
 use serde_json::Value;
 use tauri::State;
-use crate::store::ConfigStore;
 
 fn mode_arg(args: &[Value]) -> Result<PresenceMode, String> {
     args.first()
@@ -26,26 +26,56 @@ pub async fn presence_status_get() -> Result<String, ()> {
 }
 
 #[tauri::command]
-pub async fn presence_status_set(args: Vec<Value>, config: State<'_, ConfigStore>) -> Result<String, ()> {
-    let action = args.first().and_then(Value::as_str).unwrap_or("").trim().to_ascii_lowercase();
+pub async fn presence_status_set(
+    args: Vec<Value>,
+    config: State<'_, ConfigStore>,
+) -> Result<String, ()> {
+    let action = args
+        .first()
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .trim()
+        .to_ascii_lowercase();
     let result = match action.as_str() {
         "online" | "offline" | "mobile" => {
-            crate::presence_proxy::change_mode(mode_arg(&args).unwrap()); Ok(())
+            crate::presence_proxy::change_mode(mode_arg(&args).unwrap());
+            Ok(())
         }
-        "enable" => { crate::presence_proxy::change_enabled(true); Ok(()) }
-        "disable" => { crate::presence_proxy::change_enabled(false); Ok(()) }
-        "muc" => args.get(1).and_then(Value::as_bool)
+        "enable" => {
+            crate::presence_proxy::change_enabled(true);
+            Ok(())
+        }
+        "disable" => {
+            crate::presence_proxy::change_enabled(false);
+            Ok(())
+        }
+        "muc" => args
+            .get(1)
+            .and_then(Value::as_bool)
             .map(|value| crate::presence_proxy::change_connect_to_muc(value))
             .ok_or_else(|| "MUC requires a boolean second argument.".to_string()),
         "startup" => {
-            let value = args.get(1).and_then(Value::as_str).unwrap_or("").trim().to_ascii_lowercase();
+            let value = args
+                .get(1)
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .trim()
+                .to_ascii_lowercase();
             if value == "last" || PresenceMode::parse(&value).is_some() {
-                config.set("presenceStartup", json!(value)); Ok(())
-            } else { Err("Startup must be online, offline, mobile, or last.".into()) }
+                config.set("presenceStartup", json!(value));
+                Ok(())
+            } else {
+                Err("Startup must be online, offline, mobile, or last.".into())
+            }
         }
-        _ => Err("Presence action must be online, offline, mobile, enable, disable, muc, or startup.".into()),
+        _ => Err(
+            "Presence action must be online, offline, mobile, enable, disable, muc, or startup."
+                .into(),
+        ),
     };
-    if let Err(error) = result { return Ok(json!({ "success": false, "error": error }).to_string()); }
+    if let Err(error) = result {
+        return Ok(json!({ "success": false, "error": error }).to_string());
+    }
     Ok(response())
 }
 

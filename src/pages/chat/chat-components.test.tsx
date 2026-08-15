@@ -1,14 +1,14 @@
 import { describe, expect, test } from "bun:test";
-import type { ChatFriend, ChatMessage } from "@/types/chat";
+import type { ChatChannel, ChatFriend, ChatMessage } from "@/types/chat";
 import { renderToStaticMarkup } from "react-dom/server";
-import { ChatChannelRail } from "./chat-channel-rail";
+import { ChatChannelRail, visibleChatChannels } from "./chat-channel-rail";
 import { ChatChannelContext } from "./chat-channel-context";
 import { ChatComposer, shouldRestoreComposerFocus } from "./chat-composer";
 import { ChatConversationList } from "./chat-conversation-list";
 import { ChatFriendsPanel, focusFriendsDrawer } from "./chat-friends-panel";
 import { ChatThread } from "./chat-thread";
 
-const channelLabels = {
+const channelLabels: Record<ChatChannel, string> = {
 	friends: "Friends",
 	party: "Party",
 	team: "Team",
@@ -68,21 +68,34 @@ const friend: ChatFriend = {
 };
 
 describe("Chat components", () => {
-	test("channel rail exposes all real channels and selected state", () => {
+	test("channel rail renders only the visible channels and their selected state", () => {
 		const markup = renderToStaticMarkup(
 			<ChatChannelRail
-				selected="team"
+				selected="friends"
 				available={{ friends: true, party: true, team: true, all: false }}
 				labels={channelLabels}
 				onSelect={() => {}}
 			/>,
 		);
-		expect(markup).toContain("Friends");
+		for (const channel of visibleChatChannels) {
+			expect(markup).toContain(channelLabels[channel]);
+		}
+		expect(markup).toContain('aria-pressed="true"');
+	});
+
+	test("party, team, and all chat are on the rail", () => {
+		const markup = renderToStaticMarkup(
+			<ChatChannelRail
+				selected="friends"
+				available={{ friends: true, party: true, team: true, all: true }}
+				labels={channelLabels}
+				onSelect={() => {}}
+			/>,
+		);
+		expect(visibleChatChannels).toEqual(["friends", "party", "team", "all"]);
 		expect(markup).toContain("Party");
 		expect(markup).toContain("Team");
 		expect(markup).toContain("All");
-		expect(markup).toContain('aria-pressed="true"');
-		expect(markup).toContain('data-channel-available="false"');
 	});
 
 	test("conversation list shows real unread metadata and selected state", () => {

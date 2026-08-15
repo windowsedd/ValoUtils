@@ -1,69 +1,172 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Rajdhani:wght@500;600;700&display=swap');
+/*
+ * ValoUtils design layer.
+ *
+ * Direction: instrument panel, not overlay. This app reads a compressed blob out
+ * of a lockfile and shows you what the game hides — it behaves like a technician's
+ * readout, so it looks like one. Flat surfaces, hairline rules, dense tabular rows,
+ * every number in mono.
+ *
+ * The one rule everything else follows: COLOR CARRIES MEANING ONLY. The app's job
+ * is showing diffs, teams, and tiers — spending color on decoration destroys the
+ * signal it needs. Chrome is graphite and bone; a hue means something or it's absent.
+ */
+
+@import url('https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..112,400..700&family=Chivo+Mono:wght@400;500;600&display=swap');
 @import "tailwindcss";
 @import "@heroui/styles";
 
 :root {
-	--valo-red: #ff4655;
+	/* Ground. Cool graphite, lit from nowhere — panels sit on it, they don't float. */
+	--ground: #0e1216;
+	--panel: #151a1f;
+	--panel-raised: #1b2127;
+	--line: #232b32;
+	--line-strong: #323c45;
+
+	/* Ink. Bone white is the "active / selected" color, not a hue. */
+	--ink: #e6eaed;
+	--ink-dim: #8d979f;
+	--ink-faint: #5a646c;
+
+	/* Signal. The complete set of hues in the app. Each means exactly one thing. */
+	--signal-neg: #ff4655;
+	/* destructive, enemy, removed */
+	--signal-pos: #35d489;
+	/* ally, added, connected */
+	--signal-warn: #e8a33d;
+	/* pending, needs attention */
+	--signal-focus: #4cc2e8;
+	/* keyboard focus and links, nothing else */
+
+	--font-ui: 'Archivo', 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+	--font-mono: 'Chivo Mono', ui-monospace, 'Cascadia Mono', Consolas, monospace;
+
+	/*
+	 * Deprecated. Kept so nothing breaks mid-migration — prefer the tokens above.
+	 * --valo-red is no longer a brand accent; it is the destructive/enemy signal.
+	 */
+	--valo-red: var(--signal-neg);
 	--valo-dark-red: #bd3944;
-	--valo-black: #0f1923;
-	--valo-dark: #1c252e;
-	--valo-darker: #111820;
-	--valo-blue: #00d4ff;
-	--valo-cyan: #00e5ff;
-	--valo-gold: #f4b93e;
+	--valo-black: var(--ground);
+	--valo-dark: var(--panel-raised);
+	--valo-darker: var(--ground);
+	--valo-blue: var(--signal-focus);
+	--valo-cyan: var(--signal-focus);
+	--valo-gold: var(--signal-warn);
 	--valo-purple: #9d4dff;
 }
 
 * {
-	font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+	font-family: var(--font-ui);
 }
 
 body {
-	background: linear-gradient(135deg, var(--valo-darker) 0%, var(--valo-black) 100%);
-	color: #ffffff;
+	background: var(--ground);
+	color: var(--ink);
 	overflow-x: hidden;
+	font-feature-settings: "cv05", "ss01";
+	-webkit-font-smoothing: antialiased;
 }
 
+/*
+ * Headings run condensed and tight. The old stack letterspaced its headings out
+ * by 0.5px, which is the house style of every gaming overlay ever shipped.
+ */
 h1,
 h2,
 h3,
 h4,
 h5,
 h6 {
-	font-family: 'Rajdhani', 'Inter', sans-serif;
-	font-weight: 700;
-	letter-spacing: 0.5px;
+	font-family: var(--font-ui);
+	font-stretch: 88%;
+	font-weight: 600;
+	letter-spacing: -0.015em;
 }
 
-/* Animations */
-@keyframes slideIn {
-	0% {
-		transform: translateX(-100%);
-		opacity: 0;
-	}
-
-	100% {
-		transform: translateX(0);
-		opacity: 1;
-	}
+/* ---------------------------------------------------------------------------
+ * Surfaces
+ *
+ * `.panel` is the canonical name; `.glass` is an alias so the ~20 existing call
+ * sites keep working. There is no glass left in it — flat fill, hairline border,
+ * 2px radius.
+ *
+ * These rules are deliberately UNLAYERED, so they outrank Tailwind's `@layer
+ * utilities`. That is the propagation lever: a `rounded-2xl` sitting next to
+ * `glass` in a page still comes out at 2px, with no page edits.
+ * ------------------------------------------------------------------------- */
+.panel,
+.glass {
+	background: var(--panel);
+	border: 1px solid var(--line);
+	border-radius: 2px;
+	backdrop-filter: none;
 }
 
-@keyframes slideOut {
-	0% {
-		transform: translateX(0);
-		opacity: 1;
-	}
-
-	100% {
-		transform: translateX(-100%);
-		opacity: 0;
-	}
+.panel-raised,
+.glass-strong {
+	background: var(--panel-raised);
+	border: 1px solid var(--line-strong);
+	border-radius: 2px;
+	backdrop-filter: none;
 }
 
+/* ---------------------------------------------------------------------------
+ * The readout row — the signature.
+ *
+ * Label left, dotted leader, value right in mono. It ties a name to a number the
+ * way a technical index does, and it is the same device on every screen: the diff
+ * viewer, the scoreboard, Settings, About.
+ * ------------------------------------------------------------------------- */
+.readout {
+	display: flex;
+	align-items: baseline;
+	gap: 0.625rem;
+}
+
+.readout-leader {
+	flex: 1 1 auto;
+	min-width: 1.5rem;
+	align-self: center;
+	height: 1px;
+	background-image: repeating-linear-gradient(to right, var(--line-strong) 0 1px, transparent 1px 5px);
+}
+
+/* ---------------------------------------------------------------------------
+ * Numerics
+ *
+ * `tabular-nums` already marks every place in this app that holds a number in a
+ * table — RR, ACS, K/D/A, ports, timings. Binding the mono face to it puts the
+ * whole readout system in place without touching a single page.
+ *
+ * NOTE: this redefines what a Tailwind utility does. It is the only such override
+ * in the file. Use `font-mono` directly if you want mono without the numerics.
+ * ------------------------------------------------------------------------- */
+.tabular-nums {
+	font-family: var(--font-mono);
+	font-size: 0.94em;
+	letter-spacing: -0.02em;
+}
+
+/* Flattened. Kept as class names so existing call sites keep rendering; the
+ * gradient fill is gone, because a headline is not a place to spend color. */
+.gradient-text,
+.gradient-text-blue {
+	background: none;
+	-webkit-text-fill-color: currentColor;
+	background-clip: border-box;
+	color: var(--ink);
+	font-stretch: 82%;
+	letter-spacing: -0.03em;
+}
+
+/* ---------------------------------------------------------------------------
+ * Motion — entrances and progress only. No glow, no shimmer, no hover lift.
+ * ------------------------------------------------------------------------- */
 @keyframes fadeIn {
 	from {
 		opacity: 0;
-		transform: translateY(10px);
+		transform: translateY(6px);
 	}
 
 	to {
@@ -72,75 +175,45 @@ h6 {
 	}
 }
 
-@keyframes glow {
-
-	0%,
-	100% {
-		box-shadow: 0 0 20px rgba(255, 70, 85, 0.3);
-	}
-
-	50% {
-		box-shadow: 0 0 30px rgba(255, 70, 85, 0.6);
-	}
-}
-
-@keyframes shimmer {
-	0% {
-		background-position: -1000px 0;
-	}
-
-	100% {
-		background-position: 1000px 0;
-	}
-}
-
 @keyframes progress-indeterminate {
 	0% {
 		transform: translateX(-100%);
 		width: 40%;
 	}
+
 	50% {
 		width: 60%;
 	}
+
 	100% {
 		transform: translateX(280%);
 		width: 40%;
 	}
 }
 
-.animate-slide-in {
-	animation: slideIn 0.3s ease-out;
-}
-
-.animate-slide-out {
-	animation: slideOut 0.3s ease-out;
-}
-
 .animate-fade-in {
-	animation: fadeIn 0.5s ease-out forwards;
+	animation: fadeIn 0.24s cubic-bezier(0.2, 0, 0, 1) forwards;
 }
 
-.animate-glow {
-	animation: glow 2s ease-in-out infinite;
-}
-
-/* Custom scrollbar */
+/* Scrollbars are chrome, so they are graphite. The thumb used to be Riot red,
+ * which put the app's loudest color on its least important element. */
 ::-webkit-scrollbar {
-	width: 8px;
-	height: 8px;
+	width: 10px;
+	height: 10px;
 }
 
 ::-webkit-scrollbar-track {
-	background: var(--valo-darker);
+	background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-	background: var(--valo-red);
-	border-radius: 4px;
+	background: var(--line-strong);
+	border: 3px solid var(--ground);
+	border-radius: 999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-	background: var(--valo-dark-red);
+	background: var(--ink-faint);
 }
 
 .command-rail-scroll {
@@ -152,74 +225,12 @@ h6 {
 }
 
 @media (prefers-reduced-motion: reduce) {
-	.navbar-motion {
+
+	*,
+	*::before,
+	*::after {
+		animation-duration: 0.01ms !important;
+		animation-iteration-count: 1 !important;
 		transition-duration: 0.01ms !important;
 	}
-}
-
-/* Glassmorphism effect */
-.glass {
-	background: rgba(255, 255, 255, 0.05);
-	backdrop-filter: blur(10px);
-	border: 1px solid rgba(255, 255, 255, 0.1);
-	border-radius: 12px;
-}
-
-.glass-strong {
-	background: rgba(255, 255, 255, 0.08);
-	backdrop-filter: blur(20px);
-	border: 1px solid rgba(255, 255, 255, 0.15);
-	border-radius: 16px;
-}
-
-/* Gradient text */
-.gradient-text {
-	background: linear-gradient(135deg, var(--valo-red) 0%, var(--valo-purple) 100%);
-	-webkit-background-clip: text;
-	-webkit-text-fill-color: transparent;
-	background-clip: text;
-}
-
-.gradient-text-blue {
-	background: linear-gradient(135deg, var(--valo-cyan) 0%, var(--valo-blue) 100%);
-	-webkit-background-clip: text;
-	-webkit-text-fill-color: transparent;
-	background-clip: text;
-}
-
-/* Card hover effects */
-.card-hover {
-	transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.card-hover:hover {
-	transform: translateY(-4px);
-	box-shadow: 0 20px 40px rgba(255, 70, 85, 0.2);
-}
-
-/* Button glow effect */
-.btn-glow {
-	position: relative;
-	overflow: hidden;
-}
-
-.btn-glow::before {
-	content: '';
-	position: absolute;
-	top: 0;
-	left: -100%;
-	width: 100%;
-	height: 100%;
-	background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
-	transition: left 0.5s;
-}
-
-.btn-glow:hover::before {
-	left: 100%;
-}
-
-/* Divider with gradient */
-.divider-gradient {
-	height: 2px;
-	background: linear-gradient(90deg, transparent 0%, var(--valo-red) 50%, transparent 100%);
 }

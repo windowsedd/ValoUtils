@@ -20,6 +20,7 @@ import {
 	findFriendConversationCid,
 	mergeChatMessages,
 	supportsConversationHistory,
+	withResolvedSenderNames,
 } from "./chat-model";
 
 const POLL_MS = 5000;
@@ -363,14 +364,17 @@ export const useChatController = () => {
 	const visibleMessages = useMemo(
 		() =>
 			state.selectedCid
-				? mergeChatMessages(
-						state.historyByCid[state.selectedCid] ?? [],
-						summary.messages.filter(
-							(message) => message.conversationId === state.selectedCid,
+				? withResolvedSenderNames(
+						mergeChatMessages(
+							state.historyByCid[state.selectedCid] ?? [],
+							summary.messages.filter(
+								(message) => message.conversationId === state.selectedCid,
+							),
 						),
+						summary.friends,
 					)
 				: [],
-		[state.historyByCid, state.selectedCid, summary.messages],
+		[state.historyByCid, state.selectedCid, summary.friends, summary.messages],
 	);
 	const availableChannels = useMemo(
 		() => ({

@@ -109,6 +109,7 @@ pub fn config_get_all(store: State<ConfigStore>) -> String {
         "translatorTargetLanguage": get_or("translatorTargetLanguage", json!("en")),
         "deeplApiKey": get_or("deeplApiKey", json!("")),
         "hiddenTabs": get_or("hiddenTabs", json!([])),
+        "botCustomCommands": get_or("botCustomCommands", json!([])),
     })
     .to_string()
 }

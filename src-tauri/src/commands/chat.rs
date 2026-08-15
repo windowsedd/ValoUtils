@@ -1,5 +1,5 @@
 use crate::riot::api;
-use crate::riot::client::{self as riot_client, RiotState};
+use crate::riot::client::{self as riot_client, is_login_required_error, RiotState};
 use crate::store::ConfigStore;
 use crate::translate;
 use crate::xmpp;
@@ -339,17 +339,6 @@ fn merge_room_conversations(
 
 fn confirmed_party_room(joined_room: &str) -> String {
     joined_room.to_string()
-}
-
-fn is_login_required_error(error: &str) -> bool {
-    let value = error.to_lowercase();
-    value.contains("lockfile")
-        || value.contains("connection refused")
-        || value.contains("failed to connect")
-        || value.contains("error sending request for url (https://127.0.0.1")
-        || value.contains("riot client is not running")
-        || value.contains("authentication failed")
-        || value.contains("session expired")
 }
 
 fn history_error(request_id: &str, cid: &str, code: &str, error: &str) -> Value {
@@ -1534,6 +1523,26 @@ mod tests {
         assert!(is_login_required_error("Riot lockfile was not found"));
         assert!(!is_login_required_error(
             "message history payload was malformed"
+        ));
+    }
+
+    /// A signed-out player has a *running* Riot Client, so none of the
+    /// "client is down" signals fire — the chat routes just 503. Without this
+    /// case the frontend printed the raw RPC error instead of asking them to
+    /// sign in.
+    #[test]
+    fn classifies_disconnected_chat_service_as_login_required() {
+        assert!(is_login_required_error(
+			"Riot Client request failed (503 Service Unavailable) for /chat/v4/friends: {\"errorCode\":\"RPC_ERROR\",\"httpStatus\":503,\"implementationDetails\":{},\"message\":\"not connected to chat, service unavailable\"}"
+		));
+        assert!(is_login_required_error(
+            "Riot Client request failed (503 Service Unavailable) for /chat/v6/messages: \
+             {\"message\":\"not connected to chat, service unavailable\"}"
+        ));
+        // A 503 that isn't about the chat socket is a real outage, not a login.
+        assert!(!is_login_required_error(
+            "Riot Client request failed (503 Service Unavailable) for /chat/v4/friends: \
+             {\"message\":\"backend timeout\"}"
         ));
     }
 

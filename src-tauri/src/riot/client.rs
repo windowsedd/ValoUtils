@@ -45,6 +45,28 @@ fn local_client_unavailable_error(path: &str) -> String {
     )
 }
 
+/// Whether a local-API error means "nobody is signed in" rather than a real
+/// fault, so the caller can answer `{ code: "loginRequired" }` and the frontend
+/// can show its sign-in panel instead of dumping a raw HTTP error at the player.
+///
+/// Callers: `friends_get`, `chat_get`, `chat_history`, `matches_get`. Keep this
+/// the single definition — it used to be copied per command, and each copy knew
+/// about a different subset of these conditions.
+pub fn is_login_required_error(error: &str) -> bool {
+    let value = error.to_lowercase();
+    value.contains("lockfile")
+        || value.contains("connection refused")
+        || value.contains("failed to connect")
+        || value.contains("error sending request for url (https://127.0.0.1")
+        || value.contains("riot client is not running")
+        || value.contains("authentication failed")
+        || value.contains("session expired")
+        // The Riot Client is up and answering, but its chat service never came
+        // online because the player never signed in. Every chat route reports it
+        // the same way: 503 RPC_ERROR, "not connected to chat".
+        || value.contains("not connected to chat")
+}
+
 pub fn get_riot_client_info(state: &RiotState) -> Result<RiotClientInfo, String> {
     let path = lockfile_path();
     let modified = std::fs::metadata(&path)

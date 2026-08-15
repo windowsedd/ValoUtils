@@ -1,7 +1,7 @@
 use serde::Serialize;
 use std::collections::VecDeque;
-use std::sync::{Mutex, OnceLock};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Mutex, OnceLock};
 
 pub const PUUID: &str = "41c322a1-b328-495b-a004-5ccd3e45eae8";
 pub const GAME_NAME: &str = "ValoUtils Bot";
@@ -9,7 +9,8 @@ pub const TAG_LINE: &str = "BOT";
 const MAX_MESSAGES: usize = 200;
 
 pub fn help_text() -> &'static str {
-    "$online · $offline · $mobile · $enable · $disable · $status · $help"
+    // Valorant whispers collapse newlines, so this has to stay one line.
+    "$online · $offline · $mobile · $enable · $disable · $status · $help · .send {party|pregame|team|all} {language} {message} · .tran [n]"
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -90,6 +91,19 @@ fn now_iso_millis() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn help_text_lists_presence_commands_and_the_translate_command() {
+        let help = help_text();
+        assert!(help.contains("$online"));
+        assert!(help.contains("$help"));
+        assert!(help.contains(".send {party|pregame|team|all} {language} {message}"));
+        assert!(help.contains(".tran [n]"));
+        assert!(
+            !help.contains('\n'),
+            "Valorant whispers strip newlines, so help must stay one line"
+        );
+    }
 
     #[test]
     fn parses_commands_with_an_optional_prefix_and_uses_help_as_fallback() {

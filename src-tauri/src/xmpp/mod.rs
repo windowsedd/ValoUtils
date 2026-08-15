@@ -281,6 +281,9 @@ pub async fn ensure_match_xmpp_chat(
         .map(|s| s.to_string());
 
     let Some(match_id) = match_id else {
+        if let Some(rooms) = join_pregame_rooms(&api, riot, &mut state_guard).await? {
+            return Ok(rooms);
+        }
         // Left the match — leave match rooms but keep party connection alive.
         if let Some(handle) = state_guard.handle.clone() {
             let to_leave: Vec<String> = state_guard
@@ -316,14 +319,13 @@ pub async fn ensure_match_xmpp_chat(
     }
 
     let match_data = api.coregame_get_match(&match_id).await?;
-    let team_room = match_data
-        .get("TeamMUCName")
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string());
-    let all_room = match_data
-        .get("AllMUCName")
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string());
+    let (team_room, all_room) = match_rooms_from_payload(
+        &match_data,
+        &api.puuid,
+        &match_id,
+        "coregame",
+        chat_domain_hint(&state_guard, &api.region).as_deref(),
+    );
     let token = match_data.get("TeamMatchToken").and_then(|v| v.as_str());
 
     state_guard.match_id = match_id;
@@ -339,6 +341,99 @@ pub async fn ensure_match_xmpp_chat(
     }
 
     Ok((team_room, all_room))
+}
+
+fn chat_domain_hint(state_guard: &Inner, region: &str) -> Option<String> {
+    crate::riot::models::chat_domain_from_cid(&state_guard.party_room)
+        .or_else(|| {
+            state_guard
+                .party_rooms
+                .iter()
+                .find_map(|cid| crate::riot::models::chat_domain_from_cid(cid))
+        })
+        .or_else(|| {
+            crate::riot::models::chat_domain_from_cid(&state_guard.match_team_room)
+        })
+        .or_else(|| {
+            let region = region.trim();
+            (!region.is_empty()).then(|| region.to_string())
+        })
+}
+
+fn match_rooms_from_payload(
+    data: &Value,
+    puuid: &str,
+    match_id: &str,
+    phase: &str,
+    domain: Option<&str>,
+) -> (Option<String>, Option<String>) {
+    let pick = |keys: &[&str]| {
+        keys.iter()
+            .find_map(|key| data.get(*key).and_then(Value::as_str))
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+    };
+    let named = pick(&["TeamMUCName", "teamMUCName", "AllyTeamMUCName"]);
+    let all = pick(&["AllMUCName", "allMUCName"]);
+    let side = crate::riot::models::local_match_side(puuid, data);
+    let team = match (named.as_deref(), side, domain) {
+        (Some(cid), Some(side), _) => Some(crate::riot::models::rewrite_team_cid(cid, side)),
+        (Some(cid), None, _) => Some(cid.to_string()),
+        (None, Some(side), Some(domain)) if !match_id.is_empty() && !domain.is_empty() => {
+            Some(crate::riot::models::build_team_cid(
+                match_id, side, phase, domain,
+            ))
+        }
+        _ => None,
+    };
+    (team, all)
+}
+
+async fn join_pregame_rooms(
+    api: &api::RiotApiClient,
+    riot: &RiotState,
+    state_guard: &mut Inner,
+) -> Result<Option<(Option<String>, Option<String>)>, String> {
+    let pre_player = match api.pregame_get_player(&api.puuid).await {
+        Ok(player) => player,
+        Err(_) => return Ok(None),
+    };
+    let Some(match_id) = pre_player
+        .get("MatchID")
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+    else {
+        return Ok(None);
+    };
+    let match_data = api.pregame_get_match(&match_id).await?;
+    let (team_room, all_room) = match_rooms_from_payload(
+        &match_data,
+        &api.puuid,
+        &match_id,
+        "pregame",
+        chat_domain_hint(state_guard, &api.region).as_deref(),
+    );
+    if team_room.is_none() && all_room.is_none() {
+        return Ok(None);
+    }
+    let token = match_data
+        .get("PregameMatchToken")
+        .or_else(|| match_data.get("TeamMatchToken"))
+        .and_then(Value::as_str);
+
+    state_guard.match_id = match_id;
+    state_guard.match_team_room = team_room.clone().unwrap_or_default();
+    state_guard.match_all_room = all_room.clone().unwrap_or_default();
+
+    let handle = login_xmpp(riot, state_guard).await?;
+    for room in [&team_room, &all_room].into_iter().flatten() {
+        if !state_guard.joined_rooms.contains(room) {
+            handle.join_match_muc(room, token).await?;
+            state_guard.joined_rooms.insert(room.clone());
+        }
+    }
+    Ok(Some((team_room, all_room)))
 }
 
 /// Ensures the client is in the current party's MUC room. Returns
@@ -542,6 +637,34 @@ static STATE: std::sync::OnceLock<ChatXmppState> = std::sync::OnceLock::new();
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pregame_payload_exposes_the_ally_team_room() {
+        let data = json!({
+            "TeamMUCName": "9f2e-blue@ares-pregame.ap.pvp.net",
+            "AllMUCName": "",
+            "AllyTeam": {
+                "TeamID": "Red",
+                "Players": [{ "Subject": "me" }]
+            }
+        });
+        let (team, all) = match_rooms_from_payload(&data, "me", "9f2e", "pregame", Some("ap"));
+        assert_eq!(team.as_deref(), Some("9f2e-red@ares-pregame.ap.pvp.net"));
+        assert_eq!(all, None);
+
+        let constructed = json!({
+            "AllyTeam": {
+                "TeamID": "Blue",
+                "Players": [{ "Subject": "me" }]
+            }
+        });
+        let (team, _) =
+            match_rooms_from_payload(&constructed, "me", "abc-123", "pregame", Some("jp1"));
+        assert_eq!(
+            team.as_deref(),
+            Some("abc-123-blue@ares-pregame.jp1.pvp.net")
+        );
+    }
 
     #[test]
     fn new_connection_generation_starts_with_empty_syncing_snapshot() {

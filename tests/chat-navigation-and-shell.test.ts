@@ -35,7 +35,7 @@ describe("Chat navigation and page shell", () => {
 		expect(main).toContain('title: "nav.chat"');
 		expect(main).toContain('id: "chat"');
 		expect(main.indexOf('id: "friends"')).toBeLessThan(main.indexOf('id: "chat"'));
-		expect(main.indexOf('id: "chat"')).toBeLessThan(main.indexOf('id: "replays"'));
+		expect(main.indexOf('id: "chat"')).toBeLessThan(main.indexOf('id: "settings"'));
 	});
 
 	test("uses the shared controller and the new four-part Chat UI", () => {

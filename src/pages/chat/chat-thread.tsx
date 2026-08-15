@@ -3,8 +3,10 @@ import { useEffect, useRef } from "react";
 import { FaBug, FaLanguage, FaRotate, FaUserGroup } from "react-icons/fa6";
 import {
 	chatMessageKey,
+	formatClock,
 	shouldResetThreadPosition,
 	shouldStickToBottom,
+	startsMessageGroup,
 } from "./chat-model";
 
 type ThreadLabels = {
@@ -16,14 +18,6 @@ type ThreadLabels = {
 	translating: string;
 	developerPanel: string;
 	empty: string;
-};
-
-const formatTime = (value: string | null) => {
-	if (!value) return "";
-	const numeric = Number(value);
-	const date = new Date(Number.isFinite(numeric) ? numeric : value);
-	if (Number.isNaN(date.getTime())) return "";
-	return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 };
 
 export const ChatThread = ({
@@ -77,116 +71,133 @@ export const ChatThread = ({
 	}, [conversationId]);
 
 	return (
-		<section className="flex min-h-0 flex-1 flex-col bg-[#07090d]">
-		<header className="flex min-h-14 shrink-0 items-center gap-3 border-b border-white/8 px-4">
-			<div className="min-w-0 flex-1">
-				<h1 className="truncate text-sm font-semibold text-white">{title}</h1>
-				<p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-cyan-400/70">
-					{subtitle}
-				</p>
-			</div>
-			<button
-				type="button"
-				onClick={(event) => onOpenFriends(event.currentTarget)}
-				aria-label={labels.openFriends}
-				className="flex h-10 w-10 items-center justify-center rounded-xl text-gray-400 outline-none hover:bg-white/6 hover:text-white focus-visible:ring-2 focus-visible:ring-cyan-300/80 xl:hidden"
-			>
-				<FaUserGroup />
-			</button>
-		</header>
-
-		{historyError && (
-			<div className="mx-4 mt-3 flex items-center gap-3 rounded-xl border border-red-400/20 bg-red-950/20 px-3 py-2 text-xs text-red-200">
-				<span className="min-w-0 flex-1 truncate">{historyError || labels.historyFailed}</span>
+		<section className="flex min-h-0 flex-1 flex-col bg-(--ground)">
+			<header className="flex min-h-13 shrink-0 items-baseline gap-2.5 border-b border-(--line) px-4 py-3">
+				<h1 className="truncate text-sm font-semibold text-(--ink)">{title}</h1>
+				<span className="truncate text-xs text-(--ink-faint)">{subtitle}</span>
+				<span aria-hidden="true" className="readout-leader" />
 				<button
 					type="button"
-					onClick={onRetryHistory}
-					className="min-h-8 rounded-lg px-3 font-semibold outline-none hover:bg-white/8 focus-visible:ring-2 focus-visible:ring-cyan-300/80"
+					onClick={(event) => onOpenFriends(event.currentTarget)}
+					aria-label={labels.openFriends}
+					className="flex size-8 shrink-0 items-center justify-center self-center rounded-sm text-(--ink-faint) outline-none hover:bg-white/6 hover:text-(--ink) focus-visible:ring-1 focus-visible:ring-(--signal-focus) xl:hidden"
 				>
-					<FaRotate className="mr-1 inline" />
-					{labels.retryHistory}
+					<FaUserGroup />
 				</button>
-			</div>
-		)}
+			</header>
 
-		{historyLoading && (
-			<p className="px-4 pt-3 text-[11px] text-cyan-300/70">{labels.historyLoading}</p>
-		)}
-
-		<div
-			ref={scrollRef}
-			role="log"
-			aria-live="polite"
-			onScroll={() => {
-				const node = scrollRef.current;
-				if (node) stickRef.current = shouldStickToBottom(node, false);
-			}}
-			className="min-h-0 flex-1 overflow-y-auto px-4 py-4"
-		>
-			{messages.length === 0 ? (
-				<div className="flex h-full items-center justify-center text-sm text-gray-600">
-					{labels.empty}
-				</div>
-			) : (
-				<div className="space-y-3">
-					{messages.map((message) => (
-						<article
-							key={`${message.conversationId}:${message.id}`}
-							className={`flex ${message.isSelf ? "justify-end" : "justify-start"}`}
-						>
-							<div
-								className={`max-w-[72%] rounded-2xl px-3.5 py-2.5 ${
-									message.isSelf
-										? "rounded-br-sm border border-cyan-400/20 bg-cyan-950/45"
-										: "rounded-bl-sm border border-white/7 bg-white/5"
-								}`}
-							>
-								<div className="mb-1 flex items-center gap-2 text-[10px]">
-									<span className="max-w-48 truncate font-semibold text-gray-300">
-										{message.senderName || message.sender}
-									</span>
-									<span className="text-gray-600">{formatTime(message.timestamp)}</span>
-								</div>
-								<p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-gray-100">
-									{message.body}
-								</p>
-								{translatedByMessageId[chatMessageKey(message)] && (
-									<p className="mt-2 border-t border-cyan-300/10 pt-2 text-sm text-cyan-200">
-										{translatedByMessageId[chatMessageKey(message)]}
-									</p>
-								)}
-								{translationErrorByMessageId[chatMessageKey(message)] && (
-									<p role="alert" className="mt-2 text-xs text-red-300">
-										{translationErrorByMessageId[chatMessageKey(message)]}
-									</p>
-								)}
-								<button
-									type="button"
-									onClick={() => onTranslate(message)}
-									disabled={Boolean(translatingMessageId)}
-									className="mt-2 min-h-8 rounded-lg px-2 text-[10px] text-gray-500 outline-none hover:bg-white/6 hover:text-white focus-visible:ring-2 focus-visible:ring-cyan-300/80 disabled:opacity-40"
-								>
-									<FaLanguage className="mr-1 inline" />
-									{translatingMessageId === chatMessageKey(message)
-										? labels.translating
-										: labels.translate}
-								</button>
-							</div>
-						</article>
-					))}
+			{historyError && (
+				<div className="flex shrink-0 items-center gap-3 border-b border-(--signal-neg)/25 bg-(--signal-neg)/8 px-4 py-2 text-xs text-(--signal-neg)">
+					<span className="min-w-0 flex-1 truncate">{historyError || labels.historyFailed}</span>
+					<button
+						type="button"
+						onClick={onRetryHistory}
+						className="min-h-7 shrink-0 rounded-sm px-2 font-semibold text-(--ink-dim) outline-none hover:bg-white/8 hover:text-(--ink) focus-visible:ring-1 focus-visible:ring-(--signal-focus)"
+					>
+						<FaRotate className="mr-1 inline" />
+						{labels.retryHistory}
+					</button>
 				</div>
 			)}
-		</div>
 
-		<details className="mx-4 mb-2 shrink-0 rounded-lg border border-white/7 bg-black/30 text-[10px] text-gray-500">
-			<summary className="flex min-h-8 cursor-pointer items-center gap-2 px-3 outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/80">
-				<FaBug />
-				{labels.developerPanel}
-			</summary>
-			<pre className="max-h-44 overflow-auto border-t border-white/7 p-3 font-mono text-gray-400">
-				{JSON.stringify(debugData, null, 2)}
-			</pre>
-		</details>
-	</section>
-);
+			{historyLoading && (
+				<p className="shrink-0 px-4 pt-2 text-[11px] text-(--ink-faint)">{labels.historyLoading}</p>
+			)}
+
+			{/*
+			 * A transcript, not a messenger. This is a relay log off an XMPP socket —
+			 * who spoke and when is the information, so it reads as a timestamped
+			 * record: mono clock gutter, sender header per burst, body at full width.
+			 * Bubbles would spend 30% of a narrow window on silhouette.
+			 */}
+			<div
+				ref={scrollRef}
+				role="log"
+				aria-live="polite"
+				onScroll={() => {
+					const node = scrollRef.current;
+					if (node) stickRef.current = shouldStickToBottom(node, false);
+				}}
+				className="min-h-0 flex-1 overflow-y-auto py-2"
+			>
+				{messages.length === 0 ? (
+					<div className="flex h-full items-center justify-center text-sm text-(--ink-faint)">
+						{labels.empty}
+					</div>
+				) : (
+					messages.map((message, index) => {
+						const key = chatMessageKey(message);
+						const opensGroup = startsMessageGroup(messages[index - 1], message);
+						const translated = translatedByMessageId[key];
+						const translationError = translationErrorByMessageId[key];
+
+						return (
+							<article
+								key={`${message.conversationId}:${message.id}`}
+								className={`group relative px-4 hover:bg-white/2.5 ${opensGroup ? "mt-2 first:mt-0" : ""}`}
+							>
+								{/* Self is marked in the gutter, not by swapping sides or hues. */}
+								{message.isSelf && (
+									<span aria-hidden="true" className="absolute left-0 top-0 h-full w-0.5 bg-(--ink-faint)" />
+								)}
+
+								{/* The sender hangs above its burst, indented to the body column so
+								    the clock gutter stays an unbroken ruler down the left edge. */}
+								{opensGroup && (
+									<p
+										className={`truncate pl-13 text-xs font-semibold leading-5 ${message.isSelf ? "text-(--ink)" : "text-(--ink-dim)"}`}
+									>
+										{message.senderName || message.sender}
+									</p>
+								)}
+
+								<div className="flex items-start gap-3">
+									<span className="w-10 shrink-0 select-none whitespace-nowrap text-right text-[10px] tabular-nums leading-5 text-(--ink-faint)">
+										{formatClock(message.timestamp)}
+									</span>
+									<div className="min-w-0 flex-1">
+										<p className="whitespace-pre-wrap wrap-break-word text-sm leading-5 text-(--ink)">
+											{message.body}
+										</p>
+										{translated && (
+											<p className="mt-1 border-l border-(--line-strong) pl-2 text-sm leading-5 text-(--ink-dim)">
+												{translated}
+											</p>
+										)}
+										{translationError && (
+											<p role="alert" className="mt-1 text-xs text-(--signal-neg)">
+												{translationError}
+											</p>
+										)}
+									</div>
+									{/* One action, revealed on hover, instead of a button parked
+									    under every line in the log. */}
+									<button
+										type="button"
+										onClick={() => onTranslate(message)}
+										disabled={Boolean(translatingMessageId)}
+										aria-label={labels.translate}
+										className="shrink-0 self-start rounded-sm px-1.5 py-0.5 text-[10px] text-(--ink-faint) opacity-0 outline-none transition-opacity hover:bg-white/8 hover:text-(--ink) focus-visible:opacity-100 focus-visible:ring-1 focus-visible:ring-(--signal-focus) group-hover:opacity-100 disabled:opacity-40"
+									>
+										<FaLanguage className="mr-1 inline" />
+										{translatingMessageId === key ? labels.translating : labels.translate}
+									</button>
+								</div>
+							</article>
+						);
+					})
+				)}
+			</div>
+
+			<details className="shrink-0 border-t border-(--line) bg-(--panel) text-[10px] text-(--ink-faint)">
+				<summary className="flex min-h-8 cursor-pointer items-center gap-2 px-4 outline-none focus-visible:ring-1 focus-visible:ring-(--signal-focus)">
+					<FaBug />
+					{labels.developerPanel}
+				</summary>
+				<pre className="max-h-44 overflow-auto border-t border-(--line) p-3 font-mono text-(--ink-dim)">
+					{JSON.stringify(debugData, null, 2)}
+				</pre>
+			</details>
+		</section>
+	);
 };

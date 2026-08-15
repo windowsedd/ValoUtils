@@ -7,7 +7,6 @@ mod client_config;
 mod commands;
 mod fake_player;
 mod presence_proxy;
-mod replay;
 mod riot;
 mod settings_decoder;
 mod share;
@@ -51,6 +50,7 @@ pub fn run() {
             config_defaults.insert("translatorTargetLanguage".into(), json!("en"));
             config_defaults.insert("deeplApiKey".into(), json!(""));
             config_defaults.insert("hiddenTabs".into(), json!([]));
+            config_defaults.insert("botCustomCommands".into(), json!([]));
             let config_store = Store::new("config", config_defaults);
             let saved_presence_mode = config_store
                 .get("presenceMode")
@@ -91,6 +91,14 @@ pub fn run() {
                 .expect("presence app handle initialized once");
             app.manage(ProfilesStore(profiles_store));
             app.manage(RiotState::default());
+            app.manage(commands::riot_chat::RiotChatState::default());
+            {
+                let handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    let state = handle.state::<commands::riot_chat::RiotChatState>();
+                    state.begin_polling(handle.clone(), None).await;
+                });
+            }
             app.manage(commands::live::LiveCache::default());
             app.manage(commands::live::LiveStatsCache::default());
             app.manage(commands::matches::MatchCache::default());
@@ -141,11 +149,6 @@ pub fn run() {
             commands::live::live_game_fetch,
             commands::live::live_game_stats,
             commands::live::live_game_dump,
-            commands::replays::replay_list,
-            commands::replays::replay_delete,
-            commands::replays::replay_export_json,
-            commands::replays::replay_export_raw,
-            commands::replays::replay_process,
             commands::friends::friends_get,
             commands::friend_profile::friend_profile_get,
             commands::fake_player::fake_player_state,
@@ -164,7 +167,23 @@ pub fn run() {
             commands::chat::chat_send,
             commands::chat::chat_friend_action,
             commands::chat::chat_disconnect,
+            commands::riot_chat::connect_riot_chat,
+            commands::riot_chat::disconnect_riot_chat,
+            commands::riot_chat::get_chat_messages,
+            commands::riot_chat::send_chat_message,
+            commands::riot_chat::get_available_chat_channels,
+            commands::riot_chat::send_translated_chat_message,
+            commands::riot_chat::start_chat_polling,
+            commands::riot_chat::stop_chat_polling,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while running tauri application")
+        // `build` + `run` rather than `Builder::run` so the chat poller gets a
+        // chance to shut down cleanly on exit instead of being killed mid-tick.
+        .run(|app_handle, event| {
+            if let tauri::RunEvent::Exit = event {
+                let state = app_handle.state::<commands::riot_chat::RiotChatState>();
+                tauri::async_runtime::block_on(state.stop_polling());
+            }
+        });
 }

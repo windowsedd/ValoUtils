@@ -16,17 +16,20 @@ export const ChatChannelContext = ({
 	<aside
 		data-channel-context={channel}
 		data-channel-available={String(available)}
-		className="flex w-[268px] shrink-0 flex-col border-r border-white/8 bg-[#0b0e14] p-3"
+		className="flex w-[268px] shrink-0 flex-col border-r border-(--line) bg-(--panel) p-2"
 	>
-		<div className="rounded-xl border border-white/8 bg-white/[0.035] p-4">
-			<div className="flex items-center gap-2">
+		<div className="panel-raised p-3">
+			<div className="readout">
+				<h2 className="text-sm font-semibold text-(--ink)">{title}</h2>
+				<span aria-hidden="true" className="readout-leader" />
 				<span
-					className={`size-2 rounded-full ${available ? "bg-emerald-400" : "bg-gray-600"}`}
 					aria-hidden="true"
+					className={`size-1.5 shrink-0 self-center ${available ? "bg-(--signal-pos)" : "bg-(--ink-faint)"}`}
 				/>
-				<h2 className="text-sm font-semibold text-white">{title}</h2>
 			</div>
-			<p className={`mt-2 text-xs ${available ? "text-emerald-300/75" : "text-gray-500"}`}>
+			{/* The reason wraps as prose — an unavailable room explains itself, and a
+			    sentence squeezed into a right-hand readout slot just truncates. */}
+			<p className={`mt-2 text-xs leading-5 ${available ? "text-(--signal-pos)" : "text-(--ink-faint)"}`}>
 				{available ? availableLabel : unavailableLabel}
 			</p>
 		</div>

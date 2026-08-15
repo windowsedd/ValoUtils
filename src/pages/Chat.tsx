@@ -1,7 +1,7 @@
 import type { ChatChannel, ChatFriend } from "@/types/chat";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ChatChannelRail } from "./chat/chat-channel-rail";
+import { ChatChannelRail, visibleChatChannels } from "./chat/chat-channel-rail";
 import { ChatChannelContext } from "./chat/chat-channel-context";
 import { ChatComposer } from "./chat/chat-composer";
 import {
@@ -80,13 +80,16 @@ const Chat = () => {
 	};
 
 	return (
-		<div className="flex h-full min-h-0 overflow-hidden bg-[#07090d] text-gray-200 animate-fade-in">
-			<ChatChannelRail
-				selected={controller.selectedChannel}
-				available={controller.availableChannels}
-				labels={channelLabels}
-				onSelect={controller.selectChannel}
-			/>
+		<div className="flex h-full min-h-0 overflow-hidden bg-(--ground) text-(--ink-dim) animate-fade-in">
+			{/* A rail holding one button is 76px of window spent on nothing. */}
+			{visibleChatChannels.length > 1 && (
+				<ChatChannelRail
+					selected={controller.selectedChannel}
+					available={controller.availableChannels}
+					labels={channelLabels}
+					onSelect={controller.selectChannel}
+				/>
+			)}
 
 			{controller.selectedChannel === "friends" && (
 				<ChatConversationList
@@ -112,23 +115,23 @@ const Chat = () => {
 
 			<main className="flex min-w-0 flex-1 flex-col">
 				{pageError && !controller.loginRequired && (
-					<div role="alert" className="shrink-0 border-b border-red-400/20 bg-red-950/25 px-4 py-2 text-xs text-red-200">
+					<div role="alert" className="shrink-0 border-b border-(--signal-neg)/25 bg-(--signal-neg)/8 px-4 py-2 text-xs text-(--signal-neg)">
 						{pageError}
 					</div>
 				)}
 
 				{controller.loading ? (
-					<div className="flex min-h-0 flex-1 items-center justify-center text-sm text-gray-500">
+					<div className="flex min-h-0 flex-1 items-center justify-center text-sm text-(--ink-faint)">
 						{t("chat.loading")}
 					</div>
 				) : controller.loginRequired ? (
-					<div className="flex min-h-0 flex-1 items-center justify-center p-6 text-center">
-						<div className="max-w-md rounded-2xl border border-white/10 bg-white/5 p-6">
-							<p className="font-semibold text-white">{t("chat.loginRequired")}</p>
-							<p className="mt-1 text-sm text-gray-500">{t("chat.loginRequiredDesc")}</p>
+					<div className="flex min-h-0 flex-1 items-center justify-center p-6">
+						<div className="panel max-w-md p-5">
+							<p className="text-sm font-semibold text-(--ink)">{t("chat.loginRequired")}</p>
+							<p className="mt-1 text-sm leading-5 text-(--ink-faint)">{t("chat.loginRequiredDesc")}</p>
 							<button
 								type="button"
-								className="mt-4 min-h-10 rounded-xl bg-white/8 px-4 text-sm font-semibold text-gray-200 hover:bg-white/12"
+								className="mt-4 min-h-9 rounded-sm bg-(--ink) px-4 text-sm font-semibold text-(--ground) hover:bg-white"
 								onClick={controller.refreshSummary}
 							>
 								{t("chat.refresh")}

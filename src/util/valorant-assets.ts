@@ -88,7 +88,7 @@ export const getPlayerCard = (cardId?: string | null): Promise<CardAsset | null>
 /**
  * Map display names keyed by BOTH the full `mapUrl`
  * ("/Game/Maps/Bonsai/Bonsai") and its last path segment ("bonsai"), since
- * presence blobs and replay metadata each use a different one. Keeping this on
+ * presence blobs and match metadata each use a different one. Keeping this on
  * the CDN means new maps and renames land without a code change — the old
  * hardcoded table had Drift and District swapped, and was missing Summit.
  */

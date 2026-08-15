@@ -4,7 +4,7 @@
 
 ValoUtils is a Windows desktop app (Tauri 2 + React + Vite + TypeScript, Rust backend) that lets Valorant players save, load, and share full settings profiles. It reads auth tokens directly from the local Riot Client lockfile and calls Riot's private `Ares.PlayerSettings` API. No login or cloud account required.
 
-> Migrated from Electron to Tauri (2026-07). The Rust backend in `src-tauri/` replaces the old Electron main process; a compiled Bun sidecar handles replay parsing.
+> Migrated from Electron to Tauri (2026-07). The Rust backend in `src-tauri/` replaces the old Electron main process.
 
 ## Tech Stack
 
@@ -15,7 +15,6 @@ ValoUtils is a Windows desktop app (Tauri 2 + React + Vite + TypeScript, Rust ba
 - **SWR** — data fetching in the frontend
 - **tauri-plugin-updater** — auto-update via GitHub Releases (`latest.json`, minisign-signed)
 - **Aptabase** — anonymous analytics (hand-rolled HTTP ingest in `src-tauri/src/aptabase.rs`)
-- **Bun sidecar** — `sidecar/replay-parser.ts` compiled to a standalone exe (keeps `@windowsedd/valo-replay-parser` unchanged)
 
 ## Project Structure
 
@@ -30,7 +29,6 @@ src-tauri/         Rust backend (Tauri)
       career.rs    career_get (MMR + competitive history)
       live.rs      live_game_fetch/dump (with adaptive cache)
       chat.rs      chat_get/send/translate/friend_action/disconnect
-      replays.rs   replay_list/process/delete/export (drives the sidecar)
     riot/
       client.rs    Lockfile read + local Riot Client HTTPS API (cert bypass)
       api.rs       pd/glz game-API client (RiotApiClient)
@@ -41,18 +39,13 @@ src-tauri/         Rust backend (Tauri)
     store.rs       JSON file store (same %APPDATA%\ValoUtils\*.json files as before)
     translate.rs   Google web endpoint + DeepL
     updater.rs     Update check/download/install, emits update:* events
-  binaries/        Compiled replay-parser sidecar (gitignored, built by build:sidecar)
   tauri.conf.json  Window, bundle (NSIS), updater pubkey/endpoint
-  capabilities/default.json  Permission grants (dialog, clipboard, opener, updater, sidecar exec)
+  capabilities/default.json  Permission grants (dialog, clipboard, opener, updater)
   valoutils.key    Updater signing private key (gitignored — NEVER commit)
-
-sidecar/           Bun-compiled replay parser (out-of-process, CPU-heavy)
-  replay-parser.ts Entry: <vrfPath> <outDir> → NDJSON progress on stdout
-  replay/          extract.ts + abilities.ts (copied unchanged from the old Electron pipeline)
 
 src/               Frontend (WebView context)
   main.tsx         React entry (imports util/tauri-bridge first)
-  pages/           SettingsProfiles, PlayerCareer, LiveGame, Chat, Replays, Settings, About
+  pages/           SettingsProfiles, PlayerCareer, LiveGame, Chat, Settings, About
   components/      parsed-settings-viewer, settings-diff-viewer, crosshair-svg-generator,
                    dynamic-modal, button (CustomButton), alert-container, router
   util/
@@ -60,8 +53,6 @@ src/               Frontend (WebView context)
     riot-client.ts   Frontend helpers (via window.Main)
     share.ts         getData(code) → share_get_data command
   types/           Shared TypeScript types
-
-package/ts-replay-parser   Local replay-parser package source (dep of the sidecar)
 ```
 
 ## IPC Architecture
@@ -70,7 +61,7 @@ The frontend still uses the Electron-era `window.Main.send/on/removeAllListeners
 
 - `send("settings:profile:load", name)` → `invoke("settings_profile_load", { args: [name] })` — channel names have `:` and `-` replaced with `_` to form the Rust command name
 - The command's returned JSON string is delivered to callbacks registered with `on(channel, cb)`
-- `on` also subscribes to a same-named **Tauri event**, so Rust-side pushes (`app.emit("alert:info", ...)`, `replay:progress`, `update:*`) reach the same callbacks
+- `on` also subscribes to a same-named **Tauri event**, so Rust-side pushes (`app.emit("alert:info", ...)`, `update:*`) reach the same callbacks
 
 ```ts
 // frontend sends
@@ -87,7 +78,7 @@ Rust command conventions (see any file in `src-tauri/src/commands/`):
 
 - Signature: `pub async fn foo(args: Vec<Value>, ...) -> Result<String, ()>` — positional string args, returns a JSON **string**
 - Reply shape: `{ success: true, ... }` or `{ error: string, success: false }` — never reject the invoke for expected failures
-- Push-style channels use `app.emit(channel, payload)`: `alert:info`, `replay:progress`, `update:checking/available/not-available/error/download-progress/downloaded`, and `settings:profile:list` (re-emitted after every profile mutation)
+- Push-style channels use `app.emit(channel, payload)`: `alert:info`, `update:checking/available/not-available/error/download-progress/downloaded`, and `settings:profile:list` (re-emitted after every profile mutation)
 
 ### IPC Channels
 
@@ -104,8 +95,6 @@ Rust command conventions (see any file in `src-tauri/src/commands/`):
 | `career:get` | `career_get` | MMR + competitive history |
 | `live-game:fetch` / `live-game:dump` | `live_game_fetch/dump` | Live match state (polled ~5s) |
 | `chat:get/send/translate/friend-action/disconnect` | `chat_*` | Chat (REST + XMPP) |
-| `replay:list/process/delete/export-json/export-raw` | `replay_*` | Replays (sidecar) |
-| `replay:progress` | *(event only)* | Push: sidecar progress during replay:process |
 | `clipboard:get/set` | `clipboard_get/set` | Clipboard access |
 | `analytics:track` | `analytics_track` | Fire an Aptabase event |
 | `update:check` | `update_check` | Trigger update check |
@@ -128,15 +117,12 @@ asks for them. Rust toolchain (stable, MSVC) required for the backend.
 
 ```bash
 bun run dev          # tauri dev: Vite dev server + cargo run with hot-reload
-bun run build        # sidecar + tsc + vite build + tauri build (NSIS installer)
-bun run build:sidecar  # recompile the replay-parser sidecar exe
-bun run debug:replay -- <path-to-replay.vrf>  # inspect replay parser output
+bun run build        # tsc + vite build + tauri build (NSIS installer)
 
+bun test             # frontend + integration tests (bun:test)
 cargo check          # (in src-tauri/) fast Rust typecheck
 cargo clippy         # (in src-tauri/) Rust lints
-
-bun --cwd package/ts-replay-parser test       # run parser parity/unit tests
-bun --cwd package/ts-replay-parser run build   # rebuild parser dist/
+cargo test --lib     # (in src-tauri/) Rust unit tests
 ```
 
 `bun run lint` runs Oxlint against the React and TypeScript frontend in `src/`.
@@ -250,7 +236,6 @@ Riot chat is XMPP over raw TLS to `<affinity>.chat.si.riotgames.com:5223`, with 
 - Share codes are 10 characters and expire after 90 days.
 - Settings blobs must be at least ~2500 chars of valid base64 to be accepted as a profile (validation in `SettingsProfiles.tsx`).
 - Analytics events (`analytics:track`) fire on every user action — keep them when adding new features.
-- The replay sidecar exe must exist at `src-tauri/binaries/replay-parser-x86_64-pc-windows-msvc.exe` before `tauri dev`/`tauri build` — run `bun run build:sidecar` after cloning or changing `sidecar/`.
 - Never commit `src-tauri/valoutils.key` (updater signing private key, gitignored).
 - The chat XMPP client (`src-tauri/src/xmpp/`) is a from-scratch Rust port — it can only be truly verified against Riot's live chat server with a signed-in account.
 

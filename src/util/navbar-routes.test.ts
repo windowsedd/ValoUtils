@@ -10,7 +10,6 @@ const routes = [
   "live",
   "friends",
   "chat",
-  "replays",
   "settings",
   "about",
   "fake-player",
@@ -26,7 +25,6 @@ describe("command rail route groups", () => {
       "live",
       "friends",
       "chat",
-      "replays",
       "about",
       "fake-player",
     ]);
