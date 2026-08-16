@@ -1,7 +1,7 @@
 {
 	"$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
 	"productName": "ValoUtils",
-	"version": "1.0.5",
+	"version": "1.0.6",
 	"identifier": "com.windowsedd.valoutils",
 	"build": {
 		"frontendDist": "../dist",
@@ -27,8 +27,16 @@
 	},
 	"bundle": {
 		"active": true,
-		"targets": ["nsis"],
-		"icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"],
+		"targets": [
+			"nsis"
+		],
+		"icon": [
+			"icons/32x32.png",
+			"icons/128x128.png",
+			"icons/128x128@2x.png",
+			"icons/icon.icns",
+			"icons/icon.ico"
+		],
 		"windows": {
 			"nsis": {
 				"installMode": "currentUser",
@@ -39,7 +47,9 @@
 	"plugins": {
 		"updater": {
 			"pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEQ5MEMwMjBCODc1QTVFQ0IKUldUTFhscUhDd0lNMmVCbzlPNWI4OTlvRzVuSUcrWWpVT2R5bi9CK3VQcnF6c094cTdpek05MWIK",
-			"endpoints": ["https://github.com/windowsedd/ValoUtils/releases/latest/download/latest.json"],
+			"endpoints": [
+				"https://github.com/windowsedd/ValoUtils/releases/latest/download/latest.json"
+			],
 			"windows": {
 				"installMode": "passive"
 			}
