@@ -4,7 +4,6 @@ import { FaGlobe, FaRocket, FaCode, FaChartBar, FaLanguage, FaKey, FaArrowUpRigh
 import { PageHeader, SectionCard } from "@/components/section-card";
 import { useConfiguredRoutes } from "@/components/router";
 import SwaggerPage from "@/pages/SwaggerPage";
-import ChatLab, { TestLabPanel } from "@/pages/ChatLab";
 import { normalizeHiddenTabs, setTabHidden } from "@/util/navigation-tabs";
 import {
 	displayTranslationLanguage,
@@ -94,7 +93,7 @@ const Settings = () => {
 	const [clientPassword, setClientPassword] = useState<string | null>(null);
 	const [copied, setCopied] = useState<string | null>(null);
 	const [revealPassword, setRevealPassword] = useState(false);
-	const [view, setView] = useState<"settings" | "api-reference" | "chat-lab">("settings");
+	const [view, setView] = useState<"settings" | "api-reference">("settings");
 	const [appConfig, setAppConfig] = useState<AppConfig>({
 		autoUpdate: true,
 		openDevTools: false,
@@ -226,17 +225,12 @@ const Settings = () => {
 	};
 
 	if (view === "api-reference") return <SwaggerPage onBack={() => setView("settings")} />;
-	if (view === "chat-lab") return <ChatLab onBack={() => setView("settings")} />;
 
 	return (
 		<div className="h-full flex flex-col animate-fade-in">
 			<PageHeader icon={<FaGear className="text-[#ff4655] text-lg" />} title={t("settings.title")} />
 
 			<div className="flex-1 min-h-0 overflow-y-auto px-6 pb-6 flex flex-col gap-4">
-
-			<SectionCard title={t("chatLab.title", { defaultValue: "Test Lab" })} accent="#22d3ee">
-				<TestLabPanel />
-			</SectionCard>
 
 			<SectionCard title={t("settings.sectionGeneral")} accent="#ff4655">
 					<div className="flex flex-col px-1">
@@ -417,19 +411,6 @@ const Settings = () => {
 
 				<SectionCard title={t("settings.sectionDeveloper")} accent="#6b7280">
 					<div className="flex flex-col px-1">
-				<SettingRow
-					icon={<FaComments />}
-					label={t("chatLab.title")}
-					description={t("chatLab.subtitle")}
-					right={
-						<button
-							onClick={() => setView("chat-lab")}
-							className="rounded border border-cyan-400/30 bg-cyan-400/10 px-3 py-1.5 text-xs font-semibold text-cyan-300 hover:bg-cyan-400/20"
-						>
-							{t("settings.open")}
-						</button>
-					}
-				/>
 				<SettingRow icon={<FaRobot />} label="Presence masking" description="Allow Bot commands to rewrite your Riot presence." right={<Toggle checked={appConfig.presenceEnabled} onChange={v => setPresence(v ? "enable" : "disable")} />} />
 				<SettingRow icon={<FaRobot />} label="Lobby / MUC forwarding" description="Forward lobby presence while masking is active." right={<Toggle checked={appConfig.presenceMucEnabled} onChange={v => setPresence("muc", v)} />} />
 				<SettingRow icon={<FaRobot />} label="Startup presence" description="Choose the status used when the relay starts." right={<select value={appConfig.presenceStartup} onChange={event => setPresence("startup", event.target.value)} className="rounded border border-white/10 bg-[#111] px-2 py-1 text-xs text-gray-200"><option value="last">Remember last</option><option value="online">Online</option><option value="offline">Offline</option><option value="mobile">Mobile</option></select>} />

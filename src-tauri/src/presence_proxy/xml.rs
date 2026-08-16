@@ -497,17 +497,32 @@ pub fn rewrite_presence(stanza: &str, mode: PresenceMode) -> Result<Option<Strin
     );
     remove_children_named(&mut root, &["status"]);
     if let Some(games) = root.get_mut_child("games") {
-        remove_children_named(
-            games,
-            &[
-                "valorant",
-                "keystone",
-                "riot_client",
-                "league_of_legends",
-                "bacon",
-                "lion",
-            ],
-        );
+        if mode == PresenceMode::Mobile {
+            if let Some(mobile) = games.get_mut_child("keystone") {
+                set_child_text(mobile, "st", "mobile");
+                remove_children_named(mobile, &["m", "p"]);
+            }
+            if let Some(valorant) = games.get_mut_child("valorant") {
+                set_child_text(valorant, "st", "offline");
+                remove_children_named(valorant, &["m", "p"]);
+            }
+            remove_children_named(
+                games,
+                &["riot_client", "league_of_legends", "bacon", "lion"],
+            );
+        } else {
+            remove_children_named(
+                games,
+                &[
+                    "valorant",
+                    "keystone",
+                    "riot_client",
+                    "league_of_legends",
+                    "bacon",
+                    "lion",
+                ],
+            );
+        }
     }
 
     serialize_element(&root).map(Some)
@@ -607,6 +622,20 @@ mod tests {
         assert!(!output.contains("<status>"));
         assert!(!output.contains("<valorant>"));
         assert!(!output.contains("<keystone"));
+    }
+
+    #[test]
+    fn mobile_matches_a_riot_mobile_resource_without_private_data() {
+        let stanza = r#"<presence><show>chat</show><status>ready</status><games><keystone><st>chat</st></keystone><league_of_legends><st>chat</st><m>available</m><p>private</p></league_of_legends><valorant><st>chat</st><p>secret</p></valorant></games></presence>"#;
+        let output = rewrite_presence(stanza, PresenceMode::Mobile)
+            .unwrap()
+            .unwrap();
+
+        assert!(output.contains("<show>mobile</show>"));
+        assert!(output.contains("<keystone><st>mobile</st>"));
+        assert!(output.contains("<valorant><st>offline</st>"));
+        assert!(!output.contains("<league_of_legends>"));
+        assert!(!output.contains("<p>"));
     }
 
     #[test]

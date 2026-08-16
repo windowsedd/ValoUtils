@@ -1,5 +1,6 @@
 import type { ChatMessage } from "@/types/chat";
 import { useEffect, useRef } from "react";
+import type { SystemLine } from "./chat-controller-state";
 import { FaBug, FaLanguage, FaRotate, FaUserGroup } from "react-icons/fa6";
 import {
 	chatMessageKey,
@@ -25,6 +26,7 @@ export const ChatThread = ({
 	subtitle,
 	conversationId,
 	messages,
+	systemLines,
 	historyLoading,
 	historyError,
 	translatedByMessageId,
@@ -40,6 +42,7 @@ export const ChatThread = ({
 	subtitle: string;
 	conversationId: string | null;
 	messages: ChatMessage[];
+	systemLines: SystemLine[];
 	historyLoading: boolean;
 	historyError: string | null;
 	translatedByMessageId: Record<string, string>;
@@ -120,7 +123,7 @@ export const ChatThread = ({
 				}}
 				className="min-h-0 flex-1 overflow-y-auto py-2"
 			>
-				{messages.length === 0 ? (
+				{messages.length === 0 && systemLines.length === 0 ? (
 					<div className="flex h-full items-center justify-center text-sm text-(--ink-faint)">
 						{labels.empty}
 					</div>
@@ -187,6 +190,22 @@ export const ChatThread = ({
 						);
 					})
 				)}
+
+				{/* Command results, pinned under the log. Local only - none of
+				    this was sent to the room, so it is deliberately unattributed
+				    and visually quieter than a real message. */}
+				{systemLines.map((line) => (
+					<article key={line.id} className="px-4 pt-2">
+						<p className="font-mono text-[11px] text-(--ink-faint)">{line.command}</p>
+						<p
+							className={`whitespace-pre-wrap text-xs ${
+								line.failed ? "text-(--signal-neg)" : "text-(--ink-dim)"
+							}`}
+						>
+							{line.body}
+						</p>
+					</article>
+				))}
 			</div>
 
 			<details className="shrink-0 border-t border-(--line) bg-(--panel) text-[10px] text-(--ink-faint)">

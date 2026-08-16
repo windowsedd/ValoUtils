@@ -13,6 +13,22 @@ export type ChatControllerState = {
 	pendingSendBody: string | null;
 	pendingSendKnownMessageKeys: string[];
 	sendErrorByCid: Record<string, string | undefined>;
+	/**
+	 * Local-only command results, per room.
+	 *
+	 * Kept out of `historyByCid` on purpose: these were never sent to anyone,
+	 * so a history refresh or a poll must not be able to overwrite them, and
+	 * they must never reach the merge that reconciles real messages.
+	 */
+	systemByCid: Record<string, SystemLine[] | undefined>;
+};
+
+export type SystemLine = {
+	id: string;
+	/** What the player typed, echoed so the result has context. */
+	command: string;
+	body: string;
+	failed: boolean;
 };
 
 export const initialChatControllerState: ChatControllerState = {
@@ -27,6 +43,7 @@ export const initialChatControllerState: ChatControllerState = {
 	pendingSendBody: null,
 	pendingSendKnownMessageKeys: [],
 	sendErrorByCid: {},
+	systemByCid: {},
 };
 
 export type ChatControllerAction =
@@ -45,7 +62,18 @@ export type ChatControllerAction =
 	| { type: "sendSucceeded"; requestId: string; sentAt: string }
 	| { type: "sendFailed"; requestId: string; error: string }
 	| { type: "summaryMessages"; messages: ChatMessage[] }
-	| { type: "realtimeMessage"; message: ChatMessage };
+	| { type: "realtimeMessage"; message: ChatMessage }
+	| {
+			type: "commandResult";
+			cid: string;
+			id: string;
+			command: string;
+			body: string;
+			failed: boolean;
+	  };
+
+/** Plenty for a session's worth of commands, bounded so the thread can't grow forever. */
+const MAX_SYSTEM_LINES = 50;
 
 const withoutKey = <T>(record: Record<string, T>, key: string) => {
 	const next = { ...record };
@@ -244,6 +272,23 @@ export const chatControllerReducer = (
 				historyByCid: {
 					...state.historyByCid,
 					[cid]: mergeChatMessages(state.historyByCid[cid] ?? [], [action.message]),
+				},
+			};
+		}
+		case "commandResult": {
+			const existing = state.systemByCid[action.cid] ?? [];
+			return {
+				...state,
+				systemByCid: {
+					...state.systemByCid,
+					// Bounded so a long session of commands cannot grow the
+					// thread without limit.
+					[action.cid]: [...existing, {
+						id: action.id,
+						command: action.command,
+						body: action.body,
+						failed: action.failed,
+					}].slice(-MAX_SYSTEM_LINES),
 				},
 			};
 		}

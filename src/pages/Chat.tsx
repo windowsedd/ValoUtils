@@ -145,6 +145,7 @@ const Chat = () => {
 							title={threadTitle}
 							subtitle={threadSubtitle}
 							messages={controller.visibleMessages}
+							systemLines={controller.systemLines}
 							historyLoading={controller.historyLoading}
 							historyError={controller.historyError}
 							translatedByMessageId={controller.translatedByMessageId}

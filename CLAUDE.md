@@ -27,6 +27,7 @@ src-tauri/         Rust backend (Tauri)
       riot.rs      client_info, tokens, userinfo, swagger
       profiles.rs  settings:profile:* CRUD + share_get_data
       career.rs    career_get (MMR + competitive history)
+      store.rs     store_get (storefront + wallet, flattened into four shops)
       live.rs      live_game_fetch/dump (with adaptive cache)
       chat.rs      chat_get/send/translate/friend_action/disconnect
     riot/
@@ -45,7 +46,7 @@ src-tauri/         Rust backend (Tauri)
 
 src/               Frontend (WebView context)
   main.tsx         React entry (imports util/tauri-bridge first)
-  pages/           SettingsProfiles, PlayerCareer, LiveGame, Chat, Settings, About
+  pages/           SettingsProfiles, PlayerCareer, LiveGame, Chat, Store, Settings, About
   components/      parsed-settings-viewer, settings-diff-viewer, crosshair-svg-generator,
                    dynamic-modal, button (CustomButton), alert-container, router
   util/
@@ -93,6 +94,8 @@ Rust command conventions (see any file in `src-tauri/src/commands/`):
 | `tokens:get` / `tokens:refresh` | `tokens_get/refresh` | Riot auth tokens |
 | `client_info:get` / `userinfo:get` | `client_info_get` / `userinfo_get` | Lockfile info / account info |
 | `career:get` | `career_get` | MMR + competitive history |
+| `store:get` | `store_get` | Storefront (daily, bundle, Night Market, accessories) + wallet |
+| `chat:command` | `chat_command` | Runs a `.`-prefixed command typed in the Chat composer; the raw line is never posted |
 | `live-game:fetch` / `live-game:dump` | `live_game_fetch/dump` | Live match state (polled ~5s) |
 | `chat:get/send/translate/friend-action/disconnect` | `chat_*` | Chat (REST + XMPP) |
 | `clipboard:get/set` | `clipboard_get/set` | Clipboard access |
@@ -176,8 +179,8 @@ Both tokens come from `riot::client::get_tokens()` / the `tokens:get` IPC channe
 | `/mmr/v1/leaderboards/affinity/<region>/queue/competitive/season/<id>` | GET | Leaderboard |
 | `/match-history/v1/history/<puuid>` | GET | Match history (`?startIndex=&endIndex=`) |
 | `/match-details/v1/matches/<matchId>` | GET | Full match details |
-| `/store/v2/storefront/<puuid>` | GET | Daily/weekly store |
-| `/store/v1/wallet/<puuid>` | GET | VP / Radianite balance |
+| `/store/v3/storefront/<puuid>` | POST | Daily/weekly store (empty JSON body; `riot/api.rs` falls back to `GET /store/v2/...`) |
+| `/store/v1/wallet/<puuid>` | GET | VP / Radianite / Kingdom Credit balances |
 | `/store/v1/entitlements/<puuid>/<itemTypeId>` | GET | Owned items |
 | `/personalization/v2/players/<puuid>/playerloadout` | GET/PUT | Cosmetic loadout |
 | `/restrictions/v3/penalties` | GET | Account penalties |

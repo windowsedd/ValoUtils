@@ -30,12 +30,17 @@ const parseLabResponse = (payload: string): LabResponse => {
 	}
 };
 
+type ExtraHeader = { id: string; name: string; value: string };
+
 export const TestLabPanel = () => {
 	const { t } = useTranslation();
 	const [channel, setChannel] = useState<LabChannel>("party");
 	const [draft, setDraft] = useState("");
 	const [busy, setBusy] = useState(false);
 	const [result, setResult] = useState<string>("");
+	const [headerName, setHeaderName] = useState("");
+	const [headerValue, setHeaderValue] = useState("");
+	const [extraHeaders, setExtraHeaders] = useState<ExtraHeader[]>([]);
 
 	useEffect(() => {
 		if (!window.Main) return;
@@ -55,17 +60,35 @@ export const TestLabPanel = () => {
 		};
 	}, []);
 
+	const headerMap = () =>
+		Object.fromEntries(
+			extraHeaders
+				.filter((item) => item.name.trim())
+				.map((item) => [item.name.trim(), item.value]),
+		);
+
+	const addHeader = () => {
+		const name = headerName.trim();
+		if (!name) return;
+		setExtraHeaders((current) => [
+			...current,
+			{ id: `${Date.now()}-${name}`, name, value: headerValue },
+		]);
+		setHeaderName("");
+		setHeaderValue("");
+	};
+
 	const fetchInfo = (kind: LabKind) => {
 		if (!window.Main || busy) return;
 		setBusy(true);
-		window.Main.send("chat:lab-info", kind);
+		window.Main.send("chat:lab-info", kind, headerMap());
 	};
 
 	const sendChat = () => {
 		const text = draft.trim();
 		if (!window.Main || busy || !text) return;
 		setBusy(true);
-		window.Main.send("chat:lab-send", channel, text);
+		window.Main.send("chat:lab-send", channel, text, headerMap());
 	};
 
 	return (
@@ -112,6 +135,53 @@ export const TestLabPanel = () => {
 						? t("chatLab.working", { defaultValue: "Working…" })
 						: t("chatLab.send", { defaultValue: "Send" })}
 				</button>
+			</div>
+			<div className="flex flex-col gap-2">
+				<p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+					{t("chatLab.headersTitle", { defaultValue: "Request headers" })}
+				</p>
+				<p className="text-xs text-gray-500">
+					{t("chatLab.headersDesc", {
+						defaultValue:
+							"Authorization (Basic riot:<lockfile>) and rchat-blocking: true are always sent. Add extra headers below.",
+					})}
+				</p>
+				{extraHeaders.map((item) => (
+					<div key={item.id} className="flex flex-wrap items-center gap-2">
+						<code className="text-xs text-gray-300">{item.name}: {item.value || "∅"}</code>
+						<button
+							type="button"
+							onClick={() =>
+								setExtraHeaders((current) => current.filter((header) => header.id !== item.id))
+							}
+							className="rounded border border-white/10 px-2 py-0.5 text-[10px] text-gray-400 hover:text-white"
+						>
+							{t("common.close")}
+						</button>
+					</div>
+				))}
+				<div className="flex flex-wrap items-end gap-2">
+					<input
+						value={headerName}
+						onChange={(event) => setHeaderName(event.target.value)}
+						placeholder={t("chatLab.headerName", { defaultValue: "Header name" })}
+						className="w-40 rounded border border-white/10 bg-[#0b0e13] px-2 py-1.5 text-sm text-white outline-none focus:border-[#22d3ee]/50"
+					/>
+					<input
+						value={headerValue}
+						onChange={(event) => setHeaderValue(event.target.value)}
+						placeholder={t("chatLab.headerValue", { defaultValue: "Value" })}
+						className="min-w-40 flex-1 rounded border border-white/10 bg-[#0b0e13] px-2 py-1.5 text-sm text-white outline-none focus:border-[#22d3ee]/50"
+					/>
+					<button
+						type="button"
+						onClick={addHeader}
+						disabled={!headerName.trim()}
+						className="rounded border border-white/10 px-3 py-1.5 text-xs font-semibold text-gray-300 hover:bg-white/5 disabled:opacity-40"
+					>
+						{t("chatLab.addHeader", { defaultValue: "Add header" })}
+					</button>
+				</div>
 			</div>
 			<div className="flex flex-wrap gap-2">
 				{INFO_PROBES.map((probe) => (

@@ -322,7 +322,12 @@
     "currentInfo": "Current Game Chat Info",
     "allInfo": "All Chat Info",
     "resultTitle": "Response",
-    "resultEmpty": "Run a probe to see the JSON here."
+    "resultEmpty": "Run a probe to see the JSON here.",
+    "headersTitle": "Request headers",
+    "headersDesc": "Authorization (Basic riot:<lockfile>) and rchat-blocking: true are always sent. Add extra headers below.",
+    "headerName": "Header name",
+    "headerValue": "Value",
+    "addHeader": "Add header"
   },
   "settingsViewer": {
     "modalTitle": "Settings — {{name}}",

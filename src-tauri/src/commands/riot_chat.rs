@@ -29,6 +29,7 @@ use crate::riot::lockfile;
 use crate::riot::models::{ChatChannel, ChatMessage, ConnectionStatus};
 use crate::store::ConfigStore;
 use serde::Serialize;
+use serde_json::{json, Value};
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -244,6 +245,84 @@ pub async fn execute_maybe_custom_command(
     } else {
         None
     }
+}
+
+/// Which executor owns a line typed into the Chat tab composer.
+///
+/// Split out from [`chat_command`] so the routing can be tested without a Riot
+/// Client: everything past this point needs a live session.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ComposerCommand {
+    /// `.tran` / `.translate` — returns a summary to print locally.
+    History(String),
+    /// `.send` — translates and posts to a room.
+    Translate(String),
+    Unknown,
+}
+
+/// Routes a composer line, expanding a custom trigger first.
+///
+/// Unlike the in-game poller, a bare word is never a command here: the
+/// composer is where the player writes ordinary messages, and matching `gg`
+/// would make it impossible to ever say "gg".
+///
+/// The leading `.` is required *here* rather than trusted from the caller,
+/// because [`chat_command::expand_custom_command`] deliberately normalises a
+/// bare trigger into a dotted one for the in-game path - so without this guard
+/// every trigger word would still be swallowed.
+pub fn classify_composer_command(
+    input: &str,
+    commands: &[chat_command::CustomBotCommand],
+) -> ComposerCommand {
+    let trimmed = input.trim();
+    if !trimmed.starts_with('.') {
+        return ComposerCommand::Unknown;
+    }
+    let expanded = chat_command::expand_custom_command(trimmed, commands)
+        .unwrap_or_else(|| trimmed.to_string());
+    if chat_command::is_history_translate_command(&expanded) {
+        ComposerCommand::History(expanded)
+    } else if chat_command::is_translation_command(&expanded) {
+        ComposerCommand::Translate(expanded)
+    } else {
+        ComposerCommand::Unknown
+    }
+}
+
+/// Runs a command typed into the Chat tab composer.
+///
+/// The raw line is never posted to the room - the frontend routes here instead
+/// of `chat:send` precisely so a mistyped command does not leak into chat.
+#[tauri::command]
+pub async fn chat_command(args: Vec<Value>, app: AppHandle) -> Result<String, ()> {
+    let input = args
+        .first()
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    if input.trim().is_empty() {
+        return Ok(json!({ "success": false, "error": "Command is empty." }).to_string());
+    }
+
+    let commands = load_custom_commands(Some(&app));
+    let outcome = match classify_composer_command(&input, &commands) {
+        ComposerCommand::History(command) => execute_history_translation(&command, Some(&app)).await,
+        ComposerCommand::Translate(command) => execute_typed_translation(&command, Some(&app))
+            .await
+            .map(|outcome| format_translation_reply(&outcome)),
+        ComposerCommand::Unknown => {
+            return Ok(json!({
+                "success": false,
+                "error": format!("Unknown command '{}'.", input.trim()),
+            })
+            .to_string())
+        }
+    };
+
+    Ok(match outcome {
+        Ok(reply) => json!({ "success": true, "reply": reply }).to_string(),
+        Err(error) => json!({ "success": false, "error": error.to_string() }).to_string(),
+    })
 }
 
 fn load_custom_commands(app: Option<&AppHandle>) -> Vec<chat_command::CustomBotCommand> {
@@ -967,6 +1046,59 @@ mod tests {
         assert_eq!(echoes.bodies.len(), PendingEchoes::CAPACITY);
         assert!(!echoes.consume("line-0"), "oldest entries are evicted");
         assert!(echoes.consume("line-36"));
+    }
+
+    #[test]
+    fn the_composer_routes_each_command_to_its_own_executor() {
+        let commands = custom_commands();
+        assert_eq!(
+            classify_composer_command(".send team french gl hf", &commands),
+            ComposerCommand::Translate(".send team french gl hf".into())
+        );
+        assert_eq!(
+            classify_composer_command(".tran 3", &commands),
+            ComposerCommand::History(".tran 3".into())
+        );
+        assert_eq!(
+            classify_composer_command(".translate team 2", &commands),
+            ComposerCommand::History(".translate team 2".into())
+        );
+    }
+
+    #[test]
+    fn the_composer_expands_a_dotted_custom_trigger() {
+        let commands = custom_commands();
+        assert_eq!(
+            classify_composer_command(".gg", &commands),
+            ComposerCommand::Translate(".send team french good game".into())
+        );
+        // A `tran` trigger has somewhere to print here, unlike in-game.
+        assert_eq!(
+            classify_composer_command(".last", &commands),
+            ComposerCommand::History(".tran team 3".into())
+        );
+    }
+
+    #[test]
+    fn a_bare_word_is_never_a_command_in_the_composer() {
+        // In-game a bare trigger fires. Here it must not, or the player could
+        // never send "gg" as an ordinary message.
+        let commands = custom_commands();
+        assert_eq!(classify_composer_command("gg", &commands), ComposerCommand::Unknown);
+        assert_eq!(
+            classify_composer_command("good game everyone", &commands),
+            ComposerCommand::Unknown
+        );
+    }
+
+    #[test]
+    fn an_unrecognised_dotted_line_is_reported_rather_than_sent() {
+        let commands = custom_commands();
+        assert_eq!(
+            classify_composer_command(".nope arg", &commands),
+            ComposerCommand::Unknown
+        );
+        assert_eq!(classify_composer_command(".", &commands), ComposerCommand::Unknown);
     }
 
     #[test]

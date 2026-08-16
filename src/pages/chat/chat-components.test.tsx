@@ -135,6 +135,7 @@ describe("Chat components", () => {
 				title="Party"
 				subtitle="In Match"
 				messages={[message("old", "first", "1000"), message("new", "second", "2000")]}
+				systemLines={[]}
 				historyLoading={false}
 				historyError={null}
 				translatedByMessageId={{}}

@@ -21,7 +21,7 @@ describe("navbarLayout", () => {
 	});
 
 	test("uses compact direct-route spacing", () => {
-		expect(navbarLayout.railRoutes).toContain("gap-1");
+		expect(navbarLayout.railRoutes).toContain("gap-0.5");
 		expect(navbarLayout.railButton).toContain("h-11");
 		expect(navbarLayout.railButton).toContain("w-11");
 	});

@@ -230,6 +230,45 @@ impl RiotApiClient {
         )
         .await
     }
+    /// The player's storefront: daily offers, featured bundle, Night Market and
+    /// the accessory store, all in one document.
+    ///
+    /// Riot moved this to `POST /store/v3/...` with an empty body; the older
+    /// `GET /store/v2/...` still answers on some deployments. Try the current
+    /// shape first and fall back, so a client-side version skew shows up as
+    /// data rather than an error.
+    pub async fn get_storefront(&self, puuid: &str) -> Result<Value, String> {
+        let v3 = self
+            .request(
+                Target::Pd,
+                reqwest::Method::POST,
+                &format!("/store/v3/storefront/{puuid}"),
+                Some(serde_json::json!({})),
+            )
+            .await;
+        match v3 {
+            Ok(value) => Ok(value),
+            Err(v3_error) => self
+                .request(
+                    Target::Pd,
+                    reqwest::Method::GET,
+                    &format!("/store/v2/storefront/{puuid}"),
+                    None,
+                )
+                .await
+                .map_err(|v2_error| format!("{v3_error}; fallback: {v2_error}")),
+        }
+    }
+    /// VP / Radianite / Kingdom Credit balances.
+    pub async fn get_wallet(&self, puuid: &str) -> Result<Value, String> {
+        self.request(
+            Target::Pd,
+            reqwest::Method::GET,
+            &format!("/store/v1/wallet/{puuid}"),
+            None,
+        )
+        .await
+    }
     pub async fn get_mmr(&self, puuid: &str) -> Result<Value, String> {
         self.request(
             Target::Pd,

@@ -314,7 +314,12 @@
     "currentInfo": "현재 게임 채팅 정보",
     "allInfo": "전체 채팅 정보",
     "resultTitle": "응답",
-    "resultEmpty": "프로브를 실행하면 JSON이 여기에 표시됩니다."
+    "resultEmpty": "프로브를 실행하면 JSON이 여기에 표시됩니다.",
+    "headersTitle": "요청 헤더",
+    "headersDesc": "Authorization(Basic riot:<lockfile>)과 rchat-blocking: true는 항상 전송됩니다. 아래에 추가 헤더를 넣으세요.",
+    "headerName": "헤더 이름",
+    "headerValue": "값",
+    "addHeader": "헤더 추가"
   },
   "settingsViewer": {
     "modalTitle": "설정 — {{name}}",

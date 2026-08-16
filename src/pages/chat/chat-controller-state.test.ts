@@ -333,3 +333,61 @@ describe("chat controller state", () => {
 		]);
 	});
 });
+
+describe("command results", () => {
+	const result = (overrides: Partial<Parameters<typeof chatControllerReducer>[1]> = {}) =>
+		({
+			type: "commandResult" as const,
+			cid: "party@ares-parties.ap",
+			id: "command-1",
+			command: ".send team fr gl hf",
+			body: "Sent to team (fr): bonne chance",
+			failed: false,
+			...overrides,
+		}) as Parameters<typeof chatControllerReducer>[1];
+
+	test("keeps command output out of the message history", () => {
+		// These were never sent to anyone, so a history refresh must not be
+		// able to overwrite them and the merge must never see them.
+		const next = chatControllerReducer(initialChatControllerState, result());
+		expect(next.systemByCid["party@ares-parties.ap"]).toHaveLength(1);
+		expect(next.historyByCid["party@ares-parties.ap"]).toBeUndefined();
+	});
+
+	test("records results per room, in order", () => {
+		const first = chatControllerReducer(initialChatControllerState, result());
+		const second = chatControllerReducer(
+			first,
+			result({ id: "command-2", command: ".tran 2", body: "1. 好的 → okay" }),
+		);
+		const other = chatControllerReducer(
+			second,
+			result({ cid: "team@ares-coregame.ap", id: "command-3" }),
+		);
+		expect(other.systemByCid["party@ares-parties.ap"]?.map((line) => line.id)).toEqual([
+			"command-1",
+			"command-2",
+		]);
+		expect(other.systemByCid["team@ares-coregame.ap"]).toHaveLength(1);
+	});
+
+	test("marks a failure so it can be shown apart from a result", () => {
+		const next = chatControllerReducer(
+			initialChatControllerState,
+			result({ body: "Unknown command '.nope'.", failed: true }),
+		);
+		expect(next.systemByCid["party@ares-parties.ap"]?.[0]?.failed).toBe(true);
+	});
+
+	test("stays bounded over a long session", () => {
+		let state = initialChatControllerState;
+		for (let index = 0; index < 60; index++) {
+			state = chatControllerReducer(state, result({ id: `command-${index}` }));
+		}
+		const lines = state.systemByCid["party@ares-parties.ap"] ?? [];
+		expect(lines).toHaveLength(50);
+		// Oldest dropped, newest kept.
+		expect(lines[0]?.id).toBe("command-10");
+		expect(lines[49]?.id).toBe("command-59");
+	});
+});

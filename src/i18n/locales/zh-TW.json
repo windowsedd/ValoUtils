@@ -314,7 +314,12 @@
     "currentInfo": "目前對局聊天資訊",
     "allInfo": "全部聊天資訊",
     "resultTitle": "回應",
-    "resultEmpty": "執行探測後，JSON 會顯示在這裡。"
+    "resultEmpty": "執行探測後，JSON 會顯示在這裡。",
+    "headersTitle": "請求標頭",
+    "headersDesc": "一律送出 Authorization（Basic riot:<lockfile>）與 rchat-blocking: true。可在下方新增額外標頭。",
+    "headerName": "標頭名稱",
+    "headerValue": "值",
+    "addHeader": "新增標頭"
   },
   "settingsViewer": {
     "modalTitle": "設定 — {{name}}",

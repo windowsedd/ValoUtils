@@ -35,6 +35,7 @@ export type TierAsset = { name: Localized; icon: string | null; largeIcon: strin
 export type CardAsset = { name: Localized; icon: string };
 export type MapAsset = { name: Localized; listViewIcon: string | null; splash: string | null };
 export type SeasonAsset = { label: string; startMillis: number };
+export type BundleAsset = { name: Localized; icon: string | null; verticalPromo: string | null };
 
 let agentsPromise: Promise<Map<string, AgentAsset>> | null = null;
 let tiersPromise: Promise<Map<number, TierAsset>> | null = null;
@@ -43,6 +44,9 @@ let seasonAssetsPromise: Promise<Map<string, SeasonAsset>> | null = null;
 const skinDataCache = new Map<string, Promise<any | null>>();
 const skinVariantCache = new Map<string, Promise<SkinAsset | null>>();
 const cardCache = new Map<string, Promise<CardAsset | null>>();
+const skinLevelCache = new Map<string, Promise<SkinAsset | null>>();
+const bundleCache = new Map<string, Promise<BundleAsset | null>>();
+const accessoryCache = new Map<string, Promise<SkinAsset | null>>();
 
 // --- Agents ------------------------------------------------------------------
 export const getAgents = (): Promise<Map<string, AgentAsset>> => {
@@ -201,6 +205,92 @@ export const getWeaponSkin = (weapon: WeaponSkin): Promise<SkinAsset | null> => 
 /** Stable key used by the renderer to map a weapon back to its resolved asset. */
 export const weaponSkinKey = (weapon: WeaponSkin): string | null =>
 	weapon?.skinId ? variantKey(weapon) : null;
+
+// --- Store items -------------------------------------------------------------
+/**
+ * The storefront sells *skin levels*, not skins. A skin-level uuid is a
+ * different id space from the skin uuid `getWeaponSkin` takes, so passing one
+ * to `/weapons/skins/` returns nothing — hence the separate endpoint.
+ *
+ * The level's own `displayIcon` is often null (levels mostly differ by VFX,
+ * not art), so fall back to the parent skin's art via `?/weapons/skinlevels`
+ * embedded fields, then to the level name alone.
+ */
+export const getSkinLevel = (levelId: string): Promise<SkinAsset | null> => {
+	const key = levelId.toLowerCase();
+	if (!skinLevelCache.has(key)) {
+		skinLevelCache.set(
+			key,
+			fetch(`${API}/weapons/skinlevels/${key}?language=all`)
+				.then((r) => r.json())
+				.then((json) => {
+					const level = json?.data;
+					if (!level) return null;
+					return { name: level.displayName, icon: level.displayIcon ?? "" } as SkinAsset;
+				})
+				.catch(() => null)
+		);
+	}
+	return skinLevelCache.get(key)!;
+};
+
+/** Bundle art, keyed by the storefront's `DataAssetID` (not the bundle id). */
+export const getBundle = (dataAssetId: string): Promise<BundleAsset | null> => {
+	const key = dataAssetId.toLowerCase();
+	if (!bundleCache.has(key)) {
+		bundleCache.set(
+			key,
+			fetch(`${API}/bundles/${key}?language=all`)
+				.then((r) => r.json())
+				.then((json) => {
+					const bundle = json?.data;
+					if (!bundle) return null;
+					return {
+						name: bundle.displayName,
+						icon: bundle.displayIcon ?? null,
+						// The wide art is what the in-game shop banner uses.
+						verticalPromo: bundle.verticalPromoImage ?? null,
+					} as BundleAsset;
+				})
+				.catch(() => null)
+		);
+	}
+	return bundleCache.get(key)!;
+};
+
+/**
+ * The accessory store mixes sprays, cards, buddies and titles in one shelf,
+ * each served by its own endpoint. The item type uuid picks the endpoint;
+ * an unrecognised type resolves to null rather than guessing.
+ */
+const ACCESSORY_ENDPOINTS: Record<string, string> = {
+	"d5f120f8-ff8c-4aac-92ea-f2b5acbe9475": "sprays",
+	"3f296c07-64c3-494c-923b-fe692a4fa1bd": "playercards",
+	"dd3bf334-87f3-40bd-b043-682a57a8dc3a": "buddies",
+	"de7caa6b-adf7-4588-bbd1-143831e786c6": "playertitles",
+};
+
+export const getAccessoryItem = (itemTypeId: string, itemId: string): Promise<SkinAsset | null> => {
+	const endpoint = ACCESSORY_ENDPOINTS[itemTypeId.toLowerCase()];
+	if (!endpoint || !itemId) return Promise.resolve(null);
+	const key = `${endpoint}:${itemId.toLowerCase()}`;
+	if (!accessoryCache.has(key)) {
+		accessoryCache.set(
+			key,
+			fetch(`${API}/${endpoint}/${itemId.toLowerCase()}?language=all`)
+				.then((r) => r.json())
+				.then((json) => {
+					const item = json?.data;
+					if (!item) return null;
+					// Titles have no art at all — the name is the whole item.
+					const icon = item.fullTransparentIcon ?? item.displayIcon ?? item.largeArt ?? "";
+					return { name: item.displayName ?? item.titleText, icon } as SkinAsset;
+				})
+				.catch(() => null)
+		);
+	}
+	return accessoryCache.get(key)!;
+};
 
 // --- Competitive seasons -> "E5A3" / "V26A3" ------------------------------
 const romanToNum = (s: string): number => {
