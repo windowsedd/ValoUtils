@@ -252,6 +252,13 @@ async fn client_to_remote(
                                 ) {
                                     write_frame(&local_write, client_frame.as_bytes()).await?;
                                 }
+                                // `.send party` queues the groupchat on this same
+                                // task's outbound receiver. Flush it now so a
+                                // busy match stream cannot starve the select
+                                // and leave "Sent to Party" as a lie.
+                                while let Ok(pending) = outbound.try_recv() {
+                                    write_frame(&remote_write, pending.as_bytes()).await?;
+                                }
                             }
                             continue;
                         }
@@ -432,6 +439,13 @@ mod tests {
 
         assert_eq!(account_domain_for_target(&sea), "sa1.pvp.net");
         assert_eq!(account_domain_for_target(&euw), "eu1.pvp.net");
+    }
+
+    #[test]
+    fn bot_command_path_flushes_queued_groupchat() {
+        let source = include_str!("relay.rs");
+        assert!(source.contains("outbound.try_recv()"));
+        assert!(source.contains("write_frame(&remote_write, pending.as_bytes())"));
     }
 
     #[test]

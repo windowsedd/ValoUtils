@@ -191,13 +191,21 @@ impl RiotChatClient {
             if let Some(cid) = pick_team_cid(cids.iter().map(String::as_str), side) {
                 return Ok(cid);
             }
-        } else if let Some(cid) = cids.into_iter().next() {
-            return Ok(cid);
-        }
-        if channel == ChatChannel::Party {
-            if let Some(cid) = self.active_party_muc().await {
+        } else if channel == ChatChannel::Party {
+            if let Some(live) = self.active_party_muc().await {
+                if let Some(listed) = cids
+                    .iter()
+                    .find(|cid| crate::riot::models::same_party_room(cid, &live))
+                {
+                    return Ok(listed.clone());
+                }
+                return Ok(live);
+            }
+            if let Some(cid) = cids.into_iter().next() {
                 return Ok(cid);
             }
+        } else if let Some(cid) = cids.into_iter().next() {
+            return Ok(cid);
         }
         Err(RiotError::ChannelUnavailable { channel })
     }

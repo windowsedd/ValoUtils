@@ -203,7 +203,7 @@ const DummyBot = () => {
 					</select>
 					{draft.action === "send" ? (
 						<>
-							<input value={draft.language} onChange={(event) => setDraft((current) => ({ ...current, language: event.target.value }))} placeholder="zh_tw" className="min-w-0 rounded-sm border border-(--line) bg-(--panel-raised) px-2 py-1.5 font-mono text-xs text-(--ink)" />
+							<input value={draft.language} onChange={(event) => setDraft((current) => ({ ...current, language: event.target.value }))} placeholder="ko-KR" className="min-w-0 rounded-sm border border-(--line) bg-(--panel-raised) px-2 py-1.5 font-mono text-xs text-(--ink)" />
 							<input value={draft.message} onChange={(event) => setDraft((current) => ({ ...current, message: event.target.value }))} placeholder={t("dummyBot.customMessagePlaceholder")} className="col-span-2 min-w-0 rounded-sm border border-(--line) bg-(--panel-raised) px-2 py-1.5 text-xs text-(--ink)" />
 						</>
 					) : (

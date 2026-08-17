@@ -376,6 +376,26 @@ mod tests {
     }
 
     #[test]
+    fn regioned_language_codes_are_consumed_not_left_in_the_message() {
+        // `.send party ko-KR …` used to fall through to Settings zh-TW and
+        // post "ko-KR" as part of the text. The locale must be the language.
+        let command = parse_translation_command_with_fallback(
+            ".send party ko-KR do u like 金正恩",
+            "google",
+            Some("zh-TW"),
+        )
+        .unwrap();
+        assert_eq!(command.channel, ChatChannel::Party);
+        assert_eq!(command.language, "ko");
+        assert_eq!(command.language_input, "ko-KR");
+        assert_eq!(command.message, "do u like 金正恩");
+
+        let ja = parse(".send team ja-JP gl hf").unwrap();
+        assert_eq!(ja.language, "ja");
+        assert_eq!(ja.message, "gl hf");
+    }
+
+    #[test]
     fn chinese_region_codes_resolve_with_underscore_hyphen_or_slash() {
         for input in [
             ".send party zh_tw hello",

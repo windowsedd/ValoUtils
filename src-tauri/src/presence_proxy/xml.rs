@@ -1,4 +1,5 @@
 use crate::presence_proxy::PresenceMode;
+use crate::riot::models::ChatChannel;
 use base64::Engine;
 use serde_json::json;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -84,6 +85,60 @@ pub fn bot_message_body(stanza: &str) -> Option<String> {
         .get_child("body")?
         .get_text()
         .map(|body| body.into_owned())
+}
+
+/// Group MUC the game is actually in, taken from a live stanza.
+///
+/// Presence: `to="id@ares-coregame.na1.pvp.net/resource"`.
+/// Outbound chat: `to="id-blue@ares-coregame.na1.pvp.net"`.
+/// Incoming chat: `from="id@ares-parties.ap/nick"`.
+pub fn group_muc_target(stanza: &str) -> Option<(ChatChannel, String, String)> {
+    let root = Element::parse(stanza.as_bytes()).ok()?;
+    let mut candidates = Vec::new();
+    match root.name.as_str() {
+        "presence" => {
+            if let Some(to) = root.attributes.get("to") {
+                candidates.push(to.clone());
+            }
+        }
+        "message" => {
+            for key in ["from", "to"] {
+                if let Some(value) = root.attributes.get(key) {
+                    candidates.push(value.clone());
+                }
+            }
+        }
+        _ => return None,
+    }
+    for candidate in candidates {
+        let (room, resource) = match candidate.split_once('/') {
+            Some((room, resource)) => (room.to_string(), resource.to_string()),
+            None => (candidate, String::new()),
+        };
+        let Some(channel) = ChatChannel::EVERY
+            .into_iter()
+            .find(|channel| channel.matches_cid(&room))
+        else {
+            continue;
+        };
+        let resource = if root.name == "presence" {
+            resource
+        } else {
+            String::new()
+        };
+        return Some((channel, room, resource));
+    }
+    None
+}
+
+pub fn party_muc_jid(stanza: &str) -> Option<String> {
+    let (channel, room, _) = group_muc_target(stanza)?;
+    (channel == ChatChannel::Party).then_some(room)
+}
+
+pub fn party_muc_target(stanza: &str) -> Option<(String, String)> {
+    let (channel, room, resource) = group_muc_target(stanza)?;
+    (channel == ChatChannel::Party).then_some((room, resource))
 }
 
 pub fn is_muc_presence(stanza: &str) -> bool {
@@ -233,13 +288,13 @@ pub fn bot_presence(account_domain: &str, client_version: Option<&str>) -> Strin
         "premierPresenceData": {
             "rosterId": "",
             "rosterName": "ValoUtils is active.",
-            "rosterTag": "ValoUtils Active!",
+            "rosterTag": "",
             "rosterType": "VCT",
             "division": 0,
             "score": 0,
             "plating": 0,
             "showAura": false,
-            "showTag": true,
+            "showTag": false,
             "showPlating": false
         },
         "matchPresenceData": {
@@ -613,6 +668,43 @@ mod tests {
     }
 
     #[test]
+    fn reads_the_party_muc_the_game_joined() {
+        assert_eq!(
+            party_muc_target(r#"<presence to="p-1@ares-parties.na1.pvp.net/abc"/>"#),
+            Some(("p-1@ares-parties.na1.pvp.net".into(), "abc".into()))
+        );
+        assert_eq!(
+            party_muc_jid(
+                r#"<message from="p-1@ares-parties.ap/friend" type="groupchat"><body>hi</body></message>"#
+            )
+            .as_deref(),
+            Some("p-1@ares-parties.ap")
+        );
+        assert_eq!(
+            party_muc_jid(r#"<presence to="match-all@ares-coregame.na1.pvp.net/me"/>"#),
+            None
+        );
+        assert_eq!(
+            group_muc_target(
+                r#"<message to="9f2e-blue@ares-coregame.ap1.pvp.net" type="groupchat"><body>lol</body></message>"#
+            ),
+            Some((
+                ChatChannel::Team,
+                "9f2e-blue@ares-coregame.ap1.pvp.net".into(),
+                String::new()
+            ))
+        );
+        assert_eq!(
+            group_muc_target(r#"<presence to="9f2e-all@ares-coregame.ap1.pvp.net/me"/>"#)
+                .map(|(channel, room, _)| (channel, room)),
+            Some((
+                ChatChannel::All,
+                "9f2e-all@ares-coregame.ap1.pvp.net".into()
+            ))
+        );
+    }
+
+    #[test]
     fn offline_removes_products() {
         let stanza = r#"<presence><show>chat</show><status>ready</status><games><valorant><p>secret</p></valorant><keystone/></games></presence>"#;
         let output = rewrite_presence(stanza, PresenceMode::Offline)
@@ -834,6 +926,8 @@ mod tests {
             "release-10.04-shipping-17"
         );
         assert_eq!(payload["playerPresenceData"]["accountLevel"], 999);
+        assert_eq!(payload["premierPresenceData"]["showTag"], false);
+        assert_eq!(payload["premierPresenceData"]["rosterTag"], "");
         assert!(stanza.contains("<keystone>"));
         assert!(stanza.contains("<league_of_legends>"));
         assert!(stanza.contains("<bacon>"));

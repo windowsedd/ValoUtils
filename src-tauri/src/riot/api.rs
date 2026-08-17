@@ -230,6 +230,7 @@ impl RiotApiClient {
         )
         .await
     }
+
     /// The player's storefront: daily offers, featured bundle, Night Market and
     /// the accessory store, all in one document.
     ///
@@ -265,6 +266,24 @@ impl RiotApiClient {
             Target::Pd,
             reqwest::Method::GET,
             &format!("/store/v1/wallet/{puuid}"),
+            None,
+        )
+        .await
+    }
+    pub async fn get_contracts(&self, puuid: &str) -> Result<Value, String> {
+        self.request(
+            Target::Pd,
+            reqwest::Method::GET,
+            &format!("/contracts/v1/contracts/{puuid}"),
+            None,
+        )
+        .await
+    }
+    pub async fn get_entitlements(&self, puuid: &str, item_type_id: &str) -> Result<Value, String> {
+        self.request(
+            Target::Pd,
+            reqwest::Method::GET,
+            &format!("/store/v1/entitlements/{puuid}/{item_type_id}"),
             None,
         )
         .await

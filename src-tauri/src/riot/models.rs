@@ -148,6 +148,48 @@ impl MatchSide {
     }
 }
 
+/// Local part of a CID (`p-1@ares-parties.ap1.pvp.net` → `p-1`).
+pub fn cid_local_part(cid: &str) -> &str {
+    cid.split_once('@').map(|(local, _)| local).unwrap_or(cid)
+}
+
+/// Party rooms have two spellings: the Riot Client cid
+/// (`id@ares-parties.ap1.pvp.net`) and the XMPP MUCName (`id@ares-parties.ap`).
+/// Incoming party groupchat uses the short form, so a send through the game
+/// client's XMPP has to as well.
+pub fn party_xmpp_jid(cid: &str) -> String {
+    let Some((local, host)) = cid.split_once('@') else {
+        return cid.to_string();
+    };
+    let host = host.to_ascii_lowercase();
+    if !host.contains("ares-parties") {
+        return cid.to_string();
+    }
+    let Some(region_full) = host
+        .strip_prefix("ares-parties.")
+        .and_then(|rest| rest.strip_suffix(".pvp.net"))
+    else {
+        return cid.to_string();
+    };
+    let region = region_full.trim_end_matches(|ch: char| ch.is_ascii_digit());
+    if region.is_empty() || region == region_full {
+        return cid.to_string();
+    }
+    format!("{local}@ares-parties.{region}")
+}
+
+pub fn same_party_room(left: &str, right: &str) -> bool {
+    if left.is_empty() || right.is_empty() {
+        return false;
+    }
+    if left.eq_ignore_ascii_case(right) {
+        return true;
+    }
+    ChatChannel::Party.matches_cid(left)
+        && ChatChannel::Party.matches_cid(right)
+        && cid_local_part(left).eq_ignore_ascii_case(cid_local_part(right))
+}
+
 /// `{match}-blue@ares-pregame.eu1.pvp.net` → `eu1`
 pub fn chat_domain_from_cid(cid: &str) -> Option<String> {
     let after_at = cid.split_once('@')?.1;
@@ -633,6 +675,34 @@ mod tests {
         assert!(!ChatChannel::Party.matches_cid(""));
         assert!(!ChatChannel::Pregame.matches_cid(STRAY));
         assert!(!ChatChannel::Pregame.matches_cid(PARTY));
+    }
+
+    #[test]
+    fn party_xmpp_jid_uses_the_short_muc_name_the_game_echoes() {
+        assert_eq!(
+            party_xmpp_jid("p-1@ares-parties.ap1.pvp.net"),
+            "p-1@ares-parties.ap"
+        );
+        assert_eq!(
+            party_xmpp_jid("p-1@ares-parties.na1.pvp.net"),
+            "p-1@ares-parties.na"
+        );
+        assert_eq!(
+            party_xmpp_jid("p-1@ares-parties.ap"),
+            "p-1@ares-parties.ap"
+        );
+        assert_eq!(
+            party_xmpp_jid("match-all@ares-coregame.ap1.pvp.net"),
+            "match-all@ares-coregame.ap1.pvp.net"
+        );
+        assert!(same_party_room(
+            "p-1@ares-parties.ap1.pvp.net",
+            "p-1@ares-parties.ap"
+        ));
+        assert!(!same_party_room(
+            "p-1@ares-parties.ap",
+            "p-2@ares-parties.ap"
+        ));
     }
 
     #[test]

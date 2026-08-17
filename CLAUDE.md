@@ -27,6 +27,7 @@ src-tauri/         Rust backend (Tauri)
       riot.rs      client_info, tokens, userinfo, swagger
       profiles.rs  settings:profile:* CRUD + share_get_data
       career.rs    career_get (MMR + competitive history)
+      battlepass.rs battlepass_get (contracts XP/level + premium entitlements)
       store.rs     store_get (storefront + wallet, flattened into four shops)
       live.rs      live_game_fetch/dump (with adaptive cache)
       chat.rs      chat_get/send/translate/friend_action/disconnect
@@ -46,7 +47,7 @@ src-tauri/         Rust backend (Tauri)
 
 src/               Frontend (WebView context)
   main.tsx         React entry (imports util/tauri-bridge first)
-  pages/           SettingsProfiles, PlayerCareer, LiveGame, Chat, Store, Settings, About
+  pages/           SettingsProfiles, PlayerCareer, LiveGame, Chat, Store, BattlePass, Settings, About
   components/      parsed-settings-viewer, settings-diff-viewer, crosshair-svg-generator,
                    dynamic-modal, button (CustomButton), alert-container, router
   util/
@@ -94,7 +95,10 @@ Rust command conventions (see any file in `src-tauri/src/commands/`):
 | `tokens:get` / `tokens:refresh` | `tokens_get/refresh` | Riot auth tokens |
 | `client_info:get` / `userinfo:get` | `client_info_get` / `userinfo_get` | Lockfile info / account info |
 | `career:get` | `career_get` | MMR + competitive history |
+| `tools:player:resolve` | `tools_player_resolve` | Resolve `GameName#Tag` or PUUID to a canonical Riot ID |
+| `friend:profile:get` | `friend_profile_get` | Player profile used by Friends and Tools (rank + matches) |
 | `store:get` | `store_get` | Storefront (daily, bundle, Night Market, accessories) + wallet |
+| `battlepass:get` | `battlepass_get` | Act battle pass XP/level + owned premium contract ids |
 | `chat:command` | `chat_command` | Runs a `.`-prefixed command typed in the Chat composer; the raw line is never posted |
 | `live-game:fetch` / `live-game:dump` | `live_game_fetch/dump` | Live match state (polled ~5s) |
 | `chat:get/send/translate/friend-action/disconnect` | `chat_*` | Chat (REST + XMPP) |
@@ -181,10 +185,10 @@ Both tokens come from `riot::client::get_tokens()` / the `tokens:get` IPC channe
 | `/match-details/v1/matches/<matchId>` | GET | Full match details |
 | `/store/v3/storefront/<puuid>` | POST | Daily/weekly store (empty JSON body; `riot/api.rs` falls back to `GET /store/v2/...`) |
 | `/store/v1/wallet/<puuid>` | GET | VP / Radianite / Kingdom Credit balances |
-| `/store/v1/entitlements/<puuid>/<itemTypeId>` | GET | Owned items |
+| `/store/v1/entitlements/<puuid>/<itemTypeId>` | GET | Owned items (battle pass premium uses the Contracts type id) |
 | `/personalization/v2/players/<puuid>/playerloadout` | GET/PUT | Cosmetic loadout |
 | `/restrictions/v3/penalties` | GET | Account penalties |
-| `/contracts/v1/contracts/<puuid>` | GET | Battle pass / contracts |
+| `/contracts/v1/contracts/<puuid>` | GET | Battle pass / contract XP |
 | `/name-service/v2/players` | PUT | Resolve PUUIDs → names (note the hyphen; `/nameservice/...` 503s) |
 
 **Game (`glz-<region>-1.a.pvp.net`)**

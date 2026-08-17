@@ -18,10 +18,11 @@ type Props = {
 	presenceLabel: string;
 	cachedProfile?: FriendProfileData;
 	onProfileLoaded: (puuid: string, profile: FriendProfileData) => void;
-	onBack: () => void;
+	onBack?: () => void;
+	embedded?: boolean;
 };
 
-export const FriendProfile = ({ friend, card, tiers, presenceLabel, cachedProfile, onProfileLoaded, onBack }: Props) => {
+export const FriendProfile = ({ friend, card, tiers, presenceLabel, cachedProfile, onProfileLoaded, onBack, embedded = false }: Props) => {
 	const { t } = useTranslation();
 	const [profile, setProfile] = useState<FriendProfileData | null>(cachedProfile ?? null);
 	const [loading, setLoading] = useState(!cachedProfile);
@@ -42,7 +43,7 @@ export const FriendProfile = ({ friend, card, tiers, presenceLabel, cachedProfil
 	}, [friend.puuid]);
 
 	useEffect(() => {
-		if (!window.Main) return;
+		if (!window.Main || embedded) return;
 		const onResponse = (message: string) => {
 			let response: FriendProfileResponse;
 			try {
@@ -68,7 +69,7 @@ export const FriendProfile = ({ friend, card, tiers, presenceLabel, cachedProfil
 		window.Main.on("friend:profile:get", onResponse);
 		if (!cachedProfile) requestProfile();
 		return () => window.Main.removeListener("friend:profile:get", onResponse);
-	}, [cachedProfile, friend.puuid, onProfileLoaded, requestProfile, t]);
+	}, [cachedProfile, embedded, friend.puuid, onProfileLoaded, requestProfile, t]);
 
 	const seasonStarts = useMemo(
 		() => new Map([...seasons].map(([id, season]) => [id, season.startMillis])),
@@ -91,28 +92,33 @@ export const FriendProfile = ({ friend, card, tiers, presenceLabel, cachedProfil
 	const displayName = friend.gameName ? `${friend.gameName}${friend.tagLine ? `#${friend.tagLine}` : ""}` : friend.displayName;
 
 	return (
-		<div className="flex h-full min-h-0 flex-col animate-fade-in">
-			<PageHeader
-				icon={
-					<button type="button" onClick={onBack} title={t("friends.profileBack")} aria-label={t("friends.profileBack")} className="grid h-10 w-10 place-items-center rounded-md border border-white/10 text-gray-400 hover:bg-white/6 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400">
-						<FaArrowLeft />
+		<div className={`flex min-h-0 flex-col ${embedded ? "" : "h-full animate-fade-in"}`}>
+			{!embedded && (
+				<PageHeader
+					icon={
+						<button type="button" onClick={onBack} title={t("friends.profileBack")} aria-label={t("friends.profileBack")} className="grid h-10 w-10 place-items-center rounded-md border border-white/10 text-gray-400 hover:bg-white/6 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400">
+							<FaArrowLeft />
+						</button>
+					}
+					title={displayName}
+					subtitle={presenceLabel}
+				>
+					<button type="button" onClick={requestProfile} disabled={loading} title={t("friends.profileRefresh")} aria-label={t("friends.profileRefresh")} className="grid h-10 w-10 place-items-center rounded-md border border-white/10 text-gray-400 hover:bg-white/6 hover:text-white disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400">
+						<FaArrowRotateRight className={loading ? "animate-spin motion-reduce:animate-none" : ""} />
 					</button>
-				}
-				title={displayName}
-				subtitle={presenceLabel}
-			>
-				<button type="button" onClick={requestProfile} disabled={loading} title={t("friends.profileRefresh")} aria-label={t("friends.profileRefresh")} className="grid h-10 w-10 place-items-center rounded-md border border-white/10 text-gray-400 hover:bg-white/6 hover:text-white disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400">
-					<FaArrowRotateRight className={loading ? "animate-spin motion-reduce:animate-none" : ""} />
-				</button>
-			</PageHeader>
+				</PageHeader>
+			)}
 
-			<div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-6 pb-6">
-				<div data-friend-profile-summary="" className="flex flex-wrap items-center gap-4 border-b border-white/6 pb-4">
+			<div className={`flex min-h-0 flex-col gap-4 ${embedded ? "pb-2" : "flex-1 overflow-y-auto px-6 pb-6"}`}>
+				<div
+					data-friend-profile-summary=""
+					className={`flex flex-wrap items-center gap-4 ${embedded ? "panel px-4 py-3" : "border-b border-white/6 pb-4"}`}
+				>
 					<div className="flex min-w-0 flex-1 items-center gap-4">
 						{card?.icon ? <img src={card.icon} alt="" className="h-16 w-16 shrink-0 rounded-md object-cover" /> : <span className="grid h-16 w-16 shrink-0 place-items-center rounded-md bg-white/5 text-gray-600"><FaUser /></span>}
 						<div className="min-w-0">
 							<p className="truncate text-xl font-bold text-white">{displayName}</p>
-							<p className="text-sm text-gray-500">{presenceLabel}</p>
+							{presenceLabel ? <p className="text-sm text-gray-500">{presenceLabel}</p> : null}
 						</div>
 					</div>
 

@@ -4,6 +4,7 @@ mod xml;
 
 pub use relay::{start, stop};
 
+use crate::riot::models::ChatChannel;
 use serde::Serialize;
 use serde_json::json;
 use std::collections::VecDeque;
@@ -229,6 +230,7 @@ fn live_chat() -> &'static Mutex<VecDeque<xml::LiveChatLine>> {
 }
 
 pub fn record_live_chat(stanza: &str) {
+    record_group_muc_from_stanza(stanza);
     let Some(line) = xml::parse_groupchat_line(stanza) else {
         return;
     };
@@ -238,6 +240,124 @@ pub fn record_live_chat(stanza: &str) {
             transcript.pop_front();
         }
     }
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+struct ObservedRoom {
+    room: String,
+    resource: String,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+struct ObservedMucs {
+    party: ObservedRoom,
+    team: ObservedRoom,
+    all: ObservedRoom,
+    pregame: ObservedRoom,
+}
+
+fn observed_mucs() -> &'static Mutex<ObservedMucs> {
+    static OBSERVED: OnceLock<Mutex<ObservedMucs>> = OnceLock::new();
+    OBSERVED.get_or_init(|| Mutex::new(ObservedMucs::default()))
+}
+
+fn room_slot(observed: &mut ObservedMucs, channel: ChatChannel) -> &mut ObservedRoom {
+    match channel {
+        ChatChannel::Party => &mut observed.party,
+        ChatChannel::Team => &mut observed.team,
+        ChatChannel::All => &mut observed.all,
+        ChatChannel::Pregame => &mut observed.pregame,
+    }
+}
+
+fn room_slot_ref(observed: &ObservedMucs, channel: ChatChannel) -> &ObservedRoom {
+    match channel {
+        ChatChannel::Party => &observed.party,
+        ChatChannel::Team => &observed.team,
+        ChatChannel::All => &observed.all,
+        ChatChannel::Pregame => &observed.pregame,
+    }
+}
+
+pub fn record_group_muc_from_stanza(stanza: &str) {
+    let Some((channel, room, resource)) = xml::group_muc_target(stanza) else {
+        return;
+    };
+    if let Ok(mut observed) = observed_mucs().lock() {
+        let slot = room_slot(&mut observed, channel);
+        slot.room = room;
+        if !resource.is_empty() {
+            slot.resource = resource;
+        }
+    }
+}
+
+pub fn record_party_muc_from_stanza(stanza: &str) {
+    record_group_muc_from_stanza(stanza);
+}
+
+pub fn last_group_muc_jid(channel: ChatChannel) -> Option<String> {
+    observed_mucs().lock().ok().and_then(|observed| {
+        let room = &room_slot_ref(&observed, channel).room;
+        if room.is_empty() {
+            None
+        } else {
+            Some(room.clone())
+        }
+    })
+}
+
+pub fn last_party_muc_jid() -> Option<String> {
+    last_group_muc_jid(ChatChannel::Party)
+}
+
+pub fn last_group_muc_resource(channel: ChatChannel) -> String {
+    observed_mucs()
+        .lock()
+        .map(|observed| {
+            let specific = room_slot_ref(&observed, channel).resource.clone();
+            if !specific.is_empty() {
+                return specific;
+            }
+            [
+                ChatChannel::All,
+                ChatChannel::Team,
+                ChatChannel::Party,
+                ChatChannel::Pregame,
+            ]
+            .into_iter()
+            .map(|item| room_slot_ref(&observed, item).resource.clone())
+            .find(|resource| !resource.is_empty())
+            .unwrap_or_default()
+        })
+        .unwrap_or_default()
+}
+
+pub fn last_party_muc_resource() -> String {
+    last_group_muc_resource(ChatChannel::Party)
+}
+
+/// Re-join if we know the occupant nick, then post through the game XMPP.
+pub fn send_group_through_game(channel: ChatChannel, room: &str, body: &str) -> bool {
+    if room.is_empty() || body.is_empty() {
+        return false;
+    }
+    let resource = last_group_muc_resource(channel);
+    if !resource.is_empty() {
+        let join = format!(
+            r#"<presence to="{}/{}"><x xmlns="http://jabber.org/protocol/muc"/></presence>"#,
+            xml::escape_xml(room),
+            xml::escape_xml(&resource)
+        );
+        if outbound().send(join).is_err() {
+            return false;
+        }
+    }
+    send_groupchat_through_game(room, body)
+}
+
+pub fn send_party_through_game(room: &str, body: &str) -> bool {
+    send_group_through_game(ChatChannel::Party, room, body)
 }
 
 pub fn live_chat_transcript() -> Vec<xml::LiveChatLine> {
@@ -325,6 +445,33 @@ mod tests {
             "hello everyone\n大家好"
         ));
         assert!(!send_groupchat_through_game("", "hello"));
+    }
+
+    #[test]
+    fn remembers_the_party_muc_the_game_joined() {
+        record_party_muc_from_stanza(
+            r#"<presence to="live@ares-parties.ap1.pvp.net/occupant"/>"#,
+        );
+        assert_eq!(
+            last_party_muc_jid().as_deref(),
+            Some("live@ares-parties.ap1.pvp.net")
+        );
+        assert_eq!(last_party_muc_resource(), "occupant");
+        record_party_muc_from_stanza(
+            r#"<message from="live@ares-parties.ap1.pvp.net/friend" type="groupchat"><body>x</body></message>"#,
+        );
+        assert_eq!(last_party_muc_resource(), "occupant");
+    }
+
+    #[test]
+    fn remembers_the_team_room_the_player_just_typed_in() {
+        record_group_muc_from_stanza(
+            r#"<message to="9f2e-blue@ares-coregame.ap1.pvp.net" type="groupchat"><body>lol</body></message>"#,
+        );
+        assert_eq!(
+            last_group_muc_jid(ChatChannel::Team).as_deref(),
+            Some("9f2e-blue@ares-coregame.ap1.pvp.net")
+        );
     }
 
     #[test]

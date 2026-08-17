@@ -511,14 +511,7 @@ async fn run_translation_command(
 
     let body = translated.text.clone();
     let cid = resolve_send_cid(client, parsed.channel, app).await?;
-
-    // Prefer the game client's own XMPP so the line appears in party/team/all
-    // on the player's screen. REST and ValoUtils XMPP can "succeed" without
-    // the game ever rendering the message.
-    let sent_in_game = crate::presence_proxy::send_groupchat_through_game(&cid, &body);
-    if !sent_in_game && client.send_to_cid(&cid, &body).await.is_err() {
-        send_via_xmpp(app, parsed.channel, &body).await?;
-    }
+    deliver_translated_line(client, parsed.channel, &cid, &body, app).await?;
 
     Ok(TranslationOutcome {
         channel: parsed.channel,
@@ -526,6 +519,27 @@ async fn run_translation_command(
         original: parsed.message.clone(),
         translated: translated.text,
     })
+}
+
+pub fn inject_cid_for_send(channel: ChatChannel, rest_cid: &str) -> String {
+    crate::presence_proxy::last_group_muc_jid(channel).unwrap_or_else(|| rest_cid.to_string())
+}
+
+async fn deliver_translated_line(
+    client: &RiotChatClient,
+    channel: ChatChannel,
+    cid: &str,
+    body: &str,
+    app: Option<&AppHandle>,
+) -> Result<(), RiotError> {
+    let inject_cid = inject_cid_for_send(channel, cid);
+    if crate::presence_proxy::send_group_through_game(channel, &inject_cid, body) {
+        return Ok(());
+    }
+    if client.send_to_cid(cid, body).await.is_ok() {
+        return Ok(());
+    }
+    send_via_xmpp(app, channel, body).await
 }
 
 async fn resolve_send_cid(
@@ -1171,6 +1185,28 @@ mod tests {
             Some(ChatChannel::Party),
             "m-blue@ares-pregame.ap"
         ));
+    }
+
+    #[test]
+    fn inject_uses_the_room_the_game_already_spoke_in() {
+        crate::presence_proxy::record_group_muc_from_stanza(
+            r#"<message to="9f2e-blue@ares-coregame.ap1.pvp.net" type="groupchat"><body>lol</body></message>"#,
+        );
+        crate::presence_proxy::record_group_muc_from_stanza(
+            r#"<presence to="live@ares-parties.ap1.pvp.net/me"/>"#,
+        );
+        assert_eq!(
+            inject_cid_for_send(ChatChannel::Team, "9f2e-red@ares-coregame.ap1.pvp.net"),
+            "9f2e-blue@ares-coregame.ap1.pvp.net"
+        );
+        assert_eq!(
+            inject_cid_for_send(ChatChannel::Party, "other@ares-parties.ap1.pvp.net"),
+            "live@ares-parties.ap1.pvp.net"
+        );
+        assert_eq!(
+            inject_cid_for_send(ChatChannel::All, "m-all@ares-coregame.ap1.pvp.net"),
+            "m-all@ares-coregame.ap1.pvp.net"
+        );
     }
 
     #[test]

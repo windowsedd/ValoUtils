@@ -34,7 +34,8 @@ export type SkinAsset = { name: Localized; icon: string };
 export type TierAsset = { name: Localized; icon: string | null; largeIcon: string | null; color: string };
 export type CardAsset = { name: Localized; icon: string };
 export type MapAsset = { name: Localized; listViewIcon: string | null; splash: string | null };
-export type SeasonAsset = { label: string; startMillis: number };
+export type SeasonAsset = { label: string; startMillis: number; endMillis: number };
+export type EventAsset = { startMillis: number; endMillis: number };
 export type BundleAsset = { name: Localized; icon: string | null; verticalPromo: string | null };
 
 let agentsPromise: Promise<Map<string, AgentAsset>> | null = null;
@@ -47,6 +48,9 @@ const cardCache = new Map<string, Promise<CardAsset | null>>();
 const skinLevelCache = new Map<string, Promise<SkinAsset | null>>();
 const bundleCache = new Map<string, Promise<BundleAsset | null>>();
 const accessoryCache = new Map<string, Promise<SkinAsset | null>>();
+let battlepassContractsPromise: Promise<unknown[]> | null = null;
+let eventAssetsPromise: Promise<Map<string, EventAsset>> | null = null;
+const battlepassRewardCache = new Map<string, Promise<SkinAsset | null>>();
 
 // --- Agents ------------------------------------------------------------------
 export const getAgents = (): Promise<Map<string, AgentAsset>> => {
@@ -353,7 +357,13 @@ export const getSeasonAssets = (): Promise<Map<string, SeasonAsset>> => {
 						const startMillis = Date.parse(s.startTime) || 0;
 						const ep = byUuid.get(s.parentUuid) || byTime(startMillis);
 						const label = formatSeasonActLabel(ep, actNumber(enName(s.displayName)));
-						if (label) assets.set((s.uuid as string).toLowerCase(), { label, startMillis });
+						if (label) {
+							assets.set((s.uuid as string).toLowerCase(), {
+								label,
+								startMillis,
+								endMillis: Date.parse(s.endTime) || Number.MAX_SAFE_INTEGER,
+							});
+						}
 					}
 				}
 				return assets;
@@ -365,3 +375,71 @@ export const getSeasonAssets = (): Promise<Map<string, SeasonAsset>> => {
 
 export const getSeasonLabels = (): Promise<Map<string, string>> =>
 	getSeasonAssets().then((assets) => new Map([...assets].map(([id, asset]) => [id, asset.label])));
+
+const REWARD_ENDPOINTS: Record<string, string> = {
+	equippableskinlevel: "weapons/skinlevels",
+	equippablecharmlevel: "buddies/levels",
+	playercard: "playercards",
+	spray: "sprays",
+	title: "playertitles",
+	currency: "currencies",
+};
+
+export const getEventAssets = (): Promise<Map<string, EventAsset>> => {
+	if (!eventAssetsPromise) {
+		eventAssetsPromise = fetch(`${API}/events?language=all`)
+			.then((r) => r.json())
+			.then((json) => {
+				const assets = new Map<string, EventAsset>();
+				for (const event of json?.data ?? []) {
+					const id = typeof event?.uuid === "string" ? event.uuid.toLowerCase() : "";
+					if (!id) continue;
+					assets.set(id, {
+						startMillis: Date.parse(event.startTime) || 0,
+						endMillis: Date.parse(event.endTime) || Number.MAX_SAFE_INTEGER,
+					});
+				}
+				return assets;
+			})
+			.catch(() => new Map<string, EventAsset>());
+	}
+	return eventAssetsPromise;
+};
+
+export const getBattlepassContracts = (): Promise<unknown[]> => {
+	if (!battlepassContractsPromise) {
+		battlepassContractsPromise = fetch(`${API}/contracts?language=all`)
+			.then((r) => r.json())
+			.then((json) => (Array.isArray(json?.data) ? json.data : []))
+			.catch(() => [] as unknown[]);
+	}
+	return battlepassContractsPromise;
+};
+
+export const getBattlepassReward = (type: string, uuid: string): Promise<SkinAsset | null> => {
+	const endpoint = REWARD_ENDPOINTS[type.toLowerCase()];
+	if (!endpoint || !uuid) return Promise.resolve(null);
+	const key = `${endpoint}:${uuid.toLowerCase()}`;
+	if (!battlepassRewardCache.has(key)) {
+		battlepassRewardCache.set(
+			key,
+			fetch(`${API}/${endpoint}/${uuid.toLowerCase()}?language=all`)
+				.then((r) => r.json())
+				.then((json) => {
+					const item = json?.data;
+					if (!item) return null;
+					const icon =
+						item.wideArt ||
+						item.largeArt ||
+						item.fullTransparentIcon ||
+						item.displayIcon ||
+						item.largeIcon ||
+						item.rewardPreviewIcon ||
+						"";
+					return { name: item.displayName ?? item.titleText, icon } as SkinAsset;
+				})
+				.catch(() => null),
+		);
+	}
+	return battlepassRewardCache.get(key)!;
+};

@@ -51,8 +51,10 @@ fn normalize_language(provider: &str, role: &str, code: &str) -> Result<String, 
 ///
 /// The `.send {channel} {language} {message}` command is typed by a player
 /// mid-match, so it accepts the English name (`german`, `Brazilian Portuguese`)
-/// as well as the code (`de`, `pt-BR`). Matching is case- and separator-
-/// insensitive because nobody types `pt-BR` correctly under fire.
+/// as well as the code (`de`, `pt-BR`, `ko-KR`). Matching is case- and
+/// separator-insensitive because nobody types `pt-BR` correctly under fire.
+/// Regioned BCP-47 tags fall back to the primary subtag when the catalog
+/// only lists the language (`ko-KR` → `ko`); exact codes still win (`zh-TW`).
 pub fn resolve_target_language(provider: &str, input: &str) -> Option<String> {
     let wanted = fold_language_key(input);
     if wanted.is_empty() {
@@ -63,11 +65,66 @@ pub fn resolve_target_language(provider: &str, input: &str) -> Option<String> {
     }
     // `zh_tw` is Google's `zh-TW` and DeepL's `zh-HANT`. If the typed token
     // only exists on the other provider, map through the shared canonical id.
-    let matched = language_catalog().iter().find(|entry| {
+    if let Some(matched) = language_catalog().iter().find(|entry| {
         fold_language_key(&entry.code) == wanted
             || fold_language_key(&entry.english_name) == wanted
-    })?;
-    match_provider_canonical(provider, &matched.canonical_id)
+    }) {
+        if let Some(code) = match_provider_canonical(provider, &matched.canonical_id) {
+            return Some(code);
+        }
+    }
+    let primary = fold_language_key(primary_language_subtag(input)?);
+    if primary.is_empty() || primary == wanted {
+        return None;
+    }
+    match_provider_target(provider, &primary).or_else(|| {
+        language_catalog()
+            .iter()
+            .find(|entry| {
+                fold_language_key(&entry.code) == primary
+                    || fold_language_key(&entry.english_name) == primary
+            })
+            .and_then(|matched| match_provider_canonical(provider, &matched.canonical_id))
+    })
+}
+
+/// First subtag of a BCP-47-shaped token (`ko-KR`, `zh_Hant_TW`).
+///
+/// Rejects hyphenated English (`in-game`, `no-scope`) so those stay message
+/// text instead of becoming a language.
+fn primary_language_subtag(input: &str) -> Option<&str> {
+    let input = input.trim();
+    let mut parts = input.split(|c: char| matches!(c, '-' | '_' | '/'));
+    let primary = parts.next()?;
+    if !is_ascii_alpha_len(primary, 2, 3) {
+        return None;
+    }
+    let rest: Vec<&str> = parts.filter(|part| !part.is_empty()).collect();
+    if rest.is_empty() {
+        return None;
+    }
+    if !rest
+        .iter()
+        .all(|part| is_script_subtag(part) || is_region_subtag(part))
+    {
+        return None;
+    }
+    Some(primary)
+}
+
+fn is_ascii_alpha_len(value: &str, min: usize, max: usize) -> bool {
+    let len = value.len();
+    (min..=max).contains(&len) && value.bytes().all(|b| b.is_ascii_alphabetic())
+}
+
+fn is_script_subtag(value: &str) -> bool {
+    is_ascii_alpha_len(value, 4, 4)
+}
+
+fn is_region_subtag(value: &str) -> bool {
+    let len = value.len();
+    (len == 2 && value.bytes().all(|b| b.is_ascii_alphabetic()))
+        || (len == 3 && value.bytes().all(|b| b.is_ascii_digit()))
 }
 
 fn match_provider_target(provider: &str, wanted: &str) -> Option<String> {
@@ -290,6 +347,30 @@ mod tests {
             resolve_target_language("deepl", "zh-TW").unwrap(),
             "zh-HANT"
         );
+    }
+
+    #[test]
+    fn target_language_accepts_regioned_bcp47_codes() {
+        // Google's catalog is `ko` / `ja` / `en`, not `ko-KR`. Players still
+        // type the locale they see in Windows or Valorant.
+        assert_eq!(resolve_target_language("google", "ko-KR").unwrap(), "ko");
+        assert_eq!(resolve_target_language("google", "ko_KR").unwrap(), "ko");
+        assert_eq!(resolve_target_language("google", "ko/KR").unwrap(), "ko");
+        assert_eq!(resolve_target_language("google", "ja-JP").unwrap(), "ja");
+        assert_eq!(resolve_target_language("google", "en-US").unwrap(), "en");
+        assert_eq!(resolve_target_language("deepl", "ko-KR").unwrap(), "ko");
+        // Exact regioned codes still win over the primary subtag.
+        assert_eq!(
+            resolve_target_language("google", "zh-TW").unwrap(),
+            "zh-TW"
+        );
+        assert_eq!(
+            resolve_target_language("deepl", "en-US").unwrap(),
+            "en-US"
+        );
+        // Hyphenated English is not a language tag.
+        assert!(resolve_target_language("google", "in-game").is_none());
+        assert!(resolve_target_language("google", "no-scope").is_none());
     }
 
     #[test]
