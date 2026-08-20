@@ -158,24 +158,52 @@ pub fn cid_local_part(cid: &str) -> &str {
 /// Incoming party groupchat uses the short form, so a send through the game
 /// client's XMPP has to as well.
 pub fn party_xmpp_jid(cid: &str) -> String {
+    if !cid.to_ascii_lowercase().contains("ares-parties") {
+        return cid.to_string();
+    }
+    game_xmpp_jid(cid)
+}
+
+/// REST cids keep `eu1.pvp.net`; the game client's MUC is `eu`.
+pub fn game_xmpp_jid(cid: &str) -> String {
     let Some((local, host)) = cid.split_once('@') else {
         return cid.to_string();
     };
     let host = host.to_ascii_lowercase();
-    if !host.contains("ares-parties") {
+    let Some(kind_and_rest) = host.strip_prefix("ares-") else {
         return cid.to_string();
-    }
-    let Some(region_full) = host
-        .strip_prefix("ares-parties.")
-        .and_then(|rest| rest.strip_suffix(".pvp.net"))
-    else {
+    };
+    let Some((kind, rest)) = kind_and_rest.split_once('.') else {
+        return cid.to_string();
+    };
+    let Some(region_full) = rest.strip_suffix(".pvp.net") else {
         return cid.to_string();
     };
     let region = region_full.trim_end_matches(|ch: char| ch.is_ascii_digit());
     if region.is_empty() || region == region_full {
         return cid.to_string();
     }
-    format!("{local}@ares-parties.{region}")
+    format!("{local}@ares-{kind}.{region}")
+}
+
+pub fn same_side_room(left: &str, right: &str) -> bool {
+    if left.is_empty() || right.is_empty() {
+        return false;
+    }
+    if left.eq_ignore_ascii_case(right) {
+        return true;
+    }
+    let left_pregame = ChatChannel::Pregame.matches_cid(left);
+    let right_pregame = ChatChannel::Pregame.matches_cid(right);
+    if left_pregame != right_pregame {
+        return false;
+    }
+    let same_family = if left_pregame {
+        true
+    } else {
+        ChatChannel::Team.matches_cid(left) && ChatChannel::Team.matches_cid(right)
+    };
+    same_family && cid_local_part(left).eq_ignore_ascii_case(cid_local_part(right))
 }
 
 pub fn same_party_room(left: &str, right: &str) -> bool {
@@ -678,6 +706,25 @@ mod tests {
     }
 
     #[test]
+    fn pregame_xmpp_jid_uses_the_short_muc_name_the_game_echoes() {
+        assert_eq!(
+            game_xmpp_jid("9f2e-blue@ares-pregame.eu1.pvp.net"),
+            "9f2e-blue@ares-pregame.eu"
+        );
+        assert_eq!(
+            game_xmpp_jid("9f2e-blue@ares-pregame.ap"),
+            "9f2e-blue@ares-pregame.ap"
+        );
+        assert_eq!(
+            same_side_room(
+                "9f2e-blue@ares-pregame.eu1.pvp.net",
+                "9f2e-blue@ares-pregame.eu"
+            ),
+            true
+        );
+    }
+
+    #[test]
     fn party_xmpp_jid_uses_the_short_muc_name_the_game_echoes() {
         assert_eq!(
             party_xmpp_jid("p-1@ares-parties.ap1.pvp.net"),
@@ -687,10 +734,7 @@ mod tests {
             party_xmpp_jid("p-1@ares-parties.na1.pvp.net"),
             "p-1@ares-parties.na"
         );
-        assert_eq!(
-            party_xmpp_jid("p-1@ares-parties.ap"),
-            "p-1@ares-parties.ap"
-        );
+        assert_eq!(party_xmpp_jid("p-1@ares-parties.ap"), "p-1@ares-parties.ap");
         assert_eq!(
             party_xmpp_jid("match-all@ares-coregame.ap1.pvp.net"),
             "match-all@ares-coregame.ap1.pvp.net"

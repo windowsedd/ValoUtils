@@ -37,6 +37,8 @@ export type MatchPlayer = {
 	adr: number;
 	/** Damage per round. */
 	dpr: number;
+	/** Rounds where this player got the first kill. */
+	firstBloods: number;
 	headshots: number;
 	bodyshots: number;
 	legshots: number;

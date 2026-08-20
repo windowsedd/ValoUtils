@@ -11,6 +11,7 @@ import { ActRankPanel } from "./act-rank-panel";
 import { buildTeamMatchup } from "./live-game-metrics";
 import { LivePlayerHistory } from "./live-player-history";
 import { LiveTeamMatchup } from "./live-team-matchup";
+import { PreviousActsPanel } from "./previous-acts-panel";
 import type { LiveGameAssets } from "./use-live-game-assets";
 
 type Snapshot = Extract<LiveGameResponse, { success: true }>;
@@ -57,11 +58,11 @@ const RankValue = ({ tier, rr, act, assets }: { tier: number; rr?: number; act?:
 	);
 };
 
-const StatValue = ({ state, field }: { state?: RecentStatsState; field: "kd" | "winRate" | "acs" }) => {
+const StatValue = ({ state, field }: { state?: RecentStatsState; field: "kd" | "winRate" | "acs" | "dpr" }) => {
 	const { t } = useTranslation();
 	if (!state || state.status === "loading") return <span className="inline-block h-3 w-9 rounded bg-white/8 animate-pulse motion-reduce:animate-none" />;
 	if (state.status === "error") return <span className="text-[10px] text-gray-600">{t("liveGame.unavailable")}</span>;
-	const value = state.stats[field];
+	const value = state.stats[field] ?? 0;
 	return <span className="text-xs font-semibold tabular-nums text-gray-200">{field === "winRate" ? `${value.toFixed(0)}%` : field === "kd" ? value.toFixed(2) : value.toFixed(0)}</span>;
 };
 
@@ -81,7 +82,7 @@ const SkinCard = ({ weapon, label, assets }: { weapon: WeaponSkin; label: string
 	);
 };
 
-const PlayerRow = ({ player, assets, stats, expanded, onToggle, teamColor, teamLabel, recentMode }: {
+const PlayerRow = ({ player, assets, stats, expanded, onToggle, teamColor, teamLabel, recentMode, inMatch }: {
 	player: LivePlayer;
 	assets: LiveGameAssets;
 	stats?: RecentStatsState;
@@ -90,6 +91,7 @@ const PlayerRow = ({ player, assets, stats, expanded, onToggle, teamColor, teamL
 	teamColor: string;
 	teamLabel: string;
 	recentMode: string;
+	inMatch: boolean;
 }) => {
 	const { t } = useTranslation();
 	const agent = player.characterId ? assets.agents.get(player.characterId.toLowerCase()) : undefined;
@@ -123,7 +125,7 @@ const PlayerRow = ({ player, assets, stats, expanded, onToggle, teamColor, teamL
 				aria-expanded={expanded}
 				aria-controls={detailsId}
 				aria-label={`${t(expanded ? "liveGame.collapsePlayer" : "liveGame.expandPlayer", { player: displayName })}, ${teamLabel}`}
-				className="w-full min-h-12 grid grid-cols-[minmax(150px,1.5fr)_88px_52px_56px_34px] md:grid-cols-[minmax(180px,300px)_110px_140px_52px_56px_52px_minmax(34px,1fr)] xl:grid-cols-[minmax(180px,300px)_76px_110px_140px_52px_56px_52px_100px_minmax(34px,1fr)] items-center gap-2 px-3 py-1.5 text-left hover:bg-white/4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-cyan-400 transition-colors motion-reduce:transition-none"
+				className="w-full min-h-12 grid grid-cols-[minmax(150px,1.5fr)_88px_52px_56px_34px] md:grid-cols-[minmax(180px,300px)_110px_140px_52px_56px_52px_52px_minmax(34px,1fr)] xl:grid-cols-[minmax(180px,300px)_76px_110px_140px_52px_56px_52px_52px_100px_minmax(34px,1fr)] items-center gap-2 px-3 py-1.5 text-left hover:bg-white/4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-cyan-400 transition-colors motion-reduce:transition-none"
 			>
 				<div className="flex items-center gap-2 min-w-0">
 					<div className="relative w-8 h-9 rounded-md bg-white/5 overflow-hidden shrink-0">
@@ -150,6 +152,7 @@ const PlayerRow = ({ player, assets, stats, expanded, onToggle, teamColor, teamL
 				<StatValue state={stats} field="kd" />
 				<StatValue state={stats} field="winRate" />
 				<div className="hidden md:block"><StatValue state={stats} field="acs" /></div>
+				<div className="hidden md:block"><StatValue state={stats} field="dpr" /></div>
 				<div className="hidden xl:flex items-center gap-1">
 					{player.loadout ? [player.loadout.vandal, player.loadout.phantom, player.loadout.knife].map((weapon, index) => {
 						const skin = assets.skins.get(weaponSkinKey(weapon) ?? "");
@@ -164,9 +167,10 @@ const PlayerRow = ({ player, assets, stats, expanded, onToggle, teamColor, teamL
 						<p className="mb-1 text-[10px] text-gray-500">{teamLabel}{player.party ? ` · ${t("liveGame.partyDetected", { party: player.party })}` : ""}</p>
 						<p className="text-[10px] uppercase tracking-widest text-gray-500">{t("liveGame.recentFive", { mode: recentMode })}</p>
 						{stats?.status === "ready" ? (
-							<><div className="grid grid-cols-3 gap-2 mt-1.5">
+							<><div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-1.5">
 								<div><p className="text-[10px] text-gray-600">K / D / A</p><p className="text-sm font-semibold tabular-nums">{stats.stats.kills} / {stats.stats.deaths} / {stats.stats.assists}</p></div>
 								<div><p className="text-[10px] text-gray-600">{t("liveGame.acs")}</p><p className="text-sm font-semibold tabular-nums">{stats.stats.acs.toFixed(0)}</p></div>
+								<div><p className="text-[10px] text-gray-600">{t("liveGame.dpr")}</p><p className="text-sm font-semibold tabular-nums">{(stats.stats.dpr ?? 0).toFixed(0)}</p></div>
 								<div><p className="text-[10px] text-gray-600">{t("liveGame.winRate")}</p><p className="text-sm font-semibold tabular-nums">{stats.stats.winRate.toFixed(0)}%</p></div>
 							</div><p className="mt-1.5 text-[10px] text-gray-600">{t("liveGame.matchesAnalyzed", { count: stats.stats.matches })}</p></>
 						) : stats?.status === "error" ? <p className="mt-3 text-xs text-red-300">{stats.error}</p> : <div className="mt-3 h-12 rounded bg-white/5 animate-pulse motion-reduce:animate-none" />}
@@ -187,6 +191,15 @@ const PlayerRow = ({ player, assets, stats, expanded, onToggle, teamColor, teamL
 							onSeasonChange={setSelectedSeasonId}
 						/>
 					</div>
+					{inMatch && (
+						<div className="lg:col-span-2">
+							<PreviousActsPanel
+								competitiveSeasons={player.competitiveSeasons}
+								currentSeasonId={player.currentSeasonId}
+								assets={assets}
+							/>
+						</div>
+					)}
 					{stats?.status === "ready" && <div className="lg:col-span-2"><LivePlayerHistory history={stats.stats.history} assets={assets} /></div>}
 				</div>
 			)}
@@ -212,6 +225,7 @@ export const LiveScoutTable = ({ snapshot, assets, recent, refreshing, refreshEr
 	const map = mapName(snapshot.match?.mapId, assets.maps);
 	const mapArt = mapIcon(snapshot.match?.mapId, assets.maps);
 	const recentMode = queueLabel(snapshot.match?.queueId) || t("liveGame.unavailable");
+	const inMatch = snapshot.state === "coregame" || snapshot.state === "pregame";
 	const summaryId = `live-match-summary-${snapshot.rosterKey.replace(/[^a-z0-9]/gi, "-")}`;
 	return (
 		<div className="flex-1 min-h-0 px-6 pb-5 flex flex-col gap-3 overflow-hidden">
@@ -238,10 +252,10 @@ export const LiveScoutTable = ({ snapshot, assets, recent, refreshing, refreshEr
 			</section>
 
 			<section className="glass rounded-2xl overflow-y-auto min-h-0" aria-label={t("liveGame.players")}>
-				<div className="sticky top-0 z-10 grid grid-cols-[minmax(150px,1.5fr)_88px_52px_56px_34px] md:grid-cols-[minmax(180px,300px)_110px_140px_52px_56px_52px_minmax(34px,1fr)] xl:grid-cols-[minmax(180px,300px)_76px_110px_140px_52px_56px_52px_100px_minmax(34px,1fr)] gap-2 px-3 py-2 bg-[#101218]/95 backdrop-blur border-b border-white/8 text-[9px] uppercase tracking-widest text-gray-600">
-					<span>{t("matches.player")}</span><span className="hidden xl:block">{t("liveGame.detectedParties")}</span><span>{t("liveGame.current")}</span><span className="hidden md:block">{t("liveGame.peak")}</span><span>{t("liveGame.kd")}</span><span>{t("liveGame.winRate")}</span><span className="hidden md:block">{t("liveGame.acs")}</span><span className="hidden xl:block">{t("liveGame.skins")}</span><span />
+				<div className="sticky top-0 z-10 grid grid-cols-[minmax(150px,1.5fr)_88px_52px_56px_34px] md:grid-cols-[minmax(180px,300px)_110px_140px_52px_56px_52px_52px_minmax(34px,1fr)] xl:grid-cols-[minmax(180px,300px)_76px_110px_140px_52px_56px_52px_52px_100px_minmax(34px,1fr)] gap-2 px-3 py-2 bg-[#101218]/95 backdrop-blur border-b border-white/8 text-[9px] uppercase tracking-widest text-gray-600">
+					<span>{t("matches.player")}</span><span className="hidden xl:block">{t("liveGame.detectedParties")}</span><span>{t("liveGame.current")}</span><span className="hidden md:block">{t("liveGame.peak")}</span><span>{t("liveGame.kd")}</span><span>{t("liveGame.winRate")}</span><span className="hidden md:block">{t("liveGame.acs")}</span><span className="hidden md:block">{t("liveGame.dpr")}</span><span className="hidden xl:block">{t("liveGame.skins")}</span><span />
 				</div>
-				{[...teams.entries()].map(([teamId, players]) => { const meta = teamMeta(teamId, t); return <div key={teamId}><div className="px-3 py-2 flex items-center gap-2 bg-black/15 border-b border-white/5"><span className="w-2 h-2 rounded-full" style={{ background: meta.color }} /><h2 className="text-[10px] font-bold uppercase tracking-widest" style={{ color: meta.color }}>{meta.label}</h2><span className="ml-auto text-[10px] text-gray-600">{players.length}</span></div>{players.map((player) => <PlayerRow key={player.puuid} player={player} assets={assets} stats={recent[player.puuid]} expanded={expanded === player.puuid} onToggle={() => setExpanded((current) => current === player.puuid ? null : player.puuid)} teamColor={meta.color} teamLabel={meta.label} recentMode={recentMode} />)}</div>; })}
+				{[...teams.entries()].map(([teamId, players]) => { const meta = teamMeta(teamId, t); return <div key={teamId}><div className="px-3 py-2 flex items-center gap-2 bg-black/15 border-b border-white/5"><span className="w-2 h-2 rounded-full" style={{ background: meta.color }} /><h2 className="text-[10px] font-bold uppercase tracking-widest" style={{ color: meta.color }}>{meta.label}</h2><span className="ml-auto text-[10px] text-gray-600">{players.length}</span></div>{players.map((player) => <PlayerRow key={player.puuid} player={player} assets={assets} stats={recent[player.puuid]} expanded={expanded === player.puuid} onToggle={() => setExpanded((current) => current === player.puuid ? null : player.puuid)} teamColor={meta.color} teamLabel={meta.label} recentMode={recentMode} inMatch={inMatch} />)}</div>; })}
 			</section>
 		</div>
 	);

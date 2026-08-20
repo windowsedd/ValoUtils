@@ -6,6 +6,7 @@ export type TeamMetricSide = {
 	kd: number | null;
 	winRate: number | null;
 	acs: number | null;
+	dpr: number | null;
 };
 
 export type TeamMatchup = {
@@ -21,15 +22,16 @@ const averageSide = (
 	const ready = players
 		.map((player) => recent[player.puuid])
 		.filter((state): state is Extract<RecentStatsState, { status: "ready" }> => state?.status === "ready");
-	if (ready.length === 0) return { teamId, players: 0, kd: null, winRate: null, acs: null };
-	const average = (field: "kd" | "winRate" | "acs") =>
-		ready.reduce((sum, state) => sum + state.stats[field], 0) / ready.length;
+	if (ready.length === 0) return { teamId, players: 0, kd: null, winRate: null, acs: null, dpr: null };
+	const average = (field: "kd" | "winRate" | "acs" | "dpr") =>
+		ready.reduce((sum, state) => sum + (state.stats[field] ?? 0), 0) / ready.length;
 	return {
 		teamId,
 		players: ready.length,
 		kd: average("kd"),
 		winRate: average("winRate"),
 		acs: average("acs"),
+		dpr: average("dpr"),
 	};
 };
 

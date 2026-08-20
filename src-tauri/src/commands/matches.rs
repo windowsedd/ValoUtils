@@ -50,6 +50,55 @@ struct Damage {
     legshots: u64,
 }
 
+fn kill_time_millis(kill: &Value) -> Option<u64> {
+    kill.get("killTimeSinceRoundStartMillis")
+        .or_else(|| kill.get("timeSinceRoundStartMillis"))
+        .or_else(|| kill.get("roundTime"))
+        .and_then(Value::as_u64)
+}
+
+/// Earliest kill each round, counted on the killer.
+fn aggregate_first_bloods(round_results: &[Value]) -> HashMap<String, u64> {
+    let mut totals: HashMap<String, u64> = HashMap::new();
+    for round in round_results {
+        let Some(player_stats) = round.get("playerStats").and_then(Value::as_array) else {
+            continue;
+        };
+        let mut first: Option<(u64, String)> = None;
+        for stat in player_stats {
+            let subject = stat
+                .get("subject")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            for kill in stat
+                .get("kills")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+            {
+                let Some(time) = kill_time_millis(kill) else {
+                    continue;
+                };
+                let killer = kill
+                    .get("killer")
+                    .and_then(Value::as_str)
+                    .filter(|id| !id.is_empty())
+                    .unwrap_or(subject);
+                if killer.is_empty() {
+                    continue;
+                }
+                if first.as_ref().is_none_or(|(earliest, _)| time < *earliest) {
+                    first = Some((time, killer.to_ascii_lowercase()));
+                }
+            }
+        }
+        if let Some((_, killer)) = first {
+            *totals.entry(killer).or_insert(0) += 1;
+        }
+    }
+    totals
+}
+
 fn aggregate_damage(round_results: &[Value]) -> HashMap<String, Damage> {
     let mut totals: HashMap<String, Damage> = HashMap::new();
     for round in round_results {
@@ -142,6 +191,7 @@ fn reduce_match(
         .cloned()
         .unwrap_or_default();
     let damage = aggregate_damage(&round_results);
+    let first_bloods = aggregate_first_bloods(&round_results);
     let coach_teams: HashMap<String, String> = details
         .get("coaches")
         .and_then(Value::as_array)
@@ -222,6 +272,7 @@ fn reduce_match(
                 "damage": dmg.total,
                 "adr": dmg.total / rounds,
                 "dpr": dmg.total / rounds,
+                "firstBloods": first_bloods.get(&subject.to_ascii_lowercase()).copied().unwrap_or(0),
                 "headshots": dmg.headshots,
                 "bodyshots": dmg.bodyshots,
                 "legshots": dmg.legshots,
@@ -543,5 +594,60 @@ mod tests {
         assert_eq!(player["damage"], 3010);
         assert_eq!(player["dpr"], 150);
         assert_eq!(player["adr"], 150);
+    }
+
+    #[test]
+    fn counts_first_bloods_from_the_earliest_kill_each_round() {
+        let details = json!({
+            "matchInfo": { "matchId": "comp-fb" },
+            "players": [
+                player("player-1", "Blue"),
+                player("player-2", "Red")
+            ],
+            "teams": [],
+            "roundResults": [
+                {
+                    "playerStats": [
+                        {
+                            "subject": "player-1",
+                            "kills": [{ "killer": "player-1", "roundTime": 1200, "victim": "player-2" }]
+                        },
+                        {
+                            "subject": "player-2",
+                            "kills": [{ "killer": "player-2", "killTimeSinceRoundStartMillis": 2400, "victim": "player-1" }]
+                        }
+                    ]
+                },
+                {
+                    "playerStats": [
+                        {
+                            "subject": "player-1",
+                            "kills": [{ "victim": "player-2", "timeSinceRoundStartMillis": 900 }]
+                        }
+                    ]
+                },
+                {
+                    "playerStats": [
+                        {
+                            "subject": "player-2",
+                            "kills": [{ "killer": "player-2", "roundTime": 400 }]
+                        }
+                    ]
+                }
+            ]
+        });
+
+        let reduced = reduce_match(&details, &HashMap::new(), "player-1");
+        let players = reduced["players"].as_array().unwrap();
+        let player_1 = players
+            .iter()
+            .find(|value| value["subject"] == "player-1")
+            .unwrap();
+        let player_2 = players
+            .iter()
+            .find(|value| value["subject"] == "player-2")
+            .unwrap();
+        assert_eq!(player_1["firstBloods"], 2);
+        assert_eq!(player_2["firstBloods"], 1);
     }
 }

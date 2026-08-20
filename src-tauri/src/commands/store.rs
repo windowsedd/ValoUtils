@@ -597,6 +597,9 @@ mod tests {
         assert_eq!(value["wallet"]["valorantPoints"], 4215);
         assert_eq!(value["daily"]["remainingSeconds"], 43_200);
         assert_eq!(value["featuredBundle"]["dataAssetId"], "bundle-art-1");
-        assert_eq!(value["daily"]["offers"][0]["price"]["currency"], "valorantPoints");
+        assert_eq!(
+            value["daily"]["offers"][0]["price"]["currency"],
+            "valorantPoints"
+        );
     }
 }

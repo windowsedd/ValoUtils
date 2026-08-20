@@ -36,6 +36,8 @@ const requiredKeys = [
 	"historySyntax",
 	"historyDesc",
 	"historyExample",
+	"dodgeSyntax",
+	"dodgeDesc",
 	"customTitle",
 	"customDesc",
 	"customAdd",
@@ -90,6 +92,7 @@ describe("FakePlayer localization", () => {
 		expect(page).toContain('t("dummyBot.commandsTitle")');
 		expect(page).toContain('t("dummyBot.translateSyntax")');
 		expect(page).toContain('t("dummyBot.translateExample")');
+		expect(page).toContain('t("dummyBot.dodgeSyntax")');
 		expect(page).toContain('t("dummyBot.customTitle")');
 		expect(page).not.toContain('title="In-game FakePlayer"');
 		expect(page).not.toContain(">Launch</button>");

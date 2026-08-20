@@ -26,12 +26,19 @@ pub struct ContractProgress {
 
 fn as_u64(value: Option<&Value>) -> u64 {
     value
-        .and_then(|entry| entry.as_u64().or_else(|| entry.as_i64().map(|n| n.max(0) as u64)))
+        .and_then(|entry| {
+            entry
+                .as_u64()
+                .or_else(|| entry.as_i64().map(|n| n.max(0) as u64))
+        })
         .unwrap_or(0)
 }
 
 fn as_str(value: Option<&Value>) -> String {
-    value.and_then(Value::as_str).unwrap_or_default().to_string()
+    value
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string()
 }
 
 pub fn parse_contract_progress(contracts: &Value) -> Vec<ContractProgress> {

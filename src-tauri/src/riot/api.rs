@@ -437,6 +437,15 @@ impl RiotApiClient {
         )
         .await
     }
+    pub async fn pregame_quit(&self, match_id: &str) -> Result<Value, String> {
+        self.request(
+            Target::Glz,
+            reqwest::Method::POST,
+            &format!("/pregame/v1/matches/{match_id}/quit"),
+            None,
+        )
+        .await
+    }
     pub async fn coregame_get_player(&self, puuid: &str) -> Result<Value, String> {
         self.request(
             Target::Glz,

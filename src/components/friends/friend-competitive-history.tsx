@@ -1,3 +1,4 @@
+import { formatDpr } from "@/components/match-dpr";
 import { MatchScoreboard, useMatchAssets, useMatchDetails } from "@/components/match-scoreboard";
 import { useMatchPlayerProfileModal } from "@/components/match-player-profile-modal";
 import { SectionCard, SectionRow } from "@/components/section-card";
@@ -110,6 +111,12 @@ export const FriendMatchHistory = ({
 								</div>
 								<span className="hidden w-24 text-right text-xs tabular-nums text-gray-300 md:block">
 									{player ? `${player.kills} / ${player.deaths} / ${player.assists}` : "—"}
+								</span>
+								<span className="hidden w-12 text-right text-xs tabular-nums text-gray-400 lg:block">
+									{player ? formatDpr(player) : "—"}
+								</span>
+								<span className="hidden w-8 text-right text-xs tabular-nums text-gray-400 lg:block">
+									{player ? String(player.firstBloods ?? 0) : "—"}
 								</span>
 								<span className={`w-16 text-right text-sm font-bold tabular-nums ${accent === "#4ade80" ? "text-green-400" : accent === "#f87171" ? "text-red-400" : "text-gray-500"}`}>
 									{competitive ? (rr == null || rr === 0 ? <FaMinus className="ml-auto" /> : `${rr > 0 ? "+" : ""}${rr} RR`) : won == null ? <FaMinus className="ml-auto" /> : t(won ? "matches.victory" : "matches.defeat")}

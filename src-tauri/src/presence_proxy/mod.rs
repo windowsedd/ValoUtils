@@ -337,21 +337,10 @@ pub fn last_party_muc_resource() -> String {
     last_group_muc_resource(ChatChannel::Party)
 }
 
-/// Re-join if we know the occupant nick, then post through the game XMPP.
-pub fn send_group_through_game(channel: ChatChannel, room: &str, body: &str) -> bool {
+/// Post through the game client's already-joined MUC connection.
+pub fn send_group_through_game(_channel: ChatChannel, room: &str, body: &str) -> bool {
     if room.is_empty() || body.is_empty() {
         return false;
-    }
-    let resource = last_group_muc_resource(channel);
-    if !resource.is_empty() {
-        let join = format!(
-            r#"<presence to="{}/{}"><x xmlns="http://jabber.org/protocol/muc"/></presence>"#,
-            xml::escape_xml(room),
-            xml::escape_xml(&resource)
-        );
-        if outbound().send(join).is_err() {
-            return false;
-        }
     }
     send_groupchat_through_game(room, body)
 }
@@ -371,12 +360,24 @@ pub fn send_groupchat_through_game(cid: &str, body: &str) -> bool {
     if cid.is_empty() || body.is_empty() {
         return false;
     }
-    let stanza = format!(
-        r#"<message to="{}" type="groupchat"><body>{}</body></message>"#,
+    outbound().send(game_groupchat_stanza(cid, body)).is_ok()
+}
+
+fn groupchat_stanza_with_id(cid: &str, body: &str, id: &str) -> String {
+    format!(
+        r#"<message id="{}" to="{}" type="groupchat"><body>{}</body></message>"#,
+        xml::escape_xml(id),
         xml::escape_xml(cid),
         xml::escape_xml(body)
-    );
-    outbound().send(stanza).is_ok()
+    )
+}
+
+pub fn game_groupchat_stanza(cid: &str, body: &str) -> String {
+    let millis = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    groupchat_stanza_with_id(cid, body, &format!("{millis}:1"))
 }
 
 pub fn init(enabled: bool, mode: PresenceMode, connect_to_muc: bool) -> Result<(), &'static str> {
@@ -438,6 +439,15 @@ fn persist_and_emit() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn injected_groupchat_matches_the_native_player_message_shape() {
+        assert_eq!(
+            groupchat_stanza_with_id("match-blue@ares-coregame.ap1.pvp.net", "a < b & c", "42:1"),
+            r#"<message id="42:1" to="match-blue@ares-coregame.ap1.pvp.net" type="groupchat"><body>a &lt; b &amp; c</body></message>"#
+        );
+    }
+
     #[test]
     fn game_groupchat_inject_is_a_no_op_without_a_live_relay() {
         assert!(!send_groupchat_through_game(
@@ -449,9 +459,7 @@ mod tests {
 
     #[test]
     fn remembers_the_party_muc_the_game_joined() {
-        record_party_muc_from_stanza(
-            r#"<presence to="live@ares-parties.ap1.pvp.net/occupant"/>"#,
-        );
+        record_party_muc_from_stanza(r#"<presence to="live@ares-parties.ap1.pvp.net/occupant"/>"#);
         assert_eq!(
             last_party_muc_jid().as_deref(),
             Some("live@ares-parties.ap1.pvp.net")

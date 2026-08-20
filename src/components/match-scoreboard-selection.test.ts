@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import type { MatchPlayer } from "@/types/matches";
 import { formatDpr } from "./match-dpr";
 import { scoreboardPlayerInteraction } from "./match-scoreboard-selection";
@@ -24,6 +26,7 @@ const player: MatchPlayer = {
 	damage: 3000,
 	adr: 150,
 	dpr: 150,
+	firstBloods: 3,
 	headshots: 20,
 	bodyshots: 40,
 	legshots: 5,
@@ -47,6 +50,26 @@ describe("scoreboard player interaction", () => {
 			scoreboardPlayerInteraction({ ...player, subject: "   " }, () => {}).selectable,
 		).toBe(false);
 	});
+});
+
+describe("first bloods", () => {
+	test("scoreboard stats include first bloods next to DPR", () => {
+		const source = readFileSync(join(import.meta.dir, "match-scoreboard.tsx"), "utf8");
+		expect(source).toContain('t("matches.firstBloods")');
+		expect(source).toContain("self.firstBloods");
+		expect(source).toContain('t("matches.fb")');
+		expect(source).toContain("player.firstBloods");
+	});
+
+	for (const locale of ["en", "ko", "zh-TW"] as const) {
+		test(`${locale} localizes first bloods`, () => {
+			const messages = JSON.parse(
+				readFileSync(join(import.meta.dir, `../i18n/locales/${locale}.json`), "utf8"),
+			);
+			expect(messages.matches.firstBloods).toBeString();
+			expect(messages.matches.fb).toBeString();
+		});
+	}
 });
 
 describe("damage per round", () => {

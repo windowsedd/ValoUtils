@@ -4,7 +4,8 @@ import en from "./locales/en.json";
 import ko from "./locales/ko.json";
 import zhTW from "./locales/zh-TW.json";
 
-const savedLang = localStorage.getItem("valoutils-lang") ?? "en";
+const savedLangRaw = localStorage.getItem("valoutils-lang") ?? "en";
+const savedLang = savedLangRaw === "kr" ? "ko" : savedLangRaw;
 
 i18n.use(initReactI18next).init({
 	resources: {

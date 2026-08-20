@@ -165,6 +165,12 @@ const DummyBot = () => {
 						<p className="mt-1 font-mono text-[11px] text-(--ink-faint)">{t("dummyBot.historyExample")}</p>
 					</div>
 				</SectionRow>
+				<SectionRow leader={false}>
+					<div className="min-w-0">
+						<p className="font-mono text-sm text-(--ink)">{t("dummyBot.dodgeSyntax")}</p>
+						<p className="mt-1 text-xs leading-5 text-(--ink-dim)">{t("dummyBot.dodgeDesc")}</p>
+					</div>
+				</SectionRow>
 			</SectionCard>
 
 			<SectionCard title={t("dummyBot.customTitle")} accent="#e8a33d" count={customCommands.length}>
@@ -234,6 +240,7 @@ const RESERVED = new Set([
 	".send",
 	".tran",
 	".translate",
+	".dodge",
 	"$online",
 	"$offline",
 	"$mobile",

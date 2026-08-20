@@ -178,6 +178,12 @@ pub struct TranslationOutcome {
     pub translated: String,
 }
 
+pub(crate) struct PreparedTranslation {
+    pub live_cid: String,
+    pub body: String,
+    pub reply: String,
+}
+
 /// Runs a `.send {channel} {language} {message}` command.
 ///
 /// The channel parsed from the command is the channel the translation is sent
@@ -228,12 +234,47 @@ pub async fn execute_typed_translation(
     run_translation_command(&client, &parsed, &config, app).await
 }
 
+pub(crate) async fn prepare_typed_translation(
+    command: &str,
+    app: Option<&AppHandle>,
+    pinned_live_cid: Option<&str>,
+) -> Result<PreparedTranslation, crate::riot::error::RiotError> {
+    let client = RiotChatClient::connect()?;
+    let config = app
+        .map(translator_config)
+        .unwrap_or_else(|| TranslatorConfig {
+            provider: "google".into(),
+            deepl_api_key: String::new(),
+            target_language: "en".into(),
+        });
+    let parsed = chat_command::parse_translation_command_with_fallback(
+        command,
+        &config.provider,
+        Some(config.target_language.as_str()),
+    )?;
+    let prepared =
+        prepare_translation_command(&client, &parsed, &config, app, pinned_live_cid, false).await?;
+    let reply = format_translation_reply(&prepared.outcome);
+    Ok(PreparedTranslation {
+        live_cid: prepared.live_cid,
+        body: prepared.body,
+        reply,
+    })
+}
+
+pub(crate) fn expand_custom_command_for_bot(
+    input: &str,
+    app: Option<&AppHandle>,
+) -> Option<String> {
+    let commands = load_custom_commands(app);
+    chat_command::expand_custom_command(input, &commands)
+}
+
 pub async fn execute_maybe_custom_command(
     input: &str,
     app: Option<&AppHandle>,
 ) -> Option<Result<String, crate::riot::error::RiotError>> {
-    let commands = load_custom_commands(app);
-    let expanded = chat_command::expand_custom_command(input, &commands)?;
+    let expanded = expand_custom_command_for_bot(input, app)?;
     if chat_command::is_history_translate_command(&expanded) {
         Some(execute_history_translation(&expanded, app).await)
     } else if chat_command::is_translation_command(&expanded) {
@@ -257,6 +298,8 @@ pub enum ComposerCommand {
     History(String),
     /// `.send` — translates and posts to a room.
     Translate(String),
+    /// `.dodge` — leave agent select.
+    Dodge,
     Unknown,
 }
 
@@ -284,6 +327,8 @@ pub fn classify_composer_command(
         ComposerCommand::History(expanded)
     } else if chat_command::is_translation_command(&expanded) {
         ComposerCommand::Translate(expanded)
+    } else if chat_command::is_dodge_command(&expanded) {
+        ComposerCommand::Dodge
     } else {
         ComposerCommand::Unknown
     }
@@ -306,10 +351,13 @@ pub async fn chat_command(args: Vec<Value>, app: AppHandle) -> Result<String, ()
 
     let commands = load_custom_commands(Some(&app));
     let outcome = match classify_composer_command(&input, &commands) {
-        ComposerCommand::History(command) => execute_history_translation(&command, Some(&app)).await,
+        ComposerCommand::History(command) => {
+            execute_history_translation(&command, Some(&app)).await
+        }
         ComposerCommand::Translate(command) => execute_typed_translation(&command, Some(&app))
             .await
             .map(|outcome| format_translation_reply(&outcome)),
+        ComposerCommand::Dodge => execute_dodge(Some(&app)).await,
         ComposerCommand::Unknown => {
             return Ok(json!({
                 "success": false,
@@ -336,6 +384,71 @@ fn load_custom_commands(app: Option<&AppHandle>) -> Vec<chat_command::CustomBotC
         .get("botCustomCommands")
         .and_then(|value| serde_json::from_value(value).ok())
         .unwrap_or_default()
+}
+
+/// Leaves the current pre-game lobby via GLZ `POST /pregame/v1/matches/{id}/quit`.
+pub async fn execute_dodge(app: Option<&AppHandle>) -> Result<String, RiotError> {
+    let Some(app) = app else {
+        return Err(RiotError::RiotClientNotRunning);
+    };
+    let Some(riot) = app.try_state::<crate::riot::client::RiotState>() else {
+        return Err(RiotError::RiotClientNotRunning);
+    };
+
+    let result = crate::riot::api::with_api(&riot, |api| async move {
+        let pre = match api.pregame_get_player(&api.puuid).await {
+            Ok(pre) => pre,
+            Err(error) => {
+                return if is_not_in_pregame_error(&error) {
+                    Ok(DodgeResult::NotInPregame)
+                } else {
+                    Err(error)
+                };
+            }
+        };
+        let Some(match_id) = pre
+            .get("MatchID")
+            .and_then(Value::as_str)
+            .filter(|id| !id.is_empty())
+        else {
+            return Ok(DodgeResult::NotInPregame);
+        };
+        match api.pregame_quit(match_id).await {
+            Ok(_) => Ok(DodgeResult::Left),
+            Err(error) if is_not_in_pregame_error(&error) => Ok(DodgeResult::NotInPregame),
+            Err(error) => Err(error),
+        }
+    })
+    .await;
+
+    match result {
+        Ok(DodgeResult::Left) => Ok("Left agent select.".into()),
+        Ok(DodgeResult::NotInPregame) => {
+            Err(RiotError::InvalidCommand("Not in agent select.".into()))
+        }
+        Err(error) => Err(dodge_api_error(error)),
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DodgeResult {
+    Left,
+    NotInPregame,
+}
+
+fn dodge_api_error(error: String) -> RiotError {
+    if crate::riot::client::is_login_required_error(&error) {
+        RiotError::RiotClientNotRunning
+    } else if is_not_in_pregame_error(&error) {
+        RiotError::InvalidCommand("Not in agent select.".into())
+    } else {
+        RiotError::InvalidCommand("Could not leave agent select.".into())
+    }
+}
+
+fn is_not_in_pregame_error(error: &str) -> bool {
+    let lower = error.to_ascii_lowercase();
+    lower.contains("\"status\":404") || lower.contains("resource_not_found")
 }
 
 pub async fn execute_history_translation(
@@ -453,11 +566,11 @@ pub async fn execute_history_translation(
         )
         .await
         .map_err(RiotError::InvalidCommand)?;
-        parts.push(format!(
-            "{}. {} → {}",
+        parts.push(format_history_translation_line(
             index + 1,
-            preview_history_line(&message.body),
-            translated.text.trim()
+            &translated.source_language,
+            &message.body,
+            &translated.text,
         ));
     }
     Ok(parts.join(" · "))
@@ -472,6 +585,21 @@ fn history_channel_matches(wanted: Option<ChatChannel>, cid: &str) -> bool {
             ChatChannel::Team.matches_cid(cid) || ChatChannel::Pregame.matches_cid(cid)
         }
         Some(channel) => channel.matches_cid(cid),
+    }
+}
+
+fn format_history_translation_line(
+    index: usize,
+    source_language: &str,
+    original: &str,
+    translated: &str,
+) -> String {
+    let original = preview_history_line(original);
+    let translated = translated.trim();
+    if source_language.is_empty() || source_language.eq_ignore_ascii_case("auto") {
+        format!("{index}. {original} → {translated}")
+    } else {
+        format!("{index}. [{source_language}] {original} → {translated}")
     }
 }
 
@@ -499,6 +627,48 @@ async fn run_translation_command(
     config: &TranslatorConfig,
     app: Option<&AppHandle>,
 ) -> Result<TranslationOutcome, RiotError> {
+    let prepared = prepare_translation_command(client, parsed, config, app, None, true).await?;
+    deliver_translated_line(
+        client,
+        prepared.outcome.channel,
+        &prepared.rest_cid,
+        &prepared.live_cid,
+        &prepared.body,
+        app,
+    )
+    .await?;
+
+    Ok(prepared.outcome)
+}
+
+struct InternalPreparedTranslation {
+    outcome: TranslationOutcome,
+    rest_cid: String,
+    live_cid: String,
+    body: String,
+}
+
+async fn prepare_translation_command(
+    client: &RiotChatClient,
+    parsed: &TranslationCommand,
+    config: &TranslatorConfig,
+    app: Option<&AppHandle>,
+    pinned_live_cid: Option<&str>,
+    use_observed_room: bool,
+) -> Result<InternalPreparedTranslation, RiotError> {
+    let channel = effective_send_channel(parsed.channel);
+    // Resolve and snapshot the destination before the external translation
+    // request. The live relay already knows its joined MUC, so it deliberately
+    // skips REST resolution when that pinned room matches the requested channel.
+    let pinned_live_cid = pinned_live_cid.filter(|cid| channel.matches_cid(cid));
+    let (rest_cid, live_cid) = if let Some(cid) = pinned_live_cid {
+        (cid.to_string(), cid.to_string())
+    } else {
+        let rest_cid = resolve_send_cid(client, channel, app).await?;
+        let live_cid = live_room_for_send(channel, &rest_cid, use_observed_room)
+            .ok_or(RiotError::ChannelUnavailable { channel })?;
+        (rest_cid, live_cid)
+    };
     let translated = crate::translate::translate_text(
         &parsed.message,
         &config.provider,
@@ -510,15 +680,80 @@ async fn run_translation_command(
     .map_err(RiotError::InvalidCommand)?;
 
     let body = translated.text.clone();
-    let cid = resolve_send_cid(client, parsed.channel, app).await?;
-    deliver_translated_line(client, parsed.channel, &cid, &body, app).await?;
-
-    Ok(TranslationOutcome {
-        channel: parsed.channel,
-        language: translated.target_language,
-        original: parsed.message.clone(),
-        translated: translated.text,
+    Ok(InternalPreparedTranslation {
+        outcome: TranslationOutcome {
+            channel,
+            language: translated.target_language,
+            original: parsed.message.clone(),
+            translated: translated.text,
+        },
+        rest_cid,
+        live_cid,
+        body,
     })
+}
+
+fn effective_send_channel(channel: ChatChannel) -> ChatChannel {
+    channel
+}
+
+fn party_live_room(rest_cid: &str, observed_cid: Option<&str>) -> Option<String> {
+    observed_cid
+        .filter(|observed| crate::riot::models::same_party_room(rest_cid, observed))
+        .map(str::to_string)
+}
+
+fn party_room_for_send(
+    rest_cid: &str,
+    observed_cid: Option<&str>,
+    require_observed: bool,
+) -> Option<String> {
+    party_live_room(rest_cid, observed_cid)
+        .or_else(|| (!require_observed).then(|| crate::riot::models::party_xmpp_jid(rest_cid)))
+}
+
+fn match_live_room(rest_cid: &str, observed_cid: Option<&str>) -> Option<String> {
+    observed_cid
+        .filter(|observed| crate::riot::models::same_side_room(rest_cid, observed))
+        .map(str::to_string)
+}
+
+fn match_room_for_send(
+    rest_cid: &str,
+    observed_cid: Option<&str>,
+    require_observed: bool,
+) -> Option<String> {
+    match_live_room(rest_cid, observed_cid)
+        .or_else(|| (!require_observed).then(|| crate::riot::models::game_xmpp_jid(rest_cid)))
+}
+
+fn live_room_for_send(
+    channel: ChatChannel,
+    rest_cid: &str,
+    use_observed_room: bool,
+) -> Option<String> {
+    match channel {
+        ChatChannel::Party => party_room_for_send(
+            rest_cid,
+            crate::presence_proxy::last_group_muc_jid(ChatChannel::Party).as_deref(),
+            !use_observed_room,
+        ),
+        ChatChannel::Team => Some(rest_cid.to_string()),
+        ChatChannel::Pregame => match_room_for_send(
+            rest_cid,
+            crate::presence_proxy::last_group_muc_jid(ChatChannel::Pregame).as_deref(),
+            !use_observed_room,
+        ),
+        ChatChannel::All if use_observed_room => Some(inject_cid_for_send(channel, rest_cid)),
+        ChatChannel::All => Some(rest_cid.to_string()),
+    }
+}
+
+fn prefer_active_xmpp_room(channel: ChatChannel) -> bool {
+    matches!(
+        channel,
+        ChatChannel::Party | ChatChannel::Team | ChatChannel::Pregame
+    )
 }
 
 pub fn inject_cid_for_send(channel: ChatChannel, rest_cid: &str) -> String {
@@ -528,18 +763,25 @@ pub fn inject_cid_for_send(channel: ChatChannel, rest_cid: &str) -> String {
 async fn deliver_translated_line(
     client: &RiotChatClient,
     channel: ChatChannel,
-    cid: &str,
+    rest_cid: &str,
+    live_cid: &str,
     body: &str,
     app: Option<&AppHandle>,
 ) -> Result<(), RiotError> {
-    let inject_cid = inject_cid_for_send(channel, cid);
-    if crate::presence_proxy::send_group_through_game(channel, &inject_cid, body) {
-        return Ok(());
+    let sent = if crate::presence_proxy::send_group_through_game(channel, live_cid, body) {
+        true
+    } else if client.send_to_cid(rest_cid, body).await.is_ok() {
+        true
+    } else {
+        send_via_xmpp(app, channel, body).await?;
+        true
+    };
+    if sent {
+        if let Some(app) = app {
+            emit_sent_chat_message(app, live_cid, body, channel);
+        }
     }
-    if client.send_to_cid(cid, body).await.is_ok() {
-        return Ok(());
-    }
-    send_via_xmpp(app, channel, body).await
+    Ok(())
 }
 
 async fn resolve_send_cid(
@@ -547,6 +789,29 @@ async fn resolve_send_cid(
     channel: ChatChannel,
     app: Option<&AppHandle>,
 ) -> Result<String, RiotError> {
+    if prefer_active_xmpp_room(channel) {
+        if let Some(app) = app {
+            if let Some(riot) = app.try_state::<crate::riot::client::RiotState>() {
+                let active_room = match channel {
+                    ChatChannel::Party => {
+                        let (room, _) = crate::xmpp::ensure_party_xmpp_chat(&riot).await;
+                        (!room.is_empty()).then_some(room)
+                    }
+                    ChatChannel::Team | ChatChannel::Pregame => {
+                        crate::xmpp::ensure_match_xmpp_chat(&riot)
+                            .await
+                            .ok()
+                            .and_then(|(team, _)| team)
+                            .filter(|room| !room.is_empty())
+                    }
+                    _ => None,
+                };
+                if let Some(room) = active_room {
+                    return Ok(room);
+                }
+            }
+        }
+    }
     if let Ok(cid) = client.resolve_cid(channel).await {
         return Ok(cid);
     }
@@ -708,6 +973,73 @@ impl PendingEchoes {
     }
 }
 
+const LIVE_TRANSLATION_ECHO_TTL: std::time::Duration = std::time::Duration::from_secs(30);
+
+fn live_translation_echoes(
+) -> &'static std::sync::Mutex<VecDeque<(String, String, std::time::Instant)>> {
+    static ECHOES: std::sync::OnceLock<
+        std::sync::Mutex<VecDeque<(String, String, std::time::Instant)>>,
+    > = std::sync::OnceLock::new();
+    ECHOES.get_or_init(|| std::sync::Mutex::new(VecDeque::new()))
+}
+
+fn live_echo_cid_key(cid: &str) -> String {
+    if ChatChannel::Party.matches_cid(cid) {
+        crate::riot::models::party_xmpp_jid(cid).to_ascii_lowercase()
+    } else {
+        cid.to_ascii_lowercase()
+    }
+}
+
+fn prune_live_translation_echoes(echoes: &mut VecDeque<(String, String, std::time::Instant)>) {
+    while echoes
+        .front()
+        .is_some_and(|(_, _, created)| created.elapsed() >= LIVE_TRANSLATION_ECHO_TTL)
+    {
+        echoes.pop_front();
+    }
+}
+
+pub(crate) fn record_live_translation_echo(cid: &str, body: &str) {
+    if let Ok(mut echoes) = live_translation_echoes().lock() {
+        prune_live_translation_echoes(&mut echoes);
+        echoes.push_back((
+            live_echo_cid_key(cid),
+            normalize_echo(body),
+            std::time::Instant::now(),
+        ));
+        while echoes.len() > PendingEchoes::CAPACITY {
+            echoes.pop_front();
+        }
+    }
+}
+
+pub(crate) fn discard_live_translation_echo(cid: &str, body: &str) {
+    if let Ok(mut echoes) = live_translation_echoes().lock() {
+        prune_live_translation_echoes(&mut echoes);
+        let wanted = (live_echo_cid_key(cid), normalize_echo(body));
+        if let Some(index) = echoes.iter().position(|(entry_cid, entry_body, _)| {
+            (entry_cid, entry_body) == (&wanted.0, &wanted.1)
+        }) {
+            echoes.remove(index);
+        }
+    }
+}
+
+fn consume_live_translation_echo(cid: &str, body: &str) -> bool {
+    let wanted = (live_echo_cid_key(cid), normalize_echo(body));
+    live_translation_echoes().lock().is_ok_and(|mut echoes| {
+        prune_live_translation_echoes(&mut echoes);
+        let Some(index) = echoes.iter().position(|(entry_cid, entry_body, _)| {
+            (entry_cid, entry_body) == (&wanted.0, &wanted.1)
+        }) else {
+            return false;
+        };
+        echoes.remove(index);
+        true
+    })
+}
+
 fn normalize_echo(body: &str) -> String {
     body.trim().to_lowercase()
 }
@@ -719,6 +1051,8 @@ enum OwnMessage {
     Ignore,
     /// A command to run, already expanded to its `.send` form.
     Translate(String),
+    /// `.dodge` — leave agent select.
+    Dodge,
 }
 
 /// Classifies a line from the local player.
@@ -736,6 +1070,9 @@ fn plan_own_message(
     }
     if chat_command::is_translation_command(body) {
         return OwnMessage::Translate(body.to_string());
+    }
+    if chat_command::is_dodge_command(body) {
+        return OwnMessage::Dodge;
     }
     // A custom trigger expands to a full command. Triggers whose action is
     // `tran` expand to `.tran ...`, which produces a text summary with nowhere
@@ -845,9 +1182,9 @@ async fn resolve_client(
 /// Decides what a newly-seen message means.
 ///
 /// Messages from the local player are ignored unless they are a `.send`
-/// command or a custom trigger. What keeps a translated reply from being
-/// translated again is the echo list: the body the bot posts is recorded on the
-/// way out and consumed when the poller reads it back.
+/// or `.dodge` command or a custom trigger. What keeps a translated reply from
+/// being translated again is the echo list: the body the bot posts is recorded
+/// on the way out and consumed when the poller reads it back.
 async fn dispatch(
     app: &AppHandle,
     client: &RiotChatClient,
@@ -860,35 +1197,124 @@ async fn dispatch(
         .is_some_and(|puuid| message.is_from(puuid));
 
     if is_own {
-        let commands = load_custom_commands(Some(app));
-        let OwnMessage::Translate(command) =
-            plan_own_message(&message.body, &commands, &mut memory.echoes)
-        else {
+        if consume_live_translation_echo(&message.cid, &message.body) {
             return;
-        };
-        let config = translator_config(app);
-        match chat_command::parse_translation_command_with_fallback(
-            &command,
-            &config.provider,
-            Some(config.target_language.as_str()),
-        ) {
-            Ok(parsed) => match run_translation_command(client, &parsed, &config, Some(app)).await {
-                Ok(outcome) => {
-                    memory.echoes.remember(&outcome.translated);
-                    let _ = app.emit(EVENT_COMMAND, outcome);
+        }
+        let commands = load_custom_commands(Some(app));
+        match plan_own_message(&message.body, &commands, &mut memory.echoes) {
+            OwnMessage::Ignore => return,
+            OwnMessage::Dodge => match execute_dodge(Some(app)).await {
+                Ok(reply) => {
+                    let _ = app.emit(EVENT_COMMAND, reply);
                 }
                 Err(error) => {
                     let _ = app.emit(EVENT_ERROR, error.to_string());
                 }
             },
-            Err(error) => {
-                let _ = app.emit(EVENT_ERROR, error.to_string());
+            OwnMessage::Translate(command) => {
+                let config = translator_config(app);
+                match chat_command::parse_translation_command_with_fallback(
+                    &command,
+                    &config.provider,
+                    Some(config.target_language.as_str()),
+                ) {
+                    Ok(parsed) => {
+                        match run_translation_command(client, &parsed, &config, Some(app)).await {
+                            Ok(outcome) => {
+                                memory.echoes.remember(&outcome.translated);
+                                let _ = app.emit(EVENT_COMMAND, outcome);
+                            }
+                            Err(error) => {
+                                let _ = app.emit(EVENT_ERROR, error.to_string());
+                            }
+                        }
+                    }
+                    Err(error) => {
+                        let _ = app.emit(EVENT_ERROR, error.to_string());
+                    }
+                }
             }
         }
         return;
     }
 
+    emit_polled_chat_message(app, message, false);
+}
+
+fn frontend_chat_message_json(
+    conversation_id: &str,
+    id: &str,
+    sender: &str,
+    sender_name: &str,
+    body: &str,
+    timestamp: &str,
+    channel: ChatChannel,
+    is_self: bool,
+) -> Value {
+    let (msg_type, scope) = match channel {
+        ChatChannel::Party => ("groupchat", "party"),
+        ChatChannel::Pregame | ChatChannel::Team | ChatChannel::All => ("groupchat", "match"),
+    };
+    json!({
+        "id": id,
+        "conversationId": conversation_id,
+        "sender": sender,
+        "senderName": sender_name,
+        "body": body,
+        "timestamp": timestamp,
+        "type": msg_type,
+        "scope": scope,
+        "isSelf": is_self,
+    })
+}
+
+fn emit_ui_chat_message(app: &AppHandle, payload: &Value) {
+    if let Ok(text) = serde_json::to_string(payload) {
+        let _ = app.emit("chat:message", text);
+    }
+}
+
+fn emit_polled_chat_message(app: &AppHandle, message: &ChatMessage, is_self: bool) {
+    let sender_name = if message.sender_tag.is_empty() {
+        message.sender_name.clone()
+    } else {
+        format!("{}#{}", message.sender_name, message.sender_tag)
+    };
+    let payload = frontend_chat_message_json(
+        &message.cid,
+        &message.key,
+        &message.sender_puuid,
+        &sender_name,
+        &message.body,
+        &message.timestamp,
+        message.channel,
+        is_self,
+    );
+    emit_ui_chat_message(app, &payload);
     let _ = app.emit(EVENT_MESSAGE, message.clone());
+}
+
+fn emit_sent_chat_message(
+    app: &AppHandle,
+    conversation_id: &str,
+    body: &str,
+    channel: ChatChannel,
+) {
+    let millis = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_millis())
+        .unwrap_or(0);
+    let payload = frontend_chat_message_json(
+        conversation_id,
+        &format!("sent:{conversation_id}:{millis}"),
+        "",
+        "",
+        body,
+        &millis.to_string(),
+        channel,
+        true,
+    );
+    emit_ui_chat_message(app, &payload);
 }
 
 // ---------------------------------------------------------------------------
@@ -978,6 +1404,45 @@ mod tests {
             plan_own_message(".send all french push a", &commands, &mut echoes),
             OwnMessage::Translate(".send all french push a".into())
         );
+        assert_eq!(
+            plan_own_message(".dodge", &commands, &mut echoes),
+            OwnMessage::Dodge
+        );
+    }
+
+    #[test]
+    fn polled_messages_are_shaped_for_the_chat_ui() {
+        let payload = frontend_chat_message_json(
+            "blue@ares-coregame.ap",
+            "msg-1",
+            "player-1",
+            "Name#TAG",
+            "hello",
+            "123",
+            ChatChannel::Team,
+            false,
+        );
+        assert_eq!(payload["id"], "msg-1");
+        assert_eq!(payload["conversationId"], "blue@ares-coregame.ap");
+        assert_eq!(payload["sender"], "player-1");
+        assert_eq!(payload["senderName"], "Name#TAG");
+        assert_eq!(payload["body"], "hello");
+        assert_eq!(payload["type"], "groupchat");
+        assert_eq!(payload["scope"], "match");
+        assert_eq!(payload["isSelf"], false);
+
+        let party = frontend_chat_message_json(
+            "p@ares-parties.ap",
+            "m2",
+            "s",
+            "n",
+            "hi",
+            "1",
+            ChatChannel::Party,
+            true,
+        );
+        assert_eq!(party["scope"], "party");
+        assert_eq!(party["isSelf"], true);
     }
 
     #[test]
@@ -1033,7 +1498,10 @@ mod tests {
         let commands = custom_commands();
 
         echoes.remember("gg");
-        assert_eq!(plan_own_message("gg", &commands, &mut echoes), OwnMessage::Ignore);
+        assert_eq!(
+            plan_own_message("gg", &commands, &mut echoes),
+            OwnMessage::Ignore
+        );
         assert!(
             matches!(
                 plan_own_message("gg", &commands, &mut echoes),
@@ -1041,6 +1509,26 @@ mod tests {
             ),
             "a single echo must not mute the trigger for the rest of the session"
         );
+    }
+
+    #[test]
+    fn a_live_relay_echo_cannot_execute_the_same_command_twice() {
+        let cid = "relay-all@ares-coregame.ap1.pvp.net";
+        let body = ".send all french relay-echo-unique";
+
+        record_live_translation_echo(cid, body);
+        assert!(!consume_live_translation_echo(
+            "different-all@ares-coregame.ap1.pvp.net",
+            body
+        ));
+        assert!(consume_live_translation_echo(cid, body));
+        assert!(!consume_live_translation_echo(cid, body));
+
+        record_live_translation_echo("party-1@ares-parties.ap", body);
+        assert!(consume_live_translation_echo(
+            "party-1@ares-parties.ap1.pvp.net",
+            body
+        ));
     }
 
     #[test]
@@ -1077,6 +1565,14 @@ mod tests {
             classify_composer_command(".translate team 2", &commands),
             ComposerCommand::History(".translate team 2".into())
         );
+        assert_eq!(
+            classify_composer_command(".dodge", &commands),
+            ComposerCommand::Dodge
+        );
+        assert_eq!(
+            classify_composer_command("  .DODGE", &commands),
+            ComposerCommand::Dodge
+        );
     }
 
     #[test]
@@ -1098,7 +1594,10 @@ mod tests {
         // In-game a bare trigger fires. Here it must not, or the player could
         // never send "gg" as an ordinary message.
         let commands = custom_commands();
-        assert_eq!(classify_composer_command("gg", &commands), ComposerCommand::Unknown);
+        assert_eq!(
+            classify_composer_command("gg", &commands),
+            ComposerCommand::Unknown
+        );
         assert_eq!(
             classify_composer_command("good game everyone", &commands),
             ComposerCommand::Unknown
@@ -1112,7 +1611,10 @@ mod tests {
             classify_composer_command(".nope arg", &commands),
             ComposerCommand::Unknown
         );
-        assert_eq!(classify_composer_command(".", &commands), ComposerCommand::Unknown);
+        assert_eq!(
+            classify_composer_command(".", &commands),
+            ComposerCommand::Unknown
+        );
     }
 
     #[test]
@@ -1173,10 +1675,7 @@ mod tests {
 
     #[test]
     fn history_channel_matches_party_and_team_rooms() {
-        assert!(history_channel_matches(
-            None,
-            "abc@ares-parties.ap"
-        ));
+        assert!(history_channel_matches(None, "abc@ares-parties.ap"));
         assert!(history_channel_matches(
             Some(ChatChannel::Team),
             "m-blue@ares-pregame.ap"
@@ -1206,6 +1705,133 @@ mod tests {
         assert_eq!(
             inject_cid_for_send(ChatChannel::All, "m-all@ares-coregame.ap1.pvp.net"),
             "m-all@ares-coregame.ap1.pvp.net"
+        );
+    }
+
+    #[test]
+    fn party_live_room_accepts_the_current_room_in_either_cid_spelling() {
+        let current = "party-1@ares-parties.ap1.pvp.net";
+
+        assert_eq!(
+            party_live_room(current, Some("party-1@ares-parties.ap")).as_deref(),
+            Some("party-1@ares-parties.ap")
+        );
+        assert_eq!(
+            party_live_room(current, Some("party-1@ares-parties.ap1.pvp.net")).as_deref(),
+            Some("party-1@ares-parties.ap1.pvp.net")
+        );
+    }
+
+    #[test]
+    fn pregame_404s_are_not_in_agent_select() {
+        assert!(is_not_in_pregame_error(
+            r#"{"status":404,"path":"/pregame/v1/players/abc","message":"RESOURCE_NOT_FOUND"}"#
+        ));
+        assert!(!is_not_in_pregame_error(
+            r#"{"status":403,"path":"/pregame/v1/matches/abc/quit","message":"FORBIDDEN"}"#
+        ));
+        assert_eq!(
+            dodge_api_error("Riot Client is not running.".into()).to_string(),
+            "Riot Client is not running."
+        );
+        assert_eq!(
+            dodge_api_error(r#"{"status":500,"path":"/pregame/v1/matches/abc/quit"}"#.into())
+                .to_string(),
+            "Could not leave agent select."
+        );
+    }
+
+    #[test]
+    fn party_live_room_rejects_a_stale_party() {
+        assert_eq!(
+            party_live_room(
+                "party-current@ares-parties.ap1.pvp.net",
+                Some("party-old@ares-parties.ap")
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn ordinary_party_send_can_fall_back_to_the_active_resolved_room() {
+        assert_eq!(
+            party_room_for_send("party-1@ares-parties.ap1.pvp.net", None, false).as_deref(),
+            Some("party-1@ares-parties.ap")
+        );
+        assert_eq!(
+            party_room_for_send(
+                "party-1@ares-parties.ap1.pvp.net",
+                Some("party-old@ares-parties.ap"),
+                true,
+            ),
+            None,
+            "a game-socket send must not fall back to a room it has not joined"
+        );
+    }
+
+    #[test]
+    fn active_team_resolution_is_not_overwritten_by_a_stale_coregame_room() {
+        crate::presence_proxy::record_group_muc_from_stanza(
+            r#"<presence to="old-blue@ares-coregame.ap1.pvp.net/me"/>"#,
+        );
+        assert_eq!(
+            live_room_for_send(
+                ChatChannel::Team,
+                "current-blue@ares-pregame.ap1.pvp.net",
+                true,
+            )
+            .as_deref(),
+            Some("current-blue@ares-pregame.ap1.pvp.net")
+        );
+    }
+
+    #[test]
+    fn pregame_send_stays_on_the_pregame_room() {
+        assert_eq!(
+            effective_send_channel(ChatChannel::Pregame),
+            ChatChannel::Pregame
+        );
+        assert!(prefer_active_xmpp_room(ChatChannel::Pregame));
+        assert_eq!(
+            live_room_for_send(
+                ChatChannel::Pregame,
+                "m-blue@ares-pregame.ap1.pvp.net",
+                true,
+            )
+            .as_deref(),
+            Some("m-blue@ares-pregame.ap")
+        );
+        let payload = frontend_chat_message_json(
+            "m-blue@ares-pregame.ap",
+            "msg-1",
+            "player-1",
+            "Name#TAG",
+            "hello",
+            "123",
+            ChatChannel::Pregame,
+            false,
+        );
+        assert_eq!(payload["scope"], "match");
+        assert_eq!(payload["type"], "groupchat");
+    }
+
+    #[test]
+    fn live_party_and_team_prefer_the_active_xmpp_room() {
+        assert!(prefer_active_xmpp_room(ChatChannel::Party));
+        assert!(prefer_active_xmpp_room(ChatChannel::Team));
+        assert!(prefer_active_xmpp_room(ChatChannel::Pregame));
+        assert!(!prefer_active_xmpp_room(ChatChannel::All));
+    }
+
+    #[test]
+    fn history_translation_line_shows_the_original_language_code() {
+        assert_eq!(
+            format_history_translation_line(1, "ko", "gl hf", "잘 부탁해"),
+            "1. [ko] gl hf → 잘 부탁해"
+        );
+        assert_eq!(
+            format_history_translation_line(2, "auto", "hello", "你好"),
+            "2. hello → 你好"
         );
     }
 

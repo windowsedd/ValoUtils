@@ -19,7 +19,7 @@ export const LivePlayerHistory = ({ history, assets }: { history: RecentMatchSum
 				const agent = assets.agents.get(match.agentId.toLowerCase());
 				const agentName = agent ? localize(agent.name) : t("liveGame.unavailable");
 				return (
-					<div key={match.matchId || `${match.startMillis}-${match.agentId}`} className="min-h-12 grid grid-cols-[58px_minmax(110px,1fr)_88px] sm:grid-cols-[58px_minmax(120px,1fr)_64px_88px] md:grid-cols-[58px_minmax(120px,1fr)_64px_100px_88px] lg:grid-cols-[58px_minmax(130px,1fr)_64px_100px_88px_62px] xl:grid-cols-[58px_minmax(130px,1fr)_64px_100px_88px_62px_120px] items-center gap-2 px-3 py-2 border-b border-white/5 last:border-0">
+					<div key={match.matchId || `${match.startMillis}-${match.agentId}`} className="min-h-12 grid grid-cols-[58px_minmax(110px,1fr)_88px] sm:grid-cols-[58px_minmax(120px,1fr)_64px_88px] md:grid-cols-[58px_minmax(120px,1fr)_64px_100px_88px] lg:grid-cols-[58px_minmax(130px,1fr)_64px_100px_88px_62px_62px] xl:grid-cols-[58px_minmax(130px,1fr)_64px_100px_88px_62px_62px_120px] items-center gap-2 px-3 py-2 border-b border-white/5 last:border-0">
 						<span className={`text-[10px] font-bold uppercase tracking-wider ${match.won ? "text-emerald-300" : "text-red-300"}`}>{t(match.won ? "liveGame.win" : "liveGame.loss")}</span>
 						<div className="flex items-center gap-2 min-w-0">
 							{thumb ? <img src={thumb} alt="" className="hidden sm:block w-12 h-7 rounded object-cover shrink-0" /> : <span className="hidden sm:block w-12 h-7 rounded bg-white/5 shrink-0" />}
@@ -29,6 +29,7 @@ export const LivePlayerHistory = ({ history, assets }: { history: RecentMatchSum
 						<div className="hidden md:flex items-center gap-1.5 min-w-0">{agent?.icon && <img src={agent.icon} alt="" className="w-6 h-6 rounded shrink-0" />}<span className="text-[10px] text-gray-500 truncate">{agentName}</span></div>
 						<span className="text-xs tabular-nums text-gray-200">{match.kills} / {match.deaths} / {match.assists}</span>
 						<span className="hidden lg:block text-xs tabular-nums text-gray-400">{t("liveGame.acs")} {match.acs.toFixed(0)}</span>
+						<span className="hidden lg:block text-xs tabular-nums text-gray-400">{t("liveGame.dpr")} {(match.dpr ?? 0).toFixed(0)}</span>
 						<span className="hidden xl:block text-[10px] text-gray-600 text-right">{formatDate(match.startMillis)}</span>
 					</div>
 				);

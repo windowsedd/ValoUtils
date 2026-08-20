@@ -40,6 +40,12 @@ describe("Friend profile rank summary", () => {
 		expect(matchHistory).toContain("localize(agent.name)");
 	});
 
+	test("shows previous act peak ratings on the player profile used by search", () => {
+		expect(profile).toContain("<PreviousActsPanel");
+		expect(profile).toContain("competitiveSeasons={profile.competitiveSeasons}");
+		expect(profile).toContain("currentSeasonId={profile.currentSeasonId}");
+	});
+
 	for (const locale of locales) {
 		test(`${locale} provides the Peak Rank label`, () => {
 			const messages = JSON.parse(

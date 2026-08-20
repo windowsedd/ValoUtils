@@ -251,10 +251,12 @@ export const useChatController = () => {
 		window.Main.on("chat:translate", onTranslate);
 		window.Main.on("chat:friend-action", onFriendAction);
 		refreshSummary();
+		window.Main.send("start_chat_polling");
 		const interval = window.setInterval(refreshSummary, POLL_MS);
 
 		return () => {
 			window.clearInterval(interval);
+			window.Main.send("stop_chat_polling");
 			window.Main.removeListener("chat:get", onSummary);
 			window.Main.removeListener("chat:history", onHistory);
 			window.Main.removeListener("chat:message", onRealtimeMessage);

@@ -1,7 +1,7 @@
 import type { TeamMatchup } from "./live-game-metrics";
 import { useTranslation } from "react-i18next";
 
-type Metric = "kd" | "winRate" | "acs";
+type Metric = "kd" | "winRate" | "acs" | "dpr";
 
 const formatMetric = (metric: Metric, value: number) => {
 	if (metric === "kd") return value.toFixed(2);
@@ -25,6 +25,7 @@ export const LiveTeamMatchup = ({ matchup, mode }: { matchup: TeamMatchup; mode:
 		{ field: "kd", label: t("liveGame.averageKd") },
 		{ field: "winRate", label: t("liveGame.averageWinRate") },
 		{ field: "acs", label: t("liveGame.averageAcs") },
+		{ field: "dpr", label: t("liveGame.averageDpr") },
 	];
 	return (
 		<div className="border-t border-white/6 px-4 py-3 bg-black/10">
@@ -36,7 +37,7 @@ export const LiveTeamMatchup = ({ matchup, mode }: { matchup: TeamMatchup; mode:
 					<span className="text-red-300">{t("liveGame.enemy")}: {matchup.enemy.players}</span>
 				</p>
 			</div>
-			<div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+			<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
 				{metrics.map(({ field, label }) => {
 					const ready = matchup.ally[field] != null && matchup.enemy[field] != null;
 					return (

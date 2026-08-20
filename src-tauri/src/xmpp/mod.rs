@@ -351,9 +351,7 @@ fn chat_domain_hint(state_guard: &Inner, region: &str) -> Option<String> {
                 .iter()
                 .find_map(|cid| crate::riot::models::chat_domain_from_cid(cid))
         })
-        .or_else(|| {
-            crate::riot::models::chat_domain_from_cid(&state_guard.match_team_room)
-        })
+        .or_else(|| crate::riot::models::chat_domain_from_cid(&state_guard.match_team_room))
         .or_else(|| {
             let region = region.trim();
             (!region.is_empty()).then(|| region.to_string())
@@ -379,11 +377,9 @@ fn match_rooms_from_payload(
     let team = match (named.as_deref(), side, domain) {
         (Some(cid), Some(side), _) => Some(crate::riot::models::rewrite_team_cid(cid, side)),
         (Some(cid), None, _) => Some(cid.to_string()),
-        (None, Some(side), Some(domain)) if !match_id.is_empty() && !domain.is_empty() => {
-            Some(crate::riot::models::build_team_cid(
-                match_id, side, phase, domain,
-            ))
-        }
+        (None, Some(side), Some(domain)) if !match_id.is_empty() && !domain.is_empty() => Some(
+            crate::riot::models::build_team_cid(match_id, side, phase, domain),
+        ),
         _ => None,
     };
     (team, all)

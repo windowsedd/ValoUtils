@@ -11,6 +11,8 @@ describe("useChatController IPC lifecycle", () => {
 		expect(source).toContain('window.Main.removeListener("chat:history", onHistory)');
 		expect(source).toContain('window.Main.on("chat:message", onRealtimeMessage)');
 		expect(source).toContain('window.Main.removeListener("chat:message", onRealtimeMessage)');
+		expect(source).toContain('window.Main.send("start_chat_polling")');
+		expect(source).toContain('window.Main.send("stop_chat_polling")');
 		expect(source).toContain('window.Main.on("chat:presence", onPresence)');
 		expect(source).toContain('window.Main.removeListener("chat:presence", onPresence)');
 		expect(source).toContain('window.Main.on("chat:send", onSend)');

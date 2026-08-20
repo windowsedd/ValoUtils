@@ -37,8 +37,12 @@ pub(crate) fn parse_player_query(input: &str) -> Result<PlayerQuery, &'static st
         if game_name.is_empty() || tag_line.is_empty() {
             return Err("invalidInput");
         }
-        if game_name.chars().any(|ch| ch.is_control() || ch == '/' || ch == '\\')
-            || tag_line.chars().any(|ch| ch.is_control() || ch == '/' || ch == '\\')
+        if game_name
+            .chars()
+            .any(|ch| ch.is_control() || ch == '/' || ch == '\\')
+            || tag_line
+                .chars()
+                .any(|ch| ch.is_control() || ch == '/' || ch == '\\')
         {
             return Err("invalidInput");
         }
@@ -268,7 +272,8 @@ mod tests {
         assert!(resolved_player_from_alias_lookup(&json!([{
             "alias": { "game_name": "baiii", "tag_line": "918" },
             "puuid": ""
-        }])).is_none());
+        }]))
+        .is_none());
     }
 
     #[test]
@@ -287,13 +292,11 @@ mod tests {
         assert_eq!(by_puuid.game_name, "TenZ");
         assert!(resolved_player_from_names(&names, Some("missing")).is_none());
         assert!(resolved_player_from_names(&json!([]), None).is_none());
-        assert!(
-            resolved_player_from_names(
-                &json!([{ "Subject": "player-a", "GameName": "", "TagLine": "" }]),
-                None
-            )
-            .is_none()
-        );
+        assert!(resolved_player_from_names(
+            &json!([{ "Subject": "player-a", "GameName": "", "TagLine": "" }]),
+            None
+        )
+        .is_none());
     }
 
     #[test]
@@ -307,12 +310,13 @@ mod tests {
         assert_eq!(by_name.game_name, fake_player::GAME_NAME);
         assert_eq!(by_name.tag_line, fake_player::TAG_LINE);
 
-        let by_puuid = local_resolved_player(&PlayerQuery::Puuid(fake_player::PUUID.to_ascii_uppercase()))
-            .expect("fake puuid");
+        let by_puuid =
+            local_resolved_player(&PlayerQuery::Puuid(fake_player::PUUID.to_ascii_uppercase()))
+                .expect("fake puuid");
         assert_eq!(by_puuid.game_name, fake_player::GAME_NAME);
-        assert!(
-            local_resolved_player(&PlayerQuery::Puuid("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee".into()))
-                .is_none()
-        );
+        assert!(local_resolved_player(&PlayerQuery::Puuid(
+            "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee".into()
+        ))
+        .is_none());
     }
 }

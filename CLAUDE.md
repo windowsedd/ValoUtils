@@ -203,6 +203,7 @@ Both tokens come from `riot::client::get_tokens()` / the `tokens:get` IPC channe
 | `/pregame/v1/matches/<matchId>` | GET | Pre-game state |
 | `/pregame/v1/matches/<matchId>/select/<agentId>` | POST | Hover agent |
 | `/pregame/v1/matches/<matchId>/lock/<agentId>` | POST | Lock agent |
+| `/pregame/v1/matches/<matchId>/quit` | POST | Leave agent select (`.dodge`) |
 | `/core-game/v1/players/<puuid>` | GET | In-game match ID |
 | `/core-game/v1/matches/<matchId>` | GET | Live match state |
 

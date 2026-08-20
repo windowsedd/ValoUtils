@@ -12,6 +12,7 @@ import {
 import { tierName } from "@/util/valorant-ranks";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { MatchAccuracy } from "./match-accuracy-panel";
 import { formatDpr } from "./match-dpr";
 import { isMatchPlayerHighlighted } from "./match-player-highlight";
 import { matchPlayerSubtitle } from "./match-player-subtitle";
@@ -168,6 +169,7 @@ const ScoreboardRow = ({ player, assets, highlighted, onPlayerSelect, coachLabel
 			</span>
 			<span className="w-12 text-right text-xs font-semibold tabular-nums text-white shrink-0">{player.acs}</span>
 			<span className="w-12 text-right text-xs tabular-nums text-gray-400 shrink-0">{formatDpr(player)}</span>
+			<span className="w-10 text-right text-xs tabular-nums text-gray-400 shrink-0">{player.firstBloods ?? 0}</span>
 			<span className="w-12 text-right text-xs tabular-nums text-gray-400 shrink-0">{player.headshotPercent.toFixed(0)}%</span>
 		</>
 	);
@@ -224,20 +226,24 @@ export const MatchScoreboard = ({
 	return (
 		<div className="flex flex-col gap-3">
 			{self && (
-				<div className="flex items-center gap-4 flex-wrap rounded-lg bg-black/20 px-3 py-2.5">
-					{assets.agents.get(self.characterId.toLowerCase())?.icon && (
-						<img src={assets.agents.get(self.characterId.toLowerCase())!.icon} alt="" className="w-10 h-10 rounded shrink-0" />
-					)}
-					<Stat label={t("matches.kda")} value={`${self.kills} / ${self.deaths} / ${self.assists}`} />
-					<Stat label={t("matches.acs")} value={String(self.acs)} />
-					<Stat label={t("matches.dpr")} value={formatDpr(self)} />
-					<Stat label={t("matches.headshot")} value={`${self.headshotPercent.toFixed(1)}%`} />
-					<Stat label={t("matches.damage")} value={String(self.damage)} />
-					<Stat
-						label={t("matches.result")}
-						value={won === undefined ? "—" : won ? t("matches.victory") : t("matches.defeat")}
-						color={won === undefined ? undefined : won ? "#4ade80" : "#f87171"}
-					/>
+				<div className="flex flex-wrap items-stretch gap-2">
+					<div className="flex min-w-0 flex-1 items-center gap-4 flex-wrap rounded-lg bg-black/20 px-3 py-2.5">
+						{assets.agents.get(self.characterId.toLowerCase())?.icon && (
+							<img src={assets.agents.get(self.characterId.toLowerCase())!.icon} alt="" className="w-10 h-10 rounded shrink-0" />
+						)}
+						<Stat label={t("matches.kda")} value={`${self.kills} / ${self.deaths} / ${self.assists}`} />
+						<Stat label={t("matches.acs")} value={String(self.acs)} />
+						<Stat label={t("matches.dpr")} value={formatDpr(self)} />
+						<Stat label={t("matches.firstBloods")} value={String(self.firstBloods ?? 0)} />
+						<Stat label={t("matches.headshot")} value={`${self.headshotPercent.toFixed(1)}%`} />
+						<Stat label={t("matches.damage")} value={String(self.damage)} />
+						<Stat
+							label={t("matches.result")}
+							value={won === undefined ? "—" : won ? t("matches.victory") : t("matches.defeat")}
+							color={won === undefined ? undefined : won ? "#4ade80" : "#f87171"}
+						/>
+					</div>
+					<MatchAccuracy player={self} />
 				</div>
 			)}
 
@@ -250,6 +256,7 @@ export const MatchScoreboard = ({
 					<span className="w-20 text-right shrink-0">{t("matches.kda")}</span>
 					<span className="w-12 text-right shrink-0">{t("matches.acs")}</span>
 					<span className="w-12 text-right shrink-0">{t("matches.dpr")}</span>
+					<span className="w-10 text-right shrink-0">{t("matches.fb")}</span>
 					<span className="w-12 text-right shrink-0">{t("matches.hs")}</span>
 				</div>
 				{details.players.map((player) => (

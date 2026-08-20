@@ -1,5 +1,6 @@
 import { ActRankPanel } from "@/components/live-game/act-rank-panel";
 import { initialSeasonId, seasonFallbackLabel } from "@/components/live-game/act-rank";
+import { PreviousActsPanel } from "@/components/live-game/previous-acts-panel";
 import { PageHeader } from "@/components/section-card";
 import type { FriendProfileData, FriendProfileResponse } from "@/types/friend-profile";
 import type { Friend } from "@/types/friends";
@@ -160,6 +161,11 @@ export const FriendProfile = ({ friend, card, tiers, presenceLabel, cachedProfil
 							assets={{ seasons }}
 							selectedSeasonId={selectedSeasonId}
 							onSeasonChange={setSelectedSeasonId}
+						/>
+						<PreviousActsPanel
+							competitiveSeasons={profile.competitiveSeasons}
+							currentSeasonId={profile.currentSeasonId}
+							assets={{ seasons, tiers }}
 						/>
 
 						<FriendMatchHistory puuid={friend.puuid} matches={profile.matches} />

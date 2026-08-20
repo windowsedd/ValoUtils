@@ -68,6 +68,7 @@ export type RecentPlayerStats = {
 	kd: number;
 	winRate: number;
 	acs: number;
+	dpr: number;
 	history: RecentMatchSummary[];
 };
 
@@ -83,6 +84,7 @@ export type RecentMatchSummary = {
 	deaths: number;
 	assists: number;
 	acs: number;
+	dpr: number;
 };
 
 export type RecentStatsState =

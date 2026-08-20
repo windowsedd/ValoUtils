@@ -535,6 +535,7 @@ describe("isComposerCommand", () => {
 	test("treats a dotted line as a command", () => {
 		expect(isComposerCommand(".send team fr gl hf")).toBe(true);
 		expect(isComposerCommand("  .tran 2")).toBe(true);
+		expect(isComposerCommand(".dodge")).toBe(true);
 		expect(isComposerCommand(".gg")).toBe(true);
 	});
 

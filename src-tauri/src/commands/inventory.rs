@@ -144,7 +144,10 @@ pub fn parse_offer_prices(body: &Value) -> HashMap<String, Price> {
     prices
 }
 
-pub fn build_inventory(owned_by_type: &[(&str, ItemKind, &Value)], offers: &Value) -> Vec<InventoryItem> {
+pub fn build_inventory(
+    owned_by_type: &[(&str, ItemKind, &Value)],
+    offers: &Value,
+) -> Vec<InventoryItem> {
     let prices = parse_offer_prices(offers);
     let mut items = Vec::new();
     for (type_id, kind, body) in owned_by_type {
@@ -293,9 +296,15 @@ mod tests {
         });
         let prices = parse_offer_prices(&offers);
         assert_eq!(prices.get("skin-1").unwrap().amount, 875);
-        assert_eq!(prices.get("skin-1").unwrap().currency, Currency::ValorantPoints);
+        assert_eq!(
+            prices.get("skin-1").unwrap().currency,
+            Currency::ValorantPoints
+        );
         assert_eq!(prices.get("spray-1").unwrap().amount, 4250);
-        assert_eq!(prices.get("spray-1").unwrap().currency, Currency::KingdomCredits);
+        assert_eq!(
+            prices.get("spray-1").unwrap().currency,
+            Currency::KingdomCredits
+        );
         assert!(!prices.contains_key("ignored"));
     }
 
@@ -303,7 +312,11 @@ mod tests {
     fn inventory_joins_owned_items_to_catalog_prices() {
         let items = build_inventory(
             &[
-                (ITEM_SKINS, ItemKind::Skins, &entitlements(&["skin-1", "free-skin"])),
+                (
+                    ITEM_SKINS,
+                    ItemKind::Skins,
+                    &entitlements(&["skin-1", "free-skin"]),
+                ),
                 (ITEM_SPRAYS, ItemKind::Sprays, &entitlements(&["spray-1"])),
             ],
             &json!({
@@ -317,7 +330,10 @@ mod tests {
         let skin = items.iter().find(|item| item.item_id == "skin-1").unwrap();
         assert_eq!(skin.kind, ItemKind::Skins);
         assert_eq!(skin.price.as_ref().unwrap().amount, 1775);
-        let free = items.iter().find(|item| item.item_id == "free-skin").unwrap();
+        let free = items
+            .iter()
+            .find(|item| item.item_id == "free-skin")
+            .unwrap();
         assert!(free.price.is_none(), "an item with no offer stays unpriced");
         let spray = items.iter().find(|item| item.item_id == "spray-1").unwrap();
         assert_eq!(spray.kind, ItemKind::Sprays);

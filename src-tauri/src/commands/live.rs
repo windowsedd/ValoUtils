@@ -132,6 +132,36 @@ fn select_match_ids_for_queue(history: &Value, queue_id: &str, limit: usize) -> 
         .collect()
 }
 
+fn player_damage_total(puuid: &str, details: &Value) -> u64 {
+    let Some(rounds) = details.get("roundResults").and_then(Value::as_array) else {
+        return 0;
+    };
+    let mut total = 0u64;
+    for round in rounds {
+        let Some(player_stats) = round.get("playerStats").and_then(Value::as_array) else {
+            continue;
+        };
+        for stat in player_stats {
+            let subject = stat
+                .get("subject")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            if !subject.eq_ignore_ascii_case(puuid) {
+                continue;
+            }
+            for hit in stat
+                .get("damage")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+            {
+                total += hit.get("damage").and_then(Value::as_u64).unwrap_or(0);
+            }
+        }
+    }
+    total
+}
+
 fn find_match_player<'a>(puuid: &str, details: &'a Value) -> Option<&'a Value> {
     details.get("players")?.as_array()?.iter().find(|player| {
         player
@@ -156,6 +186,7 @@ fn normalize_recent_match(puuid: &str, details: &Value) -> Option<Value> {
             && team.get("teamId").and_then(Value::as_str) != team_id
     });
     let rounds_played = number("roundsPlayed");
+    let damage = player_damage_total(puuid, details);
 
     Some(json!({
         "matchId": details.pointer("/matchInfo/matchId").and_then(Value::as_str).unwrap_or_default(),
@@ -169,6 +200,7 @@ fn normalize_recent_match(puuid: &str, details: &Value) -> Option<Value> {
         "deaths": number("deaths"),
         "assists": number("assists"),
         "acs": number("score") as f64 / rounds_played.max(1) as f64,
+        "dpr": damage as f64 / rounds_played.max(1) as f64,
     }))
 }
 
@@ -180,6 +212,7 @@ fn aggregate_recent_stats(puuid: &str, matches: &[Value]) -> Result<Value, Strin
     let mut assists = 0u64;
     let mut score = 0u64;
     let mut rounds = 0u64;
+    let mut damage = 0u64;
     let mut history = Vec::new();
 
     for details in matches {
@@ -199,6 +232,7 @@ fn aggregate_recent_stats(puuid: &str, matches: &[Value]) -> Result<Value, Strin
         assists += number("assists");
         score += number("score");
         rounds += number("roundsPlayed");
+        damage += player_damage_total(puuid, details);
         history.push(summary);
         if team_id.is_some_and(|team_id| {
             details
@@ -228,6 +262,7 @@ fn aggregate_recent_stats(puuid: &str, matches: &[Value]) -> Result<Value, Strin
         "kd": kills as f64 / deaths.max(1) as f64,
         "winRate": wins as f64 * 100.0 / analyzed as f64,
         "acs": score as f64 / rounds.max(1) as f64,
+        "dpr": damage as f64 / rounds.max(1) as f64,
         "history": history,
     }))
 }
@@ -1162,11 +1197,13 @@ mod tests {
         let matches = vec![
             json!({
                 "players":[{"subject":"p1","teamId":"Blue","stats":{"kills":20,"deaths":10,"assists":5,"score":4000,"roundsPlayed":20}}],
-                "teams":[{"teamId":"Blue","won":true}]
+                "teams":[{"teamId":"Blue","won":true}],
+                "roundResults":[{"playerStats":[{"subject":"p1","damage":[{"damage":3010}]}]}]
             }),
             json!({
                 "players":[{"subject":"p1","teamId":"Red","stats":{"kills":10,"deaths":10,"assists":7,"score":3000,"roundsPlayed":20}}],
-                "teams":[{"teamId":"Red","won":false}]
+                "teams":[{"teamId":"Red","won":false}],
+                "roundResults":[{"playerStats":[{"subject":"p1","damage":[{"damage":2000}]}]}]
             }),
         ];
 
@@ -1178,6 +1215,7 @@ mod tests {
         assert_eq!(result["kd"], 1.5);
         assert_eq!(result["winRate"], 50.0);
         assert_eq!(result["acs"], 175.0);
+        assert_eq!(result["dpr"], 125.25);
     }
 
     #[test]
@@ -1220,7 +1258,8 @@ mod tests {
             "teams": [
                 {"teamId":"Blue","won":true,"roundsWon":13},
                 {"teamId":"Red","won":false,"roundsWon":9}
-            ]
+            ],
+            "roundResults":[{"playerStats":[{"subject":"p1","damage":[{"damage":3010}]}]}]
         });
 
         assert_eq!(
@@ -1236,7 +1275,8 @@ mod tests {
                 "kills": 20,
                 "deaths": 10,
                 "assists": 5,
-                "acs": 200.0
+                "acs": 200.0,
+                "dpr": 150.5
             }))
         );
         assert_eq!(normalize_recent_match("missing", &details), None);

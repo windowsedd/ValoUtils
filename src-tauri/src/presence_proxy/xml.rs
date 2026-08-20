@@ -13,6 +13,7 @@ pub enum BotCommand {
     Help,
     Translate,
     TranslateHistory,
+    Dodge,
     Unknown,
     Consume,
 }
@@ -44,7 +45,11 @@ pub fn parse_groupchat_line(stanza: &str) -> Option<LiveChatLine> {
     if root.name != "message" {
         return None;
     }
-    let kind = root.attributes.get("type").map(String::as_str).unwrap_or("");
+    let kind = root
+        .attributes
+        .get("type")
+        .map(String::as_str)
+        .unwrap_or("");
     if !kind.eq_ignore_ascii_case("groupchat") {
         return None;
     }
@@ -62,13 +67,19 @@ pub fn parse_groupchat_line(stanza: &str) -> Option<LiveChatLine> {
     } else if !from.is_empty() && from.contains('@') {
         (from, String::new())
     } else {
-        (to.split('/').next().unwrap_or(&to).to_string(), String::new())
+        (
+            to.split('/').next().unwrap_or(&to).to_string(),
+            String::new(),
+        )
     };
     if cid.is_empty() {
         return None;
     }
     let id = root.attributes.get("id").cloned().unwrap_or_else(|| {
-        format!("{cid}:{sender}:{}", body.chars().take(24).collect::<String>())
+        format!(
+            "{cid}:{sender}:{}",
+            body.chars().take(24).collect::<String>()
+        )
     });
     Some(LiveChatLine {
         id,
@@ -171,6 +182,8 @@ pub fn parse_bot_message(stanza: &str) -> Result<Option<(String, BotCommand)>, S
         BotCommand::TranslateHistory
     } else if crate::riot::chat_command::is_translation_command(&body) {
         BotCommand::Translate
+    } else if crate::riot::chat_command::is_dodge_command(&body) {
+        BotCommand::Dodge
     } else {
         parse_bot_command(&body).unwrap_or(BotCommand::Unknown)
     };
@@ -800,9 +813,7 @@ mod tests {
     #[test]
     fn intercepts_history_translate_whispers_to_the_bot() {
         let jid = format!("{}@na1.pvp.net", crate::fake_player::PUUID);
-        let stanza = format!(
-            r#"<message to="{jid}" type="chat"><body>.tran [5]</body></message>"#
-        );
+        let stanza = format!(r#"<message to="{jid}" type="chat"><body>.tran [5]</body></message>"#);
         assert_eq!(
             parse_bot_message(&stanza).unwrap(),
             Some((jid, BotCommand::TranslateHistory))
@@ -818,6 +829,16 @@ mod tests {
         assert_eq!(
             parse_bot_message(&stanza).unwrap(),
             Some((jid, BotCommand::Translate))
+        );
+    }
+
+    #[test]
+    fn intercepts_dodge_whispers_to_the_bot() {
+        let jid = format!("{}@na1.pvp.net", crate::fake_player::PUUID);
+        let stanza = format!(r#"<message to="{jid}" type="chat"><body>.dodge</body></message>"#);
+        assert_eq!(
+            parse_bot_message(&stanza).unwrap(),
+            Some((jid, BotCommand::Dodge))
         );
     }
 

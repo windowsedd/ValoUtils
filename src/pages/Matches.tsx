@@ -1,3 +1,4 @@
+import { formatDpr } from "@/components/match-dpr";
 import {
 	MatchScoreboard,
 	formatDateTime,
@@ -81,6 +82,15 @@ const MatchCard = ({
 						<>
 							<span className="text-xs tabular-nums text-gray-300 hidden md:block">
 								{self.kills} / {self.deaths} / {self.assists}
+							</span>
+							<span className="text-xs tabular-nums text-gray-500 hidden md:block w-12 text-right">
+								{self.acs}
+							</span>
+							<span className="text-xs tabular-nums text-gray-500 hidden md:block w-12 text-right">
+								{formatDpr(self)}
+							</span>
+							<span className="text-xs tabular-nums text-gray-500 hidden md:block w-8 text-right">
+								{self.firstBloods ?? 0}
 							</span>
 							<span className="text-xs tabular-nums text-gray-500 hidden md:block w-12 text-right">
 								{self.headshotPercent.toFixed(0)}%

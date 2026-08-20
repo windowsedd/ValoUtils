@@ -31,6 +31,12 @@ describe("Live Match signed-in player marker", () => {
 		expect(table.match(/minmax\(34px,1fr\)\]/g)?.length).toBe(4);
 	});
 
+	test("shows damage per round next to ACS on live player stats", () => {
+		expect(table).toContain('t("liveGame.dpr")');
+		expect(table).toContain('field="dpr"');
+		expect(table).toContain("stats.stats.dpr");
+	});
+
 	test("does not expose the raw live-game dump control", () => {
 		expect(liveGamePage).not.toContain('window.Main.send("live-game:dump")');
 		expect(liveGamePage).not.toContain("FaDownload");

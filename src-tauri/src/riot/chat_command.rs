@@ -6,6 +6,7 @@
 //! .tran [n]
 //! .translate [n]
 //! .tran {party|team|all} [n]
+//! .dodge
 //! ```
 //!
 //! The `.send` form is what you type in a hurry: channel, optional language,
@@ -54,6 +55,7 @@ pub fn is_reserved_custom_trigger(raw: &str) -> bool {
         ".send"
             | ".tran"
             | ".translate"
+            | ".dodge"
             | "$online"
             | "$offline"
             | "$mobile"
@@ -130,17 +132,22 @@ pub struct TranslationCommand {
 /// parsing. Local-player messages are otherwise ignored entirely, so this is
 /// the single door through which they re-enter the pipeline.
 pub fn is_translation_command(input: &str) -> bool {
-    is_dot_send_prefix(input.trim_start())
+    is_dot_command(input, ".send")
 }
 
-fn is_dot_send_prefix(trimmed: &str) -> bool {
-    let Some(head) = trimmed.get(..5) else {
+pub fn is_dodge_command(input: &str) -> bool {
+    is_dot_command(input, ".dodge")
+}
+
+fn is_dot_command(input: &str, command: &str) -> bool {
+    let trimmed = input.trim_start();
+    let Some(head) = trimmed.get(..command.len()) else {
         return false;
     };
-    head.eq_ignore_ascii_case(".send")
+    head.eq_ignore_ascii_case(command)
         && trimmed
             .as_bytes()
-            .get(5)
+            .get(command.len())
             .map(|byte| byte.is_ascii_whitespace())
             .unwrap_or(true)
 }
@@ -222,6 +229,7 @@ pub fn is_skippable_history_line(body: &str) -> bool {
     body.is_empty()
         || is_translation_command(body)
         || is_history_translate_command(body)
+        || is_dodge_command(body)
         || body.starts_with('$')
 }
 
@@ -266,7 +274,7 @@ pub fn parse_translation_command_with_fallback(
     default_language: Option<&str>,
 ) -> Result<TranslationCommand, RiotError> {
     let trimmed = input.trim_start();
-    if !is_dot_send_prefix(trimmed) {
+    if !is_dot_command(trimmed, ".send") {
         return Err(RiotError::InvalidCommand(
             "Commands must start with .send.".into(),
         ));
@@ -299,9 +307,9 @@ fn parse_dot_send(
                 return Err(RiotError::EmptyMessage);
             }
             (language, first.to_string(), remainder.to_string())
-        } else if let Some(default) = default_language.and_then(|value| {
-            crate::translate::resolve_target_language(provider, value)
-        }) {
+        } else if let Some(default) = default_language
+            .and_then(|value| crate::translate::resolve_target_language(provider, value))
+        {
             (default.clone(), default, after_channel.to_string())
         } else {
             return Err(RiotError::InvalidCommand(format!(
@@ -352,7 +360,10 @@ mod tests {
 
     #[test]
     fn every_channel_keyword_resolves_to_its_own_variant() {
-        assert_eq!(parse(".send party de x").unwrap().channel, ChatChannel::Party);
+        assert_eq!(
+            parse(".send party de x").unwrap().channel,
+            ChatChannel::Party
+        );
         assert_eq!(
             parse(".send pregame de x").unwrap().channel,
             ChatChannel::Pregame
@@ -393,6 +404,22 @@ mod tests {
         let ja = parse(".send team ja-JP gl hf").unwrap();
         assert_eq!(ja.language, "ja");
         assert_eq!(ja.message, "gl hf");
+
+        // `.send team kr …` used to miss Korean (`ko`) and either error or
+        // keep "kr" in the message while translating to Settings zh-TW.
+        let kr =
+            parse_translation_command_with_fallback(".send team kr gl hf", "google", Some("zh-TW"))
+                .unwrap();
+        assert_eq!(kr.language, "ko");
+        assert_eq!(kr.language_input, "kr");
+        assert_eq!(kr.message, "gl hf");
+
+        let us = parse(".send all us gl hf").unwrap();
+        assert_eq!(us.language, "en");
+        assert_eq!(us.message, "gl hf");
+        let jp = parse(".send party jp gl hf").unwrap();
+        assert_eq!(jp.language, "ja");
+        assert_eq!(jp.message, "gl hf");
     }
 
     #[test]
@@ -442,7 +469,10 @@ mod tests {
             parse(".send team german   "),
             Err(RiotError::EmptyMessage)
         ));
-        assert!(matches!(parse(".send team   "), Err(RiotError::EmptyMessage)));
+        assert!(matches!(
+            parse(".send team   "),
+            Err(RiotError::EmptyMessage)
+        ));
     }
 
     #[test]
@@ -486,9 +516,12 @@ mod tests {
 
     #[test]
     fn dot_send_can_omit_language_when_a_default_is_supplied() {
-        let command =
-            parse_translation_command_with_fallback(".send party hello everyone", "google", Some("zh-TW"))
-                .unwrap();
+        let command = parse_translation_command_with_fallback(
+            ".send party hello everyone",
+            "google",
+            Some("zh-TW"),
+        )
+        .unwrap();
         assert_eq!(command.language, "zh-TW");
         assert_eq!(command.message, "hello everyone");
         assert!(parse(".send party hello everyone").is_err());
@@ -549,7 +582,8 @@ mod tests {
         let bracket = parse_history_translate_command(".tran [5]", "google", Some("en")).unwrap();
         assert_eq!(bracket.count, 5);
 
-        let numbered = parse_history_translate_command(".translate 3", "google", Some("en")).unwrap();
+        let numbered =
+            parse_history_translate_command(".translate 3", "google", Some("en")).unwrap();
         assert_eq!(numbered.count, 3);
 
         let team = parse_history_translate_command(".tran team 5", "google", Some("en")).unwrap();
@@ -562,6 +596,7 @@ mod tests {
         assert!(!is_history_translate_command(".transit"));
         assert!(is_skippable_history_line(".tran [5]"));
         assert!(is_skippable_history_line(".send party zh_tw hi"));
+        assert!(is_skippable_history_line(".dodge"));
         assert!(!is_skippable_history_line("Haha, stultusne es?"));
         assert_eq!(
             parse_history_translate_command(".tran 99", "google", Some("en"))
@@ -580,5 +615,16 @@ mod tests {
             parse("  .SEND all french hi").unwrap().channel,
             ChatChannel::All
         );
+    }
+
+    #[test]
+    fn dodge_is_a_reserved_bare_command() {
+        assert!(is_dodge_command(".dodge"));
+        assert!(is_dodge_command("  .DODGE"));
+        assert!(is_dodge_command(".dodge now"));
+        assert!(!is_dodge_command(".dodger"));
+        assert!(!is_dodge_command("dodge"));
+        assert!(is_reserved_custom_trigger("dodge"));
+        assert!(is_reserved_custom_trigger(".dodge"));
     }
 }
