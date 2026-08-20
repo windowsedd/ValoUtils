@@ -12,6 +12,7 @@ import {
 import { tierName } from "@/util/valorant-ranks";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { formatDpr } from "./match-dpr";
 import { isMatchPlayerHighlighted } from "./match-player-highlight";
 import { matchPlayerSubtitle } from "./match-player-subtitle";
 import { scoreboardPlayerInteraction } from "./match-scoreboard-selection";
@@ -166,7 +167,7 @@ const ScoreboardRow = ({ player, assets, highlighted, onPlayerSelect, coachLabel
 				{player.kills} / {player.deaths} / {player.assists}
 			</span>
 			<span className="w-12 text-right text-xs font-semibold tabular-nums text-white shrink-0">{player.acs}</span>
-			<span className="w-12 text-right text-xs tabular-nums text-gray-400 shrink-0">{player.adr}</span>
+			<span className="w-12 text-right text-xs tabular-nums text-gray-400 shrink-0">{formatDpr(player)}</span>
 			<span className="w-12 text-right text-xs tabular-nums text-gray-400 shrink-0">{player.headshotPercent.toFixed(0)}%</span>
 		</>
 	);
@@ -229,7 +230,7 @@ export const MatchScoreboard = ({
 					)}
 					<Stat label={t("matches.kda")} value={`${self.kills} / ${self.deaths} / ${self.assists}`} />
 					<Stat label={t("matches.acs")} value={String(self.acs)} />
-					<Stat label={t("matches.adr")} value={String(self.adr)} />
+					<Stat label={t("matches.dpr")} value={formatDpr(self)} />
 					<Stat label={t("matches.headshot")} value={`${self.headshotPercent.toFixed(1)}%`} />
 					<Stat label={t("matches.damage")} value={String(self.damage)} />
 					<Stat
@@ -248,7 +249,7 @@ export const MatchScoreboard = ({
 					<span className="w-5 shrink-0" />
 					<span className="w-20 text-right shrink-0">{t("matches.kda")}</span>
 					<span className="w-12 text-right shrink-0">{t("matches.acs")}</span>
-					<span className="w-12 text-right shrink-0">{t("matches.adr")}</span>
+					<span className="w-12 text-right shrink-0">{t("matches.dpr")}</span>
 					<span className="w-12 text-right shrink-0">{t("matches.hs")}</span>
 				</div>
 				{details.players.map((player) => (

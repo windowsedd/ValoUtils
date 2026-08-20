@@ -148,6 +148,7 @@ pub fn run() {
             commands::career::career_get,
             commands::battlepass::battlepass_get,
             commands::store::store_get,
+            commands::inventory::inventory_get,
             commands::live::live_game_fetch,
             commands::live::live_game_stats,
             commands::live::live_game_dump,

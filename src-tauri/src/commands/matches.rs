@@ -215,11 +215,13 @@ fn reduce_match(
                 "assists": stat("assists"),
                 "score": score,
                 "roundsPlayed": stat("roundsPlayed"),
-                // Average Combat Score / Average Damage per Round — the two numbers
-                // every tracker site shows, neither of which Riot returns directly.
+                // Average Combat Score / Damage Per Round — tracker numbers
+                // Riot does not return directly. `adr` is the same integer as
+                // `dpr` (older clients still read that field).
                 "acs": score / rounds,
                 "damage": dmg.total,
                 "adr": dmg.total / rounds,
+                "dpr": dmg.total / rounds,
                 "headshots": dmg.headshots,
                 "bodyshots": dmg.bodyshots,
                 "legshots": dmg.legshots,
@@ -507,5 +509,39 @@ mod tests {
         let observer = &reduced["players"][0];
         assert_eq!(observer["role"], "player");
         assert_eq!(observer["teamId"], "Neutral");
+    }
+
+    #[test]
+    fn computes_dpr_as_damage_per_round() {
+        let details = json!({
+            "matchInfo": { "matchId": "comp-1" },
+            "players": [{
+                "subject": "player-1",
+                "gameName": "player-1",
+                "tagLine": "TEST",
+                "teamId": "Blue",
+                "stats": {
+                    "kills": 20,
+                    "deaths": 13,
+                    "assists": 4,
+                    "score": 5000,
+                    "roundsPlayed": 20
+                }
+            }],
+            "teams": [],
+            "roundResults": [{
+                "playerStats": [{
+                    "subject": "player-1",
+                    "damage": [{ "damage": 3010, "headshots": 0, "bodyshots": 0, "legshots": 0 }]
+                }]
+            }]
+        });
+
+        let reduced = reduce_match(&details, &HashMap::new(), "player-1");
+        let player = &reduced["players"][0];
+        assert_eq!(player["acs"], 250);
+        assert_eq!(player["damage"], 3010);
+        assert_eq!(player["dpr"], 150);
+        assert_eq!(player["adr"], 150);
     }
 }

@@ -1,5 +1,6 @@
 import { FriendProfile } from "@/components/friends/friend-profile";
 import { PageHeader } from "@/components/section-card";
+import Inventory from "@/pages/Inventory.tsx";
 import type { Friend } from "@/types/friends";
 import type { FriendProfileResponse } from "@/types/friend-profile";
 import { acceptedFriendProfile } from "@/components/friends/friend-profile-state";
@@ -47,6 +48,7 @@ const asFriend = (player: ToolsResolvedPlayer): Friend => ({
 
 const Tools = () => {
 	const { t } = useTranslation();
+	const [tool, setTool] = useState<"lookup" | "inventory">("lookup");
 	const [query, setQuery] = useState("");
 	const [state, setState] = useState(initialToolsLookupState);
 	const [tiers, setTiers] = useState<Map<number, TierAsset>>(new Map());
@@ -130,7 +132,37 @@ const Tools = () => {
 
 	return (
 		<div className="flex h-full min-h-0 flex-col animate-fade-in">
-			<PageHeader icon={<FaWrench />} title={t("tools.title")} subtitle={t("tools.subtitle")} />
+			<PageHeader
+				icon={<FaWrench />}
+				title={t("tools.title")}
+				subtitle={tool === "inventory" ? t("tools.inventory") : t("tools.subtitle")}
+			>
+				<div data-tools-switch="" className="flex rounded-sm border border-(--line)">
+					{(
+						[
+							["lookup", t("tools.lookup")],
+							["inventory", t("tools.inventory")],
+						] as const
+					).map(([value, label]) => (
+						<button
+							key={value}
+							type="button"
+							data-tool={value}
+							onClick={() => setTool(value)}
+							className={`h-8 px-2.5 text-xs ${
+								tool === value ? "bg-white/8 text-(--ink)" : "text-(--ink-faint) hover:bg-white/6"
+							}`}
+						>
+							{label}
+						</button>
+					))}
+				</div>
+			</PageHeader>
+			{tool === "inventory" ? (
+				<div data-tools-inventory="" className="flex min-h-0 flex-1 flex-col overflow-hidden px-6 pt-4">
+					<Inventory embedded />
+				</div>
+			) : (
 			<div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden px-6 py-4">
 				<form data-tools-search="" onSubmit={onSearch} className="flex shrink-0 items-center gap-2">
 					<label className="glass flex h-10 min-w-0 flex-1 items-center gap-2 px-3">
@@ -170,6 +202,7 @@ const Tools = () => {
 					</div>
 				)}
 			</div>
+			)}
 		</div>
 	);
 };

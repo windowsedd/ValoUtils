@@ -16,6 +16,8 @@ const requiredToolsKeys = [
 	"playerNotFound",
 	"loginRequired",
 	"unavailable",
+	"lookup",
+	"inventory",
 ] as const;
 
 describe("Tools navigation and player lookup shell", () => {
@@ -34,6 +36,8 @@ describe("Tools navigation and player lookup shell", () => {
 		expect(page).toContain("<FriendProfile");
 		expect(page).toContain("embedded");
 		expect(page).toContain('send("analytics:track", "tools:player:lookup"');
+		expect(page).toContain('data-tools-switch=""');
+		expect(page).toContain("<Inventory embedded");
 	});
 
 	test("stacks the search bar above the profile instead of sharing a row", () => {

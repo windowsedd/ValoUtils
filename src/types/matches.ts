@@ -33,8 +33,10 @@ export type MatchPlayer = {
 	/** Average Combat Score — computed backend-side, Riot doesn't return it. */
 	acs: number;
 	damage: number;
-	/** Average Damage per Round. */
+	/** Average Damage per Round — same value as `dpr`, kept for older clients. */
 	adr: number;
+	/** Damage per round. */
+	dpr: number;
 	headshots: number;
 	bodyshots: number;
 	legshots: number;

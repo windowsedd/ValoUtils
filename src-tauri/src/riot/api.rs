@@ -288,6 +288,17 @@ impl RiotApiClient {
         )
         .await
     }
+
+    /// Equipped cosmetics: guns, sprays, card, title, expression.
+    pub async fn get_player_loadout(&self, puuid: &str) -> Result<Value, String> {
+        self.request(
+            Target::Pd,
+            reqwest::Method::GET,
+            &format!("/personalization/v2/players/{puuid}/playerloadout"),
+            None,
+        )
+        .await
+    }
     pub async fn get_mmr(&self, puuid: &str) -> Result<Value, String> {
         self.request(
             Target::Pd,

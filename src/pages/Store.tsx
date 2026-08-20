@@ -1,8 +1,8 @@
 import { PageHeader, SectionCard } from "@/components/section-card";
 import {
-	getAccessoryItem,
 	getBundle,
 	getSkinLevel,
+	getStoreItem,
 	localize,
 	type BundleAsset,
 	type SkinAsset,
@@ -65,6 +65,18 @@ const CURRENCY_LABEL: Record<Currency, string> = {
 };
 
 const formatAmount = (amount: number) => amount.toLocaleString();
+
+/** Keep already-resolved art. A later skin-level 404 must not wipe a buddy. */
+const mergeAssets = (
+	previous: Map<string, SkinAsset | null>,
+	entries: ReadonlyArray<readonly [string, SkinAsset | null]>,
+) => {
+	const next = new Map(previous);
+	for (const [id, asset] of entries) {
+		if (asset) next.set(id, asset);
+	}
+	return next;
+};
 
 const PriceTag = ({ price }: { price: Price }) => (
 	<span className="tabular-nums text-(--ink)">
@@ -135,13 +147,12 @@ const Store = () => {
 		return () => window.Main.removeAllListeners("store:get");
 	}, [t]);
 
-	// Every skin-level id on the page, resolved once into one map.
+	// Daily + Night Market rows are always weapon skin levels.
 	const skinLevelIds = useMemo(() => {
 		if (!data) return [] as string[];
 		const ids = [
 			...data.daily.offers.map((offer) => offer.itemId),
 			...(data.nightMarket?.offers ?? []).map((offer) => offer.itemId),
-			...(data.featuredBundle?.items ?? []).map((item) => item.itemId),
 		];
 		return [...new Set(ids.filter(Boolean))];
 	}, [data]);
@@ -151,7 +162,7 @@ const Store = () => {
 		let cancelled = false;
 		Promise.all(skinLevelIds.map((id) => getSkinLevel(id).then((asset) => [id, asset] as const))).then(
 			(entries) => {
-				if (!cancelled) setSkins(new Map(entries));
+				if (!cancelled) setSkins((previous) => mergeAssets(previous, entries));
 			},
 		);
 		return () => {
@@ -159,22 +170,32 @@ const Store = () => {
 		};
 	}, [skinLevelIds]);
 
-	// The accessory shelf mixes item types, so each entry resolves by type.
+	// Featured bundles and the kingdom shelf mix types (skins, buddies, cards,
+	// flex). Resolve by itemTypeId so those uuids are not sent to /skinlevels.
 	useEffect(() => {
-		const offers = data?.accessory?.offers ?? [];
-		if (!offers.length) return;
+		const jobs = [
+			...(data?.accessory?.offers ?? []).map((offer) => ({
+				itemTypeId: offer.itemTypeId,
+				itemId: offer.itemId,
+			})),
+			...(data?.featuredBundle?.items ?? []).map((item) => ({
+				itemTypeId: item.itemTypeId,
+				itemId: item.itemId,
+			})),
+		].filter((job) => job.itemId);
+		if (!jobs.length) return;
 		let cancelled = false;
 		Promise.all(
-			offers.map((offer) =>
-				getAccessoryItem(offer.itemTypeId, offer.itemId).then((asset) => [offer.itemId, asset] as const),
+			jobs.map((job) =>
+				getStoreItem(job.itemTypeId, job.itemId).then((asset) => [job.itemId, asset] as const),
 			),
 		).then((entries) => {
-			if (!cancelled) setSkins((previous) => new Map([...previous, ...entries]));
+			if (!cancelled) setSkins((previous) => mergeAssets(previous, entries));
 		});
 		return () => {
 			cancelled = true;
 		};
-	}, [data?.accessory]);
+	}, [data?.accessory, data?.featuredBundle]);
 
 	useEffect(() => {
 		const id = data?.featuredBundle?.dataAssetId;
@@ -300,7 +321,7 @@ const Store = () => {
 												>
 													<ItemArt asset={asset} className="h-8 w-16 shrink-0" />
 													<span className="min-w-0 flex-1 truncate text-xs text-(--ink)">
-														{asset ? localize(asset.name) : item.itemId}
+														{asset ? localize(asset.name) : t("store.unknownItem")}
 													</span>
 													<span className="shrink-0 tabular-nums text-xs text-(--ink)">
 														{item.discountedPrice < item.basePrice && (

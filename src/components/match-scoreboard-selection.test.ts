@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { MatchPlayer } from "@/types/matches";
+import { formatDpr } from "./match-dpr";
 import { scoreboardPlayerInteraction } from "./match-scoreboard-selection";
 
 const player: MatchPlayer = {
@@ -22,6 +23,7 @@ const player: MatchPlayer = {
 	acs: 250,
 	damage: 3000,
 	adr: 150,
+	dpr: 150,
 	headshots: 20,
 	bodyshots: 40,
 	legshots: 5,
@@ -44,5 +46,13 @@ describe("scoreboard player interaction", () => {
 		expect(
 			scoreboardPlayerInteraction({ ...player, subject: "   " }, () => {}).selectable,
 		).toBe(false);
+	});
+});
+
+describe("damage per round", () => {
+	test("uses dpr, then adr, then damage / rounds", () => {
+		expect(formatDpr(player)).toBe("150");
+		expect(formatDpr({ ...player, dpr: Number.NaN, adr: 148 })).toBe("148");
+		expect(formatDpr({ ...player, dpr: Number.NaN, adr: Number.NaN, damage: 3010, roundsPlayed: 20 })).toBe("151");
 	});
 });

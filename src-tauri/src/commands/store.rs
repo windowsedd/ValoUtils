@@ -171,7 +171,7 @@ fn as_str(value: Option<&Value>) -> String {
 ///
 /// Riot models cost as a one-entry map keyed by currency. A missing or empty
 /// map is a free item, not a parse failure.
-fn parse_price(cost: Option<&Value>) -> Price {
+pub(crate) fn parse_price(cost: Option<&Value>) -> Price {
     let Some(map) = cost.and_then(Value::as_object) else {
         return Price {
             amount: 0,
