@@ -23,6 +23,7 @@ const LiveGame = () => {
 	const [loginRequired, setLoginRequired] = useState(false);
 	const [loading, setLoading] = useState(true);
 	const [refreshing, setRefreshing] = useState(false);
+	const [developer, setDeveloper] = useState(false);
 	const rosterKeyRef = useRef<string | null>(null);
 	const requestedStatsKeyRef = useRef<string | null>(null);
 	const statsAttemptRef = useRef(0);
@@ -128,6 +129,28 @@ const LiveGame = () => {
 		};
 	}, [t]);
 
+	useEffect(() => {
+		if (!window.Main) return;
+		const onConfig = (message: string) => {
+			try {
+				setDeveloper(JSON.parse(message)?.openDevTools === true);
+			} catch {
+				setDeveloper(false);
+			}
+		};
+		const onChanged = (event: Event) => {
+			const detail = (event as CustomEvent<{ key?: string; value?: unknown }>).detail;
+			if (detail?.key === "openDevTools") setDeveloper(detail.value === true);
+		};
+		window.Main.on("config:get-all", onConfig);
+		window.Main.send("config:get-all");
+		window.addEventListener("valoutils:config-changed", onChanged);
+		return () => {
+			window.Main.removeListener("config:get-all", onConfig);
+			window.removeEventListener("valoutils:config-changed", onChanged);
+		};
+	}, []);
+
 	const players = snapshot?.players ?? EMPTY_PLAYERS;
 	const assets = useLiveGameAssets(players);
 	const activeSnapshot = useMemo(
@@ -154,6 +177,7 @@ const LiveGame = () => {
 					recent={recent}
 					refreshing={refreshing}
 					refreshError={error ?? undefined}
+					developer={developer}
 					onRefresh={refreshSnapshot}
 				/>
 			)}

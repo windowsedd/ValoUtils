@@ -41,4 +41,32 @@ describe("Live Match signed-in player marker", () => {
 		expect(liveGamePage).not.toContain('window.Main.send("live-game:dump")');
 		expect(liveGamePage).not.toContain("FaDownload");
 	});
+
+	test("live game reads the developer tools setting for debug output", () => {
+		expect(liveGamePage).toContain("openDevTools");
+		expect(liveGamePage).toContain("developer={developer}");
+	});
+
+	test("pregame roster shows both teams, hidden agents, and fallback copy", () => {
+		expect(table).toContain('t("liveGame.pregameRoster"');
+		expect(table).toContain('t("liveGame.enemyRosterUnavailable")');
+		expect(table).toContain('t("liveGame.hiddenAgent")');
+		expect(table).toContain("agentFallback");
+		expect(table).toContain("developer && isPregame && debugText");
+		expect(table).toContain("StreakBadge");
+		expect(table).toContain("winStreak");
+	});
+
+	for (const locale of locales) {
+		test(`${locale} provides pregame roster copy`, () => {
+			const messages = JSON.parse(
+				readFileSync(join(root, `src/i18n/locales/${locale}.json`), "utf8"),
+			);
+			for (const key of ["enemyRosterUnavailable", "pregameRoster", "hiddenAgent", "pregameDebug", "winStreak", "loseStreak", "winStreakHint", "loseStreakHint"] as const) {
+				expect(messages.liveGame[key]).toBeString();
+				expect(messages.liveGame[key].trim().length).toBeGreaterThan(0);
+			}
+			expect(messages.liveGame.hiddenAgent).toBe("???");
+		});
+	}
 });

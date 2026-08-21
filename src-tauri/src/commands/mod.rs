@@ -7,6 +7,7 @@ pub mod friend_profile;
 pub mod friends;
 pub mod inventory;
 pub mod live;
+mod pregame_roster;
 pub mod matches;
 pub mod presence;
 pub mod profiles;

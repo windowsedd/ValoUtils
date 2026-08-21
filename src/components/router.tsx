@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useMemo, useState } from "
 import { Route } from "@/types/router";
 import RiotStatusBar from "@/components/riot-status-bar";
 import { NavbarRail } from "@/components/navbar-rail";
+import { RouteErrorBoundary } from "@/components/route-error-boundary";
 import { useTranslation } from "react-i18next";
 import { partitionNavbarRoutes } from "@/util/navbar-routes";
 import {
@@ -126,7 +127,11 @@ const Router = () => {
 				onSelect={selectRoute}
 				statusControl={<RiotStatusBar compact />}
 			/>
-			<main className="min-w-0 flex-1 overflow-y-auto">{body}</main>
+			<main className="min-w-0 flex-1 overflow-y-auto">
+				<RouteErrorBoundary key={selectedId} label={selectedId}>
+					{body}
+				</RouteErrorBoundary>
+			</main>
 		</div>
 	);
 };

@@ -22,6 +22,7 @@ type Props = {
 	recent: Record<string, RecentStatsState>;
 	refreshing: boolean;
 	refreshError?: string;
+	developer?: boolean;
 	onRefresh: () => void;
 };
 
@@ -58,6 +59,27 @@ const RankValue = ({ tier, rr, act, assets }: { tier: number; rr?: number; act?:
 	);
 };
 
+const formatStreakRr = (rr: number) => (rr === 0 ? "" : ` · ${rr > 0 ? "+" : ""}${rr}`);
+
+const StreakBadge = ({ state }: { state?: RecentStatsState }) => {
+	const { t } = useTranslation();
+	if (!state || state.status === "loading") return <span className="inline-block h-3 w-8 rounded bg-white/8 animate-pulse motion-reduce:animate-none" />;
+	if (state.status === "error") return null;
+	const streak = state.stats.streak;
+	if (!streak?.kind || streak.matches < 1) return null;
+	const label = t(streak.kind === "win" ? "liveGame.winStreak" : "liveGame.loseStreak", { count: streak.matches });
+	return (
+		<span
+			className={`shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${
+				streak.kind === "win" ? "bg-emerald-400/10 text-emerald-300" : "bg-red-400/10 text-red-300"
+			}`}
+			title={t(streak.kind === "win" ? "liveGame.winStreakHint" : "liveGame.loseStreakHint", { count: streak.matches, rr: streak.rr })}
+		>
+			{label}{formatStreakRr(streak.rr)}
+		</span>
+	);
+};
+
 const StatValue = ({ state, field }: { state?: RecentStatsState; field: "kd" | "winRate" | "acs" | "dpr" }) => {
 	const { t } = useTranslation();
 	if (!state || state.status === "loading") return <span className="inline-block h-3 w-9 rounded bg-white/8 animate-pulse motion-reduce:animate-none" />;
@@ -82,7 +104,7 @@ const SkinCard = ({ weapon, label, assets }: { weapon: WeaponSkin; label: string
 	);
 };
 
-const PlayerRow = ({ player, assets, stats, expanded, onToggle, teamColor, teamLabel, recentMode, inMatch }: {
+const PlayerRow = ({ player, assets, stats, expanded, onToggle, teamColor, teamLabel, recentMode, inMatch, agentFallback }: {
 	player: LivePlayer;
 	assets: LiveGameAssets;
 	stats?: RecentStatsState;
@@ -92,11 +114,12 @@ const PlayerRow = ({ player, assets, stats, expanded, onToggle, teamColor, teamL
 	teamLabel: string;
 	recentMode: string;
 	inMatch: boolean;
+	agentFallback: string;
 }) => {
 	const { t } = useTranslation();
 	const agent = player.characterId ? assets.agents.get(player.characterId.toLowerCase()) : undefined;
 	const card = player.cardId ? assets.cards.get(player.cardId.toLowerCase()) : undefined;
-	const agentName = agent ? localize(agent.name) : "";
+	const agentName = agent ? localize(agent.name) : agentFallback;
 	const displayName = player.incognito || !player.gameName ? t("liveGame.hidden") : `${player.gameName}#${player.tagLine}`;
 	const peakAct = player.peakSeasonId ? assets.seasons.get(player.peakSeasonId.toLowerCase())?.label : null;
 	const detailsId = `live-player-${player.puuid.replace(/[^a-z0-9]/gi, "-")}`;
@@ -136,6 +159,7 @@ const PlayerRow = ({ player, assets, stats, expanded, onToggle, teamColor, teamL
 						<p className="flex items-center gap-1.5 text-xs font-semibold text-white" title={displayName}>
 							<span className="truncate">{displayName}</span>
 							{player.isSelf && <span className="shrink-0 rounded border border-cyan-300/30 bg-cyan-300/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-cyan-200">{t("liveGame.me")}</span>}
+							<StreakBadge state={stats} />
 						</p>
 						<p className="text-[10px] text-gray-500 truncate">
 							{agentName || t("liveGame.unavailable")}
@@ -165,6 +189,11 @@ const PlayerRow = ({ player, assets, stats, expanded, onToggle, teamColor, teamL
 				<div id={detailsId} className="grid grid-cols-1 lg:grid-cols-[1fr_1.5fr] gap-2 px-3 pb-2 pt-2 bg-black/10">
 					<div className="rounded-lg border border-white/6 bg-white/2 p-2">
 						<p className="mb-1 text-[10px] text-gray-500">{teamLabel}{player.party ? ` · ${t("liveGame.partyDetected", { party: player.party })}` : ""}</p>
+						{stats?.status === "ready" && stats.stats.streak?.kind && stats.stats.streak.matches > 0 && (
+							<p className={`mb-1 text-[10px] font-semibold uppercase tracking-wider ${stats.stats.streak.kind === "win" ? "text-emerald-300" : "text-red-300"}`}>
+								{t(stats.stats.streak.kind === "win" ? "liveGame.winStreakHint" : "liveGame.loseStreakHint", { count: stats.stats.streak.matches, rr: stats.stats.streak.rr })}
+							</p>
+						)}
 						<p className="text-[10px] uppercase tracking-widest text-gray-500">{t("liveGame.recentFive", { mode: recentMode })}</p>
 						{stats?.status === "ready" ? (
 							<><div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-1.5">
@@ -207,7 +236,7 @@ const PlayerRow = ({ player, assets, stats, expanded, onToggle, teamColor, teamL
 	);
 };
 
-export const LiveScoutTable = ({ snapshot, assets, recent, refreshing, refreshError, onRefresh }: Props) => {
+export const LiveScoutTable = ({ snapshot, assets, recent, refreshing, refreshError, developer = false, onRefresh }: Props) => {
 	const { t } = useTranslation();
 	const [expanded, setExpanded] = useState<string | null>(null);
 	const [summaryExpanded, setSummaryExpanded] = useState(false);
@@ -218,7 +247,8 @@ export const LiveScoutTable = ({ snapshot, assets, recent, refreshing, refreshEr
 			if (!groups.has(key)) groups.set(key, []);
 			groups.get(key)!.push(player);
 		}
-		return groups;
+		const rank = (id: string) => (id === "Ally" || id === "Blue" ? 0 : id === "Enemy" || id === "Red" ? 1 : 2);
+		return [...groups.entries()].sort(([a], [b]) => rank(a) - rank(b));
 	}, [snapshot.players]);
 	const parties = new Set(snapshot.players.map((player) => player.party).filter(Boolean)).size;
 	const matchup = useMemo(() => buildTeamMatchup(snapshot.players, recent), [snapshot.players, recent]);
@@ -226,7 +256,41 @@ export const LiveScoutTable = ({ snapshot, assets, recent, refreshing, refreshEr
 	const mapArt = mapIcon(snapshot.match?.mapId, assets.maps);
 	const recentMode = queueLabel(snapshot.match?.queueId) || t("liveGame.unavailable");
 	const inMatch = snapshot.state === "coregame" || snapshot.state === "pregame";
-	const summaryId = `live-match-summary-${snapshot.rosterKey.replace(/[^a-z0-9]/gi, "-")}`;
+	const isPregame = snapshot.state === "pregame";
+	const allyCount = snapshot.players.filter((player) => player.teamId === "Ally").length;
+	const enemyCount = snapshot.players.filter((player) => player.teamId === "Enemy").length;
+	const agentFallback = isPregame ? t("liveGame.hiddenAgent") : "";
+	const debug = snapshot.pregameDebug;
+	const debugText = debug
+		? [
+			"[PREGAME DEBUG]",
+			"",
+			`MatchID: ${debug.matchId ?? "null"}`,
+			"",
+			`AllyTeam players: ${debug.allyTeamPlayers ?? 0}`,
+			`Teams count: ${debug.teamsCount ?? 0}`,
+			`Teams player subjects: ${debug.teamsPlayerSubjects ?? 0}`,
+			"",
+			"EnemyTeam:",
+			debug.enemyTeam ?? "null",
+			"",
+			"Loadouts:",
+			`${debug.loadoutsEntries ?? 0} entries`,
+			`${debug.loadoutsUniqueSubjects ?? 0} unique subjects`,
+			"",
+			`Match token: ${debug.matchToken ?? "null"}`,
+			`TeamMatchToken decoded player count: ${debug.jwtPlayerCount ?? 0}`,
+			"",
+			"Final roster:",
+			`${debug.finalRoster ?? 0} unique players`,
+			"",
+			`ALLY: ${debug.ally ?? 0}`,
+			`ENEMY: ${debug.enemy ?? 0}`,
+			"",
+			...(debug.sources ?? []).map((row) => `PUUID ${row.puuid} source=${row.source}`),
+		].join("\n")
+		: "";
+	const summaryId = `live-match-summary-${(snapshot.rosterKey ?? "roster").replace(/[^a-z0-9]/gi, "-")}`;
 	return (
 		<div className="flex-1 min-h-0 px-6 pb-5 flex flex-col gap-3 overflow-hidden">
 			<section className="glass rounded-2xl overflow-hidden shrink-0">
@@ -235,12 +299,22 @@ export const LiveScoutTable = ({ snapshot, assets, recent, refreshing, refreshEr
 					<div className="relative min-w-0"><p className="text-[10px] uppercase tracking-widest text-gray-500">{t("liveGame.matchContext")}</p><p className="text-lg font-bold text-white truncate">{map || <span aria-label={t("liveGame.unavailable")}>—</span>}</p></div>
 					<span className="relative px-2 py-1 rounded-full bg-white/6 text-[10px] uppercase tracking-wider text-gray-300">{queueLabel(snapshot.match?.queueId) || t(`liveGame.state${snapshot.state === "coregame" ? "Coregame" : snapshot.state === "pregame" ? "Pregame" : "Party"}`)}</span>
 					<span className="relative px-2 py-1 rounded-full bg-cyan-400/10 text-[10px] font-semibold uppercase tracking-wider text-cyan-300">● {t(`liveGame.state${snapshot.state === "coregame" ? "Coregame" : snapshot.state === "pregame" ? "Pregame" : "Party"}`)}</span>
+					{isPregame && (
+						<span className="relative px-2 py-1 rounded-full bg-white/6 text-[10px] font-semibold uppercase tracking-wider text-gray-200">
+							{t("liveGame.pregameRoster", { ally: allyCount, enemy: enemyCount, total: snapshot.players.length })}
+						</span>
+					)}
 					<div className="relative ml-auto flex items-center gap-2">
 						<button type="button" onClick={() => setSummaryExpanded((current) => !current)} aria-expanded={summaryExpanded} aria-controls={summaryId} aria-label={t(summaryExpanded ? "liveGame.collapseSummary" : "liveGame.expandSummary")} className="h-11 w-11 rounded-lg border border-white/10 text-gray-400 hover:text-white hover:bg-white/6 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 grid place-items-center transition-colors motion-reduce:transition-none"><FaChevronDown className={`transition-transform motion-reduce:transition-none ${summaryExpanded ? "rotate-180" : ""}`} /></button>
 						<button type="button" onClick={onRefresh} disabled={refreshing} aria-label={t(refreshing ? "liveGame.refreshing" : "liveGame.refresh")} className="h-11 w-11 rounded-lg border border-white/10 text-gray-400 hover:text-white hover:bg-white/6 disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 grid place-items-center transition-colors motion-reduce:transition-none"><FaArrowRotateRight className={refreshing ? "animate-spin motion-reduce:animate-none" : ""} /></button>
 					</div>
 				</div>
 				{refreshError && <div role="status" className="px-4 py-2 border-t border-red-400/15 bg-red-400/5 text-xs text-red-300 flex items-center justify-between gap-3"><span className="truncate">{refreshError}</span><button type="button" onClick={onRefresh} className="shrink-0 underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300">{t("liveGame.retry")}</button></div>}
+				{isPregame && enemyCount === 0 && (
+					<div role="status" className="px-4 py-2 border-t border-amber-400/15 bg-amber-400/5 text-xs text-amber-200">
+						{t("liveGame.enemyRosterUnavailable")}
+					</div>
+				)}
 				<div id={summaryId} hidden={!summaryExpanded}>
 					<div className="grid grid-cols-2 lg:grid-cols-4 border-t border-white/6">
 						{[0, 1].map((index) => { const team = snapshot.teams[index]; const meta = team ? teamMeta(team.id, t) : { label: t(index === 0 ? "liveGame.teamAlly" : "liveGame.teamEnemy"), color: index === 0 ? "#4ade80" : "#f87171" }; return <div key={team?.id ?? index} className="px-4 py-2.5 border-r border-b lg:border-b-0 border-white/6"><p className="text-[10px] uppercase tracking-wider" style={{ color: meta.color }}>{meta.label} · {t("liveGame.teamAverage")}</p><p className="text-sm font-semibold text-white">{team?.averageTier != null ? tierName(Math.round(team.averageTier)) : <span aria-label={t("liveGame.unavailable")}>—</span>}</p><p className="text-[10px] text-gray-600">{t("liveGame.ratedPlayers", { count: team?.ratedPlayers ?? 0 })}</p></div>; })}
@@ -248,6 +322,12 @@ export const LiveScoutTable = ({ snapshot, assets, recent, refreshing, refreshEr
 						<div className="px-4 py-2.5"><p className="text-[10px] uppercase tracking-wider text-gray-500">{t("liveGame.rosterSize")}</p><p className="text-lg font-semibold tabular-nums">{snapshot.players.length}</p></div>
 					</div>
 					{matchup && <LiveTeamMatchup matchup={matchup} mode={recentMode} />}
+					{developer && isPregame && debugText && (
+						<div className="border-t border-white/6 px-4 py-3">
+							<p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-gray-500">{t("liveGame.pregameDebug")}</p>
+							<pre className="max-h-56 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-black/30 p-3 text-[11px] leading-5 text-gray-300">{debugText}</pre>
+						</div>
+					)}
 				</div>
 			</section>
 
@@ -255,7 +335,7 @@ export const LiveScoutTable = ({ snapshot, assets, recent, refreshing, refreshEr
 				<div className="sticky top-0 z-10 grid grid-cols-[minmax(150px,1.5fr)_88px_52px_56px_34px] md:grid-cols-[minmax(180px,300px)_110px_140px_52px_56px_52px_52px_minmax(34px,1fr)] xl:grid-cols-[minmax(180px,300px)_76px_110px_140px_52px_56px_52px_52px_100px_minmax(34px,1fr)] gap-2 px-3 py-2 bg-[#101218]/95 backdrop-blur border-b border-white/8 text-[9px] uppercase tracking-widest text-gray-600">
 					<span>{t("matches.player")}</span><span className="hidden xl:block">{t("liveGame.detectedParties")}</span><span>{t("liveGame.current")}</span><span className="hidden md:block">{t("liveGame.peak")}</span><span>{t("liveGame.kd")}</span><span>{t("liveGame.winRate")}</span><span className="hidden md:block">{t("liveGame.acs")}</span><span className="hidden md:block">{t("liveGame.dpr")}</span><span className="hidden xl:block">{t("liveGame.skins")}</span><span />
 				</div>
-				{[...teams.entries()].map(([teamId, players]) => { const meta = teamMeta(teamId, t); return <div key={teamId}><div className="px-3 py-2 flex items-center gap-2 bg-black/15 border-b border-white/5"><span className="w-2 h-2 rounded-full" style={{ background: meta.color }} /><h2 className="text-[10px] font-bold uppercase tracking-widest" style={{ color: meta.color }}>{meta.label}</h2><span className="ml-auto text-[10px] text-gray-600">{players.length}</span></div>{players.map((player) => <PlayerRow key={player.puuid} player={player} assets={assets} stats={recent[player.puuid]} expanded={expanded === player.puuid} onToggle={() => setExpanded((current) => current === player.puuid ? null : player.puuid)} teamColor={meta.color} teamLabel={meta.label} recentMode={recentMode} inMatch={inMatch} />)}</div>; })}
+				{teams.map(([teamId, players]) => { const meta = teamMeta(teamId, t); return <div key={teamId}><div className="px-3 py-2 flex items-center gap-2 bg-black/15 border-b border-white/5"><span className="w-2 h-2 rounded-full" style={{ background: meta.color }} /><h2 className="text-[10px] font-bold uppercase tracking-widest" style={{ color: meta.color }}>{meta.label}</h2><span className="ml-auto text-[10px] text-gray-600">{players.length}</span></div>{players.map((player) => <PlayerRow key={player.puuid} player={player} assets={assets} stats={recent[player.puuid]} expanded={expanded === player.puuid} onToggle={() => setExpanded((current) => current === player.puuid ? null : player.puuid)} teamColor={meta.color} teamLabel={meta.label} recentMode={recentMode} inMatch={inMatch} agentFallback={agentFallback} />)}</div>; })}
 			</section>
 		</div>
 	);

@@ -59,6 +59,12 @@ export type LiveTeamSummary = {
 	ratedPlayers: number;
 };
 
+export type PlayerStreak = {
+	kind: "win" | "lose" | null;
+	matches: number;
+	rr: number;
+};
+
 export type RecentPlayerStats = {
 	matches: number;
 	kills: number;
@@ -70,6 +76,7 @@ export type RecentPlayerStats = {
 	acs: number;
 	dpr: number;
 	history: RecentMatchSummary[];
+	streak?: PlayerStreak;
 };
 
 export type RecentMatchSummary = {
@@ -96,6 +103,29 @@ export type RecentStatsEvent =
 	| { rosterKey: string; attemptId: number; puuid: string; success: true; stats: RecentPlayerStats; error: null }
 	| { rosterKey: string; attemptId: number; puuid: string; success: false; stats: null; error: string };
 
+export type PregameDebugSource = {
+	puuid: string;
+	source: string;
+};
+
+export type PregameDebug = {
+	matchId: string | null;
+	allyTeamPlayers: number;
+	teamsCount: number;
+	teamsPlayerSubjects: number;
+	enemyTeam: string;
+	loadoutsEntries: number;
+	loadoutsUniqueSubjects: number;
+	loadoutEnemyCandidates: number;
+	matchToken: string;
+	jwtPlayerCount: number;
+	jwtPayloadKeys: string[];
+	finalRoster: number;
+	ally: number;
+	enemy: number;
+	sources: PregameDebugSource[];
+};
+
 export type LiveGameResponse =
 	| {
 			success: true;
@@ -104,6 +134,7 @@ export type LiveGameResponse =
 			match: LiveMatchContext | null;
 			teams: LiveTeamSummary[];
 			players: LivePlayer[];
+			pregameDebug?: PregameDebug | null;
 	  }
 	| { success: false; code: "loginRequired" }
 	| { success: false; error: string };

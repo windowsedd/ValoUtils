@@ -1,5 +1,8 @@
 use crate::riot::api::{self, RiotApiClient};
 use crate::riot::client::{self, RiotState};
+use super::pregame_roster::{
+    build_pregame_roster, log_pregame_debug, redact_secrets,
+};
 use base64::Engine;
 use serde_json::{json, Map, Value};
 use std::collections::{HashMap, HashSet};
@@ -204,7 +207,66 @@ fn normalize_recent_match(puuid: &str, details: &Value) -> Option<Value> {
     }))
 }
 
+fn json_i64(value: Option<&Value>) -> i64 {
+    value
+        .and_then(|value| value.as_i64().or_else(|| value.as_u64().map(|n| n as i64)))
+        .unwrap_or(0)
+}
+
+fn rr_by_match_id(updates: Option<&Value>) -> HashMap<String, i64> {
+    updates
+        .and_then(|value| value.get("Matches"))
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|entry| {
+            let match_id = entry.get("MatchID").and_then(Value::as_str)?;
+            if match_id.is_empty() {
+                return None;
+            }
+            Some((match_id.to_string(), json_i64(entry.get("RankedRatingEarned"))))
+        })
+        .collect()
+}
+
+fn compute_streak(history: &[Value], rr_by_match: &HashMap<String, i64>) -> Value {
+    if history.is_empty() {
+        return json!({ "kind": Value::Null, "matches": 0, "rr": 0 });
+    }
+    let mut ordered = history.to_vec();
+    ordered.sort_by(|a, b| {
+        b.get("startMillis")
+            .and_then(Value::as_u64)
+            .cmp(&a.get("startMillis").and_then(Value::as_u64))
+    });
+    let winning = ordered[0].get("won").and_then(Value::as_bool).unwrap_or(false);
+    let mut matches = 0u64;
+    let mut rr = 0i64;
+    for summary in &ordered {
+        if summary.get("won").and_then(Value::as_bool).unwrap_or(false) != winning {
+            break;
+        }
+        matches += 1;
+        if let Some(match_id) = summary.get("matchId").and_then(Value::as_str) {
+            rr += rr_by_match.get(match_id).copied().unwrap_or(0);
+        }
+    }
+    json!({
+        "kind": if winning { "win" } else { "lose" },
+        "matches": matches,
+        "rr": rr,
+    })
+}
+
 fn aggregate_recent_stats(puuid: &str, matches: &[Value]) -> Result<Value, String> {
+    aggregate_recent_stats_with_rr(puuid, matches, &HashMap::new())
+}
+
+fn aggregate_recent_stats_with_rr(
+    puuid: &str,
+    matches: &[Value],
+    rr_by_match: &HashMap<String, i64>,
+) -> Result<Value, String> {
     let mut analyzed = 0u64;
     let mut wins = 0u64;
     let mut kills = 0u64;
@@ -264,6 +326,7 @@ fn aggregate_recent_stats(puuid: &str, matches: &[Value]) -> Result<Value, Strin
         "acs": score as f64 / rounds.max(1) as f64,
         "dpr": damage as f64 / rounds.max(1) as f64,
         "history": history,
+        "streak": compute_streak(&history, rr_by_match),
     }))
 }
 
@@ -622,16 +685,33 @@ async fn enrich_players(
             let (game_name, tag_line) = name_map.get(&puuid).cloned().unwrap_or_default();
             let identity = raw.get("PlayerIdentity").cloned().unwrap_or(json!({}));
 
-            let loadout = loadout_map.and_then(|lm| lm.by_subject.get(&puuid).cloned().or_else(|| lm.by_index.get(index).cloned()));
+            let loadout = loadout_map.and_then(|lm| {
+                lm.by_subject.get(&puuid).cloned().or_else(|| {
+                    // Positional fallback is only safe when this subject is absent
+                    // from the map; never assign another player's loadout to a
+                    // Pregame stub that already has a PUUID.
+                    if lm.by_subject.is_empty() {
+                        lm.by_index.get(index).cloned()
+                    } else {
+                        None
+                    }
+                })
+            });
 
             let hide_level = identity.get("HideAccountLevel").and_then(|v| v.as_bool()).unwrap_or(false);
+            let character_id = raw
+                .get("CharacterID")
+                .and_then(Value::as_str)
+                .filter(|id| !id.is_empty())
+                .map(Value::from)
+                .unwrap_or(Value::Null);
 
             json!({
                 "puuid": puuid,
                 "gameName": game_name,
                 "tagLine": tag_line,
                 "teamId": raw.get("TeamID"),
-                "characterId": raw.get("CharacterID"),
+                "characterId": character_id,
                 "cardId": identity.get("PlayerCardID"),
                 "level": if hide_level { Value::Null } else { identity.get("AccountLevel").cloned().unwrap_or(Value::Null) },
                 "currentTier": current_tier,
@@ -772,7 +852,34 @@ pub async fn live_game_fetch(
         }
 
         let match_data = detected.match_data.clone().unwrap_or(Value::Null);
-        let raw_players = normalize_raw_players(detected.state, &match_data);
+        let chat = if detected.state == LiveState::PreGame {
+            match tokio::time::timeout(
+                std::time::Duration::from_millis(800),
+                client::get_pre_game_chat_info(&riot),
+            )
+            .await
+            {
+                Ok(Ok(value)) => Some(value),
+                _ => None,
+            }
+        } else {
+            None
+        };
+        let (raw_players, pregame_debug) = if detected.state == LiveState::PreGame {
+            let roster = build_pregame_roster(
+                &match_data,
+                detected.loadouts.as_ref(),
+                chat.as_ref(),
+                &api.puuid,
+            );
+            log_pregame_debug(&roster.debug);
+            (roster.players, Some(roster.debug))
+        } else {
+            (
+                normalize_raw_players(detected.state, &match_data),
+                None,
+            )
+        };
 
         let mut roster: Vec<String> = raw_players
             .iter()
@@ -824,7 +931,8 @@ pub async fn live_game_fetch(
             "rosterKey": state_key.clone(),
             "match": match_context,
             "teams": teams,
-            "players": players
+            "players": players,
+            "pregameDebug": pregame_debug
         })
         .to_string();
         *cache.state_key.lock().unwrap() = Some(state_key);
@@ -852,6 +960,7 @@ async fn fetch_recent_stats(
             return Err("Recent stats are unavailable for this game mode.".into());
         }
         let history = api.get_match_history(&puuid, 0, 20).await?;
+        let competitive_updates = api.get_competitive_history(&puuid, 0, 20).await.ok();
         let match_ids = select_match_ids_for_queue(&history, &queue_id, 5);
         if match_ids.is_empty() {
             return Err(format!(
@@ -876,7 +985,11 @@ async fn fetch_recent_stats(
                 matches.push(details);
             }
         }
-        let stats = aggregate_recent_stats(&puuid, &matches)?;
+        let stats = aggregate_recent_stats_with_rr(
+            &puuid,
+            &matches,
+            &rr_by_match_id(competitive_updates.as_ref()),
+        )?;
         let normalized_matches = stats["matches"].as_u64().unwrap_or_default() as usize;
         if should_cache_recent_stats(expected_matches, matches.len(), normalized_matches) {
             cache.lock().unwrap().insert(cache_key, stats.clone());
@@ -1065,7 +1178,22 @@ pub async fn live_game_dump(app: AppHandle, riot: State<'_, RiotState>) -> Resul
         grab!("coregame.getLoadouts", api.coregame_get_loadouts(match_id));
     }
 
-    let json_str = serde_json::to_string_pretty(&Value::Object(out)).unwrap_or_default();
+    if pre_match_id.is_some() {
+        let match_data = out.get("pregame.getMatch").cloned().unwrap_or(Value::Null);
+        let loadouts = out.get("pregame.getLoadouts").cloned();
+        let chat = client::get_pre_game_chat_info(&riot).await.ok();
+        let roster = build_pregame_roster(
+            &match_data,
+            loadouts.as_ref(),
+            chat.as_ref(),
+            &api.puuid,
+        );
+        out.insert("pregame.rosterDebug".into(), roster.debug);
+    }
+
+    let mut dump = Value::Object(out);
+    redact_secrets(&mut dump);
+    let json_str = serde_json::to_string_pretty(&dump).unwrap_or_default();
     let file_path = app
         .dialog()
         .file()
@@ -1216,6 +1344,40 @@ mod tests {
         assert_eq!(result["winRate"], 50.0);
         assert_eq!(result["acs"], 175.0);
         assert_eq!(result["dpr"], 125.25);
+        assert_eq!(result["streak"]["kind"], "win");
+        assert_eq!(result["streak"]["matches"], 1);
+    }
+
+    #[test]
+    fn counts_consecutive_wins_and_rr_from_newest_match() {
+        let history = vec![
+            json!({"matchId":"m1","startMillis":300,"won":true}),
+            json!({"matchId":"m2","startMillis":200,"won":true}),
+            json!({"matchId":"m3","startMillis":100,"won":false}),
+        ];
+        let mut rr = HashMap::new();
+        rr.insert("m1".into(), 18);
+        rr.insert("m2".into(), 12);
+        rr.insert("m3".into(), -16);
+        assert_eq!(
+            compute_streak(&history, &rr),
+            json!({"kind":"win","matches":2,"rr":30})
+        );
+    }
+
+    #[test]
+    fn counts_a_lose_streak_and_negative_rr() {
+        let history = vec![
+            json!({"matchId":"m1","startMillis":2,"won":false}),
+            json!({"matchId":"m2","startMillis":1,"won":false}),
+        ];
+        let mut rr = HashMap::new();
+        rr.insert("m1".into(), -21);
+        rr.insert("m2".into(), -14);
+        assert_eq!(
+            compute_streak(&history, &rr),
+            json!({"kind":"lose","matches":2,"rr":-35})
+        );
     }
 
     #[test]
