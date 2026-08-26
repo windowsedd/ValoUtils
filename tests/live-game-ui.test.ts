@@ -57,12 +57,37 @@ describe("Live Match signed-in player marker", () => {
 		expect(table).toContain("winStreak");
 	});
 
+	test("party colors are anonymous and hidden for solo players", () => {
+		expect(table).toContain("groupPlayersByParty(players)");
+		expect(table).toContain('t("liveGame.partyDetected", { party: player.party })');
+		expect(table).toContain("partyColor(player.party)");
+		expect(table).not.toContain('className="w-2 h-2 rounded-full shrink-0" title={t("liveGame.partyDetected"');
+		expect(table).not.toContain('aria-label={t("liveGame.unavailable")} className="text-[10px] text-gray-700"');
+		expect(table).not.toContain("player.partyId");
+		expect(table).not.toContain("player.historicalParty");
+		expect(table).not.toContain("player.partyConfidence");
+	});
+
+	test("party members use their shared color on the player row rail and label", () => {
+		expect(table).toContain("rowAccentColor(player.party, teamColor)");
+		expect(table).toContain("borderLeft: `3px solid ${rowAccentColor(player.party, teamColor)}`");
+		expect(table).toContain("color: partyColor(player.party)");
+		expect(table).toContain('const partyLabel = player.party ? t("liveGame.partyDetected", { party: player.party }) : null;');
+		expect(table).toContain('partyLabel ? `, ${partyLabel}` : ""');
+	});
+
+	test("rate-limit errors use localized copy instead of raw Riot output", () => {
+		expect(table).toContain('error === "rateLimited"');
+		expect(table).toContain('t("liveGame.rateLimited")');
+		expect(table).toContain('error === "unavailable" ? t("liveGame.failedToLoad") : error');
+	});
+
 	for (const locale of locales) {
 		test(`${locale} provides pregame roster copy`, () => {
 			const messages = JSON.parse(
 				readFileSync(join(root, `src/i18n/locales/${locale}.json`), "utf8"),
 			);
-			for (const key of ["enemyRosterUnavailable", "pregameRoster", "hiddenAgent", "pregameDebug", "winStreak", "loseStreak", "winStreakHint", "loseStreakHint"] as const) {
+			for (const key of ["enemyRosterUnavailable", "pregameRoster", "hiddenAgent", "pregameDebug", "winStreak", "loseStreak", "winStreakHint", "loseStreakHint", "rateLimited"] as const) {
 				expect(messages.liveGame[key]).toBeString();
 				expect(messages.liveGame[key].trim().length).toBeGreaterThan(0);
 			}

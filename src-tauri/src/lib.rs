@@ -101,6 +101,7 @@ pub fn run() {
             }
             app.manage(commands::live::LiveCache::default());
             app.manage(commands::live::LiveStatsCache::default());
+            app.manage(commands::live_party::LivePartyHistoryCache::default());
             app.manage(commands::matches::MatchCache::default());
 
             if auto_update {
@@ -170,6 +171,7 @@ pub fn run() {
             commands::chat::chat_translate,
             commands::chat::chat_send,
             commands::chat::chat_friend_action,
+            commands::chat::chat_mark_read,
             commands::chat::chat_disconnect,
             commands::riot_chat::connect_riot_chat,
             commands::riot_chat::disconnect_riot_chat,

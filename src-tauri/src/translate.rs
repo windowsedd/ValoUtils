@@ -304,8 +304,8 @@ pub async fn translate_text(
             .form(&deepl_form(text, &source, &target))
             .send()
             .await
-            .map_err(|e| e.to_string())?;
-        let body: Value = response.json().await.map_err(|e| e.to_string())?;
+            .map_err(|_| translation_failed())?;
+        let body = json_from_response(response).await?;
         let (text, detected) = deepl_translation_from_body(&body)?;
         (
             text,
@@ -383,6 +383,25 @@ fn normalize_detected_language(code: &str) -> String {
     }
 }
 
+const TRANSLATION_FAILED: &str = "Translation failed.";
+
+fn translation_failed() -> String {
+    TRANSLATION_FAILED.into()
+}
+
+fn json_from_http_body(status: reqwest::StatusCode, raw: &str) -> Result<Value, String> {
+    if !status.is_success() {
+        return Err(translation_failed());
+    }
+    serde_json::from_str(raw).map_err(|_| translation_failed())
+}
+
+async fn json_from_response(response: reqwest::Response) -> Result<Value, String> {
+    let status = response.status();
+    let raw = response.text().await.map_err(|_| translation_failed())?;
+    json_from_http_body(status, &raw)
+}
+
 async fn translate_with_google_web(
     text: &str,
     source_language: &str,
@@ -391,11 +410,15 @@ async fn translate_with_google_web(
     let client = reqwest::Client::new();
     let response = client
         .get("https://translate.googleapis.com/translate_a/single")
+        .header(
+            "User-Agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        )
         .query(&google_query(text, source_language, target_language))
         .send()
         .await
-        .map_err(|e| e.to_string())?;
-    let body: Value = response.json().await.map_err(|e| e.to_string())?;
+        .map_err(|_| translation_failed())?;
+    let body = json_from_response(response).await?;
     google_translation_from_body(&body)
 }
 
@@ -526,6 +549,32 @@ mod tests {
         assert_eq!(normalize_detected_language("zh-tw"), "zh-TW");
         assert_eq!(normalize_detected_language("EN_US"), "en-US");
         assert_eq!(normalize_detected_language(""), "");
+    }
+
+    #[test]
+    fn http_bodies_that_are_not_json_fail_with_a_stable_whisper() {
+        assert_eq!(
+            json_from_http_body(reqwest::StatusCode::OK, "<!DOCTYPE html>").unwrap_err(),
+            "Translation failed."
+        );
+        assert_eq!(
+            json_from_http_body(reqwest::StatusCode::TOO_MANY_REQUESTS, "rate limited")
+                .unwrap_err(),
+            "Translation failed."
+        );
+        assert_eq!(
+            json_from_http_body(reqwest::StatusCode::OK, "error decoding response body")
+                .unwrap_err(),
+            "Translation failed."
+        );
+        let parsed = json_from_http_body(
+            reqwest::StatusCode::OK,
+            r#"[[["안녕","LOL",null,null,0]],null,"en"]"#,
+        )
+        .unwrap();
+        let (text, detected) = google_translation_from_body(&parsed).unwrap();
+        assert_eq!(text, "안녕");
+        assert_eq!(detected.as_deref(), Some("en"));
     }
 
     #[test]

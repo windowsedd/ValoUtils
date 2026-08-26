@@ -1,23 +1,16 @@
 import type { ChatChannel } from "@/types/chat";
 import type { ComponentType } from "react";
-import { FaComments, FaGlobe, FaShieldHalved, FaUserGroup } from "react-icons/fa6";
+import { FaComments } from "react-icons/fa6";
 
 type ChannelAvailability = Record<ChatChannel, boolean>;
 type ChannelLabels = Record<ChatChannel, string>;
 
 const channels: Array<{ id: ChatChannel; icon: ComponentType<{ className?: string }> }> = [
 	{ id: "friends", icon: FaComments },
-	{ id: "party", icon: FaUserGroup },
-	{ id: "team", icon: FaShieldHalved },
-	{ id: "all", icon: FaGlobe },
 ];
 
-/**
- * Channels the UI offers. Party, team, and all-chat only exist while you're in a
- * party or a live match; unavailable rooms stay on the rail at reduced opacity
- * so the switcher is always there when a room appears.
- */
-export const visibleChatChannels: ChatChannel[] = ["friends", "party", "team", "all"];
+/** Chat tab only offers friends DMs. Party/team/all stay on the in-game bot. */
+export const visibleChatChannels: ChatChannel[] = ["friends"];
 
 const visibleChannels = channels.filter((channel) =>
 	visibleChatChannels.includes(channel.id),
@@ -49,10 +42,10 @@ export const ChatChannelRail = ({
 					aria-pressed={active}
 					data-channel-available={String(available[id])}
 					onClick={() => onSelect(id)}
-					className={`relative flex min-h-14 flex-col items-center justify-center gap-1 rounded-sm px-1 text-[10px] font-semibold uppercase tracking-[0.06em] outline-none transition-colors focus-visible:ring-1 focus-visible:ring-(--signal-focus) ${
+					className={`relative flex min-h-14 flex-col items-center justify-center gap-1 rounded-[6px] border border-transparent px-1 text-[10px] font-medium uppercase tracking-[0.06em] outline-none transition-[color,background-color,border-color] duration-150 focus-visible:border-(--accent) focus-visible:shadow-[0_0_0_2px_var(--accent-soft)] ${
 						active
-							? "bg-(--panel-raised) text-(--ink) before:absolute before:left-0 before:h-6 before:w-0.5 before:bg-(--ink)"
-							: "text-(--ink-faint) hover:bg-white/4 hover:text-(--ink-dim)"
+							? "bg-[rgba(128,100,233,0.15)] border-[rgba(128,100,233,0.2)] text-(--accent-selected)"
+							: "text-(--text-muted) hover:bg-(--surface-hover) hover:text-(--text-primary)"
 					} ${!available[id] && id !== "friends" ? "opacity-45" : ""}`}
 				>
 					<Icon className="text-base" />

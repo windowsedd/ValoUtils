@@ -18,6 +18,11 @@ import {
 	filterChatFriends,
 	filterFriendConversations,
 	findFriendConversationCid,
+	visibleUnreadCount,
+	forgetMarkedUnreadIfCleared,
+	lastConversationMessageId,
+	rememberMarkedUnread,
+	sessionMarkedUnread,
 	isComposerCommand,
 	mergeChatMessages,
 	channelForCid,
@@ -75,6 +80,9 @@ export const useChatController = () => {
 	>({});
 	const [friendActionError, setFriendActionError] = useState<string | null>(null);
 	const [pendingFriendAction, setPendingFriendAction] = useState<string | null>(null);
+	const [markedUnreadByCid, setMarkedUnreadByCid] = useState<Record<string, number>>(
+		() => ({ ...sessionMarkedUnread }),
+	);
 	const translationMessageRef = useRef<string | null>(null);
 	const commandRef = useRef<{ cid: string; command: string } | null>(null);
 
@@ -108,6 +116,9 @@ export const useChatController = () => {
 			setLoginRequired(false);
 			setSummaryError(null);
 			setSummary(response);
+			setMarkedUnreadByCid((current) =>
+				forgetMarkedUnreadIfCleared(response.conversations, current),
+			);
 			dispatch({ type: "summaryMessages", messages: response.messages });
 		};
 
@@ -315,14 +326,42 @@ export const useChatController = () => {
 		],
 	);
 
+	const markConversationRead = useCallback(
+		(cid: string) => {
+			if (!cid) return;
+			const conversation = summary.conversations.find((item) => item.cid === cid);
+			const riotUnread = conversation?.unreadCount ?? 0;
+			const markedAt = rememberMarkedUnread(cid, riotUnread);
+			setMarkedUnreadByCid((current) =>
+				current[cid] === markedAt ? current : { ...current, [cid]: markedAt },
+			);
+			if (riotUnread <= 0) return;
+			const mid = lastConversationMessageId(
+				[...summary.messages, ...(state.historyByCid[cid] ?? [])],
+				cid,
+				conversation?.mid ?? "",
+			);
+			window.Main?.send("chat:mark-read", cid, mid, conversation?.type ?? "chat");
+		},
+		[state.historyByCid, summary.conversations, summary.messages],
+	);
+
 	const selectConversation = useCallback(
 		(cid: string) => {
 			dispatch({ type: "selectConversation", cid });
 			const conversation = summary.conversations.find((item) => item.cid === cid);
 			requestHistory(cid, supportsConversationHistory(conversation));
+			markConversationRead(cid);
 		},
-		[requestHistory, summary.conversations],
+		[markConversationRead, requestHistory, summary.conversations],
 	);
+
+	useEffect(() => {
+		if (!state.selectedCid) return;
+		const conversation = summary.conversations.find((item) => item.cid === state.selectedCid);
+		if ((conversation?.unreadCount ?? 0) <= 0) return;
+		markConversationRead(state.selectedCid);
+	}, [markConversationRead, state.selectedCid, summary.conversations]);
 
 	const openFriendChat = useCallback(
 		(friend: ChatFriend) => {
@@ -407,8 +446,14 @@ export const useChatController = () => {
 		[state.historyByCid, summary.messages],
 	);
 	const conversations = useMemo(
-		() => buildFriendConversations(allCachedMessages, summary.conversations, summary.friends),
-		[allCachedMessages, summary.conversations, summary.friends],
+		() =>
+			buildFriendConversations(allCachedMessages, summary.conversations, summary.friends).map(
+				(item) => ({
+					...item,
+					unreadCount: visibleUnreadCount(item.unreadCount, markedUnreadByCid[item.cid]),
+				}),
+			),
+		[allCachedMessages, markedUnreadByCid, summary.conversations, summary.friends],
 	);
 	const filteredConversations = useMemo(
 		() => filterFriendConversations(conversations, summary.friends, conversationSearch),
@@ -491,6 +536,7 @@ export const useChatController = () => {
 		friendActionError,
 		selectChannel,
 		selectConversation,
+		markConversationRead,
 		openFriendChat,
 		canOpenFriendChat,
 		refreshSummary,

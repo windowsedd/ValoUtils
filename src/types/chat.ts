@@ -12,6 +12,7 @@ export type ChatConversation = {
 	title: string;
 	participantPuuid: string;
 	unreadCount: number;
+	mid?: string;
 	messageHistory: boolean | null;
 	muted: boolean;
 	supportsHistory: boolean;

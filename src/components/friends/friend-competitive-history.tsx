@@ -49,9 +49,9 @@ export const FriendMatchHistory = ({
 	return (
 		<SectionCard
 			title={t("friends.profileRecentMatches")}
-			accent="#22d3ee"
+			accent="#8064e9"
 			right={
-				<select aria-label={t("friends.profileModeFilter")} value={queue} onChange={(event) => setQueue(event.target.value)} className="h-8 max-w-40 rounded-md border border-white/10 bg-[#101218] px-2 text-xs text-gray-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400">
+				<select aria-label={t("friends.profileModeFilter")} value={queue} onChange={(event) => setQueue(event.target.value)} className="h-8 max-w-40 rounded-md border border-white/10 bg-[#101218] px-2 text-xs text-gray-200 focus-visible:outline-none focus-visible:shadow-[0_0_0_2px_var(--accent-soft)]">
 					<option value="all">{t("friends.profileAllModes")}</option>
 					{queues.map((queueId) => <option key={queueId || "custom"} value={queueId}>{queueLabel(queueId)}</option>)}
 				</select>

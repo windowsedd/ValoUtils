@@ -9,8 +9,9 @@ pub const TAG_LINE: &str = "BOT";
 const MAX_MESSAGES: usize = 200;
 
 pub fn help_text() -> &'static str {
-    // Valorant whispers collapse newlines, so this has to stay one line.
-    "$online · $offline · $mobile · $enable · $disable · $status · $help · .send {party|pregame|team|all} {language|code} {message} · .tran [n] · .dodge"
+    // Valorant whispers collapse newlines and wrap long lines on top of
+    // themselves, so this has to stay one short ASCII line.
+    "$online $offline $mobile $enable $disable $status $help .send .tran .dodge"
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -97,12 +98,21 @@ mod tests {
         let help = help_text();
         assert!(help.contains("$online"));
         assert!(help.contains("$help"));
-        assert!(help.contains(".send {party|pregame|team|all} {language|code} {message}"));
-        assert!(help.contains(".tran [n]"));
+        assert!(help.contains(".send"));
+        assert!(help.contains(".tran"));
         assert!(help.contains(".dodge"));
         assert!(
             !help.contains('\n'),
             "Valorant whispers strip newlines, so help must stay one line"
+        );
+        assert!(
+            !help.contains('·'),
+            "Valorant's HUD font stacks middle dots onto the next glyph"
+        );
+        assert!(
+            help.chars().count() <= 80,
+            "Valorant whisper HUD wraps long lines on top of themselves: {help:?} ({} chars)",
+            help.chars().count()
         );
     }
 

@@ -13,11 +13,11 @@ const requiredChatKeys = [
 	"noAllRoom",
 	"searchConversations",
 	"noConversations",
+	"markAsRead",
 	"openFriends",
 	"historyLoading",
 	"historyFailed",
 	"retryHistory",
-	"developerPanel",
 	"searchFriends",
 	"noFriends",
 	"friendChat",
@@ -38,13 +38,14 @@ describe("Chat navigation and page shell", () => {
 		expect(main.indexOf('id: "chat"')).toBeLessThan(main.indexOf('id: "settings"'));
 	});
 
-	test("uses the shared controller and the new four-part Chat UI", () => {
+	test("uses the shared controller and the friends Chat UI", () => {
 		expect(chat).toContain("useChatController()");
-		expect(chat).toContain("<ChatChannelRail");
 		expect(chat).toContain("<ChatConversationList");
 		expect(chat).toContain("<ChatThread");
 		expect(chat).toContain("<ChatComposer");
 		expect(chat).toContain("<ChatFriendsPanel");
+		expect(chat).not.toContain("<ChatChannelRail");
+		expect(chat).not.toContain("<ChatChannelContext");
 		expect(chat).not.toContain("removeAllListeners");
 		expect(chat).not.toContain('send("chat:disconnect")');
 	});

@@ -49,7 +49,7 @@ export const ActRankPanel = ({ competitiveSeasons, assets, selectedSeasonId, onS
 						aria-expanded={expanded}
 						aria-controls={bodyId}
 						aria-label={t(expanded ? "liveGame.collapseActRank" : "liveGame.expandActRank")}
-						className="grid h-9 w-9 place-items-center rounded-md border border-white/10 text-gray-400 hover:bg-white/6 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400"
+						className="grid h-9 w-9 place-items-center rounded-md border border-white/10 text-gray-400 hover:bg-white/6 hover:text-white focus-visible:outline-none focus-visible:shadow-[0_0_0_2px_var(--accent-soft)]"
 					>
 						<FaChevronDown className={`text-xs transition-transform ${expanded ? "rotate-180" : ""}`} />
 					</button>
@@ -78,7 +78,7 @@ export const ActRankPanel = ({ competitiveSeasons, assets, selectedSeasonId, onS
 						aria-label={t("liveGame.selectAct")}
 						value={selected.seasonId}
 						onChange={(event) => onSeasonChange(event.target.value)}
-						className="h-9 max-w-44 rounded-md border border-white/10 bg-[#101218] px-2 text-xs text-gray-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400"
+						className="h-9 max-w-44 rounded-md border border-white/10 bg-[#101218] px-2 text-xs text-gray-200 focus-visible:outline-none focus-visible:shadow-[0_0_0_2px_var(--accent-soft)]"
 					>
 						{seasons.map((season) => (
 							<option key={season.seasonId} value={season.seasonId}>
@@ -92,7 +92,7 @@ export const ActRankPanel = ({ competitiveSeasons, assets, selectedSeasonId, onS
 						aria-expanded={expanded}
 						aria-controls={bodyId}
 						aria-label={t(expanded ? "liveGame.collapseActRank" : "liveGame.expandActRank")}
-						className="grid h-9 w-9 place-items-center rounded-md border border-white/10 text-gray-400 hover:bg-white/6 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400"
+						className="grid h-9 w-9 place-items-center rounded-md border border-white/10 text-gray-400 hover:bg-white/6 hover:text-white focus-visible:outline-none focus-visible:shadow-[0_0_0_2px_var(--accent-soft)]"
 					>
 						<FaChevronDown className={`text-xs transition-transform ${expanded ? "rotate-180" : ""}`} />
 					</button>

@@ -1,5 +1,5 @@
 import CustomButton from "@/components/button.tsx";
-import { PageHeader, SectionCard, SectionRow } from "@/components/section-card";
+import { PageHeader, SectionCard, SectionRow, pageBodyClass } from "@/components/section-card";
 import { openUrl } from "@/util";
 import { useEffect, useState } from "react";
 import { FaDiscord, FaGithub, FaHeart, FaTwitter } from "react-icons/fa6";
@@ -32,15 +32,12 @@ const About = () => {
 				subtitle={version ? `v${version}` : undefined}
 			/>
 
-			<div className="flex-1 min-h-0 overflow-y-auto px-6 pb-6 flex flex-col gap-4">
+			<div className={pageBodyClass}>
 				{/* Wordmark — the one place on this page that gets to be loud */}
-				<section className="glass rounded-2xl relative overflow-hidden flex flex-col items-center justify-center gap-2 px-8 py-10">
-					<div className="absolute -top-16 -left-16 w-64 h-64 rounded-full bg-[#ff4655]/10 blur-3xl pointer-events-none" />
-					<div className="absolute -bottom-16 -right-16 w-64 h-64 rounded-full bg-[#9d4dff]/10 blur-3xl pointer-events-none" />
-
-					<p className="text-[10px] uppercase tracking-[0.35em] text-gray-600 z-10">{t("about.rebuildVersion")}</p>
-					<h1 className="text-6xl font-bold gradient-text leading-none z-10">ValoUtils</h1>
-					<p className="text-gray-500 text-sm z-10">{t("about.tagline")}</p>
+				<section className="panel relative overflow-hidden flex flex-col items-center justify-center gap-2 px-8 py-10">
+					<p className="text-[10px] uppercase tracking-[0.18em] text-(--text-muted) z-10">{t("about.rebuildVersion")}</p>
+					<h1 className="text-6xl font-bold leading-none z-10 text-(--text-primary)">ValoUtils</h1>
+					<p className="text-(--text-muted) text-[12px] z-10">{t("about.tagline")}</p>
 
 					<div className="flex items-center gap-2 z-10 mt-3">
 						{LINKS.map(({ icon: Icon, url, label }) => (
@@ -49,9 +46,9 @@ const About = () => {
 								onClick={() => openUrl(url)}
 								aria-label={label}
 								title={label}
-								className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
+								className="w-9 h-9 rounded-[6px] border border-(--border) bg-(--control) flex items-center justify-center text-(--text-muted) hover:text-(--text-primary) hover:bg-(--surface-hover) transition-colors duration-150"
 							>
-								<Icon className="text-lg" />
+								<Icon className="text-[15px]" />
 							</button>
 						))}
 					</div>
@@ -61,10 +58,10 @@ const About = () => {
 					<SectionRow>
 						<FaHeart className="text-[#ff4655] shrink-0 ml-1" />
 						<div className="min-w-0 flex-1">
-							<p className="text-sm font-semibold text-white">{t("about.madeBy")}</p>
+							<p className="text-[12px] font-medium text-(--text-primary)">{t("about.madeBy")}</p>
 							<button
 								onClick={() => openUrl("https://github.com/windowsedd")}
-								className="text-xs text-gray-500 hover:text-[#22d3ee] transition-colors"
+								className="text-[11px] text-(--text-muted) hover:text-(--accent-selected) transition-colors duration-150"
 							>
 								windowsed
 							</button>
@@ -73,8 +70,8 @@ const About = () => {
 					<SectionRow>
 						<span className="w-2 h-2 rounded-full bg-green-400 shrink-0 ml-2 mr-1" />
 						<div className="min-w-0 flex-1">
-							<p className="text-sm font-semibold text-white">{t("about.version")}</p>
-							<p className="text-xs text-gray-500 tabular-nums">{version ?? "—"}</p>
+							<p className="text-[12px] font-medium text-(--text-primary)">{t("about.version")}</p>
+							<p className="text-[11px] text-(--text-muted) tabular-nums">{version ?? "—"}</p>
 						</div>
 						<CustomButton size="sm" onPress={() => window.Main.send("update:check")}>
 							<FaSync className="mr-1.5" />
@@ -84,7 +81,7 @@ const About = () => {
 				</SectionCard>
 
 				<SectionCard title={t("about.sectionLegal")} accent="#6b7280">
-					<p className="px-3 py-1 text-xs text-gray-500 leading-relaxed">{t("about.disclaimer")}</p>
+					<p className="px-3 py-1 text-[11px] text-(--text-muted) leading-relaxed">{t("about.disclaimer")}</p>
 				</SectionCard>
 			</div>
 		</div>

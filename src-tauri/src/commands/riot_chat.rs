@@ -557,7 +557,7 @@ pub async fn execute_history_translation(
 
     let mut parts = Vec::new();
     for (index, message) in collected.iter().enumerate() {
-        let translated = crate::translate::translate_text(
+        match crate::translate::translate_text(
             &message.body,
             &config.provider,
             "auto",
@@ -565,15 +565,17 @@ pub async fn execute_history_translation(
             &config.deepl_api_key,
         )
         .await
-        .map_err(RiotError::InvalidCommand)?;
-        parts.push(format_history_translation_line(
-            index + 1,
-            &translated.source_language,
-            &message.body,
-            &translated.text,
-        ));
+        {
+            Ok(translated) => parts.push(format_history_translation_line(
+                index + 1,
+                &translated.source_language,
+                &message.body,
+                &translated.text,
+            )),
+            Err(_) => parts.push(format!("{}. Translation failed.", index + 1)),
+        }
     }
-    Ok(parts.join(" · "))
+    Ok(parts.join("\n"))
 }
 
 fn history_channel_matches(wanted: Option<ChatChannel>, cid: &str) -> bool {
@@ -588,6 +590,9 @@ fn history_channel_matches(wanted: Option<ChatChannel>, cid: &str) -> bool {
     }
 }
 
+const WHISPER_LINE_LIMIT: usize = 80;
+const WHISPER_PREVIEW_LIMIT: usize = 28;
+
 fn format_history_translation_line(
     index: usize,
     source_language: &str,
@@ -595,22 +600,30 @@ fn format_history_translation_line(
     translated: &str,
 ) -> String {
     let original = preview_history_line(original);
-    let translated = translated.trim();
-    if source_language.is_empty() || source_language.eq_ignore_ascii_case("auto") {
-        format!("{index}. {original} → {translated}")
+    let translated = preview_history_line(translated);
+    let line = if source_language.is_empty() || source_language.eq_ignore_ascii_case("auto") {
+        format!("{index}. {original} -> {translated}")
     } else {
-        format!("{index}. [{source_language}] {original} → {translated}")
-    }
+        format!("{index}. [{source_language}] {original} -> {translated}")
+    };
+    preview_chars(&line, WHISPER_LINE_LIMIT)
 }
 
 fn preview_history_line(body: &str) -> String {
-    let compact = body.split_whitespace().collect::<Vec<_>>().join(" ");
-    const LIMIT: usize = 40;
-    if compact.chars().count() <= LIMIT {
-        return compact;
+    preview_chars(
+        &body.split_whitespace().collect::<Vec<_>>().join(" "),
+        WHISPER_PREVIEW_LIMIT,
+    )
+}
+
+fn preview_chars(value: &str, limit: usize) -> String {
+    let compact = value.trim();
+    if compact.chars().count() <= limit {
+        return compact.to_string();
     }
-    let mut preview: String = compact.chars().take(LIMIT).collect();
-    preview.push('…');
+    let take = limit.saturating_sub(3);
+    let mut preview: String = compact.chars().take(take).collect();
+    preview.push_str("...");
     preview
 }
 
@@ -1827,12 +1840,28 @@ mod tests {
     fn history_translation_line_shows_the_original_language_code() {
         assert_eq!(
             format_history_translation_line(1, "ko", "gl hf", "잘 부탁해"),
-            "1. [ko] gl hf → 잘 부탁해"
+            "1. [ko] gl hf -> 잘 부탁해"
         );
         assert_eq!(
             format_history_translation_line(2, "auto", "hello", "你好"),
-            "2. hello → 你好"
+            "2. hello -> 你好"
         );
+    }
+
+    #[test]
+    fn history_translation_lines_fit_valorant_whispers() {
+        let long = "alpha ".repeat(40);
+        let line = format_history_translation_line(1, "en", &long, &long);
+        assert!(
+            line.chars().count() <= 80,
+            "line too long for Valorant HUD: {line:?} ({} chars)",
+            line.chars().count()
+        );
+        assert!(!line.contains('·'));
+        assert!(!line.contains('→'));
+        let reply = ["1. hi -> 안녕", "2. gg -> 잘가"].join("\n");
+        assert!(!reply.contains('·'));
+        assert_eq!(reply.lines().count(), 2);
     }
 
     #[test]

@@ -18,6 +18,51 @@ export type FriendConversation = {
 	messages: ChatMessage[];
 };
 
+/** Riot still reports the old unread count until the client ACK lands. */
+export const visibleUnreadCount = (riotUnread: number, markedAtUnread?: number) => {
+	if (!Number.isFinite(riotUnread) || riotUnread <= 0) return 0;
+	if (markedAtUnread == null) return riotUnread;
+	return riotUnread > markedAtUnread ? riotUnread : 0;
+};
+
+export const lastConversationMessageId = (
+	messages: ChatMessage[],
+	cid: string,
+	fallback = "",
+) =>
+	[...messages]
+		.reverse()
+		.find((message) => message.conversationId === cid && message.id && message.id !== cid)
+		?.id || fallback;
+
+/**
+ * Survives Chat remounts in this session. Opening a DM hid the badge, then
+ * clicking Chat again restored it because React state reset while Riot still
+ * reported the old unread_count.
+ */
+export const sessionMarkedUnread: Record<string, number> = {};
+
+export const rememberMarkedUnread = (cid: string, riotUnread: number) => {
+	const next = Math.max(riotUnread, sessionMarkedUnread[cid] ?? 0);
+	if (next > 0) sessionMarkedUnread[cid] = next;
+	return next;
+};
+
+export const forgetMarkedUnreadIfCleared = (
+	conversations: Array<{ cid: string; unreadCount: number }>,
+	marked: Record<string, number>,
+) => {
+	const next = { ...marked };
+	let changed = false;
+	for (const conversation of conversations) {
+		if (conversation.unreadCount > 0 || next[conversation.cid] == null) continue;
+		delete next[conversation.cid];
+		delete sessionMarkedUnread[conversation.cid];
+		changed = true;
+	}
+	return changed ? next : marked;
+};
+
 export type FriendGameStatus =
 	| "offline"
 	| "checking"

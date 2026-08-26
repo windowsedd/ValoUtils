@@ -17,6 +17,11 @@ import {
 	shouldStickToBottom,
 	shouldResetThreadPosition,
 	startsMessageGroup,
+	visibleUnreadCount,
+	lastConversationMessageId,
+	rememberMarkedUnread,
+	forgetMarkedUnreadIfCleared,
+	sessionMarkedUnread,
 } from "./chat-model";
 
 const message = (overrides: Partial<ChatMessage>): ChatMessage => ({
@@ -97,6 +102,47 @@ describe("chat model", () => {
 		const first = message({ id: "same", conversationId: "cid-a" });
 		const second = message({ id: "same", conversationId: "cid-b" });
 		expect(chatMessageKey(first)).not.toBe(chatMessageKey(second));
+	});
+
+	test("hides unread until Riot reports a higher count than when it was marked read", () => {
+		expect(visibleUnreadCount(3)).toBe(3);
+		expect(visibleUnreadCount(3, 3)).toBe(0);
+		expect(visibleUnreadCount(3, 5)).toBe(0);
+		expect(visibleUnreadCount(4, 3)).toBe(4);
+		expect(visibleUnreadCount(0, 3)).toBe(0);
+	});
+
+	test("uses the latest message id in a conversation as the read receipt mid", () => {
+		expect(
+			lastConversationMessageId(
+				[
+					message({ id: "first", conversationId: "cid-a" }),
+					message({ id: "second", conversationId: "cid-a" }),
+					message({ id: "other", conversationId: "cid-b" }),
+				],
+				"cid-a",
+				"fallback",
+			),
+		).toBe("second");
+		expect(lastConversationMessageId([], "cid-a", "conv-mid")).toBe("conv-mid");
+	});
+
+	test("keeps a session mark so remounting Chat does not restore the badge", () => {
+		delete sessionMarkedUnread["cid-a"];
+		expect(rememberMarkedUnread("cid-a", 2)).toBe(2);
+		expect(sessionMarkedUnread["cid-a"]).toBe(2);
+		expect(rememberMarkedUnread("cid-a", 0)).toBe(2);
+		const stillMarked = forgetMarkedUnreadIfCleared(
+			[{ cid: "cid-a", unreadCount: 2 }],
+			{ "cid-a": 2 },
+		);
+		expect(stillMarked["cid-a"]).toBe(2);
+		const cleared = forgetMarkedUnreadIfCleared(
+			[{ cid: "cid-a", unreadCount: 0 }],
+			{ "cid-a": 2 },
+		);
+		expect(cleared["cid-a"]).toBeUndefined();
+		expect(sessionMarkedUnread["cid-a"]).toBeUndefined();
 	});
 
 	test("sorts friend conversations by newest message", () => {

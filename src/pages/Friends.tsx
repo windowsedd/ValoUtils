@@ -5,7 +5,7 @@ import { tierName } from "@/util/valorant-ranks";
 import { mapName } from "@/util/valorant-maps";
 import { queueLabel } from "@/util/valorant-queues";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { SectionCard } from "@/components/section-card";
+import { SectionCard, pageBodyClass } from "@/components/section-card";
 import { FriendProfile } from "@/components/friends/friend-profile";
 import {
 	FriendIdentity,
@@ -238,7 +238,7 @@ const Friends = () => {
 				type="button"
 				onClick={() => openFriend(friend)}
 				key={friend.puuid || friend.displayName}
-				className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 ${inParty ? "hover:bg-white/4" : "bg-white/2 hover:bg-white/6"}`}
+				className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:shadow-[0_0_0_2px_var(--accent-soft)] ${inParty ? "hover:bg-white/4" : "bg-white/2 hover:bg-white/6"}`}
 			>
 				<Avatar friend={friend} cards={cards} tiers={tiers} />
 				<div className="min-w-0 flex-1">
@@ -295,7 +295,7 @@ const Friends = () => {
 			<span className="text-xs text-gray-600 shrink-0">{label}</span>
 		</>;
 		return "isOnline" in person ? (
-			<button type="button" key={person.puuid || person.displayName} onClick={() => openFriend(person)} className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors hover:bg-white/4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400">
+			<button type="button" key={person.puuid || person.displayName} onClick={() => openFriend(person)} className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors hover:bg-white/4 focus-visible:outline-none focus-visible:shadow-[0_0_0_2px_var(--accent-soft)]">
 				{content}
 			</button>
 		) : (
@@ -350,7 +350,7 @@ const Friends = () => {
 				</span>
 			</div>
 
-			<div ref={listScrollRef} className="flex-1 min-h-0 overflow-y-auto px-6 pb-6 flex flex-col gap-4">
+			<div ref={listScrollRef} className={pageBodyClass}>
 				{loading && <div className="flex-1 flex items-center justify-center text-gray-500 text-sm">{t("friends.loading")}</div>}
 
 				{!loading && loginRequired && (
@@ -400,7 +400,7 @@ const Friends = () => {
 				)}
 
 				{groups.online.length > 0 && (
-					<SectionCard title={t("friends.onlineElsewhere")} count={groups.online.length} accent="#22d3ee">
+					<SectionCard title={t("friends.onlineElsewhere")} count={groups.online.length} accent="#8064e9">
 						{groups.online.map((f) => friendRow(f))}
 					</SectionCard>
 				)}

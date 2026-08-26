@@ -134,6 +134,7 @@ export type LiveGameResponse =
 			match: LiveMatchContext | null;
 			teams: LiveTeamSummary[];
 			players: LivePlayer[];
+			warning?: "rateLimited" | "unavailable" | null;
 			pregameDebug?: PregameDebug | null;
 	  }
 	| { success: false; code: "loginRequired" }

@@ -78,7 +78,7 @@ const MatchPlayerProfileBody = ({ player, assets }: { player: MatchPlayer; asset
 				<button
 					type="button"
 					onClick={() => setRetryVersion((value) => value + 1)}
-					className="rounded-md border border-white/10 px-3 py-2 text-sm text-gray-200 hover:bg-white/6 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400"
+					className="rounded-md border border-white/10 px-3 py-2 text-sm text-gray-200 hover:bg-white/6 focus-visible:outline-none focus-visible:shadow-[0_0_0_2px_var(--accent-soft)]"
 				>
 					{t("friends.profileRetry")}
 				</button>
@@ -149,7 +149,7 @@ export const useMatchPlayerProfileModal = (assets: MatchAssets) => {
 			title: riotId,
 			body: <MatchPlayerProfileBody player={player} assets={assets} />,
 			footer: (
-				<button type="button" onClick={closeModal} className="rounded-md border border-white/10 px-4 py-2 text-sm text-gray-200 hover:bg-white/6 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400">
+				<button type="button" onClick={closeModal} className="rounded-md border border-white/10 px-4 py-2 text-sm text-gray-200 hover:bg-white/6 focus-visible:outline-none focus-visible:shadow-[0_0_0_2px_var(--accent-soft)]">
 					{t("common.close")}
 				</button>
 			),

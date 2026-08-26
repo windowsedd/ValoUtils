@@ -233,6 +233,10 @@ fn normalize_conversations(payload: &Value) -> Vec<Value> {
                 .get("muted")
                 .and_then(|value| value.as_bool())
                 .unwrap_or(false);
+            let mid = pick_string(
+                [item.get("mid"), item.get("lastMessageId")]
+                    .map(|value| value.and_then(|value| value.as_str())),
+            );
 
             Some(json!({
                 "cid": cid,
@@ -241,6 +245,7 @@ fn normalize_conversations(payload: &Value) -> Vec<Value> {
                 "title": title,
                 "participantPuuid": if channel == "friends" { id_root(&cid) } else { String::new() },
                 "unreadCount": unread_count,
+                "mid": mid,
                 "messageHistory": message_history,
                 "muted": muted,
                 // Party/match MUCs 404 `/chat/v6/messages?cid=`. Direct chats
@@ -455,6 +460,91 @@ fn send_success(request_id: &str, cid: &str, message_type: &str, transport: &str
 
 fn send_error(request_id: &str, cid: &str, error: &str) -> Value {
     json!({ "success": false, "requestId": request_id, "cid": cid, "error": error })
+}
+
+fn active_conversation_body(cid: &str) -> Value {
+    conversation_read_ack_body(cid, "", get_send_type(cid))
+}
+
+fn active_conversation_body_with_mid(cid: &str, mid: &str, conv_type: &str) -> Value {
+    conversation_read_ack_body(cid, mid, conv_type)
+}
+
+/// Body for `POST /chat/v7/conversations/read` (`PostChatV7ConversationsRead`).
+/// `mid` is the last message the player has seen.
+fn conversation_read_ack_body(cid: &str, mid: &str, conv_type: &str) -> Value {
+    let mut body = json!({
+        "id": cid,
+        "cid": cid,
+        "type": conv_type,
+    });
+    if !mid.is_empty() && mid != cid {
+        body["mid"] = json!(mid);
+    }
+    body
+}
+
+fn conversation_last_mid(item: &Value) -> String {
+    pick_string(
+        [item.get("mid"), item.get("lastMessageId")]
+            .map(|value| value.and_then(|value| value.as_str())),
+    )
+}
+
+fn payload_last_message_id(payload: &Value) -> String {
+    messages_array(payload)
+        .into_iter()
+        .rev()
+        .find_map(|message| {
+            let id = pick_string(
+                [
+                    message.get("id"),
+                    message.get("ID"),
+                    message.get("mid"),
+                    message.get("messageId"),
+                    message.get("MessageID"),
+                ]
+                .map(|value| value.and_then(|value| value.as_str())),
+            );
+            (!id.is_empty()).then_some(id)
+        })
+        .unwrap_or_default()
+}
+
+fn find_listed_direct_conversation(payload: &Value, cid: &str) -> Option<Value> {
+    conversations_array(payload).into_iter().find(|item| {
+        pick_string(
+            [
+                item.get("cid"),
+                item.get("id"),
+                item.get("conversationId"),
+                item.get("ConversationID"),
+            ]
+            .map(|value| value.and_then(|value| value.as_str())),
+        ) == cid
+    })
+}
+
+fn mark_read_write_targets(cid: &str) -> Vec<(String, reqwest::Method)> {
+    let encoded = riot_client::urlencoding_encode(cid);
+    vec![
+        (
+            "/chat/v7/conversations/read".to_string(),
+            reqwest::Method::POST,
+        ),
+        (
+            "/chat/v6/conversations/read".to_string(),
+            reqwest::Method::POST,
+        ),
+        (
+            "/chat/v5/conversations/read".to_string(),
+            reqwest::Method::POST,
+        ),
+        (
+            format!("/chat/v4/conversations/{encoded}/read"),
+            reqwest::Method::POST,
+        ),
+    ]
 }
 
 fn decode_presence_private(value: &str) -> Value {
@@ -1527,6 +1617,56 @@ pub async fn chat_friend_action(
 }
 
 #[tauri::command]
+pub async fn chat_mark_read(args: Vec<Value>, riot: State<'_, RiotState>) -> Result<String, ()> {
+    let cid = arg(&args, 0).unwrap_or_default();
+    if cid.trim().is_empty() {
+        return Ok(json!({ "success": false, "error": "No conversation selected." }).to_string());
+    }
+    let mid = arg(&args, 1).unwrap_or_default();
+    let conv_type = arg(&args, 2).unwrap_or_else(|| get_send_type(&cid).to_string());
+    Ok(match mark_conversation_read(&riot, &cid, &mid, &conv_type).await {
+        Ok(_) => json!({ "success": true, "cid": cid }).to_string(),
+        Err(error) => json!({ "success": false, "cid": cid, "error": error }).to_string(),
+    })
+}
+
+async fn mark_conversation_read(
+    riot: &RiotState,
+    cid: &str,
+    mid: &str,
+    conv_type: &str,
+) -> Result<Value, String> {
+    let listed = match riot_client::get_chat_conversations(riot).await {
+        Ok(payload) => find_listed_direct_conversation(&payload, cid),
+        Err(_) => None,
+    };
+    let mut resolved_mid = if !mid.is_empty() && mid != cid {
+        mid.to_string()
+    } else {
+        listed
+            .as_ref()
+            .map(|item| conversation_last_mid(item))
+            .unwrap_or_default()
+    };
+    if resolved_mid.is_empty() || resolved_mid == cid {
+        if let Ok(messages) = riot_client::get_chat_messages(riot, Some(cid)).await {
+            resolved_mid = payload_last_message_id(&messages);
+        }
+    }
+    let body = conversation_read_ack_body(cid, &resolved_mid, conv_type);
+    // Riot's mark-read route is POST /chat/v7/conversations/read. Older clients
+    // expose the same operation on v6/v5/v4; stop at the first success.
+    let mut last_error = String::new();
+    for (path, method) in mark_read_write_targets(cid) {
+        match riot_client::send_internal_request(riot, &path, method, Some(body.clone())).await {
+            Ok(value) => return Ok(value),
+            Err(error) => last_error = error,
+        }
+    }
+    Err(last_error)
+}
+
+#[tauri::command]
 pub async fn chat_disconnect() -> Result<(), ()> {
     xmpp::disconnect_match_xmpp_chat().await;
     Ok(())
@@ -1622,6 +1762,61 @@ mod tests {
         assert_eq!(result[0]["unreadCount"], 3);
         assert_eq!(result[0]["messageHistory"], true);
         assert_eq!(result[0]["supportsHistory"], true);
+    }
+
+    #[test]
+    fn active_conversation_payload_uses_direct_chat_type() {
+        let body = active_conversation_body("friend@jp1.pvp.net");
+        assert_eq!(body["id"], "friend@jp1.pvp.net");
+        assert_eq!(body["cid"], "friend@jp1.pvp.net");
+        assert_eq!(body["type"], "chat");
+        assert_eq!(
+            active_conversation_body("party@ares-parties.ap")["type"],
+            "groupchat"
+        );
+        let with_mid =
+            active_conversation_body_with_mid("friend@jp1.pvp.net", "msg-9", "chat");
+        assert_eq!(with_mid["mid"], "msg-9");
+        assert_eq!(with_mid.get("unread_count"), None);
+    }
+
+    #[test]
+    fn conversation_read_ack_posts_cid_type_and_mid() {
+        let body = conversation_read_ack_body("friend@jp1.pvp.net", "msg-9", "chat");
+        assert_eq!(body["cid"], "friend@jp1.pvp.net");
+        assert_eq!(body["id"], "friend@jp1.pvp.net");
+        assert_eq!(body["type"], "chat");
+        assert_eq!(body["mid"], "msg-9");
+    }
+
+    #[test]
+    fn mark_read_posts_the_v7_conversations_read_route() {
+        let targets = mark_read_write_targets("friend@jp1.pvp.net");
+        assert_eq!(targets[0].0, "/chat/v7/conversations/read");
+        assert_eq!(targets[0].1, reqwest::Method::POST);
+        let paths: Vec<&str> = targets.iter().map(|(path, _)| path.as_str()).collect();
+        assert!(paths.contains(&"/chat/v6/conversations/read"));
+        assert!(paths.contains(&"/chat/v5/conversations/read"));
+        assert!(
+            paths
+                .iter()
+                .any(|path| path.contains("/chat/v4/conversations/friend%40") && path.ends_with("/read"))
+        );
+    }
+
+    #[test]
+    fn payload_last_message_id_prefers_the_newest_entry() {
+        let payload = json!({
+            "messages": [
+                { "id": "first" },
+                { "id": "second" }
+            ]
+        });
+        assert_eq!(payload_last_message_id(&payload), "second");
+        assert_eq!(
+            conversation_last_mid(&json!({ "mid": "conv-mid", "unread_count": 2 })),
+            "conv-mid"
+        );
     }
 
     #[test]

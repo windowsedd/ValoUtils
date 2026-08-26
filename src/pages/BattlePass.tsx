@@ -1,4 +1,4 @@
-import { PageHeader, SectionCard } from "@/components/section-card";
+import { PageHeader, SectionCard, pageBodyClass } from "@/components/section-card";
 import {
 	buildChapterViews,
 	catalogFromContracts,
@@ -70,7 +70,7 @@ const RewardTile = ({
 			data-battlepass-reward={view.reward.uuid}
 			data-status={view.status}
 			className={`relative flex flex-col gap-2 rounded-lg border p-2.5 ${
-				view.isCurrent ? "border-[#ff4655]/70 bg-white/4" : "border-(--line)"
+				view.isCurrent ? "border-(--accent-border) bg-(--accent-soft)" : "border-(--line)"
 			} ${dimmed ? "opacity-55" : ""}`}
 		>
 			{view.tier !== null && (
@@ -312,7 +312,7 @@ const BattlePass = () => {
 				</div>
 			</PageHeader>
 
-			<div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-6 pb-6">
+			<div className={pageBodyClass}>
 				{loginRequired && (
 					<div className="flex flex-1 items-center justify-center">
 						<div className="glass flex max-w-md flex-col items-center gap-2 p-6 text-center">
@@ -357,7 +357,7 @@ const BattlePass = () => {
 							right={
 								<span className="flex items-center gap-2">
 									{showPremiumBadge && (
-										<span className="rounded-sm border border-[#ff4655]/40 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-[#ff4655]">
+										<span className="rounded-[5px] border border-(--accent-border) px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-(--accent-selected)">
 											{t("battlepass.premium")}
 										</span>
 									)}
@@ -387,7 +387,7 @@ const BattlePass = () => {
 									</p>
 								</div>
 								<div className="h-1.5 overflow-hidden rounded-full bg-white/8">
-									<div className="h-full bg-[#ff4655]" style={{ width: `${xpPercent}%` }} />
+									<div className="h-full bg-(--accent)" style={{ width: `${xpPercent}%` }} />
 								</div>
 							</div>
 						</SectionCard>
@@ -404,7 +404,7 @@ const BattlePass = () => {
 										onClick={() => setPage(index)}
 										className={`h-8 min-w-8 rounded-sm border px-2 text-xs ${
 											page === index
-												? "border-[#ff4655]/70 bg-white/8 text-(--ink)"
+												? "border-(--accent-border) bg-(--accent-soft) text-(--text-primary)"
 												: "border-(--line) text-(--ink-faint) hover:bg-white/6"
 										}`}
 									>

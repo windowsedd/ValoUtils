@@ -1,4 +1,4 @@
-import { PageHeader, SectionCard } from "@/components/section-card";
+import { PageHeader, SectionCard, pageBodyClass } from "@/components/section-card";
 import {
 	getBundle,
 	getSkinLevel,
@@ -232,7 +232,7 @@ const Store = () => {
 				)}
 			</PageHeader>
 
-			<div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-6 pb-6">
+			<div className={pageBodyClass}>
 				{loading && (
 					<div className="flex flex-1 items-center justify-center text-sm text-(--ink-faint)">
 						{t("store.loading")}

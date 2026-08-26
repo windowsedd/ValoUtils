@@ -139,7 +139,7 @@ const Inventory = ({ embedded = false }: { embedded?: boolean }) => {
 				</PageHeader>
 			)}
 
-			<div className={`flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pb-6 ${embedded ? "" : "px-6"}`}>
+			<div className={`flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pb-6 ${embedded ? "" : "px-6 pt-4"}`}>
 				{loading && (
 					<div className="flex flex-1 items-center justify-center text-sm text-(--ink-faint)">
 						{t("inventory.loading")}

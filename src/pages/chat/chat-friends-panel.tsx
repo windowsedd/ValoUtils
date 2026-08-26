@@ -78,7 +78,7 @@ const FriendActions = ({
 		<div
 			role="menu"
 			data-friend-menu={friend.puuid}
-			className="mt-1.5 grid grid-cols-3 gap-px border border-(--line) bg-(--line)"
+			className="mt-1.5 grid grid-cols-3 gap-1"
 		>
 			{actions.map((action) => {
 				const Icon = action.icon;
@@ -90,7 +90,7 @@ const FriendActions = ({
 						role="menuitem"
 						disabled={disabled}
 						data-chat-available={action.key === "chat" ? String(action.enabled) : undefined}
-						className="flex min-h-8 items-center justify-center gap-1 bg-(--panel-raised) px-2 text-[11px] font-semibold text-(--ink-dim) transition-colors hover:bg-white/8 hover:text-(--ink) disabled:cursor-not-allowed disabled:opacity-35"
+						className="flex h-7 items-center justify-center gap-1 rounded-[6px] border border-(--border) bg-(--control) px-2 text-[11px] font-medium text-(--text-secondary) transition-colors duration-150 hover:bg-(--surface-hover) hover:text-(--text-primary) disabled:cursor-not-allowed disabled:opacity-35"
 						onClick={action.run}
 					>
 						<Icon aria-hidden="true" />
@@ -120,9 +120,9 @@ const FriendsPanelContent = ({
 	showClose,
 }: ChatFriendsPanelProps & { showClose: boolean }) => (
 	<>
-		<header className="flex min-h-13 shrink-0 items-center justify-between gap-2 border-b border-(--line) px-3 py-3">
-			<div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-(--ink-dim)">
-				<FaUsers className="text-(--ink-faint)" aria-hidden="true" />
+		<header className="flex min-h-11 shrink-0 items-center justify-between gap-2 border-b border-(--line) px-3">
+			<div className="flex items-center gap-2 text-[12px] font-medium text-(--text-primary)">
+				<FaUsers className="text-(--text-muted)" aria-hidden="true" />
 				{labels.title}
 			</div>
 			{showClose && (
@@ -142,7 +142,7 @@ const FriendsPanelContent = ({
 				value={search}
 				aria-label={labels.search}
 				placeholder={labels.search}
-				className="h-9 w-full rounded-sm border border-(--line) bg-(--ground) px-2.5 text-sm text-(--ink) outline-none placeholder:text-(--ink-faint) focus:border-(--signal-focus)/50"
+				className="h-7 w-full rounded-[6px] border border-(--border) bg-(--control) px-2.5 text-[12px] text-(--text-primary) outline-none placeholder:text-(--text-muted) focus:border-(--accent) focus:shadow-[0_0_0_2px_var(--accent-soft)]"
 				onChange={(event) => onSearchChange(event.currentTarget.value)}
 			/>
 		</div>
@@ -169,7 +169,7 @@ const FriendsPanelContent = ({
 									data-friend-trigger={friend.puuid}
 									aria-expanded={selected}
 									aria-haspopup="menu"
-									className={`flex min-h-11 w-full items-center gap-2.5 rounded-sm px-2 text-left transition-colors ${selected ? "bg-(--panel-raised)" : "hover:bg-white/4"}`}
+									className={`flex min-h-11 w-full items-center gap-2.5 rounded-[6px] px-2 text-left transition-colors duration-150 ${selected ? "bg-[rgba(128,100,233,0.15)] text-(--accent-selected)" : "hover:bg-(--surface-hover)"}`}
 									onClick={() => onFriendSelect(selected ? null : friend.puuid)}
 								>
 									<span
@@ -273,7 +273,7 @@ export const ChatFriendsPanel = (props: ChatFriendsPanelProps) => {
 				</div>
 			)}
 			<aside
-				className="hidden h-full w-72 shrink-0 flex-col border-l border-(--line) bg-(--panel) xl:flex"
+				className="hidden h-full w-72 shrink-0 flex-col border-l border-(--border-subtle) bg-(--sidebar) xl:flex"
 				onKeyDownCapture={handleEscape}
 			>
 				<FriendsPanelContent

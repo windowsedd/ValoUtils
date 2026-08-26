@@ -182,7 +182,7 @@ const ScoreboardRow = ({ player, assets, highlighted, onPlayerSelect, coachLabel
 			type="button"
 			onClick={interaction.activate}
 			aria-label={interaction.label}
-			className={`${className} cursor-pointer hover:bg-white/6 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-cyan-400`}
+			className={`${className} cursor-pointer hover:bg-white/6 focus-visible:outline-none focus-visible:shadow-[inset_0_0_0_2px_var(--accent-soft)]`}
 		>
 			{content}
 		</button>

@@ -63,13 +63,7 @@ pub fn build_pregame_roster(
     let mut sources: HashMap<String, Vec<String>> = HashMap::new();
 
     for player in &ally_players {
-        upsert(
-            &mut player_map,
-            &mut sources,
-            player,
-            "AllyTeam",
-            &ally_ids,
-        );
+        upsert(&mut player_map, &mut sources, player, "AllyTeam", &ally_ids);
     }
 
     let mut teams_subject_count = HashSet::new();
@@ -192,7 +186,10 @@ pub fn format_pregame_debug(debug: &Value) -> String {
         format!("{} unique subjects", num("loadoutsUniqueSubjects")),
         String::new(),
         format!("Match token: {}", text("matchToken").trim_matches('"')),
-        format!("TeamMatchToken decoded player count: {}", num("jwtPlayerCount")),
+        format!(
+            "TeamMatchToken decoded player count: {}",
+            num("jwtPlayerCount")
+        ),
         String::new(),
         format!("Final roster:"),
         format!("{} unique players", num("finalRoster")),
@@ -222,10 +219,18 @@ pub fn redact_secrets(value: &mut Value) {
         Value::Object(map) => {
             for (key, child) in map.iter_mut() {
                 let lower = key.to_ascii_lowercase();
+                let normalized: String = lower
+                    .chars()
+                    .filter(|character| character.is_ascii_alphanumeric())
+                    .collect();
                 if lower.contains("token")
                     || lower.contains("password")
                     || lower.contains("authorization")
                     || lower == "lockfile"
+                    || matches!(
+                        normalized.as_str(),
+                        "partyid" | "currentpartyid" | "decodedpartyid"
+                    )
                 {
                     *child = json!("[redacted]");
                 } else {
@@ -353,7 +358,8 @@ fn merge_pregame_chat(
         for id in &ids {
             participant_ids.insert(id.to_lowercase());
         }
-        let is_enemy_cid = !enemy_needle.is_empty() && cid.to_ascii_lowercase().contains(enemy_needle);
+        let is_enemy_cid =
+            !enemy_needle.is_empty() && cid.to_ascii_lowercase().contains(enemy_needle);
         let is_all_cid = kind == "all";
         if is_enemy_cid || is_all_cid {
             for id in ids {
@@ -422,7 +428,10 @@ fn upsert(
     } else {
         "Enemy"
     };
-    sources.entry(key.clone()).or_default().push(source.to_string());
+    sources
+        .entry(key.clone())
+        .or_default()
+        .push(source.to_string());
     let incoming = normalize_player(player, source, side);
     match player_map.get(&key) {
         None => {
@@ -484,10 +493,7 @@ fn player_richness(player: &Value) -> u32 {
     {
         score += 2;
     } else if player.get("PlayerIdentity").is_some()
-        && player
-            .get("_Source")
-            .and_then(Value::as_str)
-            != Some("Loadouts")
+        && player.get("_Source").and_then(Value::as_str) != Some("Loadouts")
         && player.get("_Source").and_then(Value::as_str) != Some("TeamMatchToken")
         && player.get("_Source").and_then(Value::as_str) != Some("Chat")
     {
@@ -553,9 +559,10 @@ fn ally_riot_team_id(source: &Value, self_puuid: &str) -> String {
     }
     for team in teams_of(source) {
         let players = team.get("Players").and_then(Value::as_array);
-        let contains_self = players.into_iter().flatten().any(|player| {
-            subject_of(player).is_some_and(|id| id.eq_ignore_ascii_case(self_puuid))
-        });
+        let contains_self = players
+            .into_iter()
+            .flatten()
+            .any(|player| subject_of(player).is_some_and(|id| id.eq_ignore_ascii_case(self_puuid)));
         if contains_self {
             return team
                 .get("TeamID")
@@ -585,7 +592,11 @@ fn players_of_team(team: &Value) -> impl Iterator<Item = &Value> {
 fn loadout_subject(entry: &Value) -> Option<String> {
     entry
         .get("Subject")
-        .or_else(|| entry.get("Loadout").and_then(|loadout| loadout.get("Subject")))
+        .or_else(|| {
+            entry
+                .get("Loadout")
+                .and_then(|loadout| loadout.get("Subject"))
+        })
         .and_then(Value::as_str)
         .filter(|s| !s.is_empty())
         .map(str::to_string)
@@ -792,10 +803,7 @@ mod tests {
         let first_enemy = roster.players.iter().find(|p| is_enemy(p)).unwrap();
         assert_eq!(first_enemy["_Source"], "Loadouts");
         assert_eq!(first_enemy["CharacterID"], "");
-        assert_eq!(
-            first_enemy["PlayerIdentity"]["HideAccountLevel"],
-            true
-        );
+        assert_eq!(first_enemy["PlayerIdentity"]["HideAccountLevel"], true);
     }
 
     #[test]
@@ -932,5 +940,29 @@ mod tests {
         assert_eq!(payload["TeamMatchToken"], "[redacted]");
         assert_eq!(payload["nested"]["password"], "[redacted]");
         assert_eq!(payload["nested"]["ok"], 1);
+    }
+
+    #[test]
+    fn redact_secrets_strips_party_identifiers() {
+        let mut payload = json!({
+            "PartyID": "party-a",
+            "nested": {
+                "PartyId": "party-b",
+                "partyId": "party-c",
+                "CurrentPartyID": "party-d",
+                "decodedPartyId": "party-e"
+            },
+            "items": [{ "partyId": "party-f", "ok": 1 }]
+        });
+
+        redact_secrets(&mut payload);
+
+        assert_eq!(payload["PartyID"], "[redacted]");
+        assert_eq!(payload["nested"]["PartyId"], "[redacted]");
+        assert_eq!(payload["nested"]["partyId"], "[redacted]");
+        assert_eq!(payload["nested"]["CurrentPartyID"], "[redacted]");
+        assert_eq!(payload["nested"]["decodedPartyId"], "[redacted]");
+        assert_eq!(payload["items"][0]["partyId"], "[redacted]");
+        assert_eq!(payload["items"][0]["ok"], 1);
     }
 }

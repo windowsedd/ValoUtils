@@ -1,8 +1,6 @@
-import type { ChatChannel, ChatFriend } from "@/types/chat";
+import type { ChatFriend } from "@/types/chat";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ChatChannelRail, visibleChatChannels } from "./chat/chat-channel-rail";
-import { ChatChannelContext } from "./chat/chat-channel-context";
 import { ChatComposer } from "./chat/chat-composer";
 import {
 	ChatConversationList,
@@ -19,12 +17,6 @@ const Chat = () => {
 	const [selectedFriendPuuid, setSelectedFriendPuuid] = useState<string | null>(null);
 	const friendsDrawerTriggerRef = useRef<HTMLButtonElement | null>(null);
 
-	const channelLabels: Record<ChatChannel, string> = {
-		friends: t("chat.scopeFriends"),
-		party: t("chat.scopeParty"),
-		team: t("chat.matchTeam"),
-		all: t("chat.matchAll"),
-	};
 	const friendStatusLabels: FriendStatusLabels = {
 		offline: t("friends.offline"),
 		checking: t("friends.checking"),
@@ -37,36 +29,13 @@ const Chat = () => {
 	};
 	const selectedConversationTitle =
 		controller.selectedFriendConversation?.title || controller.selectedConversation?.title;
-	const threadTitle = selectedConversationTitle || channelLabels[controller.selectedChannel];
-	const threadSubtitle =
-		controller.selectedChannel === "friends" && controller.selectedFriendConversation
-			? friendStatusLabels[controller.selectedFriendConversation.statusKey]
-			: channelLabels[controller.selectedChannel];
-	const emptyLabel =
-		controller.selectedChannel === "friends"
-			? t("chat.emptyFriends")
-			: controller.selectedChannel === "party"
-				? t("chat.emptyParty")
-				: controller.selectedChannel === "team"
-					? t("chat.emptyTeam")
-					: t("chat.emptyAll");
-	const disabledReason = controller.loginRequired
-		? t("chat.loginRequiredDesc")
-		: controller.selectedChannel === "friends"
-			? t("chat.noRoom")
-			: controller.selectedChannel === "party"
-				? t("chat.noPartyRoom")
-				: controller.selectedChannel === "team"
-					? t("chat.noTeamRoom")
-					: t("chat.noAllRoom");
-	const placeholder =
-		controller.selectedChannel === "friends"
-			? t("chat.placeholder")
-			: controller.selectedChannel === "party"
-				? t("chat.partyPlaceholder")
-				: controller.selectedChannel === "team"
-					? t("chat.matchTeamPlaceholder")
-					: t("chat.matchAllPlaceholder");
+	const threadTitle = selectedConversationTitle || t("chat.scopeFriends");
+	const threadSubtitle = controller.selectedFriendConversation
+		? friendStatusLabels[controller.selectedFriendConversation.statusKey]
+		: t("chat.scopeFriends");
+	const emptyLabel = t("chat.emptyFriends");
+	const disabledReason = controller.loginRequired ? t("chat.loginRequiredDesc") : t("chat.noRoom");
+	const placeholder = t("chat.placeholder");
 	const pageError = controller.summaryError || controller.friendActionError;
 
 	const closeFriendsDrawer = () => {
@@ -81,57 +50,39 @@ const Chat = () => {
 
 	return (
 		<div className="flex h-full min-h-0 overflow-hidden bg-(--ground) text-(--ink-dim) animate-fade-in">
-			{/* A rail holding one button is 76px of window spent on nothing. */}
-			{visibleChatChannels.length > 1 && (
-				<ChatChannelRail
-					selected={controller.selectedChannel}
-					available={controller.availableChannels}
-					labels={channelLabels}
-					onSelect={controller.selectChannel}
-				/>
-			)}
+			<ChatConversationList
+				conversations={controller.conversations}
+				selectedCid={controller.selectedCid}
+				statusLabels={friendStatusLabels}
+				search={controller.conversationSearch}
+				searchLabel={t("chat.searchConversations")}
+				emptyLabel={t("chat.noConversations")}
+				markAsReadLabel={t("chat.markAsRead")}
+				onSearchChange={controller.setConversationSearch}
+				onSelect={controller.selectConversation}
+				onMarkRead={controller.markConversationRead}
+			/>
 
-			{controller.selectedChannel === "friends" && (
-				<ChatConversationList
-					conversations={controller.conversations}
-					selectedCid={controller.selectedCid}
-					statusLabels={friendStatusLabels}
-					search={controller.conversationSearch}
-					searchLabel={t("chat.searchConversations")}
-					emptyLabel={t("chat.noConversations")}
-					onSearchChange={controller.setConversationSearch}
-					onSelect={controller.selectConversation}
-				/>
-			)}
-			{controller.selectedChannel !== "friends" && (
-				<ChatChannelContext
-					channel={controller.selectedChannel}
-					title={channelLabels[controller.selectedChannel]}
-					available={controller.availableChannels[controller.selectedChannel]}
-					availableLabel={t("chat.available")}
-					unavailableLabel={disabledReason}
-				/>
-			)}
-
-			<main className="flex min-w-0 flex-1 flex-col">
+			<main className="flex min-w-0 flex-1 flex-col bg-(--background) px-2 pb-2 pt-4">
+				<div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[8px] border border-(--border) bg-(--surface)">
 				{pageError && !controller.loginRequired && (
-					<div role="alert" className="shrink-0 border-b border-(--signal-neg)/25 bg-(--signal-neg)/8 px-4 py-2 text-xs text-(--signal-neg)">
+					<div role="alert" className="shrink-0 border-b border-(--signal-neg)/25 bg-(--signal-neg)/8 px-3 py-2 text-[11px] text-(--signal-neg)">
 						{pageError}
 					</div>
 				)}
 
 				{controller.loading ? (
-					<div className="flex min-h-0 flex-1 items-center justify-center text-sm text-(--ink-faint)">
+					<div className="flex min-h-0 flex-1 items-center justify-center text-[12px] text-(--text-muted)">
 						{t("chat.loading")}
 					</div>
 				) : controller.loginRequired ? (
 					<div className="flex min-h-0 flex-1 items-center justify-center p-6">
-						<div className="panel max-w-md p-5">
-							<p className="text-sm font-semibold text-(--ink)">{t("chat.loginRequired")}</p>
-							<p className="mt-1 text-sm leading-5 text-(--ink-faint)">{t("chat.loginRequiredDesc")}</p>
+						<div className="max-w-md">
+							<p className="text-[13px] font-medium text-(--text-primary)">{t("chat.loginRequired")}</p>
+							<p className="mt-1 text-[12px] leading-5 text-(--text-muted)">{t("chat.loginRequiredDesc")}</p>
 							<button
 								type="button"
-								className="mt-4 min-h-9 rounded-sm bg-(--ink) px-4 text-sm font-semibold text-(--ground) hover:bg-white"
+								className="mt-4 h-7 rounded-[6px] border border-(--border) bg-(--control) px-3 text-[12px] font-medium text-(--text-primary) hover:bg-(--surface-hover)"
 								onClick={controller.refreshSummary}
 							>
 								{t("chat.refresh")}
@@ -151,12 +102,6 @@ const Chat = () => {
 							translatedByMessageId={controller.translatedByMessageId}
 							translationErrorByMessageId={controller.translationErrorByMessageId}
 							translatingMessageId={controller.translatingMessageId}
-							debugData={{
-								selectedCid: controller.selectedCid,
-								selectedChannel: controller.selectedChannel,
-								conversation: controller.selectedConversation,
-								summary: controller.summary,
-							}}
 							labels={{
 								openFriends: t("chat.openFriends"),
 								historyLoading: t("chat.historyLoading"),
@@ -164,7 +109,6 @@ const Chat = () => {
 								retryHistory: t("chat.retryHistory"),
 								translate: t("chat.translate"),
 								translating: t("chat.translating"),
-								developerPanel: t("chat.developerPanel"),
 								empty: emptyLabel,
 							}}
 							onRetryHistory={controller.retryHistory}
@@ -188,6 +132,7 @@ const Chat = () => {
 						/>
 					</>
 				)}
+				</div>
 			</main>
 
 			<ChatFriendsPanel

@@ -33,7 +33,6 @@ const threadLabels = {
 	retryHistory: "Retry history",
 	translate: "Translate",
 	translating: "Translating",
-	developerPanel: "Developer data",
 	empty: "No messages",
 };
 
@@ -68,22 +67,7 @@ const friend: ChatFriend = {
 };
 
 describe("Chat components", () => {
-	test("channel rail renders only the visible channels and their selected state", () => {
-		const markup = renderToStaticMarkup(
-			<ChatChannelRail
-				selected="friends"
-				available={{ friends: true, party: true, team: true, all: false }}
-				labels={channelLabels}
-				onSelect={() => {}}
-			/>,
-		);
-		for (const channel of visibleChatChannels) {
-			expect(markup).toContain(channelLabels[channel]);
-		}
-		expect(markup).toContain('aria-pressed="true"');
-	});
-
-	test("party, team, and all chat are on the rail", () => {
+	test("channel rail is friends-only", () => {
 		const markup = renderToStaticMarkup(
 			<ChatChannelRail
 				selected="friends"
@@ -92,10 +76,12 @@ describe("Chat components", () => {
 				onSelect={() => {}}
 			/>,
 		);
-		expect(visibleChatChannels).toEqual(["friends", "party", "team", "all"]);
-		expect(markup).toContain("Party");
-		expect(markup).toContain("Team");
-		expect(markup).toContain("All");
+		expect(visibleChatChannels).toEqual(["friends"]);
+		expect(markup).toContain("Friends");
+		expect(markup).toContain('aria-pressed="true"');
+		expect(markup).not.toContain("Party");
+		expect(markup).not.toContain("Team");
+		expect(markup).not.toContain(">All<");
 	});
 
 	test("conversation list shows real unread metadata and selected state", () => {
@@ -117,18 +103,21 @@ describe("Chat components", () => {
 				search=""
 				searchLabel="Search conversations"
 				emptyLabel="No conversations"
+				markAsReadLabel="Mark as read"
 				onSearchChange={() => {}}
 				onSelect={() => {}}
+				onMarkRead={() => {}}
 			/>,
 		);
 		expect(markup).toContain("ALEKSANDAR#4830");
 		expect(markup).toContain("In Match");
 		expect(markup).not.toContain("hello");
 		expect(markup).toContain('data-unread-count="2"');
+		expect(markup).toContain('aria-label="Mark as read"');
 		expect(markup).toContain('aria-current="true"');
 	});
 
-	test("thread renders messages chronologically and keeps developer data collapsed", () => {
+	test("thread renders messages chronologically without developer data", () => {
 		const markup = renderToStaticMarkup(
 			<ChatThread
 				conversationId="party-cid"
@@ -141,18 +130,17 @@ describe("Chat components", () => {
 				translatedByMessageId={{}}
 				translationErrorByMessageId={{ "friend-cid:old": "Translation unavailable" }}
 				translatingMessageId={null}
-				debugData={{ cid: "party" }}
 				labels={threadLabels}
 				onRetryHistory={() => {}}
 				onTranslate={() => {}}
 				onOpenFriends={() => {}}
 			/>,
 		);
-		expect(markup.indexOf("first")).toBeLessThan(markup.indexOf("second"));
+		expect(markup.indexOf(">first<")).toBeLessThan(markup.indexOf(">second<"));
 		expect(markup).toContain("In Match");
 		expect(markup).toContain('role="log"');
-		expect(markup).toContain("<details");
-		expect(markup).not.toContain("<details open");
+		expect(markup).not.toContain("<details");
+		expect(markup).not.toContain("Developer data");
 		expect(markup).toContain("Translation unavailable");
 	});
 

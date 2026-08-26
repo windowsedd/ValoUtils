@@ -29,6 +29,11 @@ describe("useChatController IPC lifecycle", () => {
 	test("requests history and sends with request ids", () => {
 		expect(source).toContain('window.Main.send("chat:history", requestId, cid)');
 		expect(source).toContain('window.Main.send("chat:send", requestId, selectedCid, text)');
+		expect(source).toContain('window.Main?.send(');
+		expect(source).toContain('"chat:mark-read"');
+		expect(source).toContain("lastConversationMessageId");
+		expect(source).toContain("sessionMarkedUnread");
+		expect(source).toContain("if (riotUnread <= 0) return");
 		expect(source).toContain('if (!cid || !supportsHistory || channelForCid(cid) !== "friends") return');
 		expect(source).toContain("isIgnorableHistoryError(response.error)");
 		expect(source).toContain('requestHistory(response.cid, response.type === "chat")');

@@ -1,12 +1,13 @@
+use super::live_party::{self, LivePartyHistoryCache, RATE_LIMITED_ERROR};
+use super::pregame_roster::{build_pregame_roster, log_pregame_debug, redact_secrets};
 use crate::riot::api::{self, RiotApiClient};
 use crate::riot::client::{self, RiotState};
-use super::pregame_roster::{
-    build_pregame_roster, log_pregame_debug, redact_secrets,
-};
 use base64::Engine;
 use serde_json::{json, Map, Value};
 use std::collections::{HashMap, HashSet};
+use std::future::Future;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, State};
 use tokio::sync::{Mutex as AsyncMutex, Semaphore};
 
@@ -19,14 +20,70 @@ const WEAPON_KNIFE: &str = "2f59173c-4bed-b6c3-2191-dea9b58be9c7";
 const SOCKET_SKIN: &str = "bcef87d6-209b-46c6-8b19-fbe40bd95abc";
 const SOCKET_SKIN_LEVEL: &str = "e7c63390-eda7-46e0-bb7a-a6abdacd2433";
 const SOCKET_SKIN_CHROMA: &str = "3ad1b2b2-acdb-4524-852f-954a76ddae0a";
+const ENRICHMENT_TTL: Duration = Duration::from_secs(10 * 60);
+const LIVE_PD_TIMEOUT: Duration = Duration::from_secs(2);
+const PUBLIC_UNAVAILABLE_ERROR: &str = "unavailable";
 
-/// The renderer polls every ~5s. We only re-enrich (names/MMR/loadouts) when
-/// the underlying roster actually changes; otherwise we replay the last payload.
+async fn run_live_pd<T, F>(cache: &LivePartyHistoryCache, request: F) -> Result<T, String>
+where
+    F: Future<Output = Result<T, String>>,
+{
+    run_live_pd_with_timeout(cache, LIVE_PD_TIMEOUT, request).await
+}
+
+async fn run_live_pd_with_timeout<T, F>(
+    cache: &LivePartyHistoryCache,
+    timeout: Duration,
+    request: F,
+) -> Result<T, String>
+where
+    F: Future<Output = Result<T, String>>,
+{
+    tokio::time::timeout(timeout, cache.run_pd(request))
+        .await
+        .map_err(|_| PUBLIC_UNAVAILABLE_ERROR.to_string())?
+        .map_err(|error| {
+            if error == RATE_LIMITED_ERROR {
+                error
+            } else {
+                PUBLIC_UNAVAILABLE_ERROR.to_string()
+            }
+        })
+}
+
+#[derive(Clone)]
+struct CachedEnrichment {
+    game_name: String,
+    tag_line: String,
+    mmr: Option<Value>,
+    inserted_at: Instant,
+    complete: bool,
+}
+
+fn enrichment_is_fresh(inserted_at: Instant, complete: bool, now: Instant) -> bool {
+    complete && now.duration_since(inserted_at) < ENRICHMENT_TTL
+}
+
+fn enrichment_refresh_timestamp(
+    previous: Option<Instant>,
+    refreshed_name: bool,
+    refreshed_mmr: bool,
+    now: Instant,
+) -> Instant {
+    match previous {
+        Some(inserted_at) if !refreshed_name || !refreshed_mmr => inserted_at,
+        _ => now,
+    }
+}
+
+/// The renderer polls every ~5s. Current match fields are rebuilt each time,
+/// while PD-backed enrichment and same-roster party continuity are retained here.
 #[derive(Default)]
 pub struct LiveCache {
-    state_key: Mutex<Option<String>>,
-    payload: Mutex<Option<String>>,
     refresh: AsyncMutex<()>,
+    enrichment: Mutex<HashMap<String, CachedEnrichment>>,
+    continuity_roster: Mutex<Option<String>>,
+    continuity_labels: Mutex<HashMap<String, String>>,
 }
 
 #[derive(Clone)]
@@ -61,6 +118,30 @@ impl LiveState {
             LiveState::Idle => "idle",
         }
     }
+}
+
+fn live_roster_keys(
+    state: LiveState,
+    match_id: Option<&str>,
+    party_id: Option<&str>,
+    roster: &str,
+    party_membership: &str,
+) -> (String, String) {
+    let cache_key = format!(
+        "{}:{}:{}:{}",
+        state.as_str(),
+        match_id.or(party_id).unwrap_or(""),
+        roster,
+        party_membership
+    );
+    let public_key = format!(
+        "{}:{}:{}:{}",
+        state.as_str(),
+        match_id.unwrap_or(""),
+        roster,
+        party_membership
+    );
+    (cache_key, public_key)
 }
 
 fn extract_match_context(state: LiveState, source: &Value, match_id: Option<&str>) -> Value {
@@ -224,7 +305,10 @@ fn rr_by_match_id(updates: Option<&Value>) -> HashMap<String, i64> {
             if match_id.is_empty() {
                 return None;
             }
-            Some((match_id.to_string(), json_i64(entry.get("RankedRatingEarned"))))
+            Some((
+                match_id.to_string(),
+                json_i64(entry.get("RankedRatingEarned")),
+            ))
         })
         .collect()
 }
@@ -239,7 +323,10 @@ fn compute_streak(history: &[Value], rr_by_match: &HashMap<String, i64>) -> Valu
             .and_then(Value::as_u64)
             .cmp(&a.get("startMillis").and_then(Value::as_u64))
     });
-    let winning = ordered[0].get("won").and_then(Value::as_bool).unwrap_or(false);
+    let winning = ordered[0]
+        .get("won")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
     let mut matches = 0u64;
     let mut rr = 0i64;
     for summary in &ordered {
@@ -544,6 +631,7 @@ fn normalize_raw_players(state: LiveState, source: &Value) -> Vec<Value> {
 fn raw_puuid(p: &Value) -> String {
     p.get("Subject")
         .or_else(|| p.get("PUUID"))
+        .or_else(|| p.get("puuid"))
         .and_then(|v| v.as_str())
         .unwrap_or_default()
         .to_string()
@@ -582,84 +670,56 @@ async fn build_presence_party_map(riot: &RiotState) -> HashMap<String, String> {
     map
 }
 
-/// Riot strips *other* players' PartyID from live coregame/pregame to deter
-/// stream-sniping, so parties are reconstructed from presence data (self +
-/// friends) and the local player's own party roster (covers non-friend
-/// party-mates with no visible presence). Strangers with neither signal stay solo.
-fn assign_parties(
-    players: &mut [Value],
-    presence_map: &HashMap<String, String>,
-    premade: &HashSet<String>,
-    own_party_id: Option<&str>,
-) {
-    let party_id_for = |puuid: &str| -> String {
-        let id = presence_map.get(puuid).cloned().or_else(|| {
-            if premade.contains(puuid) {
-                own_party_id.map(|s| s.to_string())
-            } else {
-                None
-            }
-        });
-        id.filter(|s| !s.is_empty())
-            .unwrap_or_else(|| format!("solo-{puuid}"))
-    };
-
-    let mut groups: HashMap<String, usize> = HashMap::new();
-    let mut party_ids = Vec::with_capacity(players.len());
-    for p in players.iter() {
-        let puuid = p.get("puuid").and_then(|v| v.as_str()).unwrap_or_default();
-        let party_id = party_id_for(puuid);
-        *groups.entry(party_id.clone()).or_insert(0) += 1;
-        party_ids.push(party_id);
-    }
-
-    let mut mapping: HashMap<String, String> = HashMap::new();
-    let mut team_number = 1;
-    // Stable order for team numbering: first-seen order of party ids.
-    let mut seen = HashSet::new();
-    for party_id in &party_ids {
-        if seen.insert(party_id.clone()) && !party_id.starts_with("solo-") && groups[party_id] > 1 {
-            mapping.insert(party_id.clone(), format!("Team {team_number}"));
-            team_number += 1;
-        }
-    }
-
-    for (player, party_id) in players.iter_mut().zip(party_ids.iter()) {
-        player["party"] = mapping
-            .get(party_id)
-            .cloned()
-            .map(Value::String)
-            .unwrap_or(Value::Null);
-    }
-}
-
 async fn enrich_players(
     api: &RiotApiClient,
     raw_players: &[Value],
     loadout_map: Option<&LoadoutMap>,
-    premade: &HashSet<String>,
-    presence_map: &HashMap<String, String>,
-    own_party_id: Option<&str>,
-) -> Vec<Value> {
+    cache: &LiveCache,
+    pd_cache: &LivePartyHistoryCache,
+) -> (Vec<Value>, bool) {
     let puuids: Vec<String> = raw_players
         .iter()
         .map(raw_puuid)
         .filter(|s| !s.is_empty())
         .collect();
 
-    let names_res = api.get_names(&puuids).await.unwrap_or(Value::Array(vec![]));
-    let mut mmr_map = HashMap::new();
-    for puuid in &puuids {
-        if let Ok(mmr) = api.get_mmr(puuid).await {
-            mmr_map.insert(puuid.clone(), mmr);
+    let now = Instant::now();
+    let mut enrichments = HashMap::new();
+    let mut refresh_puuids = Vec::new();
+    {
+        let stored = cache.enrichment.lock().unwrap();
+        for puuid in &puuids {
+            let normalized = puuid.to_ascii_lowercase();
+            if let Some(entry) = stored.get(&normalized).cloned() {
+                if enrichment_is_fresh(entry.inserted_at, entry.complete, now) {
+                    enrichments.insert(normalized, entry);
+                    continue;
+                }
+                enrichments.insert(normalized, entry);
+            }
+            refresh_puuids.push(puuid.clone());
         }
     }
 
-    let mut name_map: HashMap<String, (String, String)> = HashMap::new();
+    let mut rate_limited = false;
+    let names_result = if refresh_puuids.is_empty() {
+        Ok(Value::Array(vec![]))
+    } else {
+        run_live_pd(pd_cache, api.get_names(&refresh_puuids)).await
+    };
+    if names_result
+        .as_ref()
+        .err()
+        .is_some_and(|error| error == RATE_LIMITED_ERROR)
+    {
+        rate_limited = true;
+    }
+    let names_res = names_result.unwrap_or(Value::Array(vec![]));
+    let mut refreshed_names: HashMap<String, (String, String)> = HashMap::new();
     for n in names_res.as_array().into_iter().flatten() {
         if let Some(subject) = n.get("Subject").and_then(|v| v.as_str()) {
-            name_map.insert(
-                subject.to_string(),
+            refreshed_names.insert(
+                subject.to_ascii_lowercase(),
                 (
                     n.get("GameName")
                         .and_then(|v| v.as_str())
@@ -674,15 +734,65 @@ async fn enrich_players(
         }
     }
 
-    let mut players: Vec<Value> = raw_players
+    for puuid in refresh_puuids {
+        let normalized = puuid.to_ascii_lowercase();
+        let previous = enrichments.get(&normalized).cloned();
+        let refreshed_name = refreshed_names.get(&normalized).cloned();
+        let name = refreshed_name
+            .clone()
+            .or_else(|| {
+                previous
+                    .as_ref()
+                    .map(|entry| (entry.game_name.clone(), entry.tag_line.clone()))
+            })
+            .unwrap_or_default();
+        let mmr_result = run_live_pd(pd_cache, api.get_mmr(&puuid)).await;
+        if mmr_result
+            .as_ref()
+            .err()
+            .is_some_and(|error| error == RATE_LIMITED_ERROR)
+        {
+            rate_limited = true;
+        }
+        let refreshed_mmr = mmr_result.ok();
+        let mmr = refreshed_mmr
+            .clone()
+            .or_else(|| previous.as_ref().and_then(|entry| entry.mmr.clone()));
+        if previous.is_some() || !name.0.is_empty() || mmr.is_some() {
+            let inserted_at = enrichment_refresh_timestamp(
+                previous.as_ref().map(|entry| entry.inserted_at),
+                refreshed_name.is_some(),
+                refreshed_mmr.is_some(),
+                now,
+            );
+            let entry = CachedEnrichment {
+                game_name: name.0,
+                tag_line: name.1,
+                mmr,
+                inserted_at,
+                complete: refreshed_name.is_some() && refreshed_mmr.is_some(),
+            };
+            cache
+                .enrichment
+                .lock()
+                .unwrap()
+                .insert(normalized.clone(), entry.clone());
+            enrichments.insert(normalized, entry);
+        }
+    }
+
+    let players = raw_players
         .iter()
         .enumerate()
         .map(|(index, raw)| {
             let puuid = raw_puuid(raw);
-            let mmr = mmr_map.get(&puuid);
+            let enrichment = enrichments.get(&puuid.to_ascii_lowercase());
+            let mmr = enrichment.and_then(|entry| entry.mmr.as_ref());
             let (current_tier, current_rr, peak_tier, peak_season_id) = extract_rank(mmr);
             let (current_season_id, competitive_seasons) = extract_competitive_seasons(mmr);
-            let (game_name, tag_line) = name_map.get(&puuid).cloned().unwrap_or_default();
+            let (game_name, tag_line) = enrichment
+                .map(|entry| (entry.game_name.clone(), entry.tag_line.clone()))
+                .unwrap_or_default();
             let identity = raw.get("PlayerIdentity").cloned().unwrap_or(json!({}));
 
             let loadout = loadout_map.and_then(|lm| {
@@ -727,9 +837,18 @@ async fn enrich_players(
             })
         })
         .collect();
+    (players, rate_limited)
+}
 
-    assign_parties(&mut players, presence_map, premade, own_party_id);
-    players
+fn apply_party_labels(players: &mut [Value], labels: &HashMap<String, String>) {
+    for player in players {
+        let puuid = raw_puuid(player).to_ascii_lowercase();
+        player["party"] = labels
+            .get(&puuid)
+            .cloned()
+            .map(Value::String)
+            .unwrap_or(Value::Null);
+    }
 }
 
 struct DetectedState {
@@ -824,6 +943,7 @@ async fn detect_state(api: &RiotApiClient, puuid: &str) -> Result<DetectedState,
 pub async fn live_game_fetch(
     riot: State<'_, RiotState>,
     cache: State<'_, LiveCache>,
+    party_history_cache: State<'_, LivePartyHistoryCache>,
 ) -> Result<String, ()> {
     // Polls and manual refreshes can overlap. Serializing the complete refresh
     // prevents an older, slower request from replacing a newer snapshot/cache.
@@ -846,8 +966,6 @@ pub async fn live_game_fetch(
                 "players": []
             })
             .to_string();
-            *cache.state_key.lock().unwrap() = Some("idle".to_string());
-            *cache.payload.lock().unwrap() = Some(payload.clone());
             return Ok(payload);
         }
 
@@ -875,52 +993,62 @@ pub async fn live_game_fetch(
             log_pregame_debug(&roster.debug);
             (roster.players, Some(roster.debug))
         } else {
-            (
-                normalize_raw_players(detected.state, &match_data),
-                None,
-            )
+            (normalize_raw_players(detected.state, &match_data), None)
         };
-
-        let mut roster: Vec<String> = raw_players
-            .iter()
-            .map(raw_puuid)
-            .filter(|s| !s.is_empty())
-            .collect();
-        roster.sort();
-        let roster_key = roster.join(",");
-        let state_key = format!(
-            "{}:{}:{}",
-            detected.state.as_str(),
-            detected
-                .match_id
-                .as_deref()
-                .or(detected.party_id.as_deref())
-                .unwrap_or(""),
-            roster_key
-        );
-
-        {
-            let cached_key = cache.state_key.lock().unwrap();
-            let cached_payload = cache.payload.lock().unwrap();
-            if cached_key.as_deref() == Some(state_key.as_str()) {
-                if let Some(payload) = cached_payload.as_ref() {
-                    return Ok(payload.clone());
-                }
-            }
-        }
 
         let loadout_map = detected.loadouts.as_ref().map(build_loadout_map);
         let presence_map = build_presence_party_map(&riot).await;
         let premade_set: HashSet<String> = detected.premade.into_iter().collect();
-        let players = enrich_players(
+        let roster: Vec<String> = raw_players
+            .iter()
+            .map(raw_puuid)
+            .filter(|s| !s.is_empty())
+            .collect();
+        let mut sorted_roster = roster.clone();
+        sorted_roster.sort_by_key(|puuid| puuid.to_ascii_lowercase());
+        let roster_key = sorted_roster.join(",").to_ascii_lowercase();
+        let continuity_labels =
+            if cache.continuity_roster.lock().unwrap().as_deref() == Some(roster_key.as_str()) {
+                cache.continuity_labels.lock().unwrap().clone()
+            } else {
+                HashMap::new()
+            };
+        let party_resolution = live_party::resolve_live_parties(
+            &api,
+            &roster,
+            &presence_map,
+            &premade_set,
+            detected.party_id.as_deref(),
+            &continuity_labels,
+            &party_history_cache,
+        )
+        .await;
+        let party_membership = party_resolution.partition_key(&roster);
+        let party_labels = party_resolution.anonymous_labels(&roster);
+        let (_, public_roster_key) = live_roster_keys(
+            detected.state,
+            detected.match_id.as_deref(),
+            detected.party_id.as_deref(),
+            &roster_key,
+            &party_membership,
+        );
+
+        let (mut players, enrichment_rate_limited) = enrich_players(
             &api,
             &raw_players,
             loadout_map.as_ref(),
-            &premade_set,
-            &presence_map,
-            detected.party_id.as_deref(),
+            &cache,
+            &party_history_cache,
         )
         .await;
+        let warning = if enrichment_rate_limited || party_history_cache.is_cooling_down().await {
+            Some(RATE_LIMITED_ERROR)
+        } else {
+            None
+        };
+        apply_party_labels(&mut players, &party_labels);
+        *cache.continuity_roster.lock().unwrap() = Some(roster_key.clone());
+        *cache.continuity_labels.lock().unwrap() = party_labels;
 
         let match_context =
             extract_match_context(detected.state, &match_data, detected.match_id.as_deref());
@@ -928,20 +1056,26 @@ pub async fn live_game_fetch(
         let payload = json!({
             "success": true,
             "state": detected.state.as_str(),
-            "rosterKey": state_key.clone(),
+            "rosterKey": public_roster_key,
             "match": match_context,
             "teams": teams,
             "players": players,
+            "warning": warning,
             "pregameDebug": pregame_debug
         })
         .to_string();
-        *cache.state_key.lock().unwrap() = Some(state_key);
-        *cache.payload.lock().unwrap() = Some(payload.clone());
         Ok::<String, String>(payload)
     }
     .await;
 
-    Ok(result.unwrap_or_else(|e| json!({ "success": false, "error": e }).to_string()))
+    Ok(result.unwrap_or_else(|error| {
+        let error = if error == RATE_LIMITED_ERROR {
+            RATE_LIMITED_ERROR
+        } else {
+            PUBLIC_UNAVAILABLE_ERROR
+        };
+        json!({ "success": false, "error": error }).to_string()
+    }))
 }
 
 async fn fetch_recent_stats(
@@ -950,6 +1084,7 @@ async fn fetch_recent_stats(
     queue_id: String,
     cache: Arc<Mutex<HashMap<String, Value>>>,
     permits: Arc<Semaphore>,
+    pd_cache: LivePartyHistoryCache,
 ) -> (String, Result<Value, String>) {
     let result = async {
         let _permit = permits
@@ -959,8 +1094,13 @@ async fn fetch_recent_stats(
         if queue_id.is_empty() || queue_id.eq_ignore_ascii_case("custom") {
             return Err("Recent stats are unavailable for this game mode.".into());
         }
-        let history = api.get_match_history(&puuid, 0, 20).await?;
-        let competitive_updates = api.get_competitive_history(&puuid, 0, 20).await.ok();
+        let history = if let Some(history) = pd_cache.get_history_document(&puuid) {
+            history
+        } else {
+            let history = run_live_pd(&pd_cache, api.get_match_history(&puuid, 0, 25)).await?;
+            pd_cache.put_history_document(&puuid, history.clone());
+            history
+        };
         let match_ids = select_match_ids_for_queue(&history, &queue_id, 5);
         if match_ids.is_empty() {
             return Err(format!(
@@ -978,11 +1118,26 @@ async fn fetch_recent_stats(
             return Ok(cached);
         }
 
+        let competitive_updates =
+            match run_live_pd(&pd_cache, api.get_competitive_history(&puuid, 0, 20)).await {
+                Ok(value) => Some(value),
+                Err(error) if error == RATE_LIMITED_ERROR => return Err(error),
+                Err(_) => None,
+            };
         let expected_matches = match_ids.len();
         let mut matches = Vec::with_capacity(expected_matches);
         for match_id in match_ids {
-            if let Ok(details) = api.get_match_details(&match_id).await {
+            if let Some(details) = pd_cache.get_match(&match_id) {
                 matches.push(details);
+                continue;
+            }
+            match run_live_pd(&pd_cache, api.get_match_details(&match_id)).await {
+                Ok(details) => {
+                    pd_cache.put_match(&match_id, details.clone());
+                    matches.push(details);
+                }
+                Err(error) if error == RATE_LIMITED_ERROR => return Err(error),
+                Err(_) => {}
             }
         }
         let stats = aggregate_recent_stats_with_rr(
@@ -1010,6 +1165,7 @@ pub async fn live_game_stats(
     app: AppHandle,
     riot: State<'_, RiotState>,
     cache: State<'_, LiveStatsCache>,
+    pd_cache: State<'_, LivePartyHistoryCache>,
 ) -> Result<String, ()> {
     use tauri::Emitter;
 
@@ -1043,12 +1199,12 @@ pub async fn live_game_stats(
 
     let api = match api::create_api(&riot).await {
         Ok(api) => api,
-        Err(error) => {
+        Err(_) => {
             return Ok(json!({
                 "success": false,
                 "rosterKey": roster_key,
                 "attemptId": attempt_id,
-                "error": error,
+                "error": PUBLIC_UNAVAILABLE_ERROR,
             })
             .to_string())
         }
@@ -1058,6 +1214,7 @@ pub async fn live_game_stats(
     let mut workers = tokio::task::JoinSet::new();
     let shared_cache = cache.values.clone();
     let shared_permits = cache.permits.clone();
+    let pd_cache = pd_cache.inner().clone();
 
     for _ in 0..3 {
         let Some(puuid) = pending.next() else { break };
@@ -1067,6 +1224,7 @@ pub async fn live_game_stats(
             queue_id.clone(),
             shared_cache.clone(),
             shared_permits.clone(),
+            pd_cache.clone(),
         ));
     }
 
@@ -1100,6 +1258,7 @@ pub async fn live_game_stats(
                 queue_id.clone(),
                 shared_cache.clone(),
                 shared_permits.clone(),
+                pd_cache.clone(),
             ));
         }
     }
@@ -1182,12 +1341,8 @@ pub async fn live_game_dump(app: AppHandle, riot: State<'_, RiotState>) -> Resul
         let match_data = out.get("pregame.getMatch").cloned().unwrap_or(Value::Null);
         let loadouts = out.get("pregame.getLoadouts").cloned();
         let chat = client::get_pre_game_chat_info(&riot).await.ok();
-        let roster = build_pregame_roster(
-            &match_data,
-            loadouts.as_ref(),
-            chat.as_ref(),
-            &api.puuid,
-        );
+        let roster =
+            build_pregame_roster(&match_data, loadouts.as_ref(), chat.as_ref(), &api.puuid);
         out.insert("pregame.rosterDebug".into(), roster.debug);
     }
 
@@ -1221,6 +1376,57 @@ pub async fn live_game_dump(app: AppHandle, riot: State<'_, RiotState>) -> Resul
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn party_labels_apply_by_puuid_without_exposing_internal_membership() {
+        let mut players = vec![
+            json!({ "puuid": "P1", "party": null }),
+            json!({ "puuid": "p2", "party": null }),
+            json!({ "puuid": "p3", "party": null }),
+        ];
+        let labels = HashMap::from([
+            ("p1".to_string(), "Team 1".to_string()),
+            ("p2".to_string(), "Team 1".to_string()),
+        ]);
+
+        apply_party_labels(&mut players, &labels);
+
+        assert_eq!(players[0]["party"], "Team 1");
+        assert_eq!(players[1]["party"], "Team 1");
+        assert!(players[2]["party"].is_null());
+        assert!(!serde_json::to_string(&players)
+            .unwrap()
+            .contains("party-id"));
+    }
+
+    #[test]
+    fn pregame_loadout_party_ids_do_not_enter_the_loadout_map() {
+        let loadouts = json!({
+            "Loadouts": [
+                { "Subject": "p1", "PartyID": "secret-loadout-party", "Items": {} }
+            ]
+        });
+        let loadout_map = build_loadout_map(&loadouts);
+        let serialized = serde_json::to_string(&loadout_map.by_subject).unwrap();
+
+        assert!(loadout_map.by_subject.contains_key("p1"));
+        assert!(!serialized.contains("secret-loadout-party"));
+    }
+
+    #[test]
+    fn public_party_roster_key_hides_the_raw_party_id() {
+        let (cache_key, public_key) = live_roster_keys(
+            LiveState::Party,
+            None,
+            Some("secret-riot-party-id"),
+            "p1,p2",
+            "p1,p2",
+        );
+
+        assert!(cache_key.contains("secret-riot-party-id"));
+        assert!(!public_key.contains("secret-riot-party-id"));
+        assert!(public_key.contains("p1,p2"));
+    }
 
     #[test]
     fn extracts_coregame_match_context() {
@@ -1511,6 +1717,69 @@ mod tests {
         assert_eq!(seasons[0]["wins"], 0);
         assert_eq!(seasons[0]["games"], 0);
         assert_eq!(seasons[0]["winsByTier"], json!({}));
+    }
+
+    #[test]
+    fn enrichment_cache_freshness_expires_after_ten_minutes() {
+        let inserted_at = std::time::Instant::now();
+        assert!(enrichment_is_fresh(
+            inserted_at,
+            true,
+            inserted_at + std::time::Duration::from_secs(599)
+        ));
+        assert!(!enrichment_is_fresh(
+            inserted_at,
+            true,
+            inserted_at + std::time::Duration::from_secs(600)
+        ));
+    }
+
+    #[test]
+    fn partial_first_enrichment_remains_retryable() {
+        let inserted_at = Instant::now();
+        assert!(!enrichment_is_fresh(
+            inserted_at,
+            false,
+            inserted_at + Duration::from_secs(1)
+        ));
+    }
+
+    #[test]
+    fn failed_enrichment_refresh_preserves_the_previous_timestamp() {
+        let previous = Instant::now();
+        let now = previous + Duration::from_secs(601);
+
+        assert_eq!(
+            enrichment_refresh_timestamp(Some(previous), true, false, now),
+            previous
+        );
+        assert_eq!(
+            enrichment_refresh_timestamp(Some(previous), true, true, now),
+            now
+        );
+    }
+
+    #[tokio::test]
+    async fn live_pd_errors_are_bounded_public_codes() {
+        let cache = LivePartyHistoryCache::default();
+        let raw = r#"{"status":500,"path":"/match-history/v1/history/private-puuid"}"#;
+        assert_eq!(
+            run_live_pd(&cache, async { Err::<(), _>(raw.to_string()) }).await,
+            Err(PUBLIC_UNAVAILABLE_ERROR.to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn live_pd_requests_have_a_bounded_timeout() {
+        let cache = LivePartyHistoryCache::default();
+        let result = run_live_pd_with_timeout(
+            &cache,
+            Duration::from_millis(10),
+            std::future::pending::<Result<(), String>>(),
+        )
+        .await;
+
+        assert_eq!(result, Err(PUBLIC_UNAVAILABLE_ERROR.to_string()));
     }
 }
 

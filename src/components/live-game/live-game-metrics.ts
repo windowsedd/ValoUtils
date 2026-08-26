@@ -1,4 +1,5 @@
 import type { LivePlayer, RecentStatsState } from "@/types/live-game";
+import { livePlayerStatsKey } from "./live-game-events";
 
 export type TeamMetricSide = {
 	teamId: string;
@@ -20,7 +21,7 @@ const averageSide = (
 	recent: Record<string, RecentStatsState>,
 ): TeamMetricSide => {
 	const ready = players
-		.map((player) => recent[player.puuid])
+		.map((player) => recent[livePlayerStatsKey(player.puuid)])
 		.filter((state): state is Extract<RecentStatsState, { status: "ready" }> => state?.status === "ready");
 	if (ready.length === 0) return { teamId, players: 0, kd: null, winRate: null, acs: null, dpr: null };
 	const average = (field: "kd" | "winRate" | "acs" | "dpr") =>

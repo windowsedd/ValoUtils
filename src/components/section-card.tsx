@@ -13,7 +13,7 @@ import { Children, type ReactNode } from "react";
  */
 export const SectionCard = ({
 	title,
-	accent = "#ff4655",
+	accent = "#8064e9",
 	count,
 	right,
 	children,
@@ -29,12 +29,12 @@ export const SectionCard = ({
 	<section className={`panel ${className}`}>
 		<header className="flex items-center justify-between gap-3 border-b border-(--line) px-3 py-2">
 			<div className="flex min-w-0 items-center gap-2">
-				<span aria-hidden="true" className="h-3 w-0.5 shrink-0" style={{ background: accent }} />
-				<h2 className="truncate text-[11px] font-semibold uppercase tracking-[0.08em] text-(--ink-dim)">
+				<span aria-hidden="true" className="h-3 w-0.5 shrink-0 rounded-full" style={{ background: accent }} />
+				<h2 className="truncate text-[12px] font-medium text-(--text-primary)">
 					{title}
 				</h2>
 			</div>
-			<div className="shrink-0 text-xs tabular-nums text-(--ink-faint)">
+			<div className="shrink-0 text-[11px] tabular-nums text-(--text-muted)">
 				{right ?? (typeof count === "number" ? count : null)}
 			</div>
 		</header>
@@ -60,8 +60,8 @@ export const SectionRow = ({
 
 	return (
 		<div
-			className={`readout gap-3 rounded-sm px-2.5 py-2 transition-colors ${
-				muted ? "hover:bg-white/4" : "hover:bg-white/[0.035]"
+			className={`readout gap-3 rounded-[6px] px-2.5 py-2 transition-colors duration-150 ${
+				muted ? "hover:bg-(--surface-hover)" : "hover:bg-(--surface-hover)"
 			} ${className}`}
 		>
 			{isReadout ? (
@@ -78,6 +78,13 @@ export const SectionRow = ({
 };
 
 /**
+ * Scroll body under PageHeader. Top padding keeps the first panel off the
+ * header hairline.
+ */
+export const pageBodyClass =
+	"flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-6 pt-4 pb-6";
+
+/**
  * Page header used above the section stack: an accent icon, the page name, and
  * an optional muted subtitle, with actions pushed to the right.
  */
@@ -89,11 +96,9 @@ export const PageHeader = ({
 }: { icon: ReactNode; title: string; subtitle?: string; children?: ReactNode }) => (
 	<div className="shrink-0 flex items-center justify-between gap-4 border-b border-(--line) px-6 py-3">
 		<div className="flex min-w-0 items-baseline gap-2.5">
-			{/* Forces page icons to ink even when the call site hands them a hue —
-			    an icon that's always red isn't telling you anything. */}
-			<span className="self-center text-(--ink-dim) [&_svg]:text-(--ink-dim)">{icon}</span>
-			<h1 className="truncate text-[15px] font-semibold text-(--ink)">{title}</h1>
-			{subtitle && <span className="truncate text-sm text-(--ink-faint)">{subtitle}</span>}
+			<span className="self-center text-(--text-secondary) [&_svg]:text-(--text-secondary)">{icon}</span>
+			<h1 className="truncate text-[13px] font-semibold text-(--text-primary)">{title}</h1>
+			{subtitle && <span className="truncate text-[11px] text-(--text-muted)">{subtitle}</span>}
 		</div>
 		{children && <div className="flex shrink-0 items-center gap-3">{children}</div>}
 	</div>

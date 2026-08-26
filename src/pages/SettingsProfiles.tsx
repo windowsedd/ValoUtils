@@ -1,7 +1,7 @@
 import CustomButton from "@/components/button.tsx";
 import { useDynamicModal } from "@/components/dynamic-modal.tsx";
 import { ParsedSettingsViewer } from "@/components/parsed-settings-viewer.tsx";
-import { PageHeader, SectionCard, SectionRow } from "@/components/section-card";
+import { PageHeader, SectionCard, SectionRow, pageBodyClass } from "@/components/section-card";
 import { SettingsDiffViewer } from "@/components/settings-diff-viewer.tsx";
 import { Profile } from "@/types/profile.ts";
 import formatUnixMillis from "@/util/format-date.ts";
@@ -525,33 +525,33 @@ const SettingsProfiles = () => {
 				</CustomButton>
 			</PageHeader>
 
-			<div className="flex-1 min-h-0 overflow-y-auto px-6 pb-6 flex flex-col gap-4">
+			<div className={pageBodyClass}>
 				{/* Load only applies on the next game launch, so this needs to stay visible. */}
-				<div className="glass rounded-2xl px-4 py-3 flex items-center gap-3">
-					<FaTriangleExclamation className="text-amber-400 shrink-0" />
-					<p className="text-sm text-gray-300">
+				<div className="panel px-4 py-3 flex items-center gap-3">
+					<FaTriangleExclamation className="text-(--signal-warn) shrink-0" />
+					<p className="text-[12px] text-(--text-secondary)">
 						<Trans i18nKey="profiles.gameClosedWarning" components={{ bold: <b className="text-amber-300 font-semibold" /> }} />
 					</p>
 				</div>
 
 				{profiles.length === 0 ? (
-					<div className="flex-1 flex flex-col items-center justify-center gap-2 text-gray-500">
+					<div className="flex-1 flex flex-col items-center justify-center gap-2 text-(--text-muted)">
 						<FaUsers className="text-4xl opacity-30" />
-						<p className="text-sm text-gray-400">{t("profiles.noProfilesYet")}</p>
-						<p className="text-xs">
-							<Trans i18nKey="profiles.noProfilesHint" components={{ bold: <b className="text-gray-300" /> }} />
+						<p className="text-[12px] text-(--text-secondary)">{t("profiles.noProfilesYet")}</p>
+						<p className="text-[11px]">
+							<Trans i18nKey="profiles.noProfilesHint" components={{ bold: <b className="text-(--text-secondary)" /> }} />
 						</p>
 					</div>
 				) : (
 					<SectionCard title={t("profiles.savedProfiles")} count={profiles.length} accent="#ff4655">
 						{profiles.map((profile) => (
 							<SectionRow key={profile.name}>
-								<div className="w-9 h-9 rounded-md bg-white/5 flex items-center justify-center text-[#ff4655] shrink-0">
-									<FaCogs className="text-sm" />
+								<div className="w-8 h-8 rounded-[6px] bg-(--control) border border-(--border) flex items-center justify-center text-(--accent-selected) shrink-0">
+									<FaCogs className="text-[13px]" />
 								</div>
 								<div className="min-w-0 flex-1">
-									<p className="text-sm font-semibold text-white truncate">{profile.name}</p>
-									<p className="text-xs text-gray-500">{formatUnixMillis(profile.created)}</p>
+									<p className="text-[12px] font-medium text-(--text-primary) truncate">{profile.name}</p>
+									<p className="text-[11px] text-(--text-muted)">{formatUnixMillis(profile.created)}</p>
 								</div>
 								<div className="flex items-center gap-1 shrink-0">
 									<CustomButton size="sm" className="mr-1" onClickLoading={() => loadProfile(profile)}>

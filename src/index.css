@@ -1,77 +1,146 @@
 /*
  * ValoUtils design layer.
  *
- * Direction: instrument panel, not overlay. This app reads a compressed blob out
- * of a lockfile and shows you what the game hides — it behaves like a technician's
- * readout, so it looks like one. Flat surfaces, hairline rules, dense tabular rows,
- * every number in mono.
- *
- * The one rule everything else follows: COLOR CARRIES MEANING ONLY. The app's job
- * is showing diffs, teams, and tiers — spending color on decoration destroys the
- * signal it needs. Chrome is graphite and bone; a hue means something or it's absent.
+ * Compact dark desktop chrome: near-black ground, slightly lighter cards,
+ * thin gray borders, purple accent. Color still marks teams and status;
+ * chrome itself uses the accent only for selection, focus, and on-states.
  */
 
-@import url('https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..112,400..700&family=Chivo+Mono:wght@400;500;600&display=swap');
+@import url("https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..112,400..700&family=Chivo+Mono:wght@400;500;600&display=swap");
 @import "tailwindcss";
 @import "@heroui/styles";
 
-:root {
-	/* Ground. Cool graphite, lit from nowhere — panels sit on it, they don't float. */
-	--ground: #0e1216;
-	--panel: #151a1f;
-	--panel-raised: #1b2127;
-	--line: #232b32;
-	--line-strong: #323c45;
+:root,
+.dark,
+[data-theme="dark"] {
+	color-scheme: dark;
 
-	/* Ink. Bone white is the "active / selected" color, not a hue. */
-	--ink: #e6eaed;
-	--ink-dim: #8d979f;
-	--ink-faint: #5a646c;
+	--background: #0f0f11;
+	--sidebar: #101012;
+	--surface: #1d1d20;
+	--surface-hover: #252529;
+	--control: #303034;
+	--border: #303035;
+	--border-subtle: #252529;
 
-	/* Signal. The complete set of hues in the app. Each means exactly one thing. */
+	--text-primary: #ededf0;
+	--text-secondary: #aaaab2;
+	--text-muted: #777780;
+
+	--accent: #8064e9;
+	--accent-hover: #9279f2;
+	--accent-soft: rgba(128, 100, 233, 0.16);
+	--accent-border: rgba(128, 100, 233, 0.35);
+	--accent-foreground: #f4f1ff;
+	--accent-selected: #b6a7ff;
+
+	--ground: var(--background);
+	--panel: var(--surface);
+	--panel-raised: #222226;
+	--line: #29292e;
+	--line-strong: var(--border);
+
+	--ink: var(--text-primary);
+	--ink-dim: var(--text-secondary);
+	--ink-faint: var(--text-muted);
+
 	--signal-neg: #ff4655;
-	/* destructive, enemy, removed */
 	--signal-pos: #35d489;
-	/* ally, added, connected */
 	--signal-warn: #e8a33d;
-	/* pending, needs attention */
-	--signal-focus: #4cc2e8;
-	/* keyboard focus and links, nothing else */
+	--signal-focus: var(--accent);
 
-	--font-ui: 'Archivo', 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
-	--font-mono: 'Chivo Mono', ui-monospace, 'Cascadia Mono', Consolas, monospace;
-
-	/*
-	 * Deprecated. Kept so nothing breaks mid-migration — prefer the tokens above.
-	 * --valo-red is no longer a brand accent; it is the destructive/enemy signal.
-	 */
 	--valo-red: var(--signal-neg);
 	--valo-dark-red: #bd3944;
 	--valo-black: var(--ground);
 	--valo-dark: var(--panel-raised);
 	--valo-darker: var(--ground);
-	--valo-blue: var(--signal-focus);
-	--valo-cyan: var(--signal-focus);
+	--valo-blue: var(--accent);
+	--valo-cyan: var(--accent);
 	--valo-gold: var(--signal-warn);
-	--valo-purple: #9d4dff;
+	--valo-purple: var(--accent);
+
+	--font-ui: "Archivo", "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif;
+	--font-mono: "Chivo Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+
+	--foreground: var(--text-primary);
+	--surface-foreground: var(--text-primary);
+	--surface-secondary: var(--panel-raised);
+	--surface-secondary-foreground: var(--text-primary);
+	--surface-tertiary: var(--control);
+	--surface-tertiary-foreground: var(--text-primary);
+	--overlay: var(--surface);
+	--overlay-foreground: var(--text-primary);
+	--muted: var(--text-muted);
+
+	--default: var(--control);
+	--default-foreground: var(--text-primary);
+	--default-hover: var(--surface-hover);
+
+	--success: #35d489;
+	--success-foreground: #0f0f11;
+	--warning: var(--signal-warn);
+	--warning-foreground: #0f0f11;
+	--danger: var(--signal-neg);
+	--danger-foreground: #f8ecee;
+
+	--segment: var(--control);
+	--segment-foreground: var(--text-primary);
+
+	--separator: var(--line);
+	--focus: var(--accent);
+	--link: var(--accent-selected);
+
+	--backdrop: rgba(15, 15, 17, 0.72);
+
+	--field-background: var(--control);
+	--field-foreground: var(--text-primary);
+	--field-placeholder: var(--text-muted);
+	--field-border: var(--border);
+	--field-border-width: 1px;
+	--field-radius: 6px;
+	--field-hover: #38383d;
+	--field-focus: var(--control);
+	--field-border-hover: #3c3c42;
+	--field-border-focus: var(--accent);
+
+	--border-width: 1px;
+	--radius: 0.5rem;
+
+	--surface-hover: #252529;
+	--background-secondary: #141416;
+	--background-tertiary: var(--surface);
+	--background-inverse: var(--text-primary);
+
+	--accent-soft-foreground: var(--accent-selected);
+	--accent-soft-hover: rgba(128, 100, 233, 0.22);
+
+	--surface-shadow: none;
+	--overlay-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+	--field-shadow: none;
+
+	--scrollbar-thumb: #3a3a40;
+	--scrollbar-track: transparent;
 }
 
 * {
 	font-family: var(--font-ui);
 }
 
+html,
+body,
+#root {
+	background: var(--background);
+	color: var(--text-primary);
+}
+
 body {
-	background: var(--ground);
-	color: var(--ink);
 	overflow-x: hidden;
+	font-size: 12px;
+	line-height: 1.4;
 	font-feature-settings: "cv05", "ss01";
 	-webkit-font-smoothing: antialiased;
 }
 
-/*
- * Headings run condensed and tight. The old stack letterspaced its headings out
- * by 0.5px, which is the house style of every gaming overlay ever shipped.
- */
 h1,
 h2,
 h3,
@@ -79,45 +148,35 @@ h4,
 h5,
 h6 {
 	font-family: var(--font-ui);
-	font-stretch: 88%;
+	font-stretch: 96%;
 	font-weight: 600;
-	letter-spacing: -0.015em;
+	letter-spacing: -0.01em;
+	color: var(--text-primary);
 }
 
-/* ---------------------------------------------------------------------------
+/*
  * Surfaces
  *
- * `.panel` is the canonical name; `.glass` is an alias so the ~20 existing call
- * sites keep working. There is no glass left in it — flat fill, hairline border,
- * 2px radius.
- *
- * These rules are deliberately UNLAYERED, so they outrank Tailwind's `@layer
- * utilities`. That is the propagation lever: a `rounded-2xl` sitting next to
- * `glass` in a page still comes out at 2px, with no page edits.
- * ------------------------------------------------------------------------- */
+ * Unlayered so they outrank Tailwind utilities sitting next to `glass` / `panel`.
+ */
 .panel,
 .glass {
-	background: var(--panel);
-	border: 1px solid var(--line);
-	border-radius: 2px;
+	background: var(--surface);
+	border: 1px solid var(--border);
+	border-radius: 8px;
 	backdrop-filter: none;
+	box-shadow: none;
 }
 
 .panel-raised,
 .glass-strong {
 	background: var(--panel-raised);
-	border: 1px solid var(--line-strong);
-	border-radius: 2px;
+	border: 1px solid var(--border);
+	border-radius: 8px;
 	backdrop-filter: none;
+	box-shadow: none;
 }
 
-/* ---------------------------------------------------------------------------
- * The readout row — the signature.
- *
- * Label left, dotted leader, value right in mono. It ties a name to a number the
- * way a technical index does, and it is the same device on every screen: the diff
- * viewer, the scoreboard, Settings, About.
- * ------------------------------------------------------------------------- */
 .readout {
 	display: flex;
 	align-items: baseline;
@@ -129,44 +188,33 @@ h6 {
 	min-width: 1.5rem;
 	align-self: center;
 	height: 1px;
-	background-image: repeating-linear-gradient(to right, var(--line-strong) 0 1px, transparent 1px 5px);
+	background-image: repeating-linear-gradient(
+		to right,
+		var(--line) 0 1px,
+		transparent 1px 5px
+	);
 }
 
-/* ---------------------------------------------------------------------------
- * Numerics
- *
- * `tabular-nums` already marks every place in this app that holds a number in a
- * table — RR, ACS, K/D/A, ports, timings. Binding the mono face to it puts the
- * whole readout system in place without touching a single page.
- *
- * NOTE: this redefines what a Tailwind utility does. It is the only such override
- * in the file. Use `font-mono` directly if you want mono without the numerics.
- * ------------------------------------------------------------------------- */
 .tabular-nums {
 	font-family: var(--font-mono);
 	font-size: 0.94em;
 	letter-spacing: -0.02em;
 }
 
-/* Flattened. Kept as class names so existing call sites keep rendering; the
- * gradient fill is gone, because a headline is not a place to spend color. */
 .gradient-text,
 .gradient-text-blue {
 	background: none;
 	-webkit-text-fill-color: currentColor;
 	background-clip: border-box;
-	color: var(--ink);
-	font-stretch: 82%;
-	letter-spacing: -0.03em;
+	color: var(--text-primary);
+	font-stretch: 92%;
+	letter-spacing: -0.02em;
 }
 
-/* ---------------------------------------------------------------------------
- * Motion — entrances and progress only. No glow, no shimmer, no hover lift.
- * ------------------------------------------------------------------------- */
 @keyframes fadeIn {
 	from {
 		opacity: 0;
-		transform: translateY(6px);
+		transform: translateY(4px);
 	}
 
 	to {
@@ -192,14 +240,12 @@ h6 {
 }
 
 .animate-fade-in {
-	animation: fadeIn 0.24s cubic-bezier(0.2, 0, 0, 1) forwards;
+	animation: fadeIn 0.18s ease forwards;
 }
 
-/* Scrollbars are chrome, so they are graphite. The thumb used to be Riot red,
- * which put the app's loudest color on its least important element. */
 ::-webkit-scrollbar {
-	width: 10px;
-	height: 10px;
+	width: 8px;
+	height: 8px;
 }
 
 ::-webkit-scrollbar-track {
@@ -207,13 +253,13 @@ h6 {
 }
 
 ::-webkit-scrollbar-thumb {
-	background: var(--line-strong);
-	border: 3px solid var(--ground);
+	background: var(--control);
+	border: 2px solid var(--background);
 	border-radius: 999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-	background: var(--ink-faint);
+	background: #3c3c42;
 }
 
 .command-rail-scroll {
@@ -224,8 +270,274 @@ h6 {
 	display: none;
 }
 
-@media (prefers-reduced-motion: reduce) {
+/* ---------------------------------------------------------------------------
+ * Compact controls
+ * ------------------------------------------------------------------------- */
+.button {
+	height: 28px;
+	min-height: 28px;
+	border-radius: 6px;
+	font-size: 12px;
+	font-weight: 500;
+	padding-inline: 10px;
+	transition:
+		background-color 150ms ease,
+		border-color 150ms ease,
+		color 150ms ease,
+		box-shadow 150ms ease;
+}
 
+.button:active,
+.button[data-pressed="true"] {
+	transform: none;
+}
+
+.button--primary {
+	--button-bg: var(--control);
+	--button-bg-hover: #38383d;
+	--button-bg-pressed: #2a2a2e;
+	--button-fg: var(--text-primary);
+	border: 1px solid var(--border);
+}
+
+.button--secondary,
+.button--tertiary,
+.button--ghost,
+.button--outline {
+	border-radius: 6px;
+}
+
+.button--danger {
+	border: 1px solid transparent;
+}
+
+.button:focus-visible,
+.button[data-focus-visible="true"] {
+	border-color: var(--accent);
+	box-shadow: 0 0 0 2px var(--accent-soft);
+	outline: none;
+}
+
+.input,
+.textarea,
+.select__trigger {
+	min-height: 28px;
+	height: 28px;
+	border-radius: 6px;
+	font-size: 12px;
+	padding-block: 0;
+	padding-inline: 8px;
+	background: var(--control);
+	border: 1px solid var(--border);
+	color: var(--text-primary);
+	box-shadow: none;
+}
+
+.textarea {
+	height: auto;
+	min-height: 56px;
+	padding-block: 6px;
+}
+
+.input:hover,
+.textarea:hover,
+.select__trigger:hover,
+.input[data-hovered="true"],
+.select__trigger[data-hovered="true"] {
+	background: #38383d;
+	border-color: #3c3c42;
+}
+
+.input:focus,
+.input:focus-visible,
+.textarea:focus,
+.textarea:focus-visible,
+.select__trigger:focus,
+.select__trigger:focus-visible,
+.select__trigger[data-open="true"],
+.input[data-focused="true"],
+.select__trigger[data-focus-visible="true"] {
+	border-color: var(--accent);
+	box-shadow: 0 0 0 2px var(--accent-soft);
+	outline: none;
+	background: var(--control);
+}
+
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="hidden"]):not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="image"]):not([type="color"]),
+select {
+	background-color: var(--control);
+	border: 1px solid var(--border);
+	border-radius: 6px;
+	color: var(--text-primary);
+	font-size: 12px;
+	min-height: 28px;
+	line-height: 1.2;
+	padding: 0 8px;
+	outline: none;
+	transition:
+		background-color 150ms ease,
+		border-color 150ms ease,
+		box-shadow 150ms ease;
+}
+
+textarea {
+	background-color: var(--control);
+	border: 1px solid var(--border);
+	border-radius: 6px;
+	color: var(--text-primary);
+	font-size: 12px;
+	height: auto;
+	min-height: 0;
+	line-height: 1.2;
+	padding: 6px 8px;
+	outline: none;
+	transition:
+		background-color 150ms ease,
+		border-color 150ms ease,
+		box-shadow 150ms ease;
+}
+
+input::placeholder,
+textarea::placeholder {
+	color: var(--text-muted);
+}
+
+input:hover:not(:disabled):not(:focus),
+select:hover:not(:disabled):not(:focus),
+textarea:hover:not(:disabled):not(:focus) {
+	background-color: #38383d;
+	border-color: #3c3c42;
+}
+
+input:focus,
+input:focus-visible,
+select:focus,
+select:focus-visible,
+textarea:focus,
+textarea:focus-visible {
+	border-color: var(--accent);
+	box-shadow: 0 0 0 2px var(--accent-soft);
+	outline: none;
+}
+
+input[class*="bg-transparent"],
+textarea[class*="bg-transparent"] {
+	background: transparent;
+	border: none;
+	box-shadow: none;
+	min-height: 0;
+	padding: 0;
+}
+
+input[class*="bg-transparent"]:hover,
+input[class*="bg-transparent"]:focus,
+input[class*="bg-transparent"]:focus-visible,
+textarea[class*="bg-transparent"]:hover,
+textarea[class*="bg-transparent"]:focus,
+textarea[class*="bg-transparent"]:focus-visible {
+	background: transparent;
+	border: none;
+	box-shadow: none;
+}
+
+option {
+	background: var(--surface);
+	color: var(--text-primary);
+}
+
+/* Dropdown menus / overlays */
+.popover,
+.menu,
+.list-box,
+[data-slot="popover"],
+[data-slot="menu"] {
+	background: var(--surface);
+	border: 1px solid var(--border);
+	border-radius: 8px;
+	box-shadow: var(--overlay-shadow);
+}
+
+[data-slot="menu-item"][data-selected="true"],
+[data-slot="list-box-item"][data-selected="true"],
+[aria-selected="true"] {
+	background: var(--accent-soft);
+	color: var(--accent-selected);
+}
+
+/* Sliders */
+input[type="range"] {
+	-webkit-appearance: none;
+	appearance: none;
+	height: 4px;
+	min-height: 4px;
+	padding: 0;
+	background: transparent;
+	border: none;
+	border-radius: 999px;
+	box-shadow: none;
+}
+
+input[type="range"]::-webkit-slider-runnable-track {
+	height: 4px;
+	background: #5c5c64;
+	border-radius: 999px;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+	-webkit-appearance: none;
+	appearance: none;
+	width: 12px;
+	height: 12px;
+	margin-top: -4px;
+	border-radius: 999px;
+	background: var(--accent);
+	border: none;
+	box-shadow: none;
+}
+
+input[type="range"]:focus-visible {
+	box-shadow: none;
+}
+
+input[type="range"]:focus-visible::-webkit-slider-thumb {
+	box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+input[type="range"]::-moz-range-track {
+	height: 4px;
+	background: #5c5c64;
+	border-radius: 999px;
+}
+
+input[type="range"]::-moz-range-progress {
+	height: 4px;
+	background: var(--accent);
+	border-radius: 999px;
+}
+
+input[type="range"]::-moz-range-thumb {
+	width: 12px;
+	height: 12px;
+	border: none;
+	border-radius: 999px;
+	background: var(--accent);
+}
+
+.switch,
+[data-slot="switch"] {
+	--switch-width: 32px;
+	--switch-height: 18px;
+}
+
+.modal__dialog,
+[data-slot="dialog"] {
+	background: var(--surface);
+	border: 1px solid var(--border);
+	border-radius: 8px;
+	box-shadow: var(--overlay-shadow);
+}
+
+@media (prefers-reduced-motion: reduce) {
 	*,
 	*::before,
 	*::after {

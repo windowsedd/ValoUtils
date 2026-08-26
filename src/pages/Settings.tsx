@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { FaGlobe, FaRocket, FaCode, FaChartBar, FaLanguage, FaKey, FaArrowUpRightFromSquare, FaCopy, FaCheck, FaGear, FaEye, FaEyeSlash, FaRobot, FaBook, FaComments } from "react-icons/fa6";
-import { PageHeader, SectionCard } from "@/components/section-card";
+import { PageHeader, SectionCard, pageBodyClass } from "@/components/section-card";
 import { useConfiguredRoutes } from "@/components/router";
 import SwaggerPage from "@/pages/SwaggerPage";
 import { normalizeHiddenTabs, setTabHidden } from "@/util/navigation-tabs";
@@ -44,13 +44,13 @@ const Toggle = ({
 		role="switch"
 		aria-checked={checked}
 		onClick={() => onChange(!checked)}
-		className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none ${
-			checked ? "bg-[#22d3ee]" : "bg-white/10"
+		className={`relative inline-flex h-[18px] w-8 shrink-0 cursor-pointer rounded-full border border-transparent transition-[background-color,box-shadow] duration-150 focus:outline-none focus-visible:shadow-[0_0_0_2px_var(--accent-soft)] ${
+			checked ? "bg-(--accent)" : "bg-(--control)"
 		}`}
 	>
 		<span
-			className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow transform transition-transform duration-200 ${
-				checked ? "translate-x-5" : "translate-x-0"
+			className={`pointer-events-none inline-block h-3.5 w-3.5 rounded-full bg-[#d7d7de] shadow-none transition-transform duration-150 ${
+				checked ? "translate-x-[14px]" : "translate-x-[1px]"
 			}`}
 		/>
 	</button>
@@ -65,19 +65,19 @@ type SettingRowProps = {
 };
 
 const SettingRow = ({ icon, label, description, badge, right }: SettingRowProps) => (
-	<div className="flex items-center justify-between gap-4 py-3 border-b border-white/5 last:border-0">
+	<div className="flex items-center justify-between gap-4 py-2.5 border-b border-(--line) last:border-0">
 		<div className="flex items-start gap-3 min-w-0">
-			<div className="text-gray-400 mt-0.5 shrink-0">{icon}</div>
+			<div className="text-(--text-muted) mt-0.5 shrink-0 text-[13px]">{icon}</div>
 			<div className="min-w-0">
 				<div className="flex items-center gap-2">
-					<p className="text-sm font-medium text-white">{label}</p>
+					<p className="text-[12px] font-medium text-(--text-primary)">{label}</p>
 					{badge && (
-						<span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-400/15 text-amber-400 uppercase tracking-wide">
+						<span className="text-[10px] font-medium px-1.5 py-0.5 rounded-[5px] bg-(--accent-soft) text-(--accent-selected)">
 							{badge}
 						</span>
 					)}
 				</div>
-				<p className="text-xs text-gray-500 mt-0.5">{description}</p>
+				<p className="text-[11px] text-(--text-muted) mt-0.5">{description}</p>
 			</div>
 		</div>
 		<div className="shrink-0">{right}</div>
@@ -230,7 +230,7 @@ const Settings = () => {
 		<div className="h-full flex flex-col animate-fade-in">
 			<PageHeader icon={<FaGear className="text-[#ff4655] text-lg" />} title={t("settings.title")} />
 
-			<div className="flex-1 min-h-0 overflow-y-auto px-6 pb-6 flex flex-col gap-4">
+			<div className={pageBodyClass}>
 
 			<SectionCard title={t("settings.sectionGeneral")} accent="#ff4655">
 					<div className="flex flex-col px-1">
@@ -246,10 +246,10 @@ const Settings = () => {
 									key={lang.code}
 									onClick={() => changeLang(lang.code)}
 									title={lang.name}
-									className={`px-2.5 py-1 rounded text-xs font-semibold transition-all ${
+									className={`px-2.5 py-1 rounded-[5px] text-[11px] font-medium transition-[background-color,border-color,color] duration-150 ${
 										currentLang === lang.code
-											? "bg-[#22d3ee]/20 text-[#22d3ee] border border-[#22d3ee]/40"
-											: "text-gray-400 hover:text-gray-200 border border-white/10 hover:border-white/25"
+											? "bg-(--accent-soft) text-(--accent-selected) border border-(--accent-border)"
+											: "text-(--text-secondary) hover:text-(--text-primary) border border-(--border) hover:bg-(--surface-hover)"
 									}`}
 								>
 									{lang.label}
@@ -261,7 +261,7 @@ const Settings = () => {
 					</div>
 				</SectionCard>
 
-				<SectionCard title={t("settings.sectionTranslation")} accent="#22d3ee">
+				<SectionCard title={t("settings.sectionTranslation")} accent="#8064e9">
 					<div className="flex flex-col px-1">
 				<SettingRow
 					icon={<FaLanguage />}
@@ -273,10 +273,10 @@ const Settings = () => {
 								<button
 									key={provider}
 									onClick={() => changeTranslatorProvider(provider)}
-									className={`px-2.5 py-1 rounded text-xs font-semibold uppercase transition-all ${
+									className={`px-2.5 py-1 rounded-[5px] text-[11px] font-medium uppercase transition-[background-color,border-color,color] duration-150 ${
 										appConfig.translatorProvider === provider
-											? "bg-[#22d3ee]/20 text-[#22d3ee] border border-[#22d3ee]/40"
-											: "text-gray-400 hover:text-gray-200 border border-white/10 hover:border-white/25"
+											? "bg-(--accent-soft) text-(--accent-selected) border border-(--accent-border)"
+											: "text-(--text-secondary) hover:text-(--text-primary) border border-(--border) hover:bg-(--surface-hover)"
 									}`}
 								>
 									{provider}
@@ -297,7 +297,7 @@ const Settings = () => {
 								onChange={(event) =>
 									setConfig("translatorSourceLanguage", event.target.value)
 								}
-								className="max-w-48 px-2 py-1 rounded border border-white/10 bg-[#0b0e13] text-sm text-white outline-none focus:border-[#22d3ee]/50"
+								className="max-w-48 h-7 px-2 rounded-[6px] border border-(--border) bg-(--control) text-[12px] text-(--text-primary) outline-none focus:border-(--accent) focus:shadow-[0_0_0_2px_var(--accent-soft)]"
 							>
 								<option value="auto">{t("settings.translationAuto")}</option>
 								{getTranslationLanguages(
@@ -316,7 +316,7 @@ const Settings = () => {
 								onChange={(event) =>
 									setConfig("translatorTargetLanguage", event.target.value)
 								}
-								className="max-w-48 px-2 py-1 rounded border border-white/10 bg-[#0b0e13] text-sm text-white outline-none focus:border-[#22d3ee]/50"
+								className="max-w-48 h-7 px-2 rounded-[6px] border border-(--border) bg-(--control) text-[12px] text-(--text-primary) outline-none focus:border-(--accent) focus:shadow-[0_0_0_2px_var(--accent-soft)]"
 							>
 								{getTranslationLanguages(
 									appConfig.translatorProvider,
@@ -340,7 +340,7 @@ const Settings = () => {
 							type="password"
 							value={appConfig.deeplApiKey}
 							onChange={(event) => setConfig("deeplApiKey", event.target.value)}
-							className="w-56 px-2 py-1 rounded border border-white/10 bg-black/30 text-sm text-white outline-none focus:border-[#22d3ee]/50"
+							className="w-56 h-7 px-2 rounded-[6px] border border-(--border) bg-(--control) text-[12px] text-(--text-primary) outline-none placeholder:text-(--text-muted) focus:border-(--accent) focus:shadow-[0_0_0_2px_var(--accent-soft)]"
 							placeholder="DeepL key"
 						/>
 					}
@@ -377,7 +377,7 @@ const Settings = () => {
 					</div>
 				</SectionCard>
 
-				<SectionCard title={t("settings.sectionNavigation")} accent="#22d3ee">
+				<SectionCard title={t("settings.sectionNavigation")} accent="#8064e9">
 					<div className="flex flex-col px-1">
 						{configurableRoutes.map((route) => (
 							<SettingRow
@@ -413,12 +413,12 @@ const Settings = () => {
 					<div className="flex flex-col px-1">
 				<SettingRow icon={<FaRobot />} label="Presence masking" description="Allow Bot commands to rewrite your Riot presence." right={<Toggle checked={appConfig.presenceEnabled} onChange={v => setPresence(v ? "enable" : "disable")} />} />
 				<SettingRow icon={<FaRobot />} label="Lobby / MUC forwarding" description="Forward lobby presence while masking is active." right={<Toggle checked={appConfig.presenceMucEnabled} onChange={v => setPresence("muc", v)} />} />
-				<SettingRow icon={<FaRobot />} label="Startup presence" description="Choose the status used when the relay starts." right={<select value={appConfig.presenceStartup} onChange={event => setPresence("startup", event.target.value)} className="rounded border border-white/10 bg-[#111] px-2 py-1 text-xs text-gray-200"><option value="last">Remember last</option><option value="online">Online</option><option value="offline">Offline</option><option value="mobile">Mobile</option></select>} />
+				<SettingRow icon={<FaRobot />} label="Startup presence" description="Choose the status used when the relay starts." right={<select value={appConfig.presenceStartup} onChange={event => setPresence("startup", event.target.value)} className="h-7 rounded-[6px] border border-(--border) bg-(--control) px-2 text-[11px] text-(--text-primary) outline-none focus:border-(--accent) focus:shadow-[0_0_0_2px_var(--accent-soft)]"><option value="last">Remember last</option><option value="online">Online</option><option value="offline">Offline</option><option value="mobile">Mobile</option></select>} />
 				<SettingRow
 					icon={<FaBook />}
 					label={t("nav.apiReference")}
 					description={t("apiReference.subtitle")}
-					right={<button onClick={() => setView("api-reference")} className="rounded border border-cyan-400/30 bg-cyan-400/10 px-3 py-1.5 text-xs font-semibold text-cyan-300 hover:bg-cyan-400/20">{t("settings.open")}</button>}
+					right={<button onClick={() => setView("api-reference")} className="h-7 rounded-[6px] border border-(--border) bg-(--control) px-3 text-[11px] font-medium text-(--text-primary) hover:bg-(--surface-hover)">{t("settings.open")}</button>}
 				/>
 
 				<SettingRow
@@ -431,7 +431,7 @@ const Settings = () => {
 					}
 					right={
 						<div className="flex gap-2 items-center">
-							<code className="text-xs text-gray-300 bg-black/30 border border-white/10 px-2 py-1 rounded">
+							<code className="text-[11px] text-(--text-secondary) bg-(--control) border border-(--border) px-2 py-1 rounded-[5px]">
 								{clientPort ?? "—"}
 							</code>
 							<button
@@ -440,7 +440,7 @@ const Settings = () => {
 									window.Main.send("open_url", `https://127.0.0.1:${clientPort}/chat/v6/messages`);
 								}}
 								disabled={!clientPort}
-								className="flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold border border-white/10 text-gray-400 hover:text-gray-200 hover:border-white/25 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+								className="flex h-7 items-center gap-1.5 px-2.5 rounded-[6px] text-[11px] font-medium border border-(--border) bg-(--control) text-(--text-secondary) hover:text-(--text-primary) hover:bg-(--surface-hover) disabled:opacity-40 disabled:cursor-not-allowed transition-[background-color,border-color,color] duration-150"
 							>
 								<FaArrowUpRightFromSquare className="w-3 h-3" />
 								{t("settings.open")}
@@ -453,7 +453,7 @@ const Settings = () => {
 									setTimeout(() => setCopied(null), 2000);
 								}}
 								disabled={!clientPort}
-								className="flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold border border-white/10 text-gray-400 hover:text-gray-200 hover:border-white/25 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+								className="flex h-7 items-center gap-1.5 px-2.5 rounded-[6px] text-[11px] font-medium border border-(--border) bg-(--control) text-(--text-secondary) hover:text-(--text-primary) hover:bg-(--surface-hover) disabled:opacity-40 disabled:cursor-not-allowed transition-[background-color,border-color,color] duration-150"
 							>
 								{copied === "chat" ? <FaCheck className="w-3 h-3 text-green-400" /> : <FaCopy className="w-3 h-3" />}
 								{copied === "chat" ? t("settings.copied") : t("common.copy")}
@@ -478,7 +478,7 @@ const Settings = () => {
 									window.Main.send("open_url", `https://127.0.0.1:${clientPort}/swagger/v3/openapi.json`);
 								}}
 								disabled={!clientPort}
-								className="flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold border border-white/10 text-gray-400 hover:text-gray-200 hover:border-white/25 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+								className="flex h-7 items-center gap-1.5 px-2.5 rounded-[6px] text-[11px] font-medium border border-(--border) bg-(--control) text-(--text-secondary) hover:text-(--text-primary) hover:bg-(--surface-hover) disabled:opacity-40 disabled:cursor-not-allowed transition-[background-color,border-color,color] duration-150"
 							>
 								<FaArrowUpRightFromSquare className="w-3 h-3" />
 								{t("settings.open")}
@@ -492,7 +492,7 @@ const Settings = () => {
 									setTimeout(() => setCopied(null), 2000);
 								}}
 								disabled={!clientPort}
-								className="flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold border border-white/10 text-gray-400 hover:text-gray-200 hover:border-white/25 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+								className="flex h-7 items-center gap-1.5 px-2.5 rounded-[6px] text-[11px] font-medium border border-(--border) bg-(--control) text-(--text-secondary) hover:text-(--text-primary) hover:bg-(--surface-hover) disabled:opacity-40 disabled:cursor-not-allowed transition-[background-color,border-color,color] duration-150"
 							>
 								{copied === "url" ? <FaCheck className="w-3 h-3 text-green-400" /> : <FaCopy className="w-3 h-3" />}
 								{copied === "url" ? t("settings.copied") : t("common.copy")}
@@ -507,14 +507,14 @@ const Settings = () => {
 					description={clientPassword ? t("settings.clientPasswordDesc") : t("settings.clientNotRunningShort")}
 					right={
 						<div className="flex gap-2 items-center">
-							<code className="text-xs text-gray-300 bg-black/30 border border-white/10 px-2 py-1 rounded max-w-50 truncate">
+							<code className="text-[11px] text-(--text-secondary) bg-(--control) border border-(--border) px-2 py-1 rounded-[5px] max-w-50 truncate">
 								{clientPassword ? (revealPassword ? clientPassword : "•".repeat(12)) : "—"}
 							</code>
 							<button
 								onClick={() => setRevealPassword((v) => !v)}
 								disabled={!clientPassword}
 								aria-label={revealPassword ? t("settings.hide") : t("settings.reveal")}
-								className="flex items-center px-2 py-1 rounded text-xs border border-white/10 text-gray-400 hover:text-gray-200 hover:border-white/25 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+								className="flex h-7 items-center px-2 rounded-[6px] text-[11px] border border-(--border) bg-(--control) text-(--text-secondary) hover:text-(--text-primary) hover:bg-(--surface-hover) disabled:opacity-40 disabled:cursor-not-allowed transition-[background-color,color] duration-150"
 							>
 								{revealPassword ? <FaEyeSlash className="w-3 h-3" /> : <FaEye className="w-3 h-3" />}
 							</button>
@@ -526,7 +526,7 @@ const Settings = () => {
 									setTimeout(() => setCopied(null), 2000);
 								}}
 								disabled={!clientPassword}
-								className="flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold border border-white/10 text-gray-400 hover:text-gray-200 hover:border-white/25 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+								className="flex h-7 items-center gap-1.5 px-2.5 rounded-[6px] text-[11px] font-medium border border-(--border) bg-(--control) text-(--text-secondary) hover:text-(--text-primary) hover:bg-(--surface-hover) disabled:opacity-40 disabled:cursor-not-allowed transition-[background-color,border-color,color] duration-150"
 							>
 								{copied === "pwd" ? <FaCheck className="w-3 h-3 text-green-400" /> : <FaCopy className="w-3 h-3" />}
 								{copied === "pwd" ? t("settings.copied") : t("common.copy")}

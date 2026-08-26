@@ -1,7 +1,7 @@
 import { FriendMatchHistory } from "@/components/friends/friend-competitive-history";
 import { initialSeasonId } from "@/components/live-game/act-rank";
 import { ActRankPanel } from "@/components/live-game/act-rank-panel";
-import { PageHeader, SectionCard } from "@/components/section-card";
+import { PageHeader, SectionCard, pageBodyClass } from "@/components/section-card";
 import type { CompetitiveSeason } from "@/types/live-game";
 import { getSeasonAssets, getTiers, type SeasonAsset, type TierAsset } from "@/util/valorant-assets";
 import { tierColor, tierName } from "@/util/valorant-ranks";
@@ -114,7 +114,7 @@ const PlayerCareer = () => {
 		<div className="flex h-full flex-col animate-fade-in">
 			<PageHeader icon={<FaTrophy className="text-lg text-[#ff4655]" />} title={t("career.title")} />
 
-			<div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-6 pb-6">
+			<div className={pageBodyClass}>
 				{loading && (
 					<div className="flex flex-1 items-center justify-center text-sm text-gray-500">{t("career.loading")}</div>
 				)}

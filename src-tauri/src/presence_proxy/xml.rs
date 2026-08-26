@@ -370,11 +370,21 @@ pub fn bot_command_frames(
     bot_jid: &str,
     reply: &str,
     sequence: u64,
-) -> [String; 2] {
-    [
-        bot_presence(account_domain, client_version),
-        bot_reply(bot_jid, reply, sequence),
-    ]
+) -> Vec<String> {
+    let mut frames = vec![bot_presence(account_domain, client_version)];
+    let mut lines = reply
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .peekable();
+    if lines.peek().is_none() {
+        frames.push(bot_reply(bot_jid, reply, sequence));
+        return frames;
+    }
+    for (offset, line) in lines.enumerate() {
+        frames.push(bot_reply(bot_jid, line, sequence + offset as u64));
+    }
+    frames
 }
 
 fn next_sequence() -> u64 {
@@ -1004,5 +1014,33 @@ mod tests {
         let stamp = reply.attributes.get("stamp").unwrap();
         assert_eq!(reply.attributes.get("id"), Some(&format!("fake-{stamp}")));
         assert!(frames[1].contains("<body>You are now appearing offline.</body>"));
+    }
+
+    #[test]
+    fn bot_command_splits_multiline_replies_into_separate_whispers() {
+        let domain = "eu1.pvp.net";
+        let bot_jid = format!("{}@{domain}/RC-ValoUtils", crate::fake_player::PUUID);
+        let frames = bot_command_frames(
+            domain,
+            None,
+            &bot_jid,
+            "1. hi -> 안녕\n2. gg -> 잘가",
+            7,
+        );
+        assert_eq!(frames.len(), 3);
+        assert!(frames[0].starts_with("<presence "));
+        let first = Element::parse(frames[1].as_bytes()).unwrap();
+        let second = Element::parse(frames[2].as_bytes()).unwrap();
+        assert_eq!(
+            first.get_child("body").and_then(Element::get_text).as_deref(),
+            Some("1. hi -> 안녕")
+        );
+        assert_eq!(
+            second
+                .get_child("body")
+                .and_then(Element::get_text)
+                .as_deref(),
+            Some("2. gg -> 잘가")
+        );
     }
 }

@@ -127,7 +127,7 @@ const AppShell = () => {
 						]}
 					>
 						<RiotClientWatcher>
-							<div className="flex flex-col h-screen bg-black overflow-hidden">
+							<div className="flex flex-col h-screen bg-(--background) overflow-hidden">
 								<Router />
 							</div>
 						</RiotClientWatcher>

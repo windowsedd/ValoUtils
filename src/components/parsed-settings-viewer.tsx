@@ -56,7 +56,7 @@ const TAB_IDS: TabId[] = ["general", "controls", "crosshair", "audio", "video", 
 
 function SectionHeader({ label }: { label: string }) {
     return (
-        <div className="text-xs font-bold text-gray-500 uppercase tracking-[0.15em] pt-5 pb-1.5 px-3 first:pt-2">
+        <div className="text-[12px] font-medium text-(--text-secondary) pt-5 pb-1.5 px-3 first:pt-2">
             {label}
         </div>
     );
@@ -66,30 +66,24 @@ function ToggleRow({ label, value, note }: { label: string; value: boolean | und
     const { t } = useTranslation();
     if (value === undefined) return null;
     return (
-        <div className="flex items-center justify-between px-3 py-2 hover:bg-white/[0.03] rounded-sm">
+        <div className="flex items-center justify-between px-3 py-1.5 hover:bg-(--surface-hover) rounded-[6px] transition-colors duration-150">
             <div>
-                <span className="text-sm text-gray-200">{label}</span>
-                {note && <p className="text-xs text-gray-500 mt-0.5">{note}</p>}
+                <span className="text-[12px] text-(--text-primary)">{label}</span>
+                {note && <p className="text-[11px] text-(--text-muted) mt-0.5">{note}</p>}
             </div>
-            <div className="flex gap-1 shrink-0">
+            <div
+                className={`relative inline-flex h-[18px] w-8 shrink-0 items-center rounded-full ${
+                    value ? "bg-(--accent)" : "bg-(--control)"
+                }`}
+                aria-checked={value}
+                aria-label={`${label}: ${value ? t("settingsViewer.on") : t("settingsViewer.off")}`}
+                role="switch"
+            >
                 <span
-                    className={`text-[11px] font-bold px-3 py-1 rounded-sm border tracking-wider ${
-                        value
-                            ? "bg-[#ff4655]/15 text-[#ff4655] border-[#ff4655]/40"
-                            : "bg-white/5 text-gray-600 border-white/10"
+                    className={`inline-block h-3.5 w-3.5 rounded-full bg-[#d7d7de] transition-transform duration-150 ${
+                        value ? "translate-x-[14px]" : "translate-x-[1px]"
                     }`}
-                >
-                    {t("settingsViewer.on")}
-                </span>
-                <span
-                    className={`text-[11px] font-bold px-3 py-1 rounded-sm border tracking-wider ${
-                        !value
-                            ? "bg-white/10 text-white border-white/25"
-                            : "bg-white/5 text-gray-600 border-white/10"
-                    }`}
-                >
-                    {t("settingsViewer.off")}
-                </span>
+                />
             </div>
         </div>
     );
@@ -103,20 +97,20 @@ function SliderRow({
     if (value === undefined) return null;
     const pct = Math.max(0, Math.min(100, ((value - min) / (max - min)) * 100));
     return (
-        <div className="flex items-center justify-between gap-4 px-3 py-2 hover:bg-white/[0.03] rounded-sm">
-            <span className="text-sm text-gray-200 shrink-0">{label}</span>
+        <div className="flex items-center justify-between gap-4 px-3 py-1.5 hover:bg-(--surface-hover) rounded-[6px] transition-colors duration-150">
+            <span className="text-[12px] text-(--text-primary) shrink-0">{label}</span>
             <div className="flex items-center gap-3 min-w-0 flex-1 max-w-52">
-                <div className="relative flex-1 h-[3px] bg-white/10 rounded-full">
+                <div className="relative flex-1 h-[4px] bg-[#5c5c64] rounded-full">
                     <div
-                        className="absolute top-0 left-0 h-full bg-white/80 rounded-full"
+                        className="absolute top-0 left-0 h-full bg-(--accent) rounded-full"
                         style={{ width: `${pct}%` }}
                     />
                     <div
-                        className="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full shadow-sm border border-white/40"
+                        className="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-(--accent) rounded-full"
                         style={{ left: `calc(${pct}% - 6px)` }}
                     />
                 </div>
-                <span className="text-sm text-white font-mono w-14 text-right shrink-0">
+                <span className="text-[12px] text-(--text-secondary) font-mono w-14 text-right shrink-0">
                     {value.toFixed(decimals)}{unit}
                 </span>
             </div>
@@ -127,9 +121,9 @@ function SliderRow({
 function SelectRow({ label, value }: { label: string; value: string | undefined }) {
     if (value === undefined) return null;
     return (
-        <div className="flex items-center justify-between px-3 py-2 hover:bg-white/[0.03] rounded-sm">
-            <span className="text-sm text-gray-200">{label}</span>
-            <span className="text-sm text-white bg-white/8 border border-white/15 px-3 py-0.5 rounded-sm">
+        <div className="flex items-center justify-between px-3 py-1.5 hover:bg-(--surface-hover) rounded-[6px] transition-colors duration-150">
+            <span className="text-[12px] text-(--text-primary)">{label}</span>
+            <span className="text-[12px] text-(--text-primary) bg-(--control) border border-(--border) px-2.5 h-7 inline-flex items-center rounded-[6px]">
                 {value}
             </span>
         </div>
@@ -165,13 +159,13 @@ function GeneralTab({ settings }: { settings: ReturnType<typeof parseGameSetting
 
             <SectionHeader label={t("settingsViewer.general.map")} />
             {minimapRotates !== undefined && (
-                <div className="flex items-center justify-between px-3 py-2 hover:bg-white/[0.03] rounded-sm">
-                    <span className="text-sm text-gray-200">{t("settingsViewer.general.rotate")}</span>
+                <div className="flex items-center justify-between px-3 py-1.5 hover:bg-(--surface-hover) rounded-[6px] transition-colors duration-150">
+                    <span className="text-[12px] text-(--text-primary)">{t("settingsViewer.general.rotate")}</span>
                     <div className="flex gap-1">
                         {([["rotate", "settingsViewer.general.optRotate"], ["fixed", "settingsViewer.general.optFixed"]] as const).map(([key, labelKey]) => {
                             const active = key === "rotate" ? minimapRotates : !minimapRotates;
                             return (
-                                <span key={key} className={`text-[11px] font-bold px-3 py-1 rounded-sm border tracking-wider ${active ? "bg-white/10 text-white border-white/25" : "bg-white/5 text-gray-600 border-white/10"}`}>
+                                <span key={key} className={`text-[11px] font-medium px-2.5 h-7 inline-flex items-center rounded-[6px] border ${active ? "bg-(--accent-soft) text-(--accent-selected) border-(--accent-border)" : "bg-(--control) text-(--text-muted) border-(--border)"}`}>
                                     {t(labelKey)}
                                 </span>
                             );
@@ -180,13 +174,13 @@ function GeneralTab({ settings }: { settings: ReturnType<typeof parseGameSetting
                 </div>
             )}
             {minimapTranslates !== undefined && (
-                <div className="flex items-center justify-between px-3 py-2 hover:bg-white/[0.03] rounded-sm">
-                    <span className="text-sm text-gray-200">{t("settingsViewer.general.fixedOrientation")}</span>
+                <div className="flex items-center justify-between px-3 py-1.5 hover:bg-(--surface-hover) rounded-[6px] transition-colors duration-150">
+                    <span className="text-[12px] text-(--text-primary)">{t("settingsViewer.general.fixedOrientation")}</span>
                     <div className="flex gap-1">
                         {([["alwaysSame", "settingsViewer.general.optAlwaysSame"], ["basedOnSide", "settingsViewer.general.optBasedOnSide"]] as const).map(([key, labelKey]) => {
                             const active = key === "alwaysSame" ? !minimapTranslates : minimapTranslates;
                             return (
-                                <span key={key} className={`text-[11px] font-bold px-3 py-1 rounded-sm border tracking-wider ${active ? "bg-white/10 text-white border-white/25" : "bg-white/5 text-gray-600 border-white/10"}`}>
+                                <span key={key} className={`text-[11px] font-medium px-2.5 h-7 inline-flex items-center rounded-[6px] border ${active ? "bg-(--accent-soft) text-(--accent-selected) border-(--accent-border)" : "bg-(--control) text-(--text-muted) border-(--border)"}`}>
                                     {t(labelKey)}
                                 </span>
                             );
@@ -243,16 +237,16 @@ function ControlsTab({ settings }: { settings: ReturnType<typeof parseGameSettin
     }
 
     const BindingRow = ({ action, binds }: { action: string; binds: { primary?: string; secondary?: string } }) => (
-        <div className="flex items-center justify-between px-3 py-2 hover:bg-white/[0.03] rounded-sm">
-            <span className="text-sm text-gray-200">{t(`settingsViewer.actions.${action}`, action)}</span>
+        <div className="flex items-center justify-between px-3 py-1.5 hover:bg-(--surface-hover) rounded-[6px] transition-colors duration-150">
+            <span className="text-[12px] text-(--text-primary)">{t(`settingsViewer.actions.${action}`, action)}</span>
             <div className="flex gap-2">
                 {[binds.primary, binds.secondary].map((k, i) => (
                     <span
                         key={i}
-                        className={`text-xs font-mono px-3 py-0.5 rounded-sm border min-w-12 text-center ${
+                        className={`text-[11px] font-mono px-2.5 h-7 inline-flex items-center justify-center rounded-[6px] border min-w-12 ${
                             k && k !== "None"
-                                ? "bg-white/10 text-white border-white/20"
-                                : "bg-white/3 text-gray-600 border-white/8"
+                                ? "bg-(--control) text-(--text-primary) border-(--border)"
+                                : "bg-transparent text-(--text-muted) border-(--border-subtle)"
                         }`}
                     >
                         {fmtKey(k ?? "None")}
@@ -266,11 +260,11 @@ function ControlsTab({ settings }: { settings: ReturnType<typeof parseGameSettin
         <div>
             <SectionHeader label={t("settingsViewer.controls.globalKeybinds")} />
             <div className="flex justify-end gap-2 px-3 pb-1">
-                <span className="text-[10px] text-gray-500 w-12 text-center">{t("settingsViewer.controls.key1")}</span>
-                <span className="text-[10px] text-gray-500 w-12 text-center">{t("settingsViewer.controls.key2")}</span>
+                <span className="text-[10px] text-(--text-muted) w-12 text-center">{t("settingsViewer.controls.key1")}</span>
+                <span className="text-[10px] text-(--text-muted) w-12 text-center">{t("settingsViewer.controls.key2")}</span>
             </div>
             {Object.keys(globalBindings).length === 0 ? (
-                <p className="text-sm text-gray-500 text-center py-4">{t("settingsViewer.controls.noGlobalBindings")}</p>
+                <p className="text-[12px] text-(--text-muted) text-center py-4">{t("settingsViewer.controls.noGlobalBindings")}</p>
             ) : (
                 Object.entries(globalBindings).map(([action, binds]) => (
                     <BindingRow key={action} action={action} binds={binds} />
@@ -305,23 +299,23 @@ function CrosshairTab({
     const mapped = selectedProfile ? mapRiotCrosshairProfile(selectedProfile) : null;
 
     if (profiles.length === 0) {
-        return <p className="text-center text-gray-400 py-8">{t("settingsViewer.crosshair.noProfiles")}</p>;
+        return <p className="text-center text-(--text-muted) py-8">{t("settingsViewer.crosshair.noProfiles")}</p>;
     }
 
     return (
         <div className="flex flex-col gap-4">
             <div className="flex items-center justify-center gap-2">
-                <label htmlFor="ch-profile-select" className="text-sm text-gray-400">
+                <label htmlFor="ch-profile-select" className="text-[12px] text-(--text-secondary)">
                     {t("settingsViewer.crosshair.profile")}
                 </label>
                 <select
                     id="ch-profile-select"
-                    className="glass px-3 py-1.5 rounded-md bg-transparent text-white text-sm"
+                    className="h-7 px-2.5 rounded-[6px] border border-(--border) bg-(--control) text-(--text-primary) text-[12px] outline-none focus:border-(--accent) focus:shadow-[0_0_0_2px_var(--accent-soft)]"
                     value={selectedIndex}
                     onChange={(e) => setSelectedIndex(Number(e.target.value))}
                 >
                     {profiles.map((p, i) => (
-                        <option key={i} value={i} className="bg-black">
+                        <option key={i} value={i} className="bg-(--surface)">
                             {p.profileName || t("settingsViewer.crosshair.profileFallback", { index: i + 1 })}
                             {i === crosshairData?.currentProfile ? ` ${t("settingsViewer.crosshair.active")}` : ""}
                         </option>
@@ -334,11 +328,11 @@ function CrosshairTab({
                     <h3 className="text-base font-semibold text-center gradient-text">{mapped.name}</h3>
                     <div className="grid grid-cols-2 gap-3">
                         <div className="glass p-3 flex flex-col items-center gap-2">
-                            <span className="text-xs text-gray-400">{t("settingsViewer.crosshair.primary")}</span>
+                            <span className="text-[11px] text-(--text-muted)">{t("settingsViewer.crosshair.primary")}</span>
                             <CrosshairSVG settings={mapped.primary} width={120} height={120} backgroundColor="#00000066" />
                         </div>
                         <div className="glass p-3 flex flex-col items-center gap-2">
-                            <span className="text-xs text-gray-400">{t("settingsViewer.crosshair.sniper")}</span>
+                            <span className="text-[11px] text-(--text-muted)">{t("settingsViewer.crosshair.sniper")}</span>
                             <SniperCrosshairSVG settings={mapped.sniper} width={120} height={120} backgroundColor="#00000066" />
                         </div>
                     </div>
@@ -423,7 +417,7 @@ function VideoTab({ settings }: { settings: ReturnType<typeof parseGameSettings>
     return (
         <div>
             <SectionHeader label={t("settingsViewer.video.performanceStats")} />
-            <p className="text-xs text-gray-500 px-3 pb-2">{t("settingsViewer.video.performanceStatsDesc")}</p>
+            <p className="text-[11px] text-(--text-muted) px-3 pb-2">{t("settingsViewer.video.performanceStatsDesc")}</p>
             <SelectRow label={t("settingsViewer.video.clientFps")} value={perfLabel(fpsMode)} />
             <SelectRow label={t("settingsViewer.video.serverFrameRate")} value={perfLabel(serverFpsMode)} />
             <SelectRow label={t("settingsViewer.video.packetLoss")} value={perfLabel(packetLossMode)} />
@@ -449,7 +443,7 @@ function VideoTab({ settings }: { settings: ReturnType<typeof parseGameSettings>
 
 function RawJsonTab({ rawSettings }: { rawSettings: RawGameSettings }) {
     return (
-        <pre className="text-xs text-gray-300 whitespace-pre-wrap break-all leading-relaxed p-3 font-mono">
+        <pre className="text-[11px] text-(--text-secondary) whitespace-pre-wrap break-all leading-relaxed p-3 font-mono">
             {JSON.stringify(rawSettings, null, 2)}
         </pre>
     );
@@ -468,20 +462,20 @@ export function ParsedSettingsViewer({ rawSettings, crosshairData }: ParsedSetti
     return (
         <div className="flex flex-col min-h-0">
             {/* Tab bar */}
-            <div className="flex border-b border-white/10 mb-1 gap-0 shrink-0">
+            <div className="flex border-b border-(--line) mb-1 gap-0 shrink-0">
                 {TAB_IDS.map((id) => (
                     <button
                         key={id}
                         onClick={() => setActiveTab(id)}
-                        className={`relative px-4 py-2.5 text-xs font-bold tracking-[0.12em] transition-colors cursor-pointer ${
+                        className={`relative px-4 py-2 text-[12px] font-medium transition-colors duration-150 cursor-pointer ${
                             activeTab === id
-                                ? "text-white"
-                                : "text-gray-500 hover:text-gray-300"
+                                ? "text-(--accent-selected)"
+                                : "text-(--text-muted) hover:text-(--text-secondary)"
                         }`}
                     >
                         {t(`settingsViewer.tabs.${id}`)}
                         {activeTab === id && (
-                            <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-[#ff4655]" />
+                            <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-(--accent)" />
                         )}
                     </button>
                 ))}

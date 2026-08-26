@@ -1,5 +1,5 @@
 import { LiveGameStatePanel } from "@/components/live-game/live-game-state-panel";
-import { isCurrentStatsAttempt, liveStatsRequestKey } from "@/components/live-game/live-game-events";
+import { isCurrentStatsAttempt, livePlayerStatsKey, liveStatsRequestKey, shouldPreserveReadyStats } from "@/components/live-game/live-game-events";
 import { LiveScoutTable } from "@/components/live-game/live-scout-table";
 import { useLiveGameAssets } from "@/components/live-game/use-live-game-assets";
 import { PageHeader } from "@/components/section-card";
@@ -26,6 +26,7 @@ const LiveGame = () => {
 	const [developer, setDeveloper] = useState(false);
 	const rosterKeyRef = useRef<string | null>(null);
 	const requestedStatsKeyRef = useRef<string | null>(null);
+	const lastRequestedStatsKeyRef = useRef<string | null>(null);
 	const statsAttemptRef = useRef(0);
 
 	const requestSnapshot = useCallback(() => {
@@ -61,41 +62,58 @@ const LiveGame = () => {
 					setError(null);
 					return;
 				}
-				setError(("error" in response && response.error) || t("liveGame.failedToLoad"));
+				const responseError = ("error" in response && response.error) || "";
+				setError(responseError === "rateLimited"
+					? t("liveGame.rateLimited")
+					: responseError === "unavailable" ? t("liveGame.failedToLoad") : responseError || t("liveGame.failedToLoad"));
 				return;
 			}
 
 			setLoginRequired(false);
-			setError(null);
+			setError(response.warning === "rateLimited"
+				? t("liveGame.rateLimited")
+				: response.warning === "unavailable" ? t("liveGame.failedToLoad") : null);
 			setSnapshot(response);
 			rosterKeyRef.current = response.state === "idle" ? null : response.rosterKey;
 
 			if (response.state === "idle") {
 				requestedStatsKeyRef.current = null;
+				lastRequestedStatsKeyRef.current = null;
 				setRecent({});
 				return;
 			}
 
 			const queueId = response.match?.queueId ?? "";
-			const statsKey = liveStatsRequestKey(response.rosterKey, queueId);
+			const statsKey = liveStatsRequestKey(response.players.map((player) => player.puuid), queueId);
 			if (requestedStatsKeyRef.current !== statsKey) {
+				const preserveReady = shouldPreserveReadyStats(requestedStatsKeyRef.current, lastRequestedStatsKeyRef.current, statsKey);
 				requestedStatsKeyRef.current = statsKey;
+				lastRequestedStatsKeyRef.current = statsKey;
 				const attemptId = ++statsAttemptRef.current;
-				setRecent(Object.fromEntries(response.players.map((player) => [player.puuid, { status: "loading" }])));
-				window.Main.send("live-game:stats", response.rosterKey, response.players.map((player) => player.puuid), attemptId, queueId);
+				setRecent((current) => Object.fromEntries(response.players.map((player) => [
+					livePlayerStatsKey(player.puuid),
+					preserveReady && current[livePlayerStatsKey(player.puuid)]?.status === "ready"
+						? current[livePlayerStatsKey(player.puuid)]
+						: { status: "loading" },
+				])));
+				window.Main.send("live-game:stats", statsKey, response.players.map((player) => player.puuid), attemptId, queueId);
 			}
 		};
 
 		const onPlayerStats = (message: string) => {
 			try {
 				const event = JSON.parse(message) as RecentStatsEvent;
-				if (event.rosterKey !== rosterKeyRef.current || !isCurrentStatsAttempt(event.attemptId, statsAttemptRef.current)) return;
-				setRecent((current) => ({
-					...current,
-					[event.puuid]: event.success
-						? { status: "ready", stats: event.stats }
-						: { status: "error", error: event.error },
-				}));
+				if (event.rosterKey !== requestedStatsKeyRef.current || !isCurrentStatsAttempt(event.attemptId, statsAttemptRef.current)) return;
+				setRecent((current) => {
+					const playerKey = livePlayerStatsKey(event.puuid);
+					if (!event.success && current[playerKey]?.status === "ready") return current;
+					return {
+						...current,
+						[playerKey]: event.success
+							? { status: "ready", stats: event.stats }
+							: { status: "error", error: event.error },
+					};
+				});
 			} catch {
 				// Ignore malformed or unrelated push events; the next roster refresh can retry.
 			}
@@ -104,7 +122,7 @@ const LiveGame = () => {
 		const onStatsCommand = (message: string) => {
 			try {
 				const response = JSON.parse(message) as StatsCommandResponse;
-				if (response.success || response.rosterKey !== rosterKeyRef.current || !isCurrentStatsAttempt(response.attemptId, statsAttemptRef.current)) return;
+				if (response.success || response.rosterKey !== requestedStatsKeyRef.current || !isCurrentStatsAttempt(response.attemptId, statsAttemptRef.current)) return;
 				setRecent((current) => Object.fromEntries(
 					Object.entries(current).map(([puuid, state]) => [
 						puuid,
