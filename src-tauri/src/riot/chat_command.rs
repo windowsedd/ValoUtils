@@ -22,6 +22,7 @@ use serde::{Deserialize, Serialize};
 
 pub const HISTORY_TRANSLATE_MAX: usize = 10;
 pub const HISTORY_TRANSLATE_DEFAULT: usize = 1;
+const DEFAULT_LANGUAGE_MARKER: &str = "__valoutils_default_language__";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CustomBotCommand {
@@ -88,7 +89,9 @@ pub fn expand_custom_command(input: &str, commands: &[CustomBotCommand]) -> Opti
             };
             let language = command.language.trim();
             if language.is_empty() {
-                Some(format!(".send {channel} {message}"))
+                Some(format!(
+                    ".send {channel} {DEFAULT_LANGUAGE_MARKER} {message}"
+                ))
             } else {
                 Some(format!(".send {channel} {language} {message}"))
             }
@@ -301,21 +304,37 @@ fn parse_dot_send(
     }
 
     let (first, remainder) = split_first_token(after_channel);
-    let (language, language_input, message) =
-        if let Some(language) = crate::translate::resolve_target_language(provider, first) {
-            if remainder.trim().is_empty() {
-                return Err(RiotError::EmptyMessage);
-            }
-            (language, first.to_string(), remainder.to_string())
-        } else if let Some(default) = default_language
+    let (language, language_input, message) = if first == DEFAULT_LANGUAGE_MARKER {
+        if remainder.trim().is_empty() {
+            return Err(RiotError::EmptyMessage);
+        }
+        let Some(default) = default_language
             .and_then(|value| crate::translate::resolve_target_language(provider, value))
-        {
-            (default.clone(), default, after_channel.to_string())
-        } else {
-            return Err(RiotError::InvalidCommand(format!(
-                "Unknown language '{first}'. Use .send {{channel}} {{language}} {{message}}."
-            )));
+        else {
+            return Err(RiotError::InvalidCommand(
+                "No default translation language is configured.".into(),
+            ));
         };
+        (default.clone(), default, remainder.to_string())
+    } else if first.eq_ignore_ascii_case("none") {
+        if remainder.trim().is_empty() {
+            return Err(RiotError::EmptyMessage);
+        }
+        ("none".to_string(), first.to_string(), remainder.to_string())
+    } else if let Some(language) = crate::translate::resolve_target_language(provider, first) {
+        if remainder.trim().is_empty() {
+            return Err(RiotError::EmptyMessage);
+        }
+        (language, first.to_string(), remainder.to_string())
+    } else if let Some(default) = default_language
+        .and_then(|value| crate::translate::resolve_target_language(provider, value))
+    {
+        (default.clone(), default, after_channel.to_string())
+    } else {
+        return Err(RiotError::InvalidCommand(format!(
+            "Unknown language '{first}'. Use .send {{channel}} {{language}} {{message}}."
+        )));
+    };
 
     Ok(TranslationCommand {
         channel,
@@ -525,6 +544,39 @@ mod tests {
         assert_eq!(command.language, "zh-TW");
         assert_eq!(command.message, "hello everyone");
         assert!(parse(".send party hello everyone").is_err());
+    }
+
+    #[test]
+    fn dot_send_none_is_an_explicit_no_translation_mode() {
+        let command = parse_translation_command_with_fallback(
+            ".send team none keep this exact text",
+            "google",
+            Some("ko"),
+        )
+        .unwrap();
+
+        assert_eq!(command.channel, ChatChannel::Team);
+        assert_eq!(command.language, "none");
+        assert_eq!(command.language_input, "none");
+        assert_eq!(command.message, "keep this exact text");
+    }
+
+    #[test]
+    fn custom_fallback_language_preserves_a_message_starting_with_none() {
+        let command = CustomBotCommand {
+            trigger: "pass".into(),
+            action: "send".into(),
+            channel: "team".into(),
+            language: String::new(),
+            message: "none shall pass".into(),
+            count: 0,
+        };
+        let expanded = expand_custom_command(".pass", &[command]).unwrap();
+        let parsed =
+            parse_translation_command_with_fallback(&expanded, "google", Some("ko")).unwrap();
+
+        assert_eq!(parsed.language, "ko");
+        assert_eq!(parsed.message, "none shall pass");
     }
 
     #[test]

@@ -682,28 +682,39 @@ async fn prepare_translation_command(
             .ok_or(RiotError::ChannelUnavailable { channel })?;
         (rest_cid, live_cid)
     };
-    let translated = crate::translate::translate_text(
-        &parsed.message,
-        &config.provider,
-        "auto",
-        &parsed.language,
-        &config.deepl_api_key,
-    )
-    .await
-    .map_err(RiotError::InvalidCommand)?;
+    let (body, target_language) = if let Some(body) = no_translation_body(parsed) {
+        (body.to_string(), "none".to_string())
+    } else {
+        let translated = crate::translate::translate_text(
+            &parsed.message,
+            &config.provider,
+            "auto",
+            &parsed.language,
+            &config.deepl_api_key,
+        )
+        .await
+        .map_err(RiotError::InvalidCommand)?;
+        (translated.text, translated.target_language)
+    };
 
-    let body = translated.text.clone();
     Ok(InternalPreparedTranslation {
         outcome: TranslationOutcome {
             channel,
-            language: translated.target_language,
+            language: target_language,
             original: parsed.message.clone(),
-            translated: translated.text,
+            translated: body.clone(),
         },
         rest_cid,
         live_cid,
         body,
     })
+}
+
+fn no_translation_body(parsed: &TranslationCommand) -> Option<&str> {
+    parsed
+        .language
+        .eq_ignore_ascii_case("none")
+        .then_some(parsed.message.as_str())
 }
 
 fn effective_send_channel(channel: ChatChannel) -> ChatChannel {
@@ -1873,6 +1884,18 @@ mod tests {
             translated: "bonjour tout le monde".into(),
         });
         assert_eq!(reply, "Sent to All (fr): bonjour tout le monde");
+    }
+
+    #[test]
+    fn none_language_uses_the_original_message_without_translation() {
+        let parsed = TranslationCommand {
+            channel: ChatChannel::All,
+            language: "none".into(),
+            language_input: "none".into(),
+            message: "keep this exact text".into(),
+        };
+
+        assert_eq!(no_translation_body(&parsed), Some("keep this exact text"));
     }
 
     #[test]
