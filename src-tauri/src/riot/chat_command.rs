@@ -22,7 +22,6 @@ use serde::{Deserialize, Serialize};
 
 pub const HISTORY_TRANSLATE_MAX: usize = 10;
 pub const HISTORY_TRANSLATE_DEFAULT: usize = 1;
-const DEFAULT_LANGUAGE_MARKER: &str = "__valoutils_default_language__";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CustomBotCommand {
@@ -89,9 +88,7 @@ pub fn expand_custom_command(input: &str, commands: &[CustomBotCommand]) -> Opti
             };
             let language = command.language.trim();
             if language.is_empty() {
-                Some(format!(
-                    ".send {channel} {DEFAULT_LANGUAGE_MARKER} {message}"
-                ))
+                Some(format!(".send {channel} none {message}"))
             } else {
                 Some(format!(".send {channel} {language} {message}"))
             }
@@ -304,19 +301,7 @@ fn parse_dot_send(
     }
 
     let (first, remainder) = split_first_token(after_channel);
-    let (language, language_input, message) = if first == DEFAULT_LANGUAGE_MARKER {
-        if remainder.trim().is_empty() {
-            return Err(RiotError::EmptyMessage);
-        }
-        let Some(default) = default_language
-            .and_then(|value| crate::translate::resolve_target_language(provider, value))
-        else {
-            return Err(RiotError::InvalidCommand(
-                "No default translation language is configured.".into(),
-            ));
-        };
-        (default.clone(), default, remainder.to_string())
-    } else if first.eq_ignore_ascii_case("none") {
+    let (language, language_input, message) = if first.eq_ignore_ascii_case("none") {
         if remainder.trim().is_empty() {
             return Err(RiotError::EmptyMessage);
         }
@@ -562,7 +547,7 @@ mod tests {
     }
 
     #[test]
-    fn custom_fallback_language_preserves_a_message_starting_with_none() {
+    fn blank_custom_language_is_none_and_preserves_a_message_starting_with_none() {
         let command = CustomBotCommand {
             trigger: "pass".into(),
             action: "send".into(),
@@ -575,7 +560,7 @@ mod tests {
         let parsed =
             parse_translation_command_with_fallback(&expanded, "google", Some("ko")).unwrap();
 
-        assert_eq!(parsed.language, "ko");
+        assert_eq!(parsed.language, "none");
         assert_eq!(parsed.message, "none shall pass");
     }
 

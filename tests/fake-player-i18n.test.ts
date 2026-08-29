@@ -98,4 +98,8 @@ describe("FakePlayer localization", () => {
 		expect(page).not.toContain(">Launch</button>");
 		expect(page).not.toContain("No relay messages yet.");
 	});
+
+	test("blank custom-command language is saved as none", () => {
+		expect(page).toContain('language: draft.language.trim() || "none"');
+	});
 });

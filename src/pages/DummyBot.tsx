@@ -103,6 +103,7 @@ const DummyBot = () => {
 			{
 				...draft,
 				trigger,
+				language: draft.language.trim() || "none",
 				message: draft.message.trim(),
 				count: Math.max(1, Number(draft.count) || 1),
 			},
