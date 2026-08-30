@@ -104,6 +104,7 @@ pub fn config_get_all(store: State<ConfigStore>) -> String {
         "presenceMode": get_or("presenceMode", json!("offline")),
         "presenceStartup": get_or("presenceStartup", json!("last")),
         "presenceMucEnabled": get_or("presenceMucEnabled", json!(true)),
+        "presenceCert": get_or("presenceCert", json!("deceive")),
         "translatorProvider": get_or("translatorProvider", json!("google")),
         "translatorSourceLanguage": get_or("translatorSourceLanguage", json!("auto")),
         "translatorTargetLanguage": get_or("translatorTargetLanguage", json!("en")),

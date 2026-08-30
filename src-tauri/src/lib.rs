@@ -3,6 +3,7 @@
 
 mod api_docs;
 mod aptabase;
+mod chat_certs;
 mod client_config;
 mod commands;
 mod fake_player;
@@ -44,6 +45,7 @@ pub fn run() {
             config_defaults.insert("presenceMode".into(), json!("offline"));
             config_defaults.insert("presenceStartup".into(), json!("last"));
             config_defaults.insert("presenceMucEnabled".into(), json!(true));
+            config_defaults.insert("presenceCert".into(), json!("deceive"));
             config_defaults.insert("autoUpdate".into(), json!(true));
             config_defaults.insert("translatorProvider".into(), json!("google"));
             config_defaults.insert("translatorSourceLanguage".into(), json!("auto"));
@@ -68,8 +70,19 @@ pub fn run() {
                 .get("presenceMucEnabled")
                 .and_then(|value| value.as_bool())
                 .unwrap_or(true);
-            presence_proxy::init(presence_enabled, presence_mode, presence_muc_enabled)
-                .expect("presence controller initialized once");
+            let presence_cert = config_store
+                .get("presenceCert")
+                .as_ref()
+                .and_then(|value| value.as_str())
+                .and_then(chat_certs::by_id)
+                .unwrap_or(chat_certs::DEFAULT);
+            presence_proxy::init(
+                presence_enabled,
+                presence_mode,
+                presence_muc_enabled,
+                presence_cert,
+            )
+            .expect("presence controller initialized once");
 
             let open_dev_tools =
                 matches!(config_store.get("openDevTools"), Some(v) if v == json!(true));
@@ -163,6 +176,7 @@ pub fn run() {
             commands::riot_launch::client_config_stop,
             commands::presence::presence_status_get,
             commands::presence::presence_status_set,
+            commands::presence::presence_cert_import,
             commands::matches::match_list,
             commands::matches::match_details,
             commands::matches::match_summaries,

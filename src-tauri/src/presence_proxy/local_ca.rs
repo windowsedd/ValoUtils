@@ -3,18 +3,15 @@ use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-const CACHE_FILE: &str = "localhostCert.pfx";
-const DEFAULT_PFX_URL: &str = "https://mln.cx/deceive/localhost.pfx";
+use crate::chat_certs::ChatCertIdentity;
+
+const LEGACY_CACHE_FILE: &str = "localhostCert.pfx";
 const REFRESH_BEFORE_SECONDS: i64 = 20 * 24 * 60 * 60;
 const MAX_PFX_BYTES: usize = 1024 * 1024;
 
 struct ParsedPfx {
     identity: native_tls::Identity,
     expires_at: i64,
-}
-
-fn pfx_cache_path(user_data_dir: &Path) -> PathBuf {
-    user_data_dir.join(CACHE_FILE)
 }
 
 fn needs_refresh(expires_at: i64, now: i64) -> bool {
@@ -84,13 +81,13 @@ fn pfx_leaf_expiry(_bytes: &[u8], _expected_host: &str, _now: i64) -> Result<i64
     Err("PFX identities are supported only on Windows".into())
 }
 
-fn parse_pfx_identity(bytes: &[u8]) -> Result<ParsedPfx, String> {
+fn parse_pfx_identity(bytes: &[u8], expected_host: &str) -> Result<ParsedPfx, String> {
     if bytes.is_empty() || bytes.len() > MAX_PFX_BYTES {
         return Err("The PFX certificate is empty or larger than 1 MiB".into());
     }
     let identity = native_tls::Identity::from_pkcs12(bytes, "")
         .map_err(|error| format!("Could not parse the PFX certificate: {error}"))?;
-    let expires_at = pfx_leaf_expiry(bytes, crate::client_config::LOCAL_CHAT_HOST, unix_now())?;
+    let expires_at = pfx_leaf_expiry(bytes, expected_host, unix_now())?;
     Ok(ParsedPfx {
         identity,
         expires_at,
@@ -105,16 +102,11 @@ fn build_acceptor(identity: native_tls::Identity) -> Result<tokio_native_tls::Tl
     Ok(tokio_native_tls::TlsAcceptor::from(acceptor))
 }
 
-fn pfx_url() -> String {
+fn pfx_url(identity: &ChatCertIdentity) -> String {
     std::env::var("VALOUTILS_PFX_URL")
         .ok()
         .filter(|value| value.starts_with("https://"))
-        .unwrap_or_else(|| DEFAULT_PFX_URL.to_string())
-}
-
-async fn download_pfx() -> Result<Vec<u8>, String> {
-    let url = pfx_url();
-    download_pfx_from(&url).await
+        .unwrap_or_else(|| identity.download_url.to_string())
 }
 
 async fn download_pfx_from(url: &str) -> Result<Vec<u8>, String> {
@@ -218,8 +210,7 @@ fn resolves_only_to_loopback(addresses: &[IpAddr]) -> bool {
             .all(|address| matches!(address, IpAddr::V4(ip) if ip.is_loopback()))
 }
 
-async fn verify_loopback_hostname() -> Result<(), String> {
-    let host = crate::client_config::LOCAL_CHAT_HOST;
+async fn verify_loopback_hostname(host: &str) -> Result<(), String> {
     let addresses = tokio::net::lookup_host((host, 0))
         .await
         .map_err(|error| format!("Could not resolve {host}: {error}"))?
@@ -238,13 +229,31 @@ async fn verify_loopback_hostname() -> Result<(), String> {
     ))
 }
 
-pub(super) async fn load_acceptor() -> Result<tokio_native_tls::TlsAcceptor, String> {
-    verify_loopback_hostname().await?;
-    let cache_path = pfx_cache_path(&crate::store::user_data_dir());
+/// One-time migration from the single-cert layout: `localhostCert.pfx` held
+/// Deceive's identity before certificates became selectable. Renaming it into
+/// the per-host name lets existing installs skip a re-download.
+fn migrate_legacy_cache(legacy: &Path, cache: &Path) -> bool {
+    if cache.exists() || !legacy.is_file() {
+        return false;
+    }
+    fs::rename(legacy, cache).is_ok()
+}
+
+pub(super) async fn load_acceptor(
+    identity: &'static ChatCertIdentity,
+) -> Result<tokio_native_tls::TlsAcceptor, String> {
+    verify_loopback_hostname(identity.host).await?;
+    let cache_path = crate::chat_certs::cache_path(identity);
+    if identity.id == crate::chat_certs::DECEIVE.id {
+        migrate_legacy_cache(
+            &crate::store::user_data_dir().join(LEGACY_CACHE_FILE),
+            &cache_path,
+        );
+    }
     let now = unix_now();
     let cached = fs::read(&cache_path)
         .ok()
-        .and_then(|bytes| parse_pfx_identity(&bytes).ok());
+        .and_then(|bytes| parse_pfx_identity(&bytes, identity.host).ok());
 
     if let Some(cached) = cached.as_ref() {
         if !needs_refresh(cached.expires_at, now) {
@@ -252,8 +261,9 @@ pub(super) async fn load_acceptor() -> Result<tokio_native_tls::TlsAcceptor, Str
         }
     }
 
-    match download_pfx().await.and_then(|bytes| {
-        let parsed = parse_pfx_identity(&bytes)?;
+    let download_url = pfx_url(identity);
+    match download_pfx_from(&download_url).await.and_then(|bytes| {
+        let parsed = parse_pfx_identity(&bytes, identity.host)?;
         if parsed.expires_at <= now {
             return Err("The downloaded XMPP PFX certificate is expired".into());
         }
@@ -270,9 +280,28 @@ pub(super) async fn load_acceptor() -> Result<tokio_native_tls::TlsAcceptor, Str
                     return build_acceptor(cached.identity);
                 }
             }
-            Err(refresh_error)
+            Err(format!(
+                "{refresh_error}. You can also import a PFX for {} in Settings, or place one at {}.",
+                identity.host,
+                cache_path.display()
+            ))
         }
     }
+}
+
+/// Validates and installs a user-provided PFX for `identity` (Settings
+/// import). Returns the leaf certificate's expiry as a Unix timestamp.
+/// Re-exported through `presence_proxy`; `local_ca` itself stays private.
+pub fn import_pfx(
+    bytes: &[u8],
+    identity: &'static ChatCertIdentity,
+) -> Result<i64, String> {
+    let parsed = parse_pfx_identity(bytes, identity.host)?;
+    if parsed.expires_at <= unix_now() {
+        return Err("The PFX certificate is expired".into());
+    }
+    write_cache(&crate::chat_certs::cache_path(identity), bytes)?;
+    Ok(parsed.expires_at)
 }
 
 #[cfg(test)]
@@ -322,14 +351,8 @@ mod tests {
     }
 
     #[test]
-    fn pfx_cache_is_kept_in_valoutils_user_data() {
-        let base = PathBuf::from(r"C:\Users\tester\AppData\Roaming\ValoUtils");
-        assert_eq!(pfx_cache_path(&base), base.join("localhostCert.pfx"));
-    }
-
-    #[test]
     fn rejects_bytes_that_are_not_a_pkcs12_identity() {
-        assert!(parse_pfx_identity(b"not a pfx").is_err());
+        assert!(parse_pfx_identity(b"not a pfx", crate::chat_certs::DECEIVE.host).is_err());
     }
 
     #[test]
@@ -354,11 +377,52 @@ mod tests {
         assert!(!resolves_only_to_loopback(&[]));
     }
 
+    #[test]
+    fn migrates_the_legacy_cache_only_once_and_only_if_present() {
+        let base = std::env::temp_dir().join(format!(
+            "valoutils-local-ca-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&base).unwrap();
+        let legacy = base.join("localhostCert.pfx");
+        let cache = base.join("deceive-localhost.molenzwiebel.xyz.pfx");
+
+        // No legacy file: no-op.
+        assert!(!migrate_legacy_cache(&legacy, &cache));
+        // Legacy present: renamed into place.
+        fs::write(&legacy, b"pfx-bytes").unwrap();
+        assert!(migrate_legacy_cache(&legacy, &cache));
+        assert_eq!(fs::read(&cache).unwrap(), b"pfx-bytes");
+        assert!(!legacy.exists());
+        // Already migrated: no-op, and never clobbers the cache.
+        fs::write(&legacy, b"new-bytes").unwrap();
+        assert!(!migrate_legacy_cache(&legacy, &cache));
+        assert_eq!(fs::read(&cache).unwrap(), b"pfx-bytes");
+
+        fs::remove_dir_all(&base).unwrap();
+    }
+
     #[tokio::test]
     #[ignore = "requires the public Deceive certificate service"]
     async fn downloads_and_parses_the_default_pfx() {
-        let bytes = download_pfx_from(DEFAULT_PFX_URL).await.unwrap();
-        let parsed = parse_pfx_identity(&bytes).unwrap();
+        let bytes = download_pfx_from(crate::chat_certs::DECEIVE.download_url)
+            .await
+            .unwrap();
+        let parsed = parse_pfx_identity(&bytes, crate::chat_certs::DECEIVE.host).unwrap();
+        assert!(parsed.expires_at > unix_now());
+    }
+
+    #[tokio::test]
+    #[ignore = "requires valoutils-tools.windowsed.me to serve the PFX"]
+    async fn downloads_and_parses_the_valoutils_pfx() {
+        let bytes = download_pfx_from(crate::chat_certs::VALOUTILS.download_url)
+            .await
+            .unwrap();
+        let parsed = parse_pfx_identity(&bytes, crate::chat_certs::VALOUTILS.host).unwrap();
         assert!(parsed.expires_at > unix_now());
     }
 }

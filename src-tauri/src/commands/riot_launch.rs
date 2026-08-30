@@ -116,6 +116,8 @@ pub async fn client_config_status() -> Result<String, ()> {
         "presenceMode": presence.mode,
         "presenceEnabled": presence.enabled,
         "presenceMucEnabled": presence.connect_to_muc,
+        "certId": presence.cert_id,
+        "certHost": presence.cert_host,
         "lastWarning": presence.last_warning,
     })
     .to_string())

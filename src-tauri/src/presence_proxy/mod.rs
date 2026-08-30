@@ -2,8 +2,10 @@ mod local_ca;
 mod relay;
 mod xml;
 
+pub use local_ca::import_pfx;
 pub use relay::{start, stop};
 
+use crate::chat_certs::ChatCertIdentity;
 use crate::riot::models::ChatChannel;
 use serde::Serialize;
 use serde_json::json;
@@ -64,10 +66,14 @@ pub struct PresenceSnapshot {
     pub active_connections: usize,
     pub upstream_ready: bool,
     pub last_warning: Option<String>,
+    pub cert_id: &'static str,
+    pub cert_host: &'static str,
+    pub cert_configured: bool,
 }
 
 struct Inner {
     masking: MaskingState,
+    cert: &'static ChatCertIdentity,
     relay_port: Option<u16>,
     active_connections: usize,
     upstream: Option<UpstreamTarget>,
@@ -81,7 +87,12 @@ pub struct PresenceController {
 }
 
 impl PresenceController {
-    pub fn new(enabled: bool, mode: PresenceMode, connect_to_muc: bool) -> Self {
+    pub fn new(
+        enabled: bool,
+        mode: PresenceMode,
+        connect_to_muc: bool,
+        cert: &'static ChatCertIdentity,
+    ) -> Self {
         let (state_tx, _) = broadcast::channel(16);
         Self {
             inner: Mutex::new(Inner {
@@ -90,6 +101,7 @@ impl PresenceController {
                     mode,
                     connect_to_muc,
                 },
+                cert,
                 relay_port: None,
                 active_connections: 0,
                 upstream: None,
@@ -168,6 +180,12 @@ impl PresenceController {
     pub fn set_upstream(&self, target: UpstreamTarget) {
         self.inner.lock().unwrap().upstream = Some(target);
     }
+    pub fn cert(&self) -> &'static ChatCertIdentity {
+        self.inner.lock().unwrap().cert
+    }
+    fn set_cert(&self, cert: &'static ChatCertIdentity) {
+        self.inner.lock().unwrap().cert = cert;
+    }
     pub fn upstream(&self) -> Option<UpstreamTarget> {
         self.inner.lock().unwrap().upstream.clone()
     }
@@ -204,6 +222,9 @@ impl PresenceController {
             active_connections: inner.active_connections,
             upstream_ready: inner.upstream.is_some(),
             last_warning: inner.last_warning.clone(),
+            cert_id: inner.cert.id,
+            cert_host: inner.cert.host,
+            cert_configured: crate::chat_certs::cache_path(inner.cert).exists(),
         }
     }
 }
@@ -380,9 +401,14 @@ pub fn game_groupchat_stanza(cid: &str, body: &str) -> String {
     groupchat_stanza_with_id(cid, body, &format!("{millis}:1"))
 }
 
-pub fn init(enabled: bool, mode: PresenceMode, connect_to_muc: bool) -> Result<(), &'static str> {
+pub fn init(
+    enabled: bool,
+    mode: PresenceMode,
+    connect_to_muc: bool,
+    cert: &'static ChatCertIdentity,
+) -> Result<(), &'static str> {
     CONTROLLER
-        .set(PresenceController::new(enabled, mode, connect_to_muc))
+        .set(PresenceController::new(enabled, mode, connect_to_muc, cert))
         .map_err(|_| "presence controller already initialized")
 }
 pub fn controller() -> &'static PresenceController {
@@ -412,6 +438,41 @@ pub fn change_connect_to_muc(value: bool) {
     controller().set_connect_to_muc(value);
     persist_and_emit();
 }
+
+/// Switches the chat certificate identity. If the relay is running it is
+/// restarted so the TLS acceptor matches the new identity; the Riot client
+/// picks up the rewritten chat host on its next client-config fetch.
+pub async fn change_cert(id: &str) -> Result<(), String> {
+    let identity = crate::chat_certs::by_id(id)
+        .ok_or_else(|| "Chat certificate must be deceive or valoutils.".to_string())?;
+    let was_running = controller().relay_port().is_some();
+    if was_running {
+        relay::stop().await;
+    }
+    controller().set_cert(identity);
+    if was_running {
+        if let Err(error) = relay::start().await {
+            controller().set_warning(Some(error.clone()));
+            persist_and_emit();
+            return Err(error);
+        }
+        controller().set_warning(Some(
+            "Chat certificate switched. Restart the Riot Client so it reconnects with the new certificate.".into(),
+        ));
+    }
+    persist_and_emit();
+    Ok(())
+}
+
+/// Restarts the relay when it is running so a freshly imported certificate
+/// goes live. No-op when the relay is not running.
+pub async fn reload_relay_certificate() -> Result<(), String> {
+    if controller().relay_port().is_none() {
+        return Ok(());
+    }
+    relay::stop().await;
+    relay::start().await.map(|_| ())
+}
 pub fn apply_command(command: crate::fake_player::FakePlayerCommand) -> String {
     let reply = controller().apply_command(command);
     if !matches!(
@@ -430,10 +491,23 @@ fn persist_and_emit() {
             config.set("presenceEnabled", json!(state.enabled));
             config.set("presenceMode", json!(state.mode.as_str()));
             config.set("presenceMucEnabled", json!(state.connect_to_muc));
+            config.set("presenceCert", json!(controller().cert().id));
         }
-        let payload = json!({ "success": true, "presence": controller().snapshot() }).to_string();
-        let _ = app.emit("presence:status-changed", payload);
+        emit_status(app);
     }
+}
+
+/// Re-broadcasts the presence snapshot (e.g. after an import changed
+/// certificate availability) without touching stored settings.
+pub fn notify_status_changed() {
+    if let Some(app) = APP_HANDLE.get() {
+        emit_status(app);
+    }
+}
+
+fn emit_status(app: &AppHandle) {
+    let payload = json!({ "success": true, "presence": controller().snapshot() }).to_string();
+    let _ = app.emit("presence:status-changed", payload);
 }
 
 #[cfg(test)]
@@ -494,14 +568,18 @@ mod tests {
     }
     #[test]
     fn starts_offline_without_connections() {
-        let state = PresenceController::new(false, PresenceMode::Offline, true).snapshot();
+        let state =
+            PresenceController::new(false, PresenceMode::Offline, true, crate::chat_certs::DEFAULT)
+                .snapshot();
         assert_eq!(state.mode, PresenceMode::Offline);
         assert_eq!(state.active_connections, 0);
         assert!(!state.relay_running);
+        assert_eq!(state.cert_id, "deceive");
     }
     #[test]
     fn status_commands_enable_masking_and_broadcast_complete_state() {
-        let controller = PresenceController::new(false, PresenceMode::Offline, true);
+        let controller =
+            PresenceController::new(false, PresenceMode::Offline, true, crate::chat_certs::DEFAULT);
         let mut updates = controller.subscribe_state();
         assert_eq!(
             controller.apply_command(crate::fake_player::FakePlayerCommand::Mobile),
@@ -512,7 +590,8 @@ mod tests {
     }
     #[test]
     fn disable_passes_original_presence_through() {
-        let controller = PresenceController::new(true, PresenceMode::Offline, true);
+        let controller =
+            PresenceController::new(true, PresenceMode::Offline, true, crate::chat_certs::DEFAULT);
         assert_eq!(
             controller.apply_command(crate::fake_player::FakePlayerCommand::Disable),
             "Presence masking is now disabled."

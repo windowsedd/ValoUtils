@@ -224,6 +224,10 @@ Riot chat is XMPP over raw TLS to `<affinity>.chat.si.riotgames.com:5223`, with 
 3. Call it from the frontend via `window.Main.send("my:channel", ...)` — the bridge converts the name to `my_channel` automatically. Reply with `{ success: true, ... }` or `{ error: string }`
 4. For backend-initiated pushes, use `app.emit("my:event", payload)` and `window.Main.on("my:event", ...)` — no command needed
 
+### Chat certificate identities
+
+The local chat relay's TLS identity is selectable (config key `presenceCert`, default `deceive`). Built-in identities live in `src-tauri/src/chat_certs.rs`; each has a host, a PFX download URL, and its own cache file `%APPDATA%\ValoUtils\<host>.pfx` (legacy `localhostCert.pfx` is migrated into the deceive slot). `presence:status-set "cert" <id>` switches and restarts the relay; `presence_cert_import` opens a native picker and installs a PFX for an identity. The selected host drives the `chat.host`/`chat.affinities` rewrite in `client_config.rs` and the SAN/loopback validation — the host must resolve only to `127.0.0.1` (DNS-only A record, no AAAA), so a hostname serving the PFX publicly (e.g. behind Cloudflare) cannot also be the chat host.
+
 ### Add a new profile action button
 
 - Follow the pattern in `src/pages/SettingsProfiles.tsx`

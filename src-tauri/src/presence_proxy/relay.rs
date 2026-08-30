@@ -78,7 +78,10 @@ pub async fn start() -> Result<u16, String> {
 
 #[cfg(not(test))]
 async fn local_acceptor() -> Result<TlsAcceptor, String> {
-    crate::presence_proxy::local_ca::load_acceptor().await
+    crate::presence_proxy::local_ca::load_acceptor(
+        crate::presence_proxy::controller().cert(),
+    )
+    .await
 }
 
 #[cfg(test)]
@@ -741,7 +744,7 @@ mod tests {
 
     #[tokio::test]
     async fn starts_on_an_ephemeral_loopback_port() {
-        let _ = presence_proxy::init(true, PresenceMode::Offline, true);
+        let _ = presence_proxy::init(true, PresenceMode::Offline, true, crate::chat_certs::DEFAULT);
         let port = start().await.unwrap();
         assert_ne!(port, 0);
         assert_eq!(presence_proxy::controller().relay_port(), Some(port));

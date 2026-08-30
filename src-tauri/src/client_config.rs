@@ -25,7 +25,6 @@ use std::sync::{Mutex, OnceLock};
 
 const UPSTREAM: &str = "https://clientconfig.rpg.riotgames.com";
 const PAS_CHAT_URL: &str = "https://riot-geo.pas.si.riotgames.com/pas/v1/service/chat";
-pub const LOCAL_CHAT_HOST: &str = "deceive-localhost.molenzwiebel.xyz";
 pub const DEFAULT_PORT: u16 = 8000;
 pub const HEALTH_PATH: &str = "/__valoutils/health";
 
@@ -204,6 +203,7 @@ fn patch_config_json(
     body: &[u8],
     relay_port: u16,
     affinity: Option<&str>,
+    local_chat_host: &str,
 ) -> Result<PatchedConfig, String> {
     let mut json: Value = serde_json::from_slice(body).map_err(|e| e.to_string())?;
     let port = json
@@ -228,14 +228,14 @@ fn patch_config_json(
             affinity: affinity.map(str::to_owned),
         });
 
-    json["chat.host"] = json!(LOCAL_CHAT_HOST);
+    json["chat.host"] = json!(local_chat_host);
     json["chat.port"] = json!(relay_port);
     if let Some(values) = json
         .get_mut("chat.affinities")
         .and_then(Value::as_object_mut)
     {
         for value in values.values_mut() {
-            *value = json!(LOCAL_CHAT_HOST);
+            *value = json!(local_chat_host);
         }
     }
 
@@ -282,20 +282,23 @@ async fn patch_response(
     body: Vec<u8>,
     authorization: Option<&HeaderValue>,
 ) -> Vec<u8> {
-    let Some(relay_port) = crate::presence_proxy::controller().relay_port() else {
+    let controller = crate::presence_proxy::controller();
+    let Some(relay_port) = controller.relay_port() else {
         return body;
     };
+    let local_chat_host = controller.cert().host;
     let affinity = match authorization {
         Some(value) => match resolve_affinity(value).await {
             Ok(affinity) => Some(affinity),
             Err(error) => {
-                crate::presence_proxy::controller().set_warning(Some(error));
+                controller.set_warning(Some(error));
                 None
             }
         },
         None => None,
     };
-    let Ok(patched) = patch_config_json(&body, relay_port, affinity.as_deref()) else {
+    let Ok(patched) = patch_config_json(&body, relay_port, affinity.as_deref(), local_chat_host)
+    else {
         return body;
     };
     if let Some(upstream) = patched.upstream {
@@ -330,16 +333,14 @@ mod tests {
             "chat.affinities":{"na1":"na2.chat.si.riotgames.com"},
             "unrelated":"kept"
         }"#;
-        let result = patch_config_json(input, 43123, Some("na1")).unwrap();
+        let result =
+            patch_config_json(input, 43123, Some("na1"), crate::chat_certs::DECEIVE.host).unwrap();
 
-        assert_eq!(
-            result.json["chat.host"],
-            "deceive-localhost.molenzwiebel.xyz"
-        );
+        assert_eq!(result.json["chat.host"], crate::chat_certs::DECEIVE.host);
         assert_eq!(result.json["chat.port"], 43123);
         assert_eq!(
             result.json["chat.affinities"]["na1"],
-            "deceive-localhost.molenzwiebel.xyz"
+            crate::chat_certs::DECEIVE.host
         );
         assert!(result.json.get("chat.allow_bad_cert.enabled").is_none());
         assert_eq!(result.json["unrelated"], "kept");
@@ -354,8 +355,31 @@ mod tests {
     }
 
     #[test]
+    fn rewrites_the_chat_host_to_the_selected_certificate_identity() {
+        let input = br#"{
+            "chat.host":"fallback.chat.si.riotgames.com",
+            "chat.port":5223,
+            "chat.affinities":{"eu1":"eu2.chat.si.riotgames.com"}
+        }"#;
+        let result = patch_config_json(input, 43123, None, crate::chat_certs::VALOUTILS.host)
+            .unwrap();
+
+        assert_eq!(result.json["chat.host"], crate::chat_certs::VALOUTILS.host);
+        assert_eq!(
+            result.json["chat.affinities"]["eu1"],
+            crate::chat_certs::VALOUTILS.host
+        );
+    }
+
+    #[test]
     fn malformed_body_is_not_patched() {
-        assert!(patch_config_json(b"temporary upstream error", 43123, None).is_err());
+        assert!(patch_config_json(
+            b"temporary upstream error",
+            43123,
+            None,
+            crate::chat_certs::DECEIVE.host
+        )
+        .is_err());
     }
 
     #[test]

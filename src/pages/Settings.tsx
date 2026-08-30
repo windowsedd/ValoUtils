@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Toast } from "@heroui/react";
 import { useTranslation } from "react-i18next";
 import { FaGlobe, FaRocket, FaCode, FaChartBar, FaLanguage, FaKey, FaArrowUpRightFromSquare, FaCopy, FaCheck, FaGear, FaEye, FaEyeSlash, FaRobot, FaBook, FaComments } from "react-icons/fa6";
 import { PageHeader, SectionCard, pageBodyClass } from "@/components/section-card";
@@ -19,6 +20,11 @@ const LANGUAGES = [
 	{ code: "zh-TW", label: "繁中", name: "Traditional Chinese" },
 ];
 
+const CERT_OPTIONS: { id: AppConfig["presenceCert"]; host: string }[] = [
+	{ id: "deceive", host: "deceive-localhost.molenzwiebel.xyz" },
+	{ id: "valoutils", host: "valoutils-localhost.windowsed.me" },
+];
+
 type AppConfig = {
 	autoUpdate: boolean;
 	openDevTools: boolean;
@@ -26,6 +32,7 @@ type AppConfig = {
 	presenceMode: "online" | "offline" | "mobile";
 	presenceStartup: "online" | "offline" | "mobile" | "last";
 	presenceMucEnabled: boolean;
+	presenceCert: "deceive" | "valoutils";
 	translatorProvider: TranslationProvider;
 	translatorSourceLanguage: string;
 	translatorTargetLanguage: string;
@@ -93,6 +100,7 @@ const Settings = () => {
 	const [clientPassword, setClientPassword] = useState<string | null>(null);
 	const [copied, setCopied] = useState<string | null>(null);
 	const [revealPassword, setRevealPassword] = useState(false);
+	const [certImporting, setCertImporting] = useState(false);
 	const [view, setView] = useState<"settings" | "api-reference">("settings");
 	const [appConfig, setAppConfig] = useState<AppConfig>({
 		autoUpdate: true,
@@ -101,6 +109,7 @@ const Settings = () => {
 		presenceMode: "offline",
 		presenceStartup: "last",
 		presenceMucEnabled: true,
+		presenceCert: "deceive",
 		translatorProvider: "google",
 		translatorSourceLanguage: "auto",
 		translatorTargetLanguage: "en",
@@ -220,8 +229,35 @@ const Settings = () => {
 			...(action === "disable" ? { presenceEnabled: false } : {}),
 			...(action === "muc" ? { presenceMucEnabled: Boolean(value) } : {}),
 			...(action === "startup" ? { presenceStartup: value as AppConfig["presenceStartup"] } : {}),
+			...(action === "cert" ? { presenceCert: value as AppConfig["presenceCert"] } : {}),
 			...(["online", "offline", "mobile"].includes(action) ? { presenceEnabled: true, presenceMode: action as AppConfig["presenceMode"] } : {}),
 		}));
+	};
+
+	const importChatCert = () => {
+		setCertImporting(true);
+		return new Promise<void>((resolve, reject) => {
+			window.Main.send("presence:cert-import", appConfig.presenceCert);
+			window.Main.on("presence:cert-import", (msg: string) => {
+				window.Main.removeAllListeners("presence:cert-import");
+				setCertImporting(false);
+				try {
+					const data = JSON.parse(msg) as { success: boolean; cancelled?: boolean; error?: string; expiresAt?: number };
+					if (data.success) {
+						if (data.expiresAt) {
+							Toast.toast.info(`Certificate imported. Valid until ${new Date(data.expiresAt * 1000).toLocaleDateString()}.`);
+						}
+						resolve();
+					} else if (!data.cancelled) {
+						reject(new Error(data.error || "Could not import the certificate."));
+					} else {
+						resolve();
+					}
+				} catch {
+					reject(new Error("Could not import the certificate."));
+				}
+			});
+		});
 	};
 
 	if (view === "api-reference") return <SwaggerPage onBack={() => setView("settings")} />;
@@ -414,6 +450,31 @@ const Settings = () => {
 				<SettingRow icon={<FaRobot />} label="Presence masking" description="Allow Bot commands to rewrite your Riot presence." right={<Toggle checked={appConfig.presenceEnabled} onChange={v => setPresence(v ? "enable" : "disable")} />} />
 				<SettingRow icon={<FaRobot />} label="Lobby / MUC forwarding" description="Forward lobby presence while masking is active." right={<Toggle checked={appConfig.presenceMucEnabled} onChange={v => setPresence("muc", v)} />} />
 				<SettingRow icon={<FaRobot />} label="Startup presence" description="Choose the status used when the relay starts." right={<select value={appConfig.presenceStartup} onChange={event => setPresence("startup", event.target.value)} className="h-7 rounded-[6px] border border-(--border) bg-(--control) px-2 text-[11px] text-(--text-primary) outline-none focus:border-(--accent) focus:shadow-[0_0_0_2px_var(--accent-soft)]"><option value="last">Remember last</option><option value="online">Online</option><option value="offline">Offline</option><option value="mobile">Mobile</option></select>} />
+				<SettingRow
+					icon={<FaRobot />}
+					label="Chat certificate"
+					description={`TLS identity the local chat relay presents. Active host: ${CERT_OPTIONS.find(option => option.id === appConfig.presenceCert)?.host ?? appConfig.presenceCert}.`}
+					right={
+						<div className="flex items-center gap-2">
+							<select
+								value={appConfig.presenceCert}
+								onChange={event => setPresence("cert", event.target.value)}
+								className="h-7 rounded-[6px] border border-(--border) bg-(--control) px-2 text-[11px] text-(--text-primary) outline-none focus:border-(--accent) focus:shadow-[0_0_0_2px_var(--accent-soft)]"
+							>
+								{CERT_OPTIONS.map(option => (
+									<option key={option.id} value={option.id}>{option.host}</option>
+								))}
+							</select>
+							<button
+								onClick={() => importChatCert().catch(error => Toast.toast.danger(error instanceof Error ? error.message : String(error)))}
+								disabled={certImporting}
+								className="h-7 rounded-[6px] border border-(--border) bg-(--control) px-3 text-[11px] font-medium text-(--text-primary) hover:bg-(--surface-hover) disabled:opacity-40 disabled:cursor-not-allowed transition-[background-color,border-color,color] duration-150"
+							>
+								{certImporting ? "Importing…" : "Import PFX"}
+							</button>
+						</div>
+					}
+				/>
 				<SettingRow
 					icon={<FaBook />}
 					label={t("nav.apiReference")}

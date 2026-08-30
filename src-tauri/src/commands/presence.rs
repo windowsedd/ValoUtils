@@ -2,7 +2,7 @@ use crate::presence_proxy::PresenceMode;
 use crate::store::ConfigStore;
 use serde_json::json;
 use serde_json::Value;
-use tauri::State;
+use tauri::{AppHandle, State};
 
 fn mode_arg(args: &[Value]) -> Result<PresenceMode, String> {
     args.first()
@@ -68,8 +68,17 @@ pub async fn presence_status_set(
                 Err("Startup must be online, offline, mobile, or last.".into())
             }
         }
+        "cert" => {
+            let id = args
+                .get(1)
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            crate::presence_proxy::change_cert(&id).await
+        }
         _ => Err(
-            "Presence action must be online, offline, mobile, enable, disable, muc, or startup."
+            "Presence action must be online, offline, mobile, enable, disable, muc, startup, or cert."
                 .into(),
         ),
     };
@@ -77,6 +86,65 @@ pub async fn presence_status_set(
         return Ok(json!({ "success": false, "error": error }).to_string());
     }
     Ok(response())
+}
+
+/// Opens a native file picker, validates the chosen PFX against the requested
+/// identity's chat host, and installs it as that identity's cached
+/// certificate. Reports the leaf expiry (Unix seconds) on success. When the
+/// imported identity is the selected one, a running relay is restarted so the
+/// new certificate goes live.
+#[tauri::command]
+pub async fn presence_cert_import(args: Vec<Value>, app: AppHandle) -> Result<String, ()> {
+    use tauri_plugin_dialog::DialogExt;
+
+    let id = args.first().and_then(Value::as_str).unwrap_or("");
+    let identity = crate::chat_certs::by_id(id)
+        .unwrap_or_else(|| crate::presence_proxy::controller().cert());
+
+    let picked = app
+        .dialog()
+        .file()
+        .set_title("Import chat certificate (PFX)")
+        .add_filter("PFX certificate", &["pfx"])
+        .blocking_pick_file();
+    let Some(file_path) = picked else {
+        return Ok(json!({ "success": false, "cancelled": true }).to_string());
+    };
+    let Some(path) = file_path.as_path() else {
+        return Ok(
+            json!({ "success": false, "error": "The selected file path is not usable." })
+                .to_string(),
+        );
+    };
+    let bytes = match std::fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            return Ok(json!({
+                "success": false,
+                "error": format!("Could not read the PFX file: {error}"),
+            })
+            .to_string())
+        }
+    };
+
+    match crate::presence_proxy::import_pfx(&bytes, identity) {
+        Ok(expires_at) => {
+            if crate::presence_proxy::controller().cert().id == identity.id {
+                if let Err(error) = crate::presence_proxy::reload_relay_certificate().await {
+                    crate::presence_proxy::controller().set_warning(Some(error));
+                }
+            }
+            crate::presence_proxy::notify_status_changed();
+            Ok(json!({
+                "success": true,
+                "certId": identity.id,
+                "certHost": identity.host,
+                "expiresAt": expires_at,
+            })
+            .to_string())
+        }
+        Err(error) => Ok(json!({ "success": false, "error": error }).to_string()),
+    }
 }
 
 #[cfg(test)]
