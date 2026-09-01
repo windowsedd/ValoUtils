@@ -9,128 +9,129 @@
   <img alt="Stack" src="https://img.shields.io/badge/Tauri%202-React%2019-FF4655?style=flat-square&labelColor=0E1419">
 </p>
 
-ValoUtils is a Windows desktop companion for VALORANT. It saves and restores full settings profiles, shows your rank and match history with per-round scoreboards, tracks your friends list, and parses local replay files — all without a login. It reads your auth tokens straight from the Riot Client's lockfile on your own machine.
+<p align="center">
+  <strong>English</strong> · <a href="README.zh-TW.md">繁體中文</a>
+</p>
 
----
+ValoUtils is an unofficial Windows desktop companion for VALORANT. It manages complete settings profiles and brings account, match, live-game, social, store, Battle Pass, and inventory information into one app. ValoUtils uses the Riot Client session already running on your PC, so there is no separate ValoUtils account or sign-in.
 
 ## Features
 
-### Settings profiles
+### Profiles
 
-- Snapshot your current in-game settings into a named profile
-- Restore any profile back to your account in one click
-- Share a profile as a 10-character code, or import a friend's
-- Duplicate and rename profiles locally
-- Inspect a profile without applying it — general, controls, crosshair (with live SVG previews), audio, video, and the raw decoded JSON
+- Save your current VALORANT settings as named profiles and restore them later.
+- Rename, duplicate, delete, and inspect profiles without applying them.
+- Review decoded general, control, crosshair, audio, and video settings, including crosshair previews and profile comparisons.
+- Share a profile with a 10-character code that expires after 90 days, or import a code from another player.
 
-### Career & matches
+### Career and matches
 
-- Current rank, peak rank, and RR progression
-- Competitive history with expandable rows
-- Full match history with per-match scoreboards: ACS, ADR, K/D/A, headshot percentage, and resolved player names
-- Map thumbnails and agent icons inline on every row
+- View your current and peak competitive ranks, RR progress, and recent competitive updates.
+- Browse match history with map and agent artwork, score summaries, and expandable scoreboards.
+- Inspect player-level statistics including ACS, ADR, K/D/A, headshot percentage, and first bloods.
+- Open player profiles from match results for rank summaries and recent performance.
 
-### Friends
+### Live Game
 
-- Live roster with presence — who's online, in a queue, in agent select, or mid-match
-- Queue, map, score, and party size for anyone currently in a game
+- Follow your current party, pre-game lobby, or live match with automatic refreshes.
+- See teams, party groups, selected agents, competitive ranks, previous-act ranks, and recent form.
+- Keep the last useful snapshot visible through brief API outages and rate limits.
 
-### Replays
+### Friends and Chat
 
-- Parses local `.vrf` replay files in-process, no external tools
-- Extracts player positions, ability usage, and match events
-- Export as structured JSON or raw records
+- Browse your Riot friends with live presence, queue, map, score, party-size, and last-seen details.
+- Open friend profiles to review rank and recent match information.
+- Read and send direct messages, receive live presence updates, and translate messages in the app.
+- Use the chat command system for supported party, team, and all-chat actions while VALORANT is running.
 
-### Also
+### Store, Battle Pass, and Inventory
 
-- English, Korean, and Traditional Chinese
-- Auto-update on launch and hourly, signed via minisign
-- Built-in Riot API reference browser
+- Check daily offers, the featured bundle, accessories, Night Market offers, and currency balances.
+- Track current Battle Pass XP, level progress, and premium ownership.
+- Browse owned weapon skins and accessories with search and category filters.
 
----
+### Tools and quality of life
 
-## Requirements
+- Look up players by `GameName#Tag` or PUUID, review their rank and recent matches, and browse your own inventory.
+- Use the built-in Riot API reference when developing or troubleshooting integrations.
+- Run the interface in English, Korean, or Traditional Chinese.
+- Receive minisign-verified updates on launch and during hourly checks when automatic updates are enabled.
 
-- Windows 10/11 x64
-- **Riot Client must be running** — ValoUtils reads its lockfile for auth
-- **VALORANT must be closed** when restoring a profile; the Riot Client applies settings on next launch
+## Requirements and privacy
 
-No account, no login, no cloud. Profiles live in `%APPDATA%\ValoUtils`.
+- Windows 10 or Windows 11 on x64 hardware.
+- **Riot Client must be running.** ValoUtils reads the local Riot Client lockfile to authenticate requests for the signed-in account.
+- **VALORANT must be closed before restoring a profile.** The Riot Client applies the restored settings the next time the game starts.
 
----
+ValoUtils does not ask for your Riot password and does not create a cloud account. Profiles and app configuration stay under `%APPDATA%\ValoUtils` on your PC. The app communicates with Riot's local client and private game services, fetches public game assets, and sends anonymous usage events to Aptabase. Profile data is uploaded to pastes.dev only when you explicitly create a share code. When you request a chat translation, the selected text is sent to your configured Google Translate or DeepL provider.
 
 ## Installation
 
-Grab the installer from [Releases](https://github.com/windowsedd/ValoUtils/releases/latest).
+Download the latest installer from [GitHub Releases](https://github.com/windowsedd/ValoUtils/releases/latest).
 
 | File | Notes |
 | --- | --- |
-| `ValoUtils_x.x.x_x64-setup.exe` | NSIS installer, installs per-user (no admin prompt) |
+| `ValoUtils_x.x.x_x64-setup.exe` | Per-user NSIS installer; administrator access is not required. |
 
-The installer is not yet Authenticode-signed, so SmartScreen will warn on first run — choose **More info → Run anyway**. Updates after that are handled in-app.
-
----
+The installer is not currently Authenticode-signed, so Windows SmartScreen may show a warning on first launch. If you downloaded it from this repository's Releases page, select **More info → Run anyway**. Later updates are downloaded and verified by the app.
 
 ## Building from source
 
-Requires [Bun](https://bun.sh) and a stable Rust toolchain (MSVC).
+You will need [Bun](https://bun.sh), a stable Rust toolchain using the MSVC target, and the standard [Tauri prerequisites for Windows](https://v2.tauri.app/start/prerequisites/#windows).
 
 ```bash
 git clone https://github.com/windowsedd/ValoUtils.git
 cd ValoUtils
 
 bun install
-bun run build:sidecar   # required once before the first dev run or build
-
-bun run dev             # Vite dev server + cargo run, hot-reload
-bun run build           # full production build → NSIS installer
+bun run dev
+bun run build
 ```
 
-Useful during development:
+Run the frontend and Rust checks before submitting changes:
 
 ```bash
-bun run debug:replay -- <path-to-replay.vrf>   # inspect replay parser output
-cargo check                                     # from src-tauri/
-cargo clippy                                    # from src-tauri/
+bun test
+bun run lint
+
+cd src-tauri
+cargo check
+cargo clippy
+cargo test --lib
 ```
 
----
+`bun run dev` starts Vite and the Tauri development app with hot reload. `bun run build` produces the release NSIS installer.
 
 ## Architecture
 
 ```text
 src-tauri/          Rust backend
-  commands/         One module per feature — every #[tauri::command] lives here
-  riot/             Lockfile reader, local client API, pd/glz game API
-  replay/           In-process .vrf parser (Unreal netcode → positions/events)
-  xmpp/             Hand-rolled XMPP client for Riot chat
-  settings_decoder  base64 + raw-deflate blob decoding
+  src/commands/     Tauri commands grouped by feature
+  src/riot/         Riot Client lockfile, local API, and pd/glz API clients
+  src/xmpp/         Riot chat connection and messaging
+  src/store.rs      JSON-backed local application storage
 
-src/                React frontend (WebView2)
-  pages/            One page per nav tab
-  components/       Scoreboards, crosshair generator, settings viewers
-  util/             tauri-bridge.ts — invoke()/listen() shim
+src/                React frontend running in WebView2
+  pages/            Product pages for profiles, matches, social, store, and tools
+  components/       Shared viewers, scoreboards, navigation, and controls
+  util/             Tauri IPC bridge, Riot helpers, assets, and shared utilities
 ```
 
-The frontend never calls `invoke` directly. It goes through a bridge in `src/util/tauri-bridge.ts` that maps channel names like `settings:profile:load` onto the Rust command `settings_profile_load`, and routes both command replies and backend-pushed events to the same listeners.
+Most frontend IPC goes through `src/util/tauri-bridge.ts`. The bridge maps channel names such as `settings:profile:load` to Rust commands such as `settings_profile_load`, then delivers command replies and backend events through the same listener interface. Profile-share imports use a small direct-`invoke()` helper in `src/util/share.ts`.
 
-**How settings actually move:** the Riot Client writes a lockfile containing a local port and password. ValoUtils reads it, authenticates against `127.0.0.1` over HTTPS, and calls Riot's private `Ares.PlayerSettings` endpoint. The settings blob comes back base64-encoded and raw-deflate compressed; ValoUtils inflates it, parses the JSON, and renders it. Profiles are stored in their original encoded form, so nothing is lost in a round-trip.
-
----
+For authentication, the Rust backend reads the Riot Client lockfile and communicates with the local client over `127.0.0.1`. Account and game data then comes from Riot's private Player Data (`pd`) and Game (`glz`) services. Chat uses a dedicated XMPP connection. Settings profiles remain encoded during local storage so restoring a profile does not discard unknown settings.
 
 ## Releases
 
-CI builds on every push. Pushing a `v*` tag triggers a signed build published as a **draft** GitHub Release with the installer and an updater manifest.
+The GitHub Actions release workflow runs for `v*` tags. It verifies that the tag matches the project version, builds and signs the Tauri updater artifacts, and creates a draft GitHub Release containing the NSIS installer and update manifest. From a clean `master` branch, use the release helper to synchronize version metadata and create the release commit and annotated tag before pushing:
 
 ```bash
-git tag v1.0.4
-git push origin v1.0.4
+bun run version 1.0.8
+git push origin HEAD:master --follow-tags
 ```
-
----
 
 ## Disclaimer
 
-ValoUtils is an unofficial third-party tool. It is not affiliated with, endorsed by, or connected to Riot Games. It relies on private APIs that Riot may change or restrict at any time.
+ValoUtils is an unofficial third-party tool. It is not affiliated with, endorsed by, or connected to Riot Games. It relies on private Riot APIs that may change, become restricted, or stop working at any time.
 
-Restoring a profile overwrites your current VALORANT settings — save your existing setup first if you want it back.
+Restoring a profile overwrites your current VALORANT settings. Save your existing setup as a profile first if you may want to return to it.
