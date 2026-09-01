@@ -175,7 +175,7 @@ impl ContentLabels {
 }
 
 fn riot_id(player: &TemplatePlayer) -> Option<String> {
-    if player.incognito || player.game_name.trim().is_empty() {
+    if (player.incognito && !player.is_self) || player.game_name.trim().is_empty() {
         return None;
     }
     if player.tag_line.trim().is_empty() {
@@ -689,6 +689,23 @@ mod tests {
         assert_eq!(values["enemy_team_kd"], "1.25");
         assert!(!values.contains_key("ally_team_kd"));
         assert!(!values.contains_key("my_kd"));
+    }
+
+    #[test]
+    fn own_incognito_flag_does_not_hide_the_local_riot_id() {
+        let mut snapshot = snapshot();
+        snapshot
+            .players
+            .iter_mut()
+            .find(|player| player.is_self)
+            .unwrap()
+            .incognito = true;
+
+        let values = values_from_context(&snapshot, &HashMap::new(), &ContentLabels::default());
+
+        assert_eq!(values["my_name"], "Me#TW");
+        assert!(values["ally_team_names"].contains("Me#TW"));
+        assert!(!values["enemy_team_names"].contains("Hidden#EU"));
     }
 
     #[test]
