@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import catalog from "../src/shared/bot-template-variables.json";
 
 const root = join(import.meta.dir, "..");
 const page = readFileSync(join(root, "src/pages/DummyBot.tsx"), "utf8");
@@ -53,6 +54,14 @@ const requiredKeys = [
 	"mode.offline",
 	"mode.mobile",
 ] as const;
+const templateKeys = [
+	"variablesButton",
+	"variablesLabel",
+	"variableGroup.enemy",
+	"variableGroup.ally",
+	"variableGroup.me",
+	"variableGroup.match",
+] as const;
 
 const get = (value: Record<string, unknown>, path: string) =>
 	path.split(".").reduce<unknown>((current, key) =>
@@ -72,8 +81,23 @@ describe("FakePlayer localization", () => {
 				expect(get(messages, key), `${locale}: dummyBot.${key}`).toBeString();
 				expect((get(messages, key) as string).trim().length).toBeGreaterThan(0);
 			}
+			for (const key of templateKeys) {
+				expect(get(messages, key), `${locale}: dummyBot.${key}`).toBeString();
+				expect((get(messages, key) as string).trim().length).toBeGreaterThan(0);
+			}
+			for (const item of catalog) {
+				const key = item.descriptionKey.replace("dummyBot.", "");
+				expect(get(messages, key), `${locale}: ${item.descriptionKey}`).toBeString();
+				expect((get(messages, key) as string).trim().length).toBeGreaterThan(0);
+			}
 		});
 	}
+
+	test("custom Send commands use the template autocomplete editor", () => {
+		expect(page).toContain("BotCommandMessageEditor");
+		expect(page).toContain("value={draft.message}");
+		expect(page).toContain("onChange={(message)");
+	});
 
 	test("visible copy uses Bot terminology instead of FakePlayer", () => {
 		for (const locale of locales) {

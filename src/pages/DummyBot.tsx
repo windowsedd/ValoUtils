@@ -2,6 +2,7 @@ import { PageHeader, SectionCard, SectionRow, pageBodyClass } from "@/components
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { FaPlay, FaPlus, FaRobot, FaTrash } from "react-icons/fa6";
+import { BotCommandMessageEditor } from "./bot-command-message-editor";
 
 type CustomBotCommand = {
 	trigger: string;
@@ -211,7 +212,11 @@ const DummyBot = () => {
 					{draft.action === "send" ? (
 						<>
 							<input value={draft.language} onChange={(event) => setDraft((current) => ({ ...current, language: event.target.value }))} placeholder="ko-KR" className="min-w-0 rounded-sm border border-(--line) bg-(--panel-raised) px-2 py-1.5 font-mono text-xs text-(--ink)" />
-							<input value={draft.message} onChange={(event) => setDraft((current) => ({ ...current, message: event.target.value }))} placeholder={t("dummyBot.customMessagePlaceholder")} className="col-span-2 min-w-0 rounded-sm border border-(--line) bg-(--panel-raised) px-2 py-1.5 text-xs text-(--ink)" />
+							<BotCommandMessageEditor
+								value={draft.message}
+								onChange={(message) => setDraft((current) => ({ ...current, message }))}
+								placeholder={t("dummyBot.customMessagePlaceholder")}
+							/>
 						</>
 					) : (
 						<input type="number" min={1} max={10} value={draft.count} onChange={(event) => setDraft((current) => ({ ...current, count: Number(event.target.value) }))} className="min-w-0 rounded-sm border border-(--line) bg-(--panel-raised) px-2 py-1.5 font-mono text-xs text-(--ink)" />
