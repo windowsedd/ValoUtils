@@ -1,6 +1,7 @@
 pub mod api;
 pub mod chat;
 pub mod chat_command;
+pub mod chat_template;
 pub mod client;
 pub mod dedup;
 pub mod error;
