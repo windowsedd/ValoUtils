@@ -278,10 +278,11 @@ async fn client_to_remote(
                                         Err(error) => error.to_string(),
                                     }
                                 } else if let Some(expanded) =
-                                    crate::commands::riot_chat::expand_custom_command_for_bot(
+                                    crate::commands::riot_chat::resolve_custom_command_for_bot(
                                         &body,
                                         crate::presence_proxy::app_handle(),
                                     )
+                                    .await
                                 {
                                     if crate::riot::chat_command::is_history_translate_command(&expanded) {
                                         match crate::commands::riot_chat::execute_history_translation(

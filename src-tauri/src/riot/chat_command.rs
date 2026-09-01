@@ -66,15 +66,20 @@ pub fn is_reserved_custom_trigger(raw: &str) -> bool {
     )
 }
 
-pub fn expand_custom_command(input: &str, commands: &[CustomBotCommand]) -> Option<String> {
+pub fn find_custom_command(input: &str, commands: &[CustomBotCommand]) -> Option<CustomBotCommand> {
     let first = input.trim().split_whitespace().next()?;
     let wanted = normalize_custom_trigger(first);
     if wanted.is_empty() || is_reserved_custom_trigger(&wanted) {
         return None;
     }
-    let command = commands
+    commands
         .iter()
-        .find(|item| normalize_custom_trigger(&item.trigger) == wanted)?;
+        .find(|item| normalize_custom_trigger(&item.trigger) == wanted)
+        .cloned()
+}
+
+pub fn expand_custom_command(input: &str, commands: &[CustomBotCommand]) -> Option<String> {
+    let command = find_custom_command(input, commands)?;
     match command.action.trim().to_ascii_lowercase().as_str() {
         "send" => {
             let message = command.message.trim();
@@ -607,6 +612,24 @@ mod tests {
         );
         assert!(expand_custom_command(".send", &commands).is_none());
         assert!(is_reserved_custom_trigger("tran"));
+    }
+
+    #[test]
+    fn finds_a_saved_command_without_losing_its_template() {
+        let command = CustomBotCommand {
+            trigger: "scout".into(),
+            action: "send".into(),
+            channel: "team".into(),
+            language: "none".into(),
+            message: "Enemy KDA: {{enemy_team_kda}}".into(),
+            count: 0,
+        };
+
+        assert_eq!(
+            find_custom_command(".scout", &[command.clone()]),
+            Some(command)
+        );
+        assert!(find_custom_command(".send", &[]).is_none());
     }
 
     #[test]

@@ -262,19 +262,35 @@ pub(crate) async fn prepare_typed_translation(
     })
 }
 
-pub(crate) fn expand_custom_command_for_bot(
+async fn resolve_matched_custom_command(
+    command: &chat_command::CustomBotCommand,
+    app: Option<&AppHandle>,
+) -> Option<String> {
+    let mut resolved = command.clone();
+    if resolved.action.trim().eq_ignore_ascii_case("send") {
+        resolved.message = match app {
+            Some(app) => super::bot_template::resolve_custom_message(app, &resolved.message).await,
+            None => crate::riot::chat_template::render_template(&resolved.message, &HashMap::new()),
+        };
+    }
+    let trigger = resolved.trigger.clone();
+    chat_command::expand_custom_command(&trigger, &[resolved])
+}
+
+pub(crate) async fn resolve_custom_command_for_bot(
     input: &str,
     app: Option<&AppHandle>,
 ) -> Option<String> {
     let commands = load_custom_commands(app);
-    chat_command::expand_custom_command(input, &commands)
+    let command = chat_command::find_custom_command(input, &commands)?;
+    resolve_matched_custom_command(&command, app).await
 }
 
 pub async fn execute_maybe_custom_command(
     input: &str,
     app: Option<&AppHandle>,
 ) -> Option<Result<String, crate::riot::error::RiotError>> {
-    let expanded = expand_custom_command_for_bot(input, app)?;
+    let expanded = resolve_custom_command_for_bot(input, app).await?;
     if chat_command::is_history_translate_command(&expanded) {
         Some(execute_history_translation(&expanded, app).await)
     } else if chat_command::is_translation_command(&expanded) {
@@ -298,6 +314,8 @@ pub enum ComposerCommand {
     History(String),
     /// `.send` — translates and posts to a room.
     Translate(String),
+    /// A saved `Send` command whose message may still contain templates.
+    Custom(chat_command::CustomBotCommand),
     /// `.dodge` — leave agent select.
     Dodge,
     Unknown,
@@ -320,6 +338,11 @@ pub fn classify_composer_command(
     let trimmed = input.trim();
     if !trimmed.starts_with('.') {
         return ComposerCommand::Unknown;
+    }
+    if let Some(command) = chat_command::find_custom_command(trimmed, commands) {
+        if command.action.trim().eq_ignore_ascii_case("send") {
+            return ComposerCommand::Custom(command);
+        }
     }
     let expanded = chat_command::expand_custom_command(trimmed, commands)
         .unwrap_or_else(|| trimmed.to_string());
@@ -357,6 +380,16 @@ pub async fn chat_command(args: Vec<Value>, app: AppHandle) -> Result<String, ()
         ComposerCommand::Translate(command) => execute_typed_translation(&command, Some(&app))
             .await
             .map(|outcome| format_translation_reply(&outcome)),
+        ComposerCommand::Custom(command) => {
+            match resolve_matched_custom_command(&command, Some(&app)).await {
+                Some(expanded) => execute_typed_translation(&expanded, Some(&app))
+                    .await
+                    .map(|outcome| format_translation_reply(&outcome)),
+                None => Err(RiotError::InvalidCommand(
+                    "Saved custom command is invalid.".into(),
+                )),
+            }
+        }
         ComposerCommand::Dodge => execute_dodge(Some(&app)).await,
         ComposerCommand::Unknown => {
             return Ok(json!({
@@ -1075,6 +1108,8 @@ enum OwnMessage {
     Ignore,
     /// A command to run, already expanded to its `.send` form.
     Translate(String),
+    /// A saved `Send` command whose message may still contain templates.
+    Custom(chat_command::CustomBotCommand),
     /// `.dodge` — leave agent select.
     Dodge,
 }
@@ -1101,9 +1136,9 @@ fn plan_own_message(
     // A custom trigger expands to a full command. Triggers whose action is
     // `tran` expand to `.tran ...`, which produces a text summary with nowhere
     // to show it in-game, so those stay a UI-only feature and fall through.
-    match chat_command::expand_custom_command(body, commands) {
-        Some(expanded) if chat_command::is_translation_command(&expanded) => {
-            OwnMessage::Translate(expanded)
+    match chat_command::find_custom_command(body, commands) {
+        Some(command) if command.action.trim().eq_ignore_ascii_case("send") => {
+            OwnMessage::Custom(command)
         }
         _ => OwnMessage::Ignore,
     }
@@ -1236,26 +1271,13 @@ async fn dispatch(
                 }
             },
             OwnMessage::Translate(command) => {
-                let config = translator_config(app);
-                match chat_command::parse_translation_command_with_fallback(
-                    &command,
-                    &config.provider,
-                    Some(config.target_language.as_str()),
-                ) {
-                    Ok(parsed) => {
-                        match run_translation_command(client, &parsed, &config, Some(app)).await {
-                            Ok(outcome) => {
-                                memory.echoes.remember(&outcome.translated);
-                                let _ = app.emit(EVENT_COMMAND, outcome);
-                            }
-                            Err(error) => {
-                                let _ = app.emit(EVENT_ERROR, error.to_string());
-                            }
-                        }
-                    }
-                    Err(error) => {
-                        let _ = app.emit(EVENT_ERROR, error.to_string());
-                    }
+                dispatch_translation_command(app, client, &command, memory).await;
+            }
+            OwnMessage::Custom(command) => {
+                if let Some(command) = resolve_matched_custom_command(&command, Some(app)).await {
+                    dispatch_translation_command(app, client, &command, memory).await;
+                } else {
+                    let _ = app.emit(EVENT_ERROR, "Saved custom command is invalid.");
                 }
             }
         }
@@ -1263,6 +1285,33 @@ async fn dispatch(
     }
 
     emit_polled_chat_message(app, message, false);
+}
+
+async fn dispatch_translation_command(
+    app: &AppHandle,
+    client: &RiotChatClient,
+    command: &str,
+    memory: &mut PollMemory,
+) {
+    let config = translator_config(app);
+    match chat_command::parse_translation_command_with_fallback(
+        command,
+        &config.provider,
+        Some(config.target_language.as_str()),
+    ) {
+        Ok(parsed) => match run_translation_command(client, &parsed, &config, Some(app)).await {
+            Ok(outcome) => {
+                memory.echoes.remember(&outcome.translated);
+                let _ = app.emit(EVENT_COMMAND, outcome);
+            }
+            Err(error) => {
+                let _ = app.emit(EVENT_ERROR, error.to_string());
+            }
+        },
+        Err(error) => {
+            let _ = app.emit(EVENT_ERROR, error.to_string());
+        }
+    }
 }
 
 fn frontend_chat_message_json(
@@ -1416,12 +1465,12 @@ mod tests {
 
         assert_eq!(
             plan_own_message("gg", &commands, &mut echoes),
-            OwnMessage::Translate(".send team french good game".into())
+            OwnMessage::Custom(commands[0].clone())
         );
         // The dotted spelling keeps working.
         assert_eq!(
             plan_own_message(".gg", &commands, &mut echoes),
-            OwnMessage::Translate(".send team french good game".into())
+            OwnMessage::Custom(commands[0].clone())
         );
         // As does a literal command.
         assert_eq!(
@@ -1431,6 +1480,24 @@ mod tests {
         assert_eq!(
             plan_own_message(".dodge", &commands, &mut echoes),
             OwnMessage::Dodge
+        );
+    }
+
+    #[test]
+    fn in_game_custom_send_keeps_its_template_until_execution() {
+        let mut echoes = PendingEchoes::default();
+        let command = chat_command::CustomBotCommand {
+            trigger: "scout".into(),
+            action: "send".into(),
+            channel: "team".into(),
+            language: "none".into(),
+            message: "Enemy KDA: {{enemy_team_kda}}".into(),
+            count: 0,
+        };
+
+        assert_eq!(
+            plan_own_message("scout", &[command.clone()], &mut echoes),
+            OwnMessage::Custom(command)
         );
     }
 
@@ -1505,7 +1572,7 @@ mod tests {
 
         assert!(matches!(
             plan_own_message("gg", &commands, &mut echoes),
-            OwnMessage::Translate(_)
+            OwnMessage::Custom(_)
         ));
         echoes.remember("gg wp");
 
@@ -1529,7 +1596,7 @@ mod tests {
         assert!(
             matches!(
                 plan_own_message("gg", &commands, &mut echoes),
-                OwnMessage::Translate(_)
+                OwnMessage::Custom(_)
             ),
             "a single echo must not mute the trigger for the rest of the session"
         );
@@ -1604,12 +1671,29 @@ mod tests {
         let commands = custom_commands();
         assert_eq!(
             classify_composer_command(".gg", &commands),
-            ComposerCommand::Translate(".send team french good game".into())
+            ComposerCommand::Custom(commands[0].clone())
         );
         // A `tran` trigger has somewhere to print here, unlike in-game.
         assert_eq!(
             classify_composer_command(".last", &commands),
             ComposerCommand::History(".tran team 3".into())
+        );
+    }
+
+    #[test]
+    fn the_composer_keeps_custom_send_templates_until_execution() {
+        let command = chat_command::CustomBotCommand {
+            trigger: "scout".into(),
+            action: "send".into(),
+            channel: "team".into(),
+            language: "none".into(),
+            message: "Enemy KDA: {{enemy_team_kda}}".into(),
+            count: 0,
+        };
+
+        assert_eq!(
+            classify_composer_command(".scout", &[command.clone()]),
+            ComposerCommand::Custom(command)
         );
     }
 
