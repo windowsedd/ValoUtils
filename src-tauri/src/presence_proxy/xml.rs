@@ -354,11 +354,11 @@ pub fn bot_presence(account_domain: &str, client_version: Option<&str>) -> Strin
     )
 }
 
-pub fn bot_reply(bot_jid: &str, body: &str, _sequence: u64) -> String {
+pub fn bot_reply(bot_jid: &str, body: &str, sequence: u64) -> String {
     let stamp = riot_timestamp();
     let bare_jid = bot_jid.split('/').next().unwrap_or(bot_jid);
     format!(
-        r#"<message from="{}/RC-ValoUtils" stamp="{stamp}" id="fake-{stamp}" type="chat"><body>{}</body></message>"#,
+        r#"<message from="{}/RC-ValoUtils" stamp="{stamp}" id="fake-{stamp}-{sequence}" type="chat"><body>{}</body></message>"#,
         escape_xml(bare_jid),
         escape_xml(body)
     )
@@ -970,7 +970,7 @@ mod tests {
         let root = Element::parse(output.as_bytes()).unwrap();
         assert!(output.contains("mode &lt;offline&gt; &amp; ready"));
         let stamp = root.attributes.get("stamp").unwrap();
-        assert_eq!(root.attributes.get("id"), Some(&format!("fake-{stamp}")));
+        assert_eq!(root.attributes.get("id"), Some(&format!("fake-{stamp}-7")));
     }
 
     #[test]
@@ -1012,27 +1012,34 @@ mod tests {
             Some(bot_jid.as_str())
         );
         let stamp = reply.attributes.get("stamp").unwrap();
-        assert_eq!(reply.attributes.get("id"), Some(&format!("fake-{stamp}")));
+        assert_eq!(reply.attributes.get("id"), Some(&format!("fake-{stamp}-7")));
         assert!(frames[1].contains("<body>You are now appearing offline.</body>"));
+    }
+
+    #[test]
+    fn bot_reply_sequence_is_part_of_the_stable_message_id() {
+        let first = Element::parse(bot_reply("bot@na1.pvp.net", "one", 41).as_bytes()).unwrap();
+        let second = Element::parse(bot_reply("bot@na1.pvp.net", "two", 42).as_bytes()).unwrap();
+
+        assert!(first.attributes["id"].ends_with("-41"));
+        assert!(second.attributes["id"].ends_with("-42"));
+        assert_ne!(first.attributes["id"], second.attributes["id"]);
     }
 
     #[test]
     fn bot_command_splits_multiline_replies_into_separate_whispers() {
         let domain = "eu1.pvp.net";
         let bot_jid = format!("{}@{domain}/RC-ValoUtils", crate::fake_player::PUUID);
-        let frames = bot_command_frames(
-            domain,
-            None,
-            &bot_jid,
-            "1. hi -> 안녕\n2. gg -> 잘가",
-            7,
-        );
+        let frames = bot_command_frames(domain, None, &bot_jid, "1. hi -> 안녕\n2. gg -> 잘가", 7);
         assert_eq!(frames.len(), 3);
         assert!(frames[0].starts_with("<presence "));
         let first = Element::parse(frames[1].as_bytes()).unwrap();
         let second = Element::parse(frames[2].as_bytes()).unwrap();
         assert_eq!(
-            first.get_child("body").and_then(Element::get_text).as_deref(),
+            first
+                .get_child("body")
+                .and_then(Element::get_text)
+                .as_deref(),
             Some("1. hi -> 안녕")
         );
         assert_eq!(

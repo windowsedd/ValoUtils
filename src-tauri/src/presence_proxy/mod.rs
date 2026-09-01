@@ -1,3 +1,4 @@
+mod bot_direct;
 mod local_ca;
 mod relay;
 mod xml;
@@ -13,6 +14,8 @@ use std::collections::VecDeque;
 use std::sync::{Mutex, OnceLock};
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::broadcast;
+
+use bot_direct::{BotDirectError, BotDirectHub, BotDirectMessage};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -232,6 +235,31 @@ impl PresenceController {
 static CONTROLLER: OnceLock<PresenceController> = OnceLock::new();
 static APP_HANDLE: OnceLock<AppHandle> = OnceLock::new();
 static OUTBOUND: OnceLock<broadcast::Sender<String>> = OnceLock::new();
+static BOT_DIRECT: OnceLock<BotDirectHub> = OnceLock::new();
+
+fn bot_direct() -> &'static BotDirectHub {
+    BOT_DIRECT.get_or_init(BotDirectHub::new)
+}
+
+pub(crate) fn subscribe_bot_direct() -> broadcast::Receiver<BotDirectMessage> {
+    bot_direct().subscribe()
+}
+
+pub(crate) fn send_bot_direct(body: &str) -> Result<BotDirectMessage, BotDirectError> {
+    deliver_bot_direct(bot_direct(), body, |delivered| {
+        crate::fake_player::record_message(delivered, false)
+    })
+}
+
+fn deliver_bot_direct(
+    hub: &BotDirectHub,
+    body: &str,
+    record: impl FnOnce(&str),
+) -> Result<BotDirectMessage, BotDirectError> {
+    let message = hub.deliver(body)?;
+    record(body);
+    Ok(message)
+}
 
 fn outbound() -> &'static broadcast::Sender<String> {
     OUTBOUND.get_or_init(|| broadcast::channel(32).0)
@@ -513,6 +541,36 @@ fn emit_status(app: &AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[test]
+    fn successful_direct_delivery_records_the_bot_message_once() {
+        let hub = BotDirectHub::new();
+        let mut receiver = hub.subscribe();
+        let records = AtomicUsize::new(0);
+
+        let delivered = deliver_bot_direct(&hub, "hello", |_| {
+            records.fetch_add(1, Ordering::Relaxed);
+        })
+        .unwrap();
+
+        assert_eq!(records.load(Ordering::Relaxed), 1);
+        assert_eq!(receiver.try_recv().unwrap(), delivered);
+    }
+
+    #[test]
+    fn rejected_direct_delivery_is_not_recorded() {
+        let hub = BotDirectHub::new();
+        let records = AtomicUsize::new(0);
+
+        assert_eq!(
+            deliver_bot_direct(&hub, "hello", |_| {
+                records.fetch_add(1, Ordering::Relaxed);
+            }),
+            Err(BotDirectError::NoActiveRelay)
+        );
+        assert_eq!(records.load(Ordering::Relaxed), 0);
+    }
 
     #[test]
     fn injected_groupchat_matches_the_native_player_message_shape() {
@@ -568,9 +626,13 @@ mod tests {
     }
     #[test]
     fn starts_offline_without_connections() {
-        let state =
-            PresenceController::new(false, PresenceMode::Offline, true, crate::chat_certs::DEFAULT)
-                .snapshot();
+        let state = PresenceController::new(
+            false,
+            PresenceMode::Offline,
+            true,
+            crate::chat_certs::DEFAULT,
+        )
+        .snapshot();
         assert_eq!(state.mode, PresenceMode::Offline);
         assert_eq!(state.active_connections, 0);
         assert!(!state.relay_running);
@@ -578,8 +640,12 @@ mod tests {
     }
     #[test]
     fn status_commands_enable_masking_and_broadcast_complete_state() {
-        let controller =
-            PresenceController::new(false, PresenceMode::Offline, true, crate::chat_certs::DEFAULT);
+        let controller = PresenceController::new(
+            false,
+            PresenceMode::Offline,
+            true,
+            crate::chat_certs::DEFAULT,
+        );
         let mut updates = controller.subscribe_state();
         assert_eq!(
             controller.apply_command(crate::fake_player::FakePlayerCommand::Mobile),
@@ -590,8 +656,12 @@ mod tests {
     }
     #[test]
     fn disable_passes_original_presence_through() {
-        let controller =
-            PresenceController::new(true, PresenceMode::Offline, true, crate::chat_certs::DEFAULT);
+        let controller = PresenceController::new(
+            true,
+            PresenceMode::Offline,
+            true,
+            crate::chat_certs::DEFAULT,
+        );
         assert_eq!(
             controller.apply_command(crate::fake_player::FakePlayerCommand::Disable),
             "Presence masking is now disabled."

@@ -15,7 +15,7 @@ use crate::presence_proxy::xml::{
     is_global_presence, is_muc_presence, parse_bot_message, rewrite_presence, BotCommand,
     XmppFramer,
 };
-use crate::presence_proxy::MaskingState;
+use crate::presence_proxy::{BotDirectMessage, MaskingState};
 
 const LIVE_TRANSLATION_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 const LIVE_TRANSLATION_QUEUE_CAPACITY: usize = 8;
@@ -78,10 +78,7 @@ pub async fn start() -> Result<u16, String> {
 
 #[cfg(not(test))]
 async fn local_acceptor() -> Result<TlsAcceptor, String> {
-    crate::presence_proxy::local_ca::load_acceptor(
-        crate::presence_proxy::controller().cert(),
-    )
-    .await
+    crate::presence_proxy::local_ca::load_acceptor(crate::presence_proxy::controller().cert()).await
 }
 
 #[cfg(test)]
@@ -188,6 +185,7 @@ async fn client_to_remote(
     let mut last_presence: Option<String> = None;
     let mut states = crate::presence_proxy::controller().subscribe_state();
     let mut outbound = crate::presence_proxy::subscribe_outbound();
+    let mut bot_direct = crate::presence_proxy::subscribe_bot_direct();
     let mut reply_sequence = 0u64;
     let (translation_tx, translation_rx) = mpsc::channel(LIVE_TRANSLATION_QUEUE_CAPACITY);
     tauri::async_runtime::spawn(live_translation_worker(
@@ -197,6 +195,28 @@ async fn client_to_remote(
 
     loop {
         tokio::select! {
+            direct_result = bot_direct.recv() => {
+                match direct_result {
+                    Ok(message) => {
+                        let version = bot_version.lock().await.clone();
+                        for frame in direct_message_frames(
+                            account_domain,
+                            version.as_deref(),
+                            &message,
+                        ) {
+                            write_frame(&local_write, frame.as_bytes()).await?;
+                        }
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
+                        log::warn!(
+                            "Dummy Bot direct relay lagged; skipped {skipped} message(s)"
+                        );
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                        return Err("Dummy Bot direct relay closed unexpectedly.".into());
+                    }
+                }
+            }
             inject = outbound.recv() => {
                 if let Ok(stanza) = inject {
                     write_frame(&remote_write, stanza.as_bytes()).await?;
@@ -374,6 +394,21 @@ async fn client_to_remote(
             }
         }
     }
+}
+
+fn direct_message_frames(
+    account_domain: &str,
+    version: Option<&str>,
+    message: &BotDirectMessage,
+) -> Vec<String> {
+    let bot_jid = format!("{}@{account_domain}", crate::fake_player::PUUID);
+    bot_command_frames(
+        account_domain,
+        version,
+        &bot_jid,
+        &message.body,
+        message.sequence,
+    )
 }
 
 async fn translate_bot_command_on_connection(
@@ -615,6 +650,23 @@ mod tests {
     use crate::presence_proxy::{self, PresenceMode, UpstreamTarget};
 
     #[test]
+    fn direct_messages_build_local_bot_presence_and_whisper_frames() {
+        let frames = direct_message_frames(
+            "ap1.pvp.net",
+            Some("release-11.04-shipping-4-3520990"),
+            &BotDirectMessage {
+                sequence: 27,
+                body: "hello <player>".into(),
+            },
+        );
+
+        assert_eq!(frames.len(), 2);
+        assert!(frames[0].starts_with("<presence"));
+        assert!(frames[1].contains("hello &lt;player&gt;"));
+        assert!(frames[1].contains("-27\" type=\"chat\""));
+    }
+
+    #[test]
     fn uses_the_xmpp_domain_mapped_from_the_pas_affinity() {
         let sea = UpstreamTarget {
             host: "sa1.chat.si.riotgames.com".into(),
@@ -745,7 +797,12 @@ mod tests {
 
     #[tokio::test]
     async fn starts_on_an_ephemeral_loopback_port() {
-        let _ = presence_proxy::init(true, PresenceMode::Offline, true, crate::chat_certs::DEFAULT);
+        let _ = presence_proxy::init(
+            true,
+            PresenceMode::Offline,
+            true,
+            crate::chat_certs::DEFAULT,
+        );
         let port = start().await.unwrap();
         assert_ne!(port, 0);
         assert_eq!(presence_proxy::controller().relay_port(), Some(port));
