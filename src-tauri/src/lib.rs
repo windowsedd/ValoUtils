@@ -105,6 +105,10 @@ pub fn run() {
             app.manage(ProfilesStore(profiles_store));
             app.manage(RiotState::default());
             app.manage(commands::riot_chat::RiotChatState::default());
+            app.manage(commands::live::LiveCache::default());
+            app.manage(commands::live::LiveStatsCache::default());
+            app.manage(commands::live_party::LivePartyHistoryCache::default());
+            app.manage(commands::matches::MatchCache::default());
             {
                 let handle = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
@@ -112,10 +116,6 @@ pub fn run() {
                     state.begin_polling(handle.clone(), None).await;
                 });
             }
-            app.manage(commands::live::LiveCache::default());
-            app.manage(commands::live::LiveStatsCache::default());
-            app.manage(commands::live_party::LivePartyHistoryCache::default());
-            app.manage(commands::matches::MatchCache::default());
 
             if auto_update {
                 let app_handle = app.handle().clone();
@@ -207,4 +207,28 @@ pub fn run() {
                 tauri::async_runtime::block_on(state.stop_polling());
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn live_template_state_is_managed_before_the_chat_poller_starts() {
+        let source = include_str!("lib.rs");
+        let poller = source
+            .find("state.begin_polling(handle.clone(), None).await")
+            .expect("chat poller startup must remain present");
+        for managed_state in [
+            "app.manage(commands::live::LiveCache::default())",
+            "app.manage(commands::live::LiveStatsCache::default())",
+            "app.manage(commands::live_party::LivePartyHistoryCache::default())",
+        ] {
+            let managed = source
+                .find(managed_state)
+                .unwrap_or_else(|| panic!("missing managed state: {managed_state}"));
+            assert!(
+                managed < poller,
+                "{managed_state} must be registered before the immediate first poll"
+            );
+        }
+    }
 }
