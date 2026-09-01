@@ -2,16 +2,12 @@ import { PageHeader, SectionCard, SectionRow, pageBodyClass } from "@/components
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { FaPlay, FaPlus, FaRobot, FaTrash } from "react-icons/fa6";
+import {
+	normalizeCustomBotCommand,
+	normalizeCustomBotCommands,
+	type CustomBotCommand,
+} from "./bot-custom-command";
 import { BotCommandMessageEditor } from "./bot-command-message-editor";
-
-type CustomBotCommand = {
-	trigger: string;
-	action: "send" | "tran";
-	channel: string;
-	language: string;
-	message: string;
-	count: number;
-};
 
 type Message = { id: string; body: string; timestamp: string; isSelf: boolean };
 type FakePlayerState = {
@@ -34,6 +30,7 @@ const DummyBot = () => {
 	const [launchBusy, setLaunchBusy] = useState(false);
 	const [customCommands, setCustomCommands] = useState<CustomBotCommand[]>([]);
 	const [draft, setDraft] = useState<CustomBotCommand>({
+		when: "command",
 		trigger: "",
 		action: "send",
 		channel: "team",
@@ -54,8 +51,8 @@ const DummyBot = () => {
 		};
 		const applyConfig = (message: string) => {
 			try {
-				const config = JSON.parse(message) as { botCustomCommands?: CustomBotCommand[] };
-				setCustomCommands(normalizeCustomCommands(config.botCustomCommands));
+				const config = JSON.parse(message) as { botCustomCommands?: unknown };
+				setCustomCommands(normalizeCustomBotCommands(config.botCustomCommands));
 			} catch { /* ignore */ }
 		};
 		window.Main.on("fake_player:state", applyState);
@@ -77,8 +74,9 @@ const DummyBot = () => {
 	}, [t]);
 
 	const saveCustomCommands = (next: CustomBotCommand[]) => {
-		setCustomCommands(next);
-		window.Main.send("config:set", "botCustomCommands", next);
+		const normalized = normalizeCustomBotCommands(next);
+		setCustomCommands(normalized);
+		window.Main.send("config:set", "botCustomCommands", normalized);
 	};
 
 	const addCustomCommand = () => {
@@ -101,13 +99,13 @@ const DummyBot = () => {
 		}
 		saveCustomCommands([
 			...customCommands,
-			{
+			normalizeCustomBotCommand({
 				...draft,
 				trigger,
 				language: draft.language.trim() || "none",
 				message: draft.message.trim(),
 				count: Math.max(1, Number(draft.count) || 1),
-			},
+			}),
 		]);
 		setDraft((current) => ({ ...current, trigger: "", message: "" }));
 		setCustomError(null);
@@ -203,7 +201,7 @@ const DummyBot = () => {
 						<option value="send">{t("dummyBot.customActionSend")}</option>
 						<option value="tran">{t("dummyBot.customActionTran")}</option>
 					</select>
-					<select value={draft.channel} onChange={(event) => setDraft((current) => ({ ...current, channel: event.target.value }))} className="min-w-0 rounded-sm border border-(--line) bg-(--panel-raised) px-2 py-1.5 text-xs text-(--ink)">
+					<select value={draft.channel} onChange={(event) => setDraft((current) => ({ ...current, channel: event.target.value as CustomBotCommand["channel"] }))} className="min-w-0 rounded-sm border border-(--line) bg-(--panel-raised) px-2 py-1.5 text-xs text-(--ink)">
 						<option value="party">party</option>
 						<option value="team">team</option>
 						<option value="all">all</option>
@@ -261,10 +259,5 @@ const normalizeTrigger = (value: string) => {
 	if (!trimmed) return "";
 	return trimmed.startsWith(".") || trimmed.startsWith("$") ? trimmed : `.${trimmed}`;
 };
-
-const normalizeCustomCommands = (value: CustomBotCommand[] | undefined) =>
-	Array.isArray(value)
-		? value.filter((item) => item && typeof item.trigger === "string" && typeof item.action === "string")
-		: [];
 
 export default DummyBot;
