@@ -17,6 +17,15 @@ pub struct TemplatePlan {
     pub needs_content: bool,
 }
 
+impl TemplatePlan {
+    pub fn merge(&mut self, other: &Self) {
+        self.variables.extend(other.variables.iter().cloned());
+        self.needs_roster |= other.needs_roster;
+        self.needs_recent |= other.needs_recent;
+        self.needs_content |= other.needs_content;
+    }
+}
+
 fn catalog() -> &'static [TemplateVariable] {
     static CATALOG: OnceLock<Vec<TemplateVariable>> = OnceLock::new();
     CATALOG.get_or_init(|| {
@@ -100,9 +109,10 @@ mod tests {
     #[test]
     fn catalog_contains_all_approved_variables() {
         let ids: Vec<_> = catalog().iter().map(|item| item.id.as_str()).collect();
-        assert_eq!(ids.len(), 33);
+        assert_eq!(ids.len(), 34);
         assert!(ids.contains(&"enemy_team_kda"));
         assert!(ids.contains(&"roster_count"));
+        assert!(ids.contains(&"server"));
     }
 
     #[test]
@@ -136,6 +146,23 @@ mod tests {
             render_template("{{my_rank}} vs {{my_rank}}", &values),
             "Diamond 1 vs Diamond 1"
         );
+    }
+
+    #[test]
+    fn merging_template_plans_unions_all_data_requirements() {
+        let mut merged = plan_template("{{map}}");
+        merged.merge(&plan_template("{{enemy_team_kda}} {{roster_count}}"));
+
+        assert_eq!(
+            merged.variables,
+            ["enemy_team_kda", "map", "roster_count"]
+                .into_iter()
+                .map(str::to_string)
+                .collect()
+        );
+        assert!(merged.needs_roster);
+        assert!(merged.needs_recent);
+        assert!(merged.needs_content);
     }
 
     #[test]

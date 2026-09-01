@@ -93,6 +93,24 @@ pub fn find_custom_command(input: &str, commands: &[CustomBotCommand]) -> Option
         .cloned()
 }
 
+pub fn find_lifecycle_command(
+    commands: &[CustomBotCommand],
+    when: CustomCommandWhen,
+) -> Option<CustomBotCommand> {
+    if when == CustomCommandWhen::Command {
+        return None;
+    }
+    commands
+        .iter()
+        .find(|item| {
+            item.when == when
+                && item.action.trim().eq_ignore_ascii_case("send")
+                && item.channel.trim().eq_ignore_ascii_case("direct")
+                && !item.message.trim().is_empty()
+        })
+        .cloned()
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ExpandedCustomCommand {
     History(String),
@@ -425,6 +443,62 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(command.when, CustomCommandWhen::Command);
+    }
+
+    #[test]
+    fn lifecycle_lookup_uses_the_first_structurally_valid_entry() {
+        let invalid = CustomBotCommand {
+            when: CustomCommandWhen::OnMatchStart,
+            trigger: String::new(),
+            action: "tran".into(),
+            channel: "team".into(),
+            language: "none".into(),
+            message: "invalid".into(),
+            count: 1,
+        };
+        let first = CustomBotCommand {
+            when: CustomCommandWhen::OnMatchStart,
+            trigger: String::new(),
+            action: "send".into(),
+            channel: "direct".into(),
+            language: "none".into(),
+            message: "first".into(),
+            count: 1,
+        };
+        let duplicate = CustomBotCommand {
+            message: "duplicate".into(),
+            ..first.clone()
+        };
+
+        assert_eq!(
+            find_lifecycle_command(
+                &[invalid, first.clone(), duplicate],
+                CustomCommandWhen::OnMatchStart,
+            ),
+            Some(first)
+        );
+    }
+
+    #[test]
+    fn lifecycle_lookup_ignores_empty_or_group_routed_entries() {
+        let empty = CustomBotCommand {
+            when: CustomCommandWhen::OnPregame,
+            trigger: String::new(),
+            action: "send".into(),
+            channel: "direct".into(),
+            language: "none".into(),
+            message: "   ".into(),
+            count: 1,
+        };
+        let group = CustomBotCommand {
+            message: "hello".into(),
+            channel: "team".into(),
+            ..empty.clone()
+        };
+        assert_eq!(
+            find_lifecycle_command(&[empty, group], CustomCommandWhen::OnPregame),
+            None
+        );
     }
 
     #[test]

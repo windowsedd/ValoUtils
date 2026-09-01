@@ -23,6 +23,7 @@
 
 use crate::riot::chat::RiotChatClient;
 use crate::riot::chat_command::{self, TranslationCommand};
+use crate::riot::chat_lifecycle::{LifecycleTracker, LifecycleTransition, PhaseObservation};
 use crate::riot::dedup::SeenMessages;
 use crate::riot::error::RiotError;
 use crate::riot::lockfile;
@@ -1102,6 +1103,15 @@ struct PollMemory {
     local_puuid: Option<String>,
     /// Lines this app posted itself, so they cannot be read back as commands.
     echoes: PendingEchoes,
+    lifecycle: LifecycleTracker,
+    prepared_match_end: Option<PreparedMatchEnd>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PreparedMatchEnd {
+    match_id: String,
+    language: String,
+    body: String,
 }
 
 /// Bodies the bot has just posted, kept only until they come back around.
@@ -1297,17 +1307,30 @@ async fn poll_once(
 
     for channel in ChatChannel::EVERY {
         // An unavailable channel is the normal state for most of a session.
-        let Ok(cid) = client.resolve_cid(channel).await else {
-            memory.cids.remove(&channel);
-            continue;
+        let cid = match client.resolve_cid(channel).await {
+            Ok(cid) => cid,
+            Err(RiotError::ChannelUnavailable { .. }) => {
+                memory.cids.remove(&channel);
+                continue;
+            }
+            Err(error) => return Err(error),
         };
 
         // A changed CID means a new match or party. Priming below handles the
         // history; recording it here keeps the map honest for the next tick.
         memory.cids.insert(channel, cid.clone());
 
-        let Ok(messages) = client.get_messages_for_cid(&cid, channel).await else {
-            continue;
+        let messages = match client.get_messages_for_cid(&cid, channel).await {
+            Ok(messages) => messages,
+            Err(
+                RiotError::ChannelUnavailable { .. }
+                | RiotError::StaleConversation { .. }
+                | RiotError::ConversationNotFound,
+            ) => {
+                memory.cids.remove(&channel);
+                continue;
+            }
+            Err(error) => return Err(error),
         };
 
         // First sight of this room: swallow its backlog.
@@ -1324,7 +1347,141 @@ async fn poll_once(
         }
     }
 
+    let observation = phase_observation(&memory.cids);
+    let transitions = memory.lifecycle.observe(observation);
+    process_lifecycle_transitions(app, memory, transitions).await;
+
     Ok(())
+}
+
+fn phase_observation(cids: &HashMap<ChatChannel, String>) -> PhaseObservation {
+    let pregame_id = cids.get(&ChatChannel::Pregame).cloned();
+    let match_id = [ChatChannel::All, ChatChannel::Team]
+        .into_iter()
+        .filter_map(|channel| cids.get(&channel))
+        .find(|cid| cid.to_ascii_lowercase().contains("@ares-coregame"))
+        .cloned();
+    PhaseObservation {
+        connected: true,
+        pregame_id,
+        match_id,
+    }
+}
+
+fn lifecycle_warning(app: &AppHandle, event: &str, error: impl std::fmt::Display) {
+    let warning = format!("Dummy Bot {event} message skipped: {error}");
+    log::warn!("{warning}");
+    let _ = app.emit(EVENT_ERROR, warning);
+}
+
+async fn deliver_lifecycle_direct(app: &AppHandle, event: &str, language: &str, body: &str) {
+    match resolve_direct_message(language, body, Some(app)).await {
+        Ok(body) => {
+            if let Err(error) = deliver_proactive_direct(&body) {
+                lifecycle_warning(app, event, error);
+            }
+        }
+        Err(error) => lifecycle_warning(app, event, error),
+    }
+}
+
+fn take_prepared_match_end(memory: &mut PollMemory, match_id: &str) -> Option<PreparedMatchEnd> {
+    if memory
+        .prepared_match_end
+        .as_ref()
+        .map(|prepared| prepared.match_id.as_str())
+        != Some(match_id)
+    {
+        return None;
+    }
+    memory.prepared_match_end.take()
+}
+
+async fn process_lifecycle_transitions(
+    app: &AppHandle,
+    memory: &mut PollMemory,
+    transitions: Vec<LifecycleTransition>,
+) {
+    if transitions.is_empty() {
+        return;
+    }
+    let commands = load_custom_commands(Some(app));
+    for transition in transitions {
+        match transition {
+            LifecycleTransition::PregameStarted { .. } => {
+                let Some(command) = chat_command::find_lifecycle_command(
+                    &commands,
+                    chat_command::CustomCommandWhen::OnPregame,
+                ) else {
+                    continue;
+                };
+                match super::bot_template::resolve_custom_messages(
+                    app,
+                    std::slice::from_ref(&command.message),
+                )
+                .await
+                {
+                    Ok(messages) => {
+                        if let Some(body) = messages.first() {
+                            deliver_lifecycle_direct(app, "onPregame", &command.language, body)
+                                .await;
+                        }
+                    }
+                    Err(error) => lifecycle_warning(app, "onPregame", error),
+                }
+            }
+            LifecycleTransition::MatchStarted { match_id } => {
+                memory.prepared_match_end = None;
+                let start = chat_command::find_lifecycle_command(
+                    &commands,
+                    chat_command::CustomCommandWhen::OnMatchStart,
+                );
+                let end = chat_command::find_lifecycle_command(
+                    &commands,
+                    chat_command::CustomCommandWhen::OnMatchEnd,
+                );
+                let messages: Vec<String> = start
+                    .iter()
+                    .chain(end.iter())
+                    .map(|command| command.message.clone())
+                    .collect();
+                if messages.is_empty() {
+                    continue;
+                }
+                let resolved =
+                    match super::bot_template::resolve_custom_messages(app, &messages).await {
+                        Ok(resolved) => resolved,
+                        Err(error) => {
+                            lifecycle_warning(app, "onMatchStart", error);
+                            continue;
+                        }
+                    };
+                let mut resolved = resolved.into_iter();
+                if let Some(command) = start {
+                    if let Some(body) = resolved.next() {
+                        deliver_lifecycle_direct(app, "onMatchStart", &command.language, &body)
+                            .await;
+                    }
+                }
+                if let Some(command) = end {
+                    if let Some(body) = resolved.next() {
+                        memory.prepared_match_end = Some(PreparedMatchEnd {
+                            match_id,
+                            language: command.language,
+                            body,
+                        });
+                    }
+                }
+            }
+            LifecycleTransition::MatchEnded { match_id } => {
+                let Some(prepared) = take_prepared_match_end(memory, &match_id) else {
+                    continue;
+                };
+                deliver_lifecycle_direct(app, "onMatchEnd", &prepared.language, &prepared.body)
+                    .await;
+            }
+        }
+    }
 }
 
 /// Clones the cached client out, rebuilding it if the lockfile changed.
@@ -1640,6 +1797,57 @@ mod tests {
             deliver_source_reply_direct("reply once".into()),
             "reply once"
         );
+    }
+
+    #[test]
+    fn lifecycle_observation_uses_pregame_and_coregame_rooms_only() {
+        let cids = HashMap::from([
+            (
+                ChatChannel::Pregame,
+                "pregame-a-blue@ares-pregame.ap1.pvp.net".into(),
+            ),
+            (
+                ChatChannel::Team,
+                "pregame-a-blue@ares-pregame.ap1.pvp.net".into(),
+            ),
+            (
+                ChatChannel::All,
+                "match-a-all@ares-coregame.ap1.pvp.net".into(),
+            ),
+        ]);
+
+        assert_eq!(
+            phase_observation(&cids),
+            PhaseObservation {
+                connected: true,
+                pregame_id: Some("pregame-a-blue@ares-pregame.ap1.pvp.net".into()),
+                match_id: Some("match-a-all@ares-coregame.ap1.pvp.net".into()),
+            }
+        );
+    }
+
+    #[test]
+    fn prepared_match_end_keeps_start_snapshot_and_is_consumed_once() {
+        let mut memory = PollMemory {
+            prepared_match_end: Some(PreparedMatchEnd {
+                match_id: "match-a".into(),
+                language: "none".into(),
+                body: "Start map was Ascent with 10 players".into(),
+            }),
+            ..PollMemory::default()
+        };
+
+        assert_eq!(take_prepared_match_end(&mut memory, "match-b"), None);
+        assert!(memory.prepared_match_end.is_some());
+        assert_eq!(
+            take_prepared_match_end(&mut memory, "match-a"),
+            Some(PreparedMatchEnd {
+                match_id: "match-a".into(),
+                language: "none".into(),
+                body: "Start map was Ascent with 10 players".into(),
+            })
+        );
+        assert_eq!(take_prepared_match_end(&mut memory, "match-a"), None);
     }
 
     fn custom_commands() -> Vec<chat_command::CustomBotCommand> {

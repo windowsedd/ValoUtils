@@ -30,7 +30,13 @@ struct TemplateSnapshot {
     state: String,
     map_id: String,
     queue_id: String,
+    server: String,
     players: Vec<TemplatePlayer>,
+}
+
+fn normalize_server(value: &str) -> String {
+    let value = value.trim();
+    value.rsplit('.').next().unwrap_or_default().to_string()
 }
 
 impl TemplateSnapshot {
@@ -110,6 +116,12 @@ impl TemplateSnapshot {
                 .and_then(Value::as_str)
                 .unwrap_or_default()
                 .to_string(),
+            server: normalize_server(
+                value
+                    .pointer("/match/server")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default(),
+            ),
             players,
         })
     }
@@ -401,6 +413,9 @@ fn values_from_context(
         values.insert("queue".into(), snapshot.queue_id.clone());
         values.insert("mode".into(), mode_label(&snapshot.queue_id));
     }
+    if !snapshot.server.is_empty() {
+        values.insert("server".into(), snapshot.server.clone());
+    }
     if let Some(phase) = phase_label(&snapshot.state) {
         values.insert("phase".into(), phase.into());
     }
@@ -586,14 +601,40 @@ async fn load_snapshot(
     TemplateSnapshot::from_value(&value)
 }
 
-pub(crate) async fn resolve_custom_message(app: &AppHandle, message: &str) -> String {
-    let plan = chat_template::plan_template(message);
+fn render_custom_messages(
+    messages: &[String],
+    snapshot: &TemplateSnapshot,
+    recent: &HashMap<String, Value>,
+    labels: &ContentLabels,
+) -> Vec<String> {
+    let values = values_from_context(snapshot, recent, labels);
+    messages
+        .iter()
+        .map(|message| chat_template::render_template(message, &values))
+        .collect()
+}
+
+pub(crate) async fn resolve_custom_messages(
+    app: &AppHandle,
+    messages: &[String],
+) -> Result<Vec<String>, String> {
+    let plans: Vec<_> = messages
+        .iter()
+        .map(|message| chat_template::plan_template(message))
+        .collect();
+    let mut plan = TemplatePlan::default();
+    for message_plan in &plans {
+        plan.merge(message_plan);
+    }
     if plan.variables.is_empty() {
-        return message.to_string();
+        return Ok(messages.to_vec());
     }
     let deadline = tokio::time::Instant::now() + TEMPLATE_RESOLUTION_TIMEOUT;
     let Some(snapshot) = load_snapshot(app, deadline).await else {
-        return chat_template::render_template(message, &HashMap::new());
+        return Ok(messages
+            .iter()
+            .map(|message| chat_template::render_template(message, &HashMap::new()))
+            .collect());
     };
     let puuids = requested_recent_puuids(&plan, &snapshot);
     let recent = if puuids.is_empty() {
@@ -612,8 +653,17 @@ pub(crate) async fn resolve_custom_message(app: &AppHandle, message: &str) -> St
     let labels = load_content_labels(&plan, deadline)
         .await
         .unwrap_or_default();
-    let values = values_from_context(&snapshot, &recent, &labels);
-    chat_template::render_template(message, &values)
+    Ok(render_custom_messages(
+        messages, &snapshot, &recent, &labels,
+    ))
+}
+
+pub(crate) async fn resolve_custom_message(app: &AppHandle, message: &str) -> String {
+    resolve_custom_messages(app, &[message.to_string()])
+        .await
+        .ok()
+        .and_then(|mut messages| messages.pop())
+        .unwrap_or_else(|| chat_template::render_template(message, &HashMap::new()))
 }
 
 #[cfg(test)]
@@ -724,6 +774,23 @@ mod tests {
     }
 
     #[test]
+    fn start_and_end_templates_render_from_one_shared_snapshot() {
+        let messages = vec![
+            "Map: {{map}}".to_string(),
+            "Players: {{roster_count}}".to_string(),
+        ];
+        assert_eq!(
+            render_custom_messages(
+                &messages,
+                &snapshot(),
+                &HashMap::new(),
+                &ContentLabels::default(),
+            ),
+            vec!["Map: Ascent", "Players: 4"]
+        );
+    }
+
+    #[test]
     fn content_labels_index_agent_and_map_api_fields() {
         let labels = ContentLabels::from_api(
             &json!({ "data": [{ "uuid": "SAGE-ID", "displayName": "Sage" }] }),
@@ -738,5 +805,26 @@ mod tests {
         assert_eq!(labels.maps["ascent-id"], "Ascent");
         assert_eq!(labels.maps["/game/maps/ascent/ascent"], "Ascent");
         assert_eq!(labels.maps["ascent"], "Ascent");
+    }
+
+    #[test]
+    fn normalizes_server_from_match_game_pod() {
+        let value = json!({
+            "success": true,
+            "state": "coregame",
+            "match": {
+                "server": "aresriot.aws-ape1-prod.ap-gp-hongkong-1"
+            },
+            "players": []
+        });
+        let snapshot = TemplateSnapshot::from_value(&value).unwrap();
+        let values = values_from_context(&snapshot, &HashMap::new(), &ContentLabels::default());
+        assert_eq!(values["server"], "ap-gp-hongkong-1");
+    }
+
+    #[test]
+    fn preserves_undotted_server_and_omits_missing_server() {
+        assert_eq!(normalize_server("local-pod"), "local-pod");
+        assert_eq!(normalize_server(""), "");
     }
 }

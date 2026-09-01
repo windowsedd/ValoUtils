@@ -155,6 +155,7 @@ fn extract_match_context(state: LiveState, source: &Value, match_id: Option<&str
         "mapId": string(&["/MapID", "/MapId", "/CustomGameData/Settings/Map"]),
         "modeId": string(&["/ModeID", "/ModeId", "/GameMode", "/Mode", "/CustomGameData/Settings/Mode"]),
         "queueId": string(&["/QueueID", "/QueueId", "/MatchmakingData/QueueID"]).unwrap_or_default(),
+        "server": string(&["/GamePodID", "/GamePodId", "/gamePodId"]).unwrap_or_default(),
         "phase": state.as_str(),
     })
 }
@@ -1470,7 +1471,8 @@ mod tests {
         let source = json!({
             "MapID": "/Game/Maps/Ascent/Ascent",
             "ModeID": "/Game/GameModes/Bomb/BombGameMode.BombGameMode_C",
-            "QueueID": "competitive"
+            "QueueID": "competitive",
+            "GamePodID": "aresriot.aws-ape1-prod.ap-gp-hongkong-1"
         });
 
         assert_eq!(
@@ -1480,6 +1482,7 @@ mod tests {
                 "mapId": "/Game/Maps/Ascent/Ascent",
                 "modeId": "/Game/GameModes/Bomb/BombGameMode.BombGameMode_C",
                 "queueId": "competitive",
+                "server": "aresriot.aws-ape1-prod.ap-gp-hongkong-1",
                 "phase": "coregame"
             })
         );
@@ -1502,6 +1505,7 @@ mod tests {
                 "mapId": "/Game/Maps/Bonsai/Bonsai",
                 "modeId": "/Game/GameModes/Bomb/BombGameMode.BombGameMode_C",
                 "queueId": "competitive",
+                "server": "",
                 "phase": "party"
             })
         );
