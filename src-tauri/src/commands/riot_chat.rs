@@ -1440,6 +1440,7 @@ mod tests {
     fn custom_commands() -> Vec<chat_command::CustomBotCommand> {
         vec![
             chat_command::CustomBotCommand {
+                when: chat_command::CustomCommandWhen::Command,
                 trigger: "gg".into(),
                 action: "send".into(),
                 channel: "team".into(),
@@ -1448,6 +1449,7 @@ mod tests {
                 count: 0,
             },
             chat_command::CustomBotCommand {
+                when: chat_command::CustomCommandWhen::Command,
                 trigger: "last".into(),
                 action: "tran".into(),
                 channel: "team".into(),
@@ -1487,6 +1489,7 @@ mod tests {
     fn in_game_custom_send_keeps_its_template_until_execution() {
         let mut echoes = PendingEchoes::default();
         let command = chat_command::CustomBotCommand {
+            when: chat_command::CustomCommandWhen::Command,
             trigger: "scout".into(),
             action: "send".into(),
             channel: "team".into(),
@@ -1562,6 +1565,7 @@ mod tests {
         // A trigger whose translation starts with the trigger word is the loop
         // case: without the echo list this line would fire `gg` forever.
         let commands = vec![chat_command::CustomBotCommand {
+            when: chat_command::CustomCommandWhen::Command,
             trigger: "gg".into(),
             action: "send".into(),
             channel: "team".into(),
@@ -1683,6 +1687,7 @@ mod tests {
     #[test]
     fn the_composer_keeps_custom_send_templates_until_execution() {
         let command = chat_command::CustomBotCommand {
+            when: chat_command::CustomCommandWhen::Command,
             trigger: "scout".into(),
             action: "send".into(),
             channel: "team".into(),

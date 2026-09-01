@@ -23,8 +23,20 @@ use serde::{Deserialize, Serialize};
 pub const HISTORY_TRANSLATE_MAX: usize = 10;
 pub const HISTORY_TRANSLATE_DEFAULT: usize = 1;
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum CustomCommandWhen {
+    #[default]
+    Command,
+    OnPregame,
+    OnMatchStart,
+    OnMatchEnd,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CustomBotCommand {
+    #[serde(default)]
+    pub when: CustomCommandWhen,
     pub trigger: String,
     pub action: String,
     #[serde(default)]
@@ -74,40 +86,74 @@ pub fn find_custom_command(input: &str, commands: &[CustomBotCommand]) -> Option
     }
     commands
         .iter()
-        .find(|item| normalize_custom_trigger(&item.trigger) == wanted)
+        .find(|item| {
+            item.when == CustomCommandWhen::Command
+                && normalize_custom_trigger(&item.trigger) == wanted
+        })
         .cloned()
 }
 
-pub fn expand_custom_command(input: &str, commands: &[CustomBotCommand]) -> Option<String> {
-    let command = find_custom_command(input, commands)?;
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ExpandedCustomCommand {
+    History(String),
+    Group(String),
+    Direct { language: String, message: String },
+}
+
+pub fn expand_matched_custom_command(
+    command: &CustomBotCommand,
+    resolved_message: &str,
+) -> Option<ExpandedCustomCommand> {
     match command.action.trim().to_ascii_lowercase().as_str() {
         "send" => {
-            let message = command.message.trim();
+            let message = resolved_message.trim();
             if message.is_empty() {
                 return None;
+            }
+            let language = match command.language.trim() {
+                "" => "none",
+                value => value,
+            };
+            if command.channel.trim().eq_ignore_ascii_case("direct") {
+                return Some(ExpandedCustomCommand::Direct {
+                    language: language.to_string(),
+                    message: message.to_string(),
+                });
             }
             let channel = if command.channel.trim().is_empty() {
                 "team"
             } else {
                 command.channel.trim()
             };
-            let language = command.language.trim();
-            if language.is_empty() {
-                Some(format!(".send {channel} none {message}"))
-            } else {
-                Some(format!(".send {channel} {language} {message}"))
-            }
+            Some(ExpandedCustomCommand::Group(format!(
+                ".send {channel} {language} {message}"
+            )))
         }
         "tran" => {
             let count = command.count.max(1);
             let channel = command.channel.trim();
+            if channel.eq_ignore_ascii_case("direct") {
+                return None;
+            }
             if channel.is_empty() {
-                Some(format!(".tran {count}"))
+                Some(ExpandedCustomCommand::History(format!(".tran {count}")))
             } else {
-                Some(format!(".tran {channel} {count}"))
+                Some(ExpandedCustomCommand::History(format!(
+                    ".tran {channel} {count}"
+                )))
             }
         }
         _ => None,
+    }
+}
+
+pub fn expand_custom_command(input: &str, commands: &[CustomBotCommand]) -> Option<String> {
+    let command = find_custom_command(input, commands)?;
+    match expand_matched_custom_command(&command, &command.message)? {
+        ExpandedCustomCommand::History(command) | ExpandedCustomCommand::Group(command) => {
+            Some(command)
+        }
+        ExpandedCustomCommand::Direct { .. } => None,
     }
 }
 
@@ -349,6 +395,91 @@ mod tests {
         parse_translation_command(input, "google")
     }
 
+    fn custom(
+        when: CustomCommandWhen,
+        trigger: &str,
+        action: &str,
+        channel: &str,
+        message: &str,
+    ) -> CustomBotCommand {
+        CustomBotCommand {
+            when,
+            trigger: trigger.into(),
+            action: action.into(),
+            channel: channel.into(),
+            language: "none".into(),
+            message: message.into(),
+            count: 1,
+        }
+    }
+
+    #[test]
+    fn old_json_defaults_when_to_command() {
+        let command: CustomBotCommand = serde_json::from_value(serde_json::json!({
+            "trigger": "eco",
+            "action": "send",
+            "channel": "team",
+            "language": "none",
+            "message": "save",
+            "count": 5
+        }))
+        .unwrap();
+        assert_eq!(command.when, CustomCommandWhen::Command);
+    }
+
+    #[test]
+    fn lifecycle_entries_do_not_match_chat_triggers() {
+        let commands = vec![custom(
+            CustomCommandWhen::OnPregame,
+            "ready",
+            "send",
+            "direct",
+            "Agent select",
+        )];
+        assert!(find_custom_command("ready", &commands).is_none());
+    }
+
+    #[test]
+    fn direct_send_expands_without_entering_dot_send_syntax() {
+        let command = custom(
+            CustomCommandWhen::Command,
+            "dm",
+            "send",
+            "direct",
+            "raw template",
+        );
+        assert_eq!(
+            expand_matched_custom_command(&command, "Ascent"),
+            Some(ExpandedCustomCommand::Direct {
+                language: "none".into(),
+                message: "Ascent".into(),
+            })
+        );
+        assert_eq!(expand_custom_command("dm", &[command]), None);
+    }
+
+    #[test]
+    fn group_and_history_expansion_remain_typed() {
+        let group = custom(
+            CustomCommandWhen::Command,
+            "gg",
+            "send",
+            "team",
+            "good game",
+        );
+        assert_eq!(
+            expand_matched_custom_command(&group, "good game"),
+            Some(ExpandedCustomCommand::Group(
+                ".send team none good game".into()
+            ))
+        );
+        let history = custom(CustomCommandWhen::Command, "last", "tran", "team", "");
+        assert_eq!(
+            expand_matched_custom_command(&history, ""),
+            Some(ExpandedCustomCommand::History(".tran team 1".into()))
+        );
+    }
+
     #[test]
     fn parses_the_documented_examples() {
         let team = parse(".send team german hello").unwrap();
@@ -554,6 +685,7 @@ mod tests {
     #[test]
     fn blank_custom_language_is_none_and_preserves_a_message_starting_with_none() {
         let command = CustomBotCommand {
+            when: CustomCommandWhen::Command,
             trigger: "pass".into(),
             action: "send".into(),
             channel: "team".into(),
@@ -582,6 +714,7 @@ mod tests {
     fn expands_custom_send_and_tran_shortcuts() {
         let commands = vec![
             CustomBotCommand {
+                when: CustomCommandWhen::Command,
                 trigger: "gg".into(),
                 action: "send".into(),
                 channel: "team".into(),
@@ -590,6 +723,7 @@ mod tests {
                 count: 0,
             },
             CustomBotCommand {
+                when: CustomCommandWhen::Command,
                 trigger: ".last".into(),
                 action: "tran".into(),
                 channel: "party".into(),
@@ -617,6 +751,7 @@ mod tests {
     #[test]
     fn finds_a_saved_command_without_losing_its_template() {
         let command = CustomBotCommand {
+            when: CustomCommandWhen::Command,
             trigger: "scout".into(),
             action: "send".into(),
             channel: "team".into(),
