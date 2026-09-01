@@ -262,27 +262,126 @@ pub(crate) async fn prepare_typed_translation(
     })
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum ResolvedCustomCommand {
+    History(String),
+    Group(String),
+    Direct(String),
+}
+
+struct DirectTranslationRequest {
+    message: String,
+    provider: String,
+    source_language: String,
+    target_language: String,
+    deepl_api_key: String,
+}
+
+fn direct_translation_request(
+    language: &str,
+    message: &str,
+    config: &TranslatorConfig,
+) -> Result<Option<DirectTranslationRequest>, RiotError> {
+    let language = language.trim();
+    if language.is_empty() || language.eq_ignore_ascii_case("none") {
+        return Ok(None);
+    }
+    let target_language = crate::translate::resolve_target_language(&config.provider, language)
+        .ok_or_else(|| RiotError::InvalidCommand(format!("Unknown language '{language}'.")))?;
+    Ok(Some(DirectTranslationRequest {
+        message: message.to_string(),
+        provider: config.provider.clone(),
+        source_language: "auto".into(),
+        target_language,
+        deepl_api_key: config.deepl_api_key.clone(),
+    }))
+}
+
+async fn resolve_direct_message(
+    language: &str,
+    message: &str,
+    app: Option<&AppHandle>,
+) -> Result<String, RiotError> {
+    let config = app
+        .map(translator_config)
+        .unwrap_or_else(|| TranslatorConfig {
+            provider: "google".into(),
+            deepl_api_key: String::new(),
+            target_language: "en".into(),
+        });
+    let Some(request) = direct_translation_request(language, message, &config)? else {
+        return Ok(message.to_string());
+    };
+    crate::translate::translate_text(
+        &request.message,
+        &request.provider,
+        &request.source_language,
+        &request.target_language,
+        &request.deepl_api_key,
+    )
+    .await
+    .map(|translated| translated.text)
+    .map_err(RiotError::InvalidCommand)
+}
+
 async fn resolve_matched_custom_command(
     command: &chat_command::CustomBotCommand,
     app: Option<&AppHandle>,
-) -> Option<String> {
-    let mut resolved = command.clone();
-    if resolved.action.trim().eq_ignore_ascii_case("send") {
-        resolved.message = match app {
-            Some(app) => super::bot_template::resolve_custom_message(app, &resolved.message).await,
-            None => crate::riot::chat_template::render_template(&resolved.message, &HashMap::new()),
-        };
+) -> Result<Option<ResolvedCustomCommand>, RiotError> {
+    let resolved_message = if command.action.trim().eq_ignore_ascii_case("send") {
+        match app {
+            Some(app) => super::bot_template::resolve_custom_message(app, &command.message).await,
+            None => crate::riot::chat_template::render_template(&command.message, &HashMap::new()),
+        }
+    } else {
+        command.message.clone()
+    };
+    let Some(expanded) = chat_command::expand_matched_custom_command(command, &resolved_message)
+    else {
+        return Ok(None);
+    };
+    match expanded {
+        chat_command::ExpandedCustomCommand::History(command) => {
+            Ok(Some(ResolvedCustomCommand::History(command)))
+        }
+        chat_command::ExpandedCustomCommand::Group(command) => {
+            Ok(Some(ResolvedCustomCommand::Group(command)))
+        }
+        chat_command::ExpandedCustomCommand::Direct { language, message } => {
+            let message = resolve_direct_message(&language, &message, app).await?;
+            Ok(Some(ResolvedCustomCommand::Direct(message)))
+        }
     }
-    let trigger = resolved.trigger.clone();
-    chat_command::expand_custom_command(&trigger, &[resolved])
+}
+
+fn deliver_proactive_direct_with(
+    body: &str,
+    deliver: impl FnOnce(&str) -> Result<(), String>,
+) -> Result<String, RiotError> {
+    deliver(body).map_err(RiotError::InvalidCommand)?;
+    Ok("Dummy Bot sent you a direct message.".into())
+}
+
+fn deliver_proactive_direct(body: &str) -> Result<String, RiotError> {
+    deliver_proactive_direct_with(body, |message| {
+        crate::presence_proxy::send_bot_direct(message)
+            .map(|_| ())
+            .map_err(|error| error.to_string())
+    })
+}
+
+fn deliver_source_reply_direct(body: String) -> String {
+    body
 }
 
 pub(crate) async fn resolve_custom_command_for_bot(
     input: &str,
     app: Option<&AppHandle>,
-) -> Option<String> {
+) -> Result<Option<ResolvedCustomCommand>, RiotError> {
     let commands = load_custom_commands(app);
-    let command = chat_command::find_custom_command(input, &commands)?;
+    let Some(command) = chat_command::find_custom_command(input, &commands) else {
+        return Ok(None);
+    };
     resolve_matched_custom_command(&command, app).await
 }
 
@@ -290,17 +389,21 @@ pub async fn execute_maybe_custom_command(
     input: &str,
     app: Option<&AppHandle>,
 ) -> Option<Result<String, crate::riot::error::RiotError>> {
-    let expanded = resolve_custom_command_for_bot(input, app).await?;
-    if chat_command::is_history_translate_command(&expanded) {
-        Some(execute_history_translation(&expanded, app).await)
-    } else if chat_command::is_translation_command(&expanded) {
-        Some(
-            execute_typed_translation(&expanded, app)
+    let resolved = match resolve_custom_command_for_bot(input, app).await {
+        Ok(Some(resolved)) => resolved,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
+    match resolved {
+        ResolvedCustomCommand::History(command) => {
+            Some(execute_history_translation(&command, app).await)
+        }
+        ResolvedCustomCommand::Group(command) => Some(
+            execute_typed_translation(&command, app)
                 .await
                 .map(|outcome| format_translation_reply(&outcome)),
-        )
-    } else {
-        None
+        ),
+        ResolvedCustomCommand::Direct(body) => Some(Ok(deliver_source_reply_direct(body))),
     }
 }
 
@@ -382,12 +485,19 @@ pub async fn chat_command(args: Vec<Value>, app: AppHandle) -> Result<String, ()
             .map(|outcome| format_translation_reply(&outcome)),
         ComposerCommand::Custom(command) => {
             match resolve_matched_custom_command(&command, Some(&app)).await {
-                Some(expanded) => execute_typed_translation(&expanded, Some(&app))
-                    .await
-                    .map(|outcome| format_translation_reply(&outcome)),
-                None => Err(RiotError::InvalidCommand(
+                Ok(Some(ResolvedCustomCommand::History(command))) => {
+                    execute_history_translation(&command, Some(&app)).await
+                }
+                Ok(Some(ResolvedCustomCommand::Group(command))) => {
+                    execute_typed_translation(&command, Some(&app))
+                        .await
+                        .map(|outcome| format_translation_reply(&outcome))
+                }
+                Ok(Some(ResolvedCustomCommand::Direct(body))) => deliver_proactive_direct(&body),
+                Ok(None) => Err(RiotError::InvalidCommand(
                     "Saved custom command is invalid.".into(),
                 )),
+                Err(error) => Err(error),
             }
         }
         ComposerCommand::Dodge => execute_dodge(Some(&app)).await,
@@ -1274,10 +1384,26 @@ async fn dispatch(
                 dispatch_translation_command(app, client, &command, memory).await;
             }
             OwnMessage::Custom(command) => {
-                if let Some(command) = resolve_matched_custom_command(&command, Some(app)).await {
-                    dispatch_translation_command(app, client, &command, memory).await;
-                } else {
-                    let _ = app.emit(EVENT_ERROR, "Saved custom command is invalid.");
+                match resolve_matched_custom_command(&command, Some(app)).await {
+                    Ok(Some(ResolvedCustomCommand::Group(command))) => {
+                        dispatch_translation_command(app, client, &command, memory).await;
+                    }
+                    Ok(Some(ResolvedCustomCommand::Direct(body))) => {
+                        match deliver_proactive_direct(&body) {
+                            Ok(reply) => {
+                                let _ = app.emit(EVENT_COMMAND, reply);
+                            }
+                            Err(error) => {
+                                let _ = app.emit(EVENT_ERROR, error.to_string());
+                            }
+                        }
+                    }
+                    Ok(Some(ResolvedCustomCommand::History(_))) | Ok(None) => {
+                        let _ = app.emit(EVENT_ERROR, "Saved custom command is invalid.");
+                    }
+                    Err(error) => {
+                        let _ = app.emit(EVENT_ERROR, error.to_string());
+                    }
                 }
             }
         }
@@ -1436,6 +1562,85 @@ fn translator_config(app: &AppHandle) -> TranslatorConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn direct_custom_command(language: &str, message: &str) -> chat_command::CustomBotCommand {
+        chat_command::CustomBotCommand {
+            when: chat_command::CustomCommandWhen::Command,
+            trigger: "dm".into(),
+            action: "send".into(),
+            channel: "direct".into(),
+            language: language.into(),
+            message: message.into(),
+            count: 0,
+        }
+    }
+
+    #[tokio::test]
+    async fn direct_language_none_preserves_the_resolved_message() {
+        let resolved =
+            resolve_matched_custom_command(&direct_custom_command("none", "hello exactly"), None)
+                .await
+                .unwrap()
+                .unwrap();
+
+        assert_eq!(
+            resolved,
+            ResolvedCustomCommand::Direct("hello exactly".into())
+        );
+    }
+
+    #[test]
+    fn translated_direct_requests_use_auto_source_and_configured_provider() {
+        let config = TranslatorConfig {
+            provider: "google".into(),
+            deepl_api_key: "secret".into(),
+            target_language: "en".into(),
+        };
+        let request = direct_translation_request("french", "hello", &config)
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(request.provider, "google");
+        assert_eq!(request.source_language, "auto");
+        assert_eq!(request.target_language, "fr");
+        assert_eq!(request.message, "hello");
+        assert_eq!(request.deepl_api_key, "secret");
+    }
+
+    #[test]
+    fn proactive_direct_returns_confirmation_after_one_delivery() {
+        let mut deliveries = 0;
+        let reply = deliver_proactive_direct_with("hello", |body| {
+            deliveries += 1;
+            assert_eq!(body, "hello");
+            Ok(())
+        })
+        .unwrap();
+
+        assert_eq!(deliveries, 1);
+        assert_eq!(reply, "Dummy Bot sent you a direct message.");
+    }
+
+    #[test]
+    fn proactive_direct_surfaces_an_absent_relay() {
+        let error = deliver_proactive_direct_with("hello", |_| {
+            Err("Dummy Bot direct messages require an active Riot relay connection.".into())
+        })
+        .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Dummy Bot direct messages require an active Riot relay connection."
+        );
+    }
+
+    #[test]
+    fn a_direct_command_from_the_bot_whisper_path_is_only_a_source_reply() {
+        assert_eq!(
+            deliver_source_reply_direct("reply once".into()),
+            "reply once"
+        );
+    }
 
     fn custom_commands() -> Vec<chat_command::CustomBotCommand> {
         vec![

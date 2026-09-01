@@ -10,6 +10,7 @@ use tokio_native_tls::TlsAcceptor;
 use tokio_rustls::TlsAcceptor;
 use tokio_rustls::TlsConnector;
 
+use crate::commands::riot_chat::ResolvedCustomCommand;
 use crate::presence_proxy::xml::{
     bot_command_frames, bot_message_body, bot_presence, bot_reply, inject_bot_roster,
     is_global_presence, is_muc_presence, parse_bot_message, rewrite_presence, BotCommand,
@@ -297,34 +298,37 @@ async fn client_to_remote(
                                         Ok(reply) => reply,
                                         Err(error) => error.to_string(),
                                     }
-                                } else if let Some(expanded) =
-                                    crate::commands::riot_chat::resolve_custom_command_for_bot(
+                                } else {
+                                    match crate::commands::riot_chat::resolve_custom_command_for_bot(
                                         &body,
                                         crate::presence_proxy::app_handle(),
                                     )
                                     .await
-                                {
-                                    if crate::riot::chat_command::is_history_translate_command(&expanded) {
-                                        match crate::commands::riot_chat::execute_history_translation(
-                                            &expanded,
-                                            crate::presence_proxy::app_handle(),
-                                        )
-                                        .await
-                                        {
-                                            Ok(reply) => reply,
-                                            Err(error) => error.to_string(),
+                                    {
+                                        Ok(Some(ResolvedCustomCommand::History(expanded))) => {
+                                            match crate::commands::riot_chat::execute_history_translation(
+                                                &expanded,
+                                                crate::presence_proxy::app_handle(),
+                                            )
+                                            .await
+                                            {
+                                                Ok(reply) => reply,
+                                                Err(error) => error.to_string(),
+                                            }
                                         }
-                                    } else if crate::riot::chat_command::is_translation_command(&expanded) {
-                                        translate_bot_command_on_connection(&expanded, &remote_write).await
-                                    } else {
-                                        crate::presence_proxy::apply_command(
+                                        Ok(Some(ResolvedCustomCommand::Group(expanded))) => {
+                                            translate_bot_command_on_connection(
+                                                &expanded,
+                                                &remote_write,
+                                            )
+                                            .await
+                                        }
+                                        Ok(Some(ResolvedCustomCommand::Direct(reply))) => reply,
+                                        Ok(None) => crate::presence_proxy::apply_command(
                                             crate::fake_player::parse_command(&body),
-                                        )
+                                        ),
+                                        Err(error) => error.to_string(),
                                     }
-                                } else {
-                                    crate::presence_proxy::apply_command(
-                                        crate::fake_player::parse_command(&body),
-                                    )
                                 };
                                 crate::fake_player::record_message(&reply, false);
                                 let version = bot_version.lock().await.clone();
