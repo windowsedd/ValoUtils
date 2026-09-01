@@ -13,6 +13,7 @@ The event messages use the existing custom-command message editor, translation s
 - Add one configurable message for each of `onPregame`, `onMatchStart`, and `onMatchEnd`.
 - Fire lifecycle events even when ValoUtils starts during agent select or an active match.
 - Support the existing template-variable catalog for all three lifecycle messages.
+- Add `{{server}}` to the Match variable group for the current pregame or live-game server pod.
 - Preserve all existing saved commands and group-room behavior without migration.
 
 ## Non-goals
@@ -22,6 +23,7 @@ The event messages use the existing custom-command message editor, translation s
 - Do not queue lifecycle messages while the Dummy Bot relay is disconnected.
 - Do not add `onPregameEnd` or expose user-defined event names.
 - Do not allow more than one configured entry for the same lifecycle event.
+- Do not expose Riot's full internal `GamePodID` prefix or reduce the value to only the broad shard.
 - Do not make edits to an `onMatchEnd` template during an active match affect that match; event configuration is captured when the match starts and applies to the next match after an edit.
 
 ## Saved Configuration
@@ -82,6 +84,8 @@ For a lifecycle entry:
 - The saved-command preview labels the event and shows `Dummy Bot DM` rather than rendering a `.send` command.
 
 The editor continues to show unexpanded `{{variable}}` syntax in saved previews.
+
+The Variables popover adds `{{server}}` to the Match group. Its description is `Current match server`, and its example uses the normalized pod suffix `ap-gp-hongkong-1`.
 
 ## Direct Delivery Architecture
 
@@ -149,6 +153,8 @@ The event state is in memory. Restarting ValoUtils during a match intentionally 
 
 All three lifecycle messages use the complete existing variable catalog. `onPregame` resolves against its pregame snapshot. Match Start and Match End share the core-game snapshot captured at Match Start, which keeps map, roster, team, agent, and recent-stat values available after the room disappears.
 
+`{{server}}` reads `GamePodID` from Riot's pregame or core-game match payload. The value is normalized to the final dot-separated pod suffix: for example, `aresriot.aws-ape1-prod.ap-gp-hongkong-1` becomes `ap-gp-hongkong-1`. If Riot returns a non-empty value without a dot, that value is preserved. Party/idle state or a missing value renders as `N/A`. Because Match End uses the Match Start snapshot, it retains the same server value after the core-game room disappears.
+
 - Known unavailable values render as `N/A`.
 - Unknown placeholders remain verbatim.
 - Literal messages use the no-data fast path.
@@ -184,6 +190,7 @@ Frontend tests cover:
 - lifecycle controls hiding trigger/action and locking Direct;
 - one-entry uniqueness for all three lifecycle events;
 - saved preview labels and unchanged template autocomplete;
+- `{{server}}` appearing in the Match autocomplete group with localized description and example;
 - existing manual Send and Translate History editor behavior.
 
 Rust unit tests cover:
@@ -197,6 +204,7 @@ Rust unit tests cover:
 - transient missing core-game checks and Riot Client disconnects;
 - direct match-ID replacement ordering;
 - retained Match End template values;
+- pregame and core-game `GamePodID` extraction, normalized server suffix rendering, and missing-server `N/A` fallback;
 - skipped event delivery without queueing;
 - preservation of every existing command-routing test.
 
