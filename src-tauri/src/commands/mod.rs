@@ -1,5 +1,6 @@
 pub mod app;
 pub mod battlepass;
+pub(crate) mod bot_template;
 pub mod career;
 pub mod chat;
 pub mod fake_player;

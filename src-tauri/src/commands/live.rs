@@ -1155,6 +1155,43 @@ async fn fetch_recent_stats(
     (puuid, result)
 }
 
+pub(crate) async fn template_recent_stats(
+    riot: &RiotState,
+    cache: &LiveStatsCache,
+    pd_cache: &LivePartyHistoryCache,
+    puuids: Vec<String>,
+    queue_id: String,
+    deadline: tokio::time::Instant,
+) -> HashMap<String, Value> {
+    let Ok(Ok(api)) = tokio::time::timeout_at(deadline, api::create_api(riot)).await else {
+        return HashMap::new();
+    };
+    let mut workers = tokio::task::JoinSet::new();
+    for puuid in puuids {
+        workers.spawn(fetch_recent_stats(
+            api.clone(),
+            puuid,
+            queue_id.clone(),
+            cache.values.clone(),
+            cache.permits.clone(),
+            pd_cache.clone(),
+        ));
+    }
+
+    let mut values = HashMap::new();
+    loop {
+        match tokio::time::timeout_at(deadline, workers.join_next()).await {
+            Ok(Some(Ok((puuid, Ok(stats))))) => {
+                values.insert(puuid.to_ascii_lowercase(), stats);
+            }
+            Ok(Some(_)) => continue,
+            Ok(None) | Err(_) => break,
+        }
+    }
+    workers.abort_all();
+    values
+}
+
 fn should_cache_recent_stats(expected: usize, fetched: usize, normalized: usize) -> bool {
     expected > 0 && expected == fetched && expected == normalized
 }
