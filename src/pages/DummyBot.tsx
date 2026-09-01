@@ -3,9 +3,13 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { FaPlay, FaPlus, FaRobot, FaTrash } from "react-icons/fa6";
 import {
+	CUSTOM_COMMAND_WHENS,
+	channelsForCustomCommand,
+	isLifecycleWhen,
 	normalizeCustomBotCommand,
 	normalizeCustomBotCommands,
 	type CustomBotCommand,
+	type CustomCommandWhen,
 } from "./bot-custom-command";
 import { BotCommandMessageEditor } from "./bot-command-message-editor";
 
@@ -80,17 +84,23 @@ const DummyBot = () => {
 	};
 
 	const addCustomCommand = () => {
-		const trigger = normalizeTrigger(draft.trigger);
-		if (!trigger) {
-			setCustomError(t("dummyBot.customTriggerRequired"));
-			return;
-		}
-		if (RESERVED.has(trigger)) {
-			setCustomError(t("dummyBot.customTriggerReserved"));
-			return;
-		}
-		if (customCommands.some((item) => normalizeTrigger(item.trigger) === trigger)) {
-			setCustomError(t("dummyBot.customTriggerExists"));
+		const lifecycle = isLifecycleWhen(draft.when);
+		const trigger = lifecycle ? "" : normalizeTrigger(draft.trigger);
+		if (!lifecycle) {
+			if (!trigger) {
+				setCustomError(t("dummyBot.customTriggerRequired"));
+				return;
+			}
+			if (RESERVED.has(trigger)) {
+				setCustomError(t("dummyBot.customTriggerReserved"));
+				return;
+			}
+			if (customCommands.some((item) => item.when === "command" && normalizeTrigger(item.trigger) === trigger)) {
+				setCustomError(t("dummyBot.customTriggerExists"));
+				return;
+			}
+		} else if (customCommands.some((item) => item.when === draft.when)) {
+			setCustomError(t("dummyBot.customLifecycleExists"));
 			return;
 		}
 		if (draft.action === "send" && !draft.message.trim()) {
@@ -107,7 +117,25 @@ const DummyBot = () => {
 				count: Math.max(1, Number(draft.count) || 1),
 			}),
 		]);
-		setDraft((current) => ({ ...current, trigger: "", message: "" }));
+		setDraft((current) => normalizeCustomBotCommand({
+			...current,
+			when: "command",
+			trigger: "",
+			action: "send",
+			channel: "team",
+			message: "",
+		}));
+		setCustomError(null);
+	};
+
+	const selectWhen = (when: CustomCommandWhen) => {
+		if (isLifecycleWhen(when) && customCommands.some((item) => item.when === when)) {
+			setCustomError(t("dummyBot.customLifecycleExists"));
+			return;
+		}
+		setDraft((current) => normalizeCustomBotCommand(when === "command"
+			? { ...current, when, trigger: "", action: "send", channel: "team" }
+			: { ...current, when }));
 		setCustomError(null);
 	};
 
@@ -175,20 +203,26 @@ const DummyBot = () => {
 
 			<SectionCard title={t("dummyBot.customTitle")} accent="#e8a33d" count={customCommands.length}>
 				<p className="px-3 pb-1 text-xs text-(--ink-faint)">{t("dummyBot.customDesc")}</p>
-				{customCommands.map((item) => (
-					<SectionRow key={item.trigger} leader={false}>
+				{customCommands.map((item, index) => (
+					<SectionRow key={`${item.when}:${item.trigger}:${index}`} leader={false}>
 						<div className="flex min-w-0 flex-1 items-center gap-2">
-							<span className="font-mono text-sm text-(--ink)">{item.trigger}</span>
+							<span className="font-mono text-sm text-(--ink)">
+								{isLifecycleWhen(item.when)
+									? t(`dummyBot.customWhen.${item.when}`)
+									: item.trigger}
+							</span>
 							<span className="truncate text-xs text-(--ink-dim)">
-								{item.action === "send"
-									? `.send ${item.channel || "team"} ${item.language} ${item.message}`.trim()
+								{isLifecycleWhen(item.when) || item.channel === "direct"
+									? `Dummy Bot ${t("dummyBot.customTargetDirect")} · ${item.language} · ${item.message}`
+									: item.action === "send"
+										? `.send ${item.channel || "team"} ${item.language} ${item.message}`.trim()
 									: `.tran ${item.channel} ${item.count || 1}`.trim()}
 							</span>
 						</div>
 						<button
 							type="button"
 							className="shrink-0 rounded-sm p-1.5 text-(--ink-faint) hover:bg-white/8 hover:text-(--signal-neg)"
-							onClick={() => saveCustomCommands(customCommands.filter((command) => command.trigger !== item.trigger))}
+							onClick={() => saveCustomCommands(customCommands.filter((_, commandIndex) => commandIndex !== index))}
 							aria-label={t("dummyBot.customRemove")}
 						>
 							<FaTrash className="h-3 w-3" />
@@ -196,17 +230,52 @@ const DummyBot = () => {
 					</SectionRow>
 				))}
 				<div className="grid grid-cols-2 gap-2 px-2.5 py-2 sm:grid-cols-6">
-					<input value={draft.trigger} onChange={(event) => setDraft((current) => ({ ...current, trigger: event.target.value }))} placeholder=".gg" className="min-w-0 rounded-sm border border-(--line) bg-(--panel-raised) px-2 py-1.5 font-mono text-xs text-(--ink)" />
-					<select value={draft.action} onChange={(event) => setDraft((current) => ({ ...current, action: event.target.value as CustomBotCommand["action"] }))} className="min-w-0 rounded-sm border border-(--line) bg-(--panel-raised) px-2 py-1.5 text-xs text-(--ink)">
-						<option value="send">{t("dummyBot.customActionSend")}</option>
-						<option value="tran">{t("dummyBot.customActionTran")}</option>
+					<select
+						value={draft.when}
+						onChange={(event) => selectWhen(event.target.value as CustomCommandWhen)}
+						aria-label={t("dummyBot.customWhenLabel")}
+						className="min-w-0 rounded-sm border border-(--line) bg-(--panel-raised) px-2 py-1.5 text-xs text-(--ink)"
+					>
+						{CUSTOM_COMMAND_WHENS.map((when) => (
+							<option
+								key={when}
+								value={when}
+								disabled={isLifecycleWhen(when) && customCommands.some((item) => item.when === when)}
+							>
+								{t(`dummyBot.customWhen.${when}`)}
+							</option>
+						))}
 					</select>
-					<select value={draft.channel} onChange={(event) => setDraft((current) => ({ ...current, channel: event.target.value as CustomBotCommand["channel"] }))} className="min-w-0 rounded-sm border border-(--line) bg-(--panel-raised) px-2 py-1.5 text-xs text-(--ink)">
-						<option value="party">party</option>
-						<option value="team">team</option>
-						<option value="all">all</option>
-						<option value="pregame">pregame</option>
-					</select>
+					{isLifecycleWhen(draft.when) ? (
+						<>
+							<input readOnly value={t("dummyBot.customActionSend")} aria-label={t("dummyBot.customActionSend")} className="min-w-0 rounded-sm border border-(--line) bg-(--panel-raised) px-2 py-1.5 text-xs text-(--ink-dim)" />
+							<input readOnly value={t("dummyBot.customTargetDirect")} aria-label={t("dummyBot.customTargetLabel")} className="min-w-0 rounded-sm border border-(--line) bg-(--panel-raised) px-2 py-1.5 text-xs text-(--ink-dim)" />
+						</>
+					) : (
+						<>
+							<input value={draft.trigger} onChange={(event) => setDraft((current) => ({ ...current, trigger: event.target.value }))} placeholder=".gg" className="min-w-0 rounded-sm border border-(--line) bg-(--panel-raised) px-2 py-1.5 font-mono text-xs text-(--ink)" />
+							<select
+								value={draft.action}
+								onChange={(event) => setDraft((current) => normalizeCustomBotCommand({ ...current, action: event.target.value as CustomBotCommand["action"] }))}
+								className="min-w-0 rounded-sm border border-(--line) bg-(--panel-raised) px-2 py-1.5 text-xs text-(--ink)"
+							>
+								<option value="send">{t("dummyBot.customActionSend")}</option>
+								<option value="tran">{t("dummyBot.customActionTran")}</option>
+							</select>
+							<select
+								value={draft.channel}
+								onChange={(event) => setDraft((current) => ({ ...current, channel: event.target.value as CustomBotCommand["channel"] }))}
+								aria-label={t("dummyBot.customTargetLabel")}
+								className="min-w-0 rounded-sm border border-(--line) bg-(--panel-raised) px-2 py-1.5 text-xs text-(--ink)"
+							>
+								{channelsForCustomCommand(draft.action).map((channel) => (
+									<option key={channel} value={channel}>
+										{channel === "direct" ? t("dummyBot.customTargetDirect") : channel}
+									</option>
+								))}
+							</select>
+						</>
+					)}
 					{draft.action === "send" ? (
 						<>
 							<input value={draft.language} onChange={(event) => setDraft((current) => ({ ...current, language: event.target.value }))} placeholder="ko-KR" className="min-w-0 rounded-sm border border-(--line) bg-(--panel-raised) px-2 py-1.5 font-mono text-xs text-(--ink)" />
@@ -221,7 +290,12 @@ const DummyBot = () => {
 					)}
 				</div>
 				<div className="flex items-center justify-between gap-2 px-2.5 pb-2">
-					{customError ? <p className="text-xs text-(--signal-neg)">{customError}</p> : <span />}
+					<div>
+						{customError && <p className="text-xs text-(--signal-neg)">{customError}</p>}
+						{(isLifecycleWhen(draft.when) || draft.channel === "direct") && (
+							<p className="text-xs text-(--ink-faint)">{t("dummyBot.customDirectRequiresRelay")}</p>
+						)}
+					</div>
 					<button type="button" onClick={addCustomCommand} className="flex items-center gap-1.5 rounded-sm border border-(--line-strong) bg-(--panel-raised) px-3 py-1.5 text-xs font-semibold text-(--ink) hover:bg-white/8">
 						<FaPlus className="h-3 w-3" />
 						{t("dummyBot.customAdd")}

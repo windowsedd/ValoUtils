@@ -10,12 +10,19 @@ import {
 describe("bot command template autocomplete", () => {
 	test("catalog exposes every approved variable exactly once", () => {
 		const ids = BOT_TEMPLATE_VARIABLES.map((item) => item.id);
-		expect(ids).toHaveLength(33);
+		expect(ids).toHaveLength(34);
 		expect(new Set(ids).size).toBe(ids.length);
 		expect(ids).toContain("enemy_team_kda");
 		expect(ids).toContain("ally_team_agents");
 		expect(ids).toContain("my_win_rate");
 		expect(ids).toContain("roster_count");
+		expect(BOT_TEMPLATE_VARIABLES.find((item) => item.id === "server")).toEqual({
+			id: "server",
+			group: "match",
+			descriptionKey: "dummyBot.variable.server",
+			example: "ap-gp-hongkong-1",
+			dataLevel: "roster",
+		});
 	});
 
 	test("finds only the unmatched placeholder at the caret", () => {

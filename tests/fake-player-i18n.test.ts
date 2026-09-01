@@ -45,6 +45,16 @@ const requiredKeys = [
 	"customRemove",
 	"customActionSend",
 	"customActionTran",
+	"customWhenLabel",
+	"customWhen.command",
+	"customWhen.onPregame",
+	"customWhen.onMatchStart",
+	"customWhen.onMatchEnd",
+	"customTargetLabel",
+	"customTargetDirect",
+	"customLifecycleExists",
+	"customDirectRequiresRelay",
+	"customDirectSent",
 	"customMessagePlaceholder",
 	"customTriggerRequired",
 	"customTriggerReserved",
@@ -97,6 +107,15 @@ describe("FakePlayer localization", () => {
 		expect(page).toContain("BotCommandMessageEditor");
 		expect(page).toContain("value={draft.message}");
 		expect(page).toContain("onChange={(message)");
+	});
+
+	test("custom commands expose lifecycle timing and direct delivery", () => {
+		expect(page).toContain("CUSTOM_COMMAND_WHENS");
+		expect(page).toContain("channelsForCustomCommand");
+		expect(page).toContain("isLifecycleWhen");
+		expect(page).toContain('t("dummyBot.customWhenLabel")');
+		expect(page).toContain('t("dummyBot.customTargetLabel")');
+		expect(page).toContain('t("dummyBot.customDirectRequiresRelay")');
 	});
 
 	test("visible copy uses Bot terminology instead of FakePlayer", () => {

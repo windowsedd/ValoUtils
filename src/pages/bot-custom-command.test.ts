@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+	channelsForCustomCommand,
 	normalizeCustomBotCommand,
 	normalizeCustomBotCommands,
 } from "./bot-custom-command";
@@ -70,6 +71,15 @@ describe("custom bot command normalization", () => {
 			action: "tran",
 			channel: "direct",
 		})).toMatchObject({ action: "tran", channel: "party" });
+	});
+
+	test("direct is available only for manual send", () => {
+		expect(channelsForCustomCommand("send")).toEqual([
+			"direct", "party", "pregame", "team", "all",
+		]);
+		expect(channelsForCustomCommand("tran")).toEqual([
+			"party", "pregame", "team", "all",
+		]);
 	});
 
 	test("only the first entry for each lifecycle event is retained", () => {

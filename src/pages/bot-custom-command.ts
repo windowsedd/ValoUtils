@@ -21,6 +21,11 @@ export interface CustomBotCommand {
 
 const ACTIONS: readonly CustomCommandAction[] = ["send", "tran"];
 const CHANNELS: readonly CustomCommandChannel[] = ["direct", "party", "pregame", "team", "all"];
+const GROUP_CHANNELS: readonly CustomCommandChannel[] = ["party", "pregame", "team", "all"];
+
+export const channelsForCustomCommand = (
+	action: CustomCommandAction,
+): readonly CustomCommandChannel[] => action === "send" ? CHANNELS : GROUP_CHANNELS;
 
 export const isLifecycleWhen = (
 	when: CustomCommandWhen,
