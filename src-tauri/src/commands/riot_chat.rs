@@ -543,7 +543,7 @@ pub async fn execute_dodge(app: Option<&AppHandle>) -> Result<String, RiotError>
         let pre = match api.pregame_get_player(&api.puuid).await {
             Ok(pre) => pre,
             Err(error) => {
-                return if is_not_in_pregame_error(&error) {
+                return if is_not_in_game_error(&error) {
                     Ok(DodgeResult::NotInPregame)
                 } else {
                     Err(error)
@@ -559,7 +559,7 @@ pub async fn execute_dodge(app: Option<&AppHandle>) -> Result<String, RiotError>
         };
         match api.pregame_quit(match_id).await {
             Ok(_) => Ok(DodgeResult::Left),
-            Err(error) if is_not_in_pregame_error(&error) => Ok(DodgeResult::NotInPregame),
+            Err(error) if is_not_in_game_error(&error) => Ok(DodgeResult::NotInPregame),
             Err(error) => Err(error),
         }
     })
@@ -583,14 +583,14 @@ enum DodgeResult {
 fn dodge_api_error(error: String) -> RiotError {
     if crate::riot::client::is_login_required_error(&error) {
         RiotError::RiotClientNotRunning
-    } else if is_not_in_pregame_error(&error) {
+    } else if is_not_in_game_error(&error) {
         RiotError::InvalidCommand("Not in agent select.".into())
     } else {
         RiotError::InvalidCommand("Could not leave agent select.".into())
     }
 }
 
-fn is_not_in_pregame_error(error: &str) -> bool {
+fn is_not_in_game_error(error: &str) -> bool {
     let lower = error.to_ascii_lowercase();
     lower.contains("\"status\":404") || lower.contains("resource_not_found")
 }
@@ -1347,20 +1347,63 @@ async fn poll_once(
         }
     }
 
-    let observation = phase_observation(&memory.cids);
-    let transitions = memory.lifecycle.observe(observation);
-    process_lifecycle_transitions(app, memory, transitions).await;
+    let commands = load_custom_commands(Some(app));
+    if commands
+        .iter()
+        .any(|command| command.when != chat_command::CustomCommandWhen::Command)
+    {
+        let observation = observe_lifecycle_phase(app).await?;
+        let transitions = memory.lifecycle.observe(observation);
+        process_lifecycle_transitions(app, memory, transitions).await;
+    }
 
     Ok(())
 }
 
-fn phase_observation(cids: &HashMap<ChatChannel, String>) -> PhaseObservation {
-    let pregame_id = cids.get(&ChatChannel::Pregame).cloned();
-    let match_id = [ChatChannel::All, ChatChannel::Team]
-        .into_iter()
-        .filter_map(|channel| cids.get(&channel))
-        .find(|cid| cid.to_ascii_lowercase().contains("@ares-coregame"))
-        .cloned();
+fn player_match_id(payload: &Value) -> Option<String> {
+    payload
+        .get("MatchID")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|match_id| !match_id.is_empty())
+        .map(str::to_string)
+}
+
+async fn observe_lifecycle_phase(app: &AppHandle) -> Result<PhaseObservation, RiotError> {
+    let Some(riot) = app.try_state::<crate::riot::client::RiotState>() else {
+        return Err(RiotError::RiotClientNotRunning);
+    };
+    let result = crate::riot::api::with_api(&riot, |api| async move {
+        let match_id = match api.coregame_get_player(&api.puuid).await {
+            Ok(payload) => player_match_id(&payload),
+            Err(error) if is_not_in_game_error(&error) => None,
+            Err(error) => return Err(error),
+        };
+        let pregame_id = if match_id.is_none() {
+            match api.pregame_get_player(&api.puuid).await {
+                Ok(payload) => player_match_id(&payload),
+                Err(error) if is_not_in_game_error(&error) => None,
+                Err(error) => return Err(error),
+            }
+        } else {
+            None
+        };
+        Ok(phase_observation(pregame_id, match_id))
+    })
+    .await;
+
+    match result {
+        Ok(observation) => Ok(observation),
+        Err(error) if crate::riot::client::is_login_required_error(&error) => {
+            Err(RiotError::RiotClientNotRunning)
+        }
+        Err(_) => Err(RiotError::InvalidCommand(
+            "Could not check the live game phase.".into(),
+        )),
+    }
+}
+
+fn phase_observation(pregame_id: Option<String>, match_id: Option<String>) -> PhaseObservation {
     PhaseObservation {
         connected: true,
         pregame_id,
@@ -1800,30 +1843,25 @@ mod tests {
     }
 
     #[test]
-    fn lifecycle_observation_uses_pregame_and_coregame_rooms_only() {
-        let cids = HashMap::from([
-            (
-                ChatChannel::Pregame,
-                "pregame-a-blue@ares-pregame.ap1.pvp.net".into(),
-            ),
-            (
-                ChatChannel::Team,
-                "pregame-a-blue@ares-pregame.ap1.pvp.net".into(),
-            ),
-            (
-                ChatChannel::All,
-                "match-a-all@ares-coregame.ap1.pvp.net".into(),
-            ),
-        ]);
-
+    fn lifecycle_observation_uses_glz_player_state() {
         assert_eq!(
-            phase_observation(&cids),
+            phase_observation(Some("glz-pregame-a".into()), Some("glz-match-a".into())),
             PhaseObservation {
                 connected: true,
-                pregame_id: Some("pregame-a-blue@ares-pregame.ap1.pvp.net".into()),
-                match_id: Some("match-a-all@ares-coregame.ap1.pvp.net".into()),
+                pregame_id: Some("glz-pregame-a".into()),
+                match_id: Some("glz-match-a".into()),
             }
         );
+    }
+
+    #[test]
+    fn player_match_id_requires_a_non_empty_match_id() {
+        assert_eq!(
+            player_match_id(&json!({ "MatchID": "  pregame-a  " })),
+            Some("pregame-a".into())
+        );
+        assert_eq!(player_match_id(&json!({ "MatchID": "  " })), None);
+        assert_eq!(player_match_id(&json!({})), None);
     }
 
     #[test]
@@ -2250,10 +2288,10 @@ mod tests {
 
     #[test]
     fn pregame_404s_are_not_in_agent_select() {
-        assert!(is_not_in_pregame_error(
+        assert!(is_not_in_game_error(
             r#"{"status":404,"path":"/pregame/v1/players/abc","message":"RESOURCE_NOT_FOUND"}"#
         ));
-        assert!(!is_not_in_pregame_error(
+        assert!(!is_not_in_game_error(
             r#"{"status":403,"path":"/pregame/v1/matches/abc/quit","message":"FORBIDDEN"}"#
         ));
         assert_eq!(
