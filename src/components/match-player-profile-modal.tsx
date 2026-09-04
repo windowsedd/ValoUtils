@@ -10,7 +10,7 @@ import { getSeasonAssets, localize, type SeasonAsset } from "@/util/valorant-ass
 import { tierColor, tierName } from "@/util/valorant-ranks";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { FaUser } from "react-icons/fa6";
+import { LuUser } from "react-icons/lu";
 import { subscribeMatchPlayerProfile } from "./match-player-profile-modal-state";
 
 const MatchPlayerProfileBody = ({ player, assets }: { player: MatchPlayer; assets: MatchAssets }) => {
@@ -68,17 +68,17 @@ const MatchPlayerProfileBody = ({ player, assets }: { player: MatchPlayer; asset
 		: null;
 
 	if (loading && !profile) {
-		return <div className="grid min-h-48 place-items-center text-sm text-gray-500">{t("friends.profileLoading")}</div>;
+		return <div className="grid min-h-48 place-items-center text-[12px] text-(--text-muted)">{t("friends.profileLoading")}</div>;
 	}
 
 	if (error && !profile) {
 		return (
 			<div className="flex min-h-48 flex-col items-center justify-center gap-3 text-center">
-				<p className="text-sm text-red-300">{error}</p>
+				<p className="text-[12px] text-(--signal-neg)">{error}</p>
 				<button
 					type="button"
 					onClick={() => setRetryVersion((value) => value + 1)}
-					className="rounded-md border border-white/10 px-3 py-2 text-sm text-gray-200 hover:bg-white/6 focus-visible:outline-none focus-visible:shadow-[0_0_0_2px_var(--accent-soft)]"
+					className="h-8 rounded-[6px] border border-(--border) bg-(--control) px-3 text-[12px] font-medium text-(--text-primary) transition-colors hover:bg-(--surface-hover) focus-visible:outline-none focus-visible:border-(--accent)"
 				>
 					{t("friends.profileRetry")}
 				</button>
@@ -90,39 +90,40 @@ const MatchPlayerProfileBody = ({ player, assets }: { player: MatchPlayer; asset
 
 	return (
 		<div className="flex flex-col gap-4">
-			<div className="flex items-center gap-3 border-b border-white/6 pb-3">
+			<div className="flex items-center gap-3 border-b border-(--line) pb-3">
 				{agent?.icon ? (
 					<img src={agent.icon} alt={localize(agent.name)} className="h-12 w-12 shrink-0 rounded-md object-cover" />
 				) : (
-					<span className="grid h-12 w-12 shrink-0 place-items-center rounded-md bg-white/5 text-gray-600"><FaUser /></span>
+					<span className="grid h-12 w-12 shrink-0 place-items-center rounded-[8px] bg-(--control) text-(--text-muted)"><LuUser /></span>
 				)}
 				<div className="min-w-0">
-					<p className="truncate text-base font-bold text-white">{player.gameName || t("matches.player")}{player.tagLine ? <span className="text-gray-500">#{player.tagLine}</span> : null}</p>
-					<p className="text-xs text-gray-500">{agent ? localize(agent.name) : t("matches.player")}</p>
+					<p className="truncate text-[15px] font-semibold text-(--text-primary)">{player.gameName || t("matches.player")}{player.tagLine ? <span className="text-(--text-muted)">#{player.tagLine}</span> : null}</p>
+					<p className="text-[11px] text-(--text-muted)">{agent ? localize(agent.name) : t("matches.player")}</p>
 				</div>
 			</div>
 
-			<SectionCard title={t("friends.profileCurrentRank")} accent={currentTier > 0 ? tierColor(currentTier) : "#6b7280"} right={currentTier > 0 ? `${profile.currentRR} RR` : null}>
+			<SectionCard title={t("friends.profileCurrentRank")} accent={currentTier > 0 ? tierColor(currentTier) : "var(--text-muted)"} right={currentTier > 0 ? `${profile.currentRR} RR` : null}>
 				<div className="grid gap-4 px-3 py-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
 					<div className="flex min-w-0 items-center gap-4">
 						{currentIcon && <img src={currentIcon} alt={tierName(currentTier)} className="h-16 w-16 shrink-0 object-contain" />}
 						<div className="min-w-0">
-							<p className="truncate text-2xl font-bold" style={{ color: currentTier > 0 ? tierColor(currentTier) : "#6b7280" }}>{currentTier > 0 ? tierName(currentTier) : t("career.unranked")}</p>
-							<p className="text-sm tabular-nums text-gray-400">{currentTier > 0 ? `${profile.currentRR} / 100 RR` : "â€”"}</p>
+							<p className="truncate text-2xl font-bold" style={{ color: currentTier > 0 ? tierColor(currentTier) : "var(--text-muted)" }}>{currentTier > 0 ? tierName(currentTier) : t("career.unranked")}</p>
+							<p className="text-[12px] tabular-nums text-(--text-secondary)">{currentTier > 0 ? `${profile.currentRR} / 100 RR` : "â€”"}</p>
 						</div>
 					</div>
-					<div className="flex min-w-36 items-center gap-3 border-t border-white/6 pt-3 sm:border-l sm:border-t-0 sm:pl-5 sm:pt-0">
+					<div className="flex min-w-36 items-center gap-3 border-t border-(--line) pt-3 sm:border-l sm:border-t-0 sm:pl-5 sm:pt-0">
 						{peakIcon && <img src={peakIcon} alt={tierName(peakTier)} className="h-11 w-11 shrink-0 object-contain" />}
 						<div className="min-w-0">
-							<p className="text-[9px] uppercase tracking-widest text-gray-600">{t("friends.profilePeakRank")}</p>
-							<p className="truncate text-sm font-semibold" style={{ color: peakTier > 0 ? tierColor(peakTier) : "#6b7280" }}>{peakTier > 0 ? tierName(peakTier) : t("career.unranked")}</p>
-							{peakSeason && <p className="mt-0.5 text-[10px] text-gray-500">{t("friends.profileEpisodeAct")}: {peakSeason}</p>}
+							<p className="text-[9px] uppercase tracking-widest text-(--text-muted)">{t("friends.profilePeakRank")}</p>
+							<p className="truncate text-sm font-semibold" style={{ color: peakTier > 0 ? tierColor(peakTier) : "var(--text-muted)" }}>{peakTier > 0 ? tierName(peakTier) : t("career.unranked")}</p>
+							{peakSeason && <p className="mt-0.5 text-[10px] text-(--text-muted)">{t("friends.profileEpisodeAct")}: {peakSeason}</p>}
 						</div>
 					</div>
 				</div>
 			</SectionCard>
 
 			<ActRankPanel
+				defaultExpanded
 				competitiveSeasons={profile.competitiveSeasons}
 				assets={{ seasons }}
 				selectedSeasonId={selectedSeasonId}
@@ -149,7 +150,7 @@ export const useMatchPlayerProfileModal = (assets: MatchAssets) => {
 			title: riotId,
 			body: <MatchPlayerProfileBody player={player} assets={assets} />,
 			footer: (
-				<button type="button" onClick={closeModal} className="rounded-md border border-white/10 px-4 py-2 text-sm text-gray-200 hover:bg-white/6 focus-visible:outline-none focus-visible:shadow-[0_0_0_2px_var(--accent-soft)]">
+				<button type="button" onClick={closeModal} className="h-8 rounded-[6px] border border-(--border) bg-(--control) px-4 text-[12px] font-medium text-(--text-primary) transition-colors hover:bg-(--surface-hover) focus-visible:outline-none focus-visible:border-(--accent)">
 					{t("common.close")}
 				</button>
 			),

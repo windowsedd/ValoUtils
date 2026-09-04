@@ -20,10 +20,16 @@ describe("navbarLayout", () => {
 		expect(navbarLayout.railStatus).toContain("shrink-0");
 	});
 
-	test("uses compact direct-route spacing", () => {
-		expect(navbarLayout.railRoutes).toContain("gap-0.5");
-		expect(navbarLayout.railButton).toContain("h-11");
-		expect(navbarLayout.railButton).toContain("w-11");
+	test("uses airy direct-route spacing on 40px tiles", () => {
+		expect(navbarLayout.railRoutes).toContain("gap-2");
+		expect(navbarLayout.railButton).toContain("h-10");
+		expect(navbarLayout.railButton).toContain("w-10");
+	});
+
+	test("marks the selected route with a solid accent tile, not a tick", () => {
+		expect(navbarLayout.railButtonActive).toContain("bg-(--accent)");
+		expect(navbarLayout.railButtonActive).toContain("text-(--accent-foreground)");
+		expect(navbarLayout).not.toHaveProperty("railSelectionMarker");
 	});
 
 	test("contains status menu content within the viewport", () => {

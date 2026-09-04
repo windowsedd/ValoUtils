@@ -1,3 +1,4 @@
+import { LoginRequiredPanel } from "@/components/login-required-panel";
 import { PageHeader, SectionCard, pageBodyClass } from "@/components/section-card";
 import {
 	getBundle,
@@ -10,7 +11,8 @@ import {
 import { formatCountdown, remainingSeconds } from "@/util/store-countdown";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { FaStore } from "react-icons/fa6";
+
+import { LuStore } from "react-icons/lu";
 
 type Currency = "valorantPoints" | "radianite" | "kingdomCredits" | "unknown";
 type Price = { amount: number; currency: Currency };
@@ -79,36 +81,73 @@ const mergeAssets = (
 };
 
 const PriceTag = ({ price }: { price: Price }) => (
-	<span className="tabular-nums text-(--ink)">
+	<span className="tabular-nums text-(--text-primary)">
 		{formatAmount(price.amount)}
 		{CURRENCY_LABEL[price.currency] && (
-			<span className="ml-1 text-[11px] text-(--ink-faint)">{CURRENCY_LABEL[price.currency]}</span>
+			<span className="ml-1 text-[11px] text-(--text-muted)">{CURRENCY_LABEL[price.currency]}</span>
 		)}
 	</span>
 );
 
-/** A ticking timer. `seconds` is the value at fetch time; `since` anchors the tick. */
-const Countdown = ({ seconds, since }: { seconds: number; since: number }) => {
+/*
+ * One ticker for every clock on the page.
+ *
+ * Each Countdown used to own a `setInterval`, so a store with four shops ran
+ * four timers — and because they started whenever their section mounted, they
+ * ticked at four different moments and the page never rolled over as one.
+ */
+const secondListeners = new Set<() => void>();
+let secondTimer: ReturnType<typeof setInterval> | null = null;
+
+const useSharedSecond = () => {
 	const [now, setNow] = useState(() => Date.now());
 	useEffect(() => {
-		const id = setInterval(() => setNow(Date.now()), 1000);
-		return () => clearInterval(id);
+		const tick = () => setNow(Date.now());
+		secondListeners.add(tick);
+		secondTimer ??= setInterval(() => {
+			for (const listener of secondListeners) listener();
+		}, 1000);
+		return () => {
+			secondListeners.delete(tick);
+			if (secondListeners.size === 0 && secondTimer) {
+				clearInterval(secondTimer);
+				secondTimer = null;
+			}
+		};
 	}, []);
+	return now;
+};
+
+/** A ticking timer. `seconds` is the value at fetch time; `since` anchors the tick. */
+const Countdown = ({ seconds, since }: { seconds: number; since: number }) => {
+	const { t } = useTranslation();
+	const now = useSharedSecond();
 	const left = remainingSeconds(seconds, (now - since) / 1000);
-	return <span className="tabular-nums text-xs text-(--ink-faint)">{formatCountdown(left)}</span>;
+	return (
+		<span className="flex items-baseline gap-1.5">
+			{/* Bare "14:22:07" reads as a duration with no subject. */}
+			<span className="text-[10px] uppercase tracking-widest text-(--text-muted)">
+				{t("store.resetsIn")}
+			</span>
+			<span className="tabular-nums text-[11px] text-(--text-secondary)">{formatCountdown(left)}</span>
+		</span>
+	);
 };
 
 const ItemArt = ({ asset, className = "" }: { asset: SkinAsset | null; className?: string }) =>
 	asset?.icon ? (
 		<img src={asset.icon} alt={localize(asset.name)} className={`object-contain ${className}`} />
 	) : (
-		<div className={`flex items-center justify-center text-[10px] text-(--ink-faint) ${className}`}>
+		<div className={`flex items-center justify-center text-[10px] text-(--text-muted) ${className}`}>
 			{asset ? localize(asset.name) : "—"}
 		</div>
 	);
 
 const Store = () => {
 	const [data, setData] = useState<StoreData | null>(null);
+	// Bumped when the login panel sees a Riot Client appear, so the fetch
+	// below re-runs without the user having to leave and re-enter the page.
+	const [reloadKey, setReloadKey] = useState(0);
 	const [fetchedAt, setFetchedAt] = useState(() => Date.now());
 	const [skins, setSkins] = useState<Map<string, SkinAsset | null>>(new Map());
 	const [bundleArt, setBundleArt] = useState<BundleAsset | null>(null);
@@ -132,6 +171,10 @@ const Store = () => {
 				setLoading(false);
 				return;
 			}
+			// A retry got through — drop the signed-out state so the panel makes way
+			// for the content instead of hiding a successful load behind it.
+			setLoginRequired(false);
+			setError(null);
 			setData({
 				wallet: response.wallet,
 				daily: response.daily,
@@ -145,7 +188,7 @@ const Store = () => {
 		window.Main.on("store:get", onResponse);
 		window.Main.send("store:get");
 		return () => window.Main.removeAllListeners("store:get");
-	}, [t]);
+	}, [t, reloadKey]);
 
 	// Daily + Night Market rows are always weapon skin levels.
 	const skinLevelIds = useMemo(() => {
@@ -213,46 +256,50 @@ const Store = () => {
 
 	return (
 		<div className="flex h-full flex-col animate-fade-in">
-			<PageHeader icon={<FaStore className="text-lg" />} title={t("store.title")}>
+			<PageHeader icon={<LuStore className="text-lg" />} title={t("store.title")}>
 				{wallet && (
-					<div className="flex shrink-0 items-center gap-4 text-sm">
-						<span className="tabular-nums text-(--ink)">
-							{formatAmount(wallet.valorantPoints)}
-							<span className="ml-1 text-[11px] text-(--ink-faint)">VP</span>
-						</span>
-						<span className="tabular-nums text-(--ink)">
-							{formatAmount(wallet.radianite)}
-							<span className="ml-1 text-[11px] text-(--ink-faint)">RAD</span>
-						</span>
-						<span className="tabular-nums text-(--ink)">
-							{formatAmount(wallet.kingdomCredits)}
-							<span className="ml-1 text-[11px] text-(--ink-faint)">KC</span>
-						</span>
+					<div className="flex shrink-0 items-center gap-1.5">
+						{(
+							[
+								[wallet.valorantPoints, "VP"],
+								[wallet.radianite, "RAD"],
+								[wallet.kingdomCredits, "KC"],
+							] as const
+						).map(([amount, label]) => (
+							<span
+								key={label}
+								className="flex items-baseline gap-1 rounded-[5px] border border-(--border) bg-(--control) px-2 py-0.5"
+							>
+								<span className="text-[12px] font-medium tabular-nums text-(--text-primary)">
+									{formatAmount(amount)}
+								</span>
+								<span className="text-[10px] tracking-wide text-(--text-muted)">{label}</span>
+							</span>
+						))}
 					</div>
 				)}
 			</PageHeader>
 
 			<div className={pageBodyClass}>
 				{loading && (
-					<div className="flex flex-1 items-center justify-center text-sm text-(--ink-faint)">
+					<div className="flex flex-1 items-center justify-center text-sm text-(--text-muted)">
 						{t("store.loading")}
 					</div>
 				)}
 
 				{!loading && loginRequired && (
-					<div className="flex flex-1 items-center justify-center">
-						<div className="glass flex max-w-md flex-col items-center gap-2 p-6 text-center">
-							<FaStore className="mb-1 text-3xl text-(--ink-faint)" />
-							<p className="font-semibold text-(--ink)">{t("store.loginRequired")}</p>
-							<p className="text-sm text-(--ink-faint)">{t("store.loginRequiredDesc")}</p>
-						</div>
-					</div>
+					<LoginRequiredPanel
+						onRetry={() => setReloadKey((key) => key + 1)}
+						icon={<LuStore />}
+						title={t("store.loginRequired")}
+						description={t("store.loginRequiredDesc")}
+					/>
 				)}
 
 				{!loading && error && !loginRequired && (
-					<div className="glass rounded-lg px-4 py-3">
-						<p className="text-sm font-semibold text-red-300">{t("store.failedToLoad")}</p>
-						<p className="mt-0.5 text-xs text-(--ink-faint)">{error}</p>
+					<div className="panel px-4 py-3">
+						<p className="text-[12px] font-semibold text-(--signal-neg)">{t("store.failedToLoad")}</p>
+						<p className="mt-0.5 text-xs text-(--text-muted)">{error}</p>
 					</div>
 				)}
 
@@ -269,11 +316,11 @@ const Store = () => {
 									return (
 										<div
 											key={offer.offerId || offer.itemId}
-											className="flex flex-col gap-2 rounded-lg border border-(--line) p-3"
+											className="flex flex-col gap-2 rounded-[8px] border border-(--line) bg-(--panel-raised) p-3"
 										>
-											<ItemArt asset={asset} className="h-16 w-full" />
-											<div className="flex items-baseline justify-between gap-2">
-												<span className="truncate text-sm text-(--ink)">
+											<ItemArt asset={asset} className="h-20 w-full" />
+											<div className="flex items-baseline justify-between gap-2 border-t border-(--line) pt-2">
+												<span className="truncate text-[12px] text-(--text-primary)">
 													{asset ? localize(asset.name) : t("store.unknownItem")}
 												</span>
 												<PriceTag price={offer.price} />
@@ -294,21 +341,21 @@ const Store = () => {
 										<img
 											src={bundleArt.verticalPromo ?? bundleArt.icon ?? ""}
 											alt={localize(bundleArt.name)}
-											className="h-32 w-full rounded-lg object-cover"
+											className="h-40 w-full rounded-[8px] object-cover"
 										/>
 									) : null}
 									<div className="flex items-baseline justify-between gap-3">
-										<span className="truncate font-semibold text-(--ink)">
+										<span className="truncate text-[13px] font-semibold text-(--text-primary)">
 											{bundleArt ? localize(bundleArt.name) : t("store.featuredBundle")}
 										</span>
-										<span className="tabular-nums text-sm text-(--ink)">
+										<span className="tabular-nums text-sm text-(--text-primary)">
 											{data.featuredBundle.totalDiscounted < data.featuredBundle.totalBase && (
-												<span className="mr-2 text-(--ink-faint) line-through">
+												<span className="mr-2 text-(--text-muted) line-through">
 													{formatAmount(data.featuredBundle.totalBase)}
 												</span>
 											)}
 											{formatAmount(data.featuredBundle.totalDiscounted)}
-											<span className="ml-1 text-[11px] text-(--ink-faint)">VP</span>
+											<span className="ml-1 text-[11px] text-(--text-muted)">VP</span>
 										</span>
 									</div>
 									<div className="flex flex-col gap-1">
@@ -317,15 +364,15 @@ const Store = () => {
 											return (
 												<div
 													key={item.itemId}
-													className="flex items-center gap-3 rounded border border-(--line) px-2 py-1.5"
+													className="flex items-center gap-3 rounded-[6px] border border-(--line) bg-(--panel-raised) px-2 py-1.5"
 												>
 													<ItemArt asset={asset} className="h-8 w-16 shrink-0" />
-													<span className="min-w-0 flex-1 truncate text-xs text-(--ink)">
+													<span className="min-w-0 flex-1 truncate text-xs text-(--text-primary)">
 														{asset ? localize(asset.name) : t("store.unknownItem")}
 													</span>
-													<span className="shrink-0 tabular-nums text-xs text-(--ink)">
+													<span className="shrink-0 tabular-nums text-xs text-(--text-primary)">
 														{item.discountedPrice < item.basePrice && (
-															<span className="mr-1.5 text-(--ink-faint) line-through">
+															<span className="mr-1.5 text-(--text-muted) line-through">
 																{formatAmount(item.basePrice)}
 															</span>
 														)}
@@ -354,7 +401,7 @@ const Store = () => {
 											return (
 												<div
 													key={offer.offerId || offer.itemId}
-													className="flex h-28 flex-col items-center justify-center rounded-lg border border-dashed border-(--line) text-xs text-(--ink-faint)"
+													className="flex h-32 flex-col items-center justify-center rounded-[8px] border border-dashed border-(--line) text-[11px] text-(--text-muted)"
 												>
 													{t("store.hiddenCard")}
 												</div>
@@ -363,20 +410,20 @@ const Store = () => {
 										return (
 											<div
 												key={offer.offerId || offer.itemId}
-												className="flex flex-col gap-2 rounded-lg border border-(--line) p-3"
+												className="flex flex-col gap-2 rounded-[8px] border border-(--line) bg-(--panel-raised) p-3"
 											>
-												<ItemArt asset={asset} className="h-12 w-full" />
-												<span className="truncate text-xs text-(--ink)">
+												<ItemArt asset={asset} className="h-16 w-full" />
+												<span className="truncate text-xs text-(--text-primary)">
 													{asset ? localize(asset.name) : t("store.unknownItem")}
 												</span>
 												<div className="flex items-baseline justify-between gap-2">
-													<span className="tabular-nums text-xs text-(--ink)">
-														<span className="mr-1.5 text-(--ink-faint) line-through">
+													<span className="tabular-nums text-xs text-(--text-primary)">
+														<span className="mr-1.5 text-(--text-muted) line-through">
 															{formatAmount(offer.basePrice)}
 														</span>
 														{formatAmount(offer.discountedPrice)}
 													</span>
-													<span className="shrink-0 rounded bg-(--line) px-1.5 py-0.5 text-[10px] text-(--ink)">
+													<span className="shrink-0 rounded-[5px] border border-(--signal-pos)/30 bg-(--signal-pos)/10 px-1.5 py-0.5 text-[10px] font-medium text-(--signal-pos)">
 														−{offer.discountPercent}%
 													</span>
 												</div>
@@ -399,10 +446,10 @@ const Store = () => {
 										return (
 											<div
 												key={offer.offerId || offer.itemId}
-												className="flex items-center gap-3 rounded border border-(--line) px-2 py-1.5"
+												className="flex items-center gap-3 rounded-[6px] border border-(--line) bg-(--panel-raised) px-2 py-1.5"
 											>
 												<ItemArt asset={asset} className="h-8 w-8 shrink-0" />
-												<span className="min-w-0 flex-1 truncate text-xs text-(--ink)">
+												<span className="min-w-0 flex-1 truncate text-xs text-(--text-primary)">
 													{asset ? localize(asset.name) : t("store.unknownItem")}
 												</span>
 												<PriceTag price={offer.price} />

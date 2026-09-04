@@ -26,7 +26,12 @@
     "name": "名稱",
     "createdOn": "建立日期",
     "actions": "操作",
-    "add": "新增"
+    "add": "新增",
+    "launchWithRelay": "使用 XMPP 轉送啟動",
+    "launching": "啟動中…",
+    "launchFailed": "啟動失敗。",
+    "riotClientRunningHint": "Riot Client 已在執行中。請完全關閉（包含系統列圖示）後再重新啟動。",
+    "launchNormal": "正常啟動"
   },
   "riotStatus": {
     "connecting": "連線中...",
@@ -123,7 +128,10 @@
     "invalidInput": "請輸入 Riot ID（名稱#標籤）或玩家 PUUID。",
     "playerNotFound": "找不到這位玩家。",
     "loginRequired": "請開啟 Riot 用戶端並登入以查詢玩家。",
-    "unavailable": "目前無法載入此玩家資料。"
+    "unavailable": "目前無法載入此玩家資料。",
+    "lookupDesc": "以 Riot ID 或 PUUID 查詢任何玩家的段位、賽季紀錄與近期對戰。",
+    "inventoryDesc": "瀏覽帳號中的武器造型、配件與已集齊的套組。",
+    "allTools": "全部工具"
   },
   "store": {
     "title": "商店",
@@ -136,7 +144,8 @@
     "nightMarket": "夜市",
     "accessoryStore": "配件商店",
     "hiddenCard": "尚未揭曉",
-    "unknownItem": "未知項目"
+    "unknownItem": "未知項目",
+    "resetsIn": "重置倒數"
   },
   "inventory": {
     "title": "收藏",
@@ -204,7 +213,11 @@
     "daysLeft": "剩餘 {{count}} 天",
     "endsToday": "今天結束",
     "ended": "已結束",
-    "notStarted": "尚無進度"
+    "notStarted": "尚無進度",
+    "chapterPosition": "{{page}} / {{total}}",
+    "prevChapter": "上一章",
+    "nextChapter": "下一章",
+    "currentChapter": "目前章節"
   },
   "career": {
     "title": "戰績",
@@ -300,7 +313,8 @@
     "previousActs": "歷屆賽季",
     "peakRating": "巔峰段位",
     "unrated": "未定級",
-    "actMatches": "{{count}} 場"
+    "actMatches": "{{count}} 場",
+    "actMatchesLabel": "場次"
   },
   "chat": {
     "title": "聊天",
@@ -516,14 +530,22 @@
     }
   },
   "about": {
-    "rebuildVersion": "重建版本",
     "tagline": "您的終極 Valorant 工具夥伴",
     "madeBy": "製作者",
     "version": "版本",
     "checkForUpdates": "檢查更新",
     "disclaimer": "ValoUtils 與 Riot Games 或 Valorant 無任何關聯",
     "sectionApp": "應用程式",
-    "sectionLegal": "法律聲明"
+    "sectionLegal": "法律聲明",
+    "sectionUpdates": "更新",
+    "sectionCredits": "製作",
+    "currentVersion": "目前版本",
+    "checking": "正在檢查更新…",
+    "downloading": "正在下載更新…",
+    "downloadingVersion": "正在下載 v{{version}}…",
+    "installed": "更新完成 — 重新啟動中…",
+    "upToDate": "您已使用最新版本。",
+    "updateFailed": "檢查更新失敗。"
   },
   "dummyBot": {
     "title": "遊戲內機器人",
@@ -553,7 +575,7 @@
       "help": "列出指令"
     },
     "translateSyntax": ".send {party|pregame|team|all} {language|code} {message}",
-    "translateDesc": "密語傳給機器人。頻道裡只會出現翻譯後的文字。語言可用名稱或代碼：french、de、ko、ko-KR、ja-JP、zh_tw、zh-TW。省略語言則用設定值。",
+    "translateDesc": "將此私訊給機器人。只有翻譯結果會送到該聊天室。語言可以是名稱或代碼：french、de、ko、ko-KR、ja-JP、zh_tw、zh-TW。使用 auto 套用設定中的語言，或 none 直接送出不翻譯。",
     "translateExample": ".send party ko-KR hello everyone",
     "historySyntax": ".tran [n]   or   .translate [n]",
     "historyDesc": "密語傳給機器人。讀取最近 n 則派對/隊伍/全體訊息，再把翻譯密語回傳給你。可指定頻道：.tran team 5。",
@@ -631,7 +653,24 @@
       "online": "在線",
       "offline": "離線",
       "mobile": "行動裝置"
-    }
+    },
+    "relayStopped": "未執行",
+    "clients": "已連線用戶端",
+    "endpoint": "端點位址",
+    "launchBlocked": "請完全關閉 Riot Client（包含系統列圖示）後再啟動。",
+    "customNew": "新增指令",
+    "customEmpty": "尚未建立自訂指令。",
+    "customTriggerLabel": "觸發字",
+    "customActionLabel": "動作",
+    "customLanguageLabel": "語言",
+    "customMessageLabel": "訊息",
+    "customCountLabel": "行數",
+    "customLifecycleNote": "自動觸發，並由 Dummy Bot 私訊給你。不需要觸發字。",
+    "customLineCount": "最近 {{count}} 行",
+    "customEdit": "編輯指令",
+    "customEditing": "編輯指令",
+    "customLanguageNone": "不翻譯",
+    "customLanguageAuto": "使用設定中的語言"
   },
   "apiReference": {
     "subtitle": "Riot 客戶端 REST API",

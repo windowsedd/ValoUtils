@@ -12,8 +12,20 @@ import { fetcher } from "@/util/swr";
 import { Toast } from "@heroui/react";
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { FaCogs, FaComments, FaQuestion, FaTrophy } from "react-icons/fa";
-import { FaGear, FaUserGroup, FaClockRotateLeft, FaRobot, FaCrosshairs, FaStore, FaWrench, FaTicket } from "react-icons/fa6";
+import {
+	LuBot,
+	LuCrosshair,
+	LuHistory,
+	LuInfo,
+	LuMessageSquare,
+	LuSettings,
+	LuSlidersHorizontal,
+	LuStore,
+	LuTicket,
+	LuTrophy,
+	LuUsers,
+	LuWrench,
+} from "react-icons/lu";
 import DummyBotPage from "@/pages/DummyBot.tsx";
 import Tools from "@/pages/Tools.tsx";
 import BattlePass from "@/pages/BattlePass.tsx";
@@ -55,73 +67,73 @@ const AppShell = () => {
 							{
 								title: "nav.profiles",
 								id: "profiles",
-								icon: <FaCogs />,
+								icon: <LuSlidersHorizontal />,
 								component: <SettingsProfiles />,
 							},
 							{
 								title: "nav.career",
 								id: "career",
-								icon: <FaTrophy />,
+								icon: <LuTrophy />,
 								component: <PlayerCareer />,
 							},
 							{
 								title: "nav.matches",
 								id: "matches",
-								icon: <FaClockRotateLeft />,
+								icon: <LuHistory />,
 								component: <Matches />,
 							},
 							{
 								title: "nav.liveGame",
 								id: "live-game",
-								icon: <FaCrosshairs />,
+								icon: <LuCrosshair />,
 								component: <LiveGame />,
 							},
 							{
 								title: "nav.friends",
 								id: "friends",
-								icon: <FaUserGroup />,
+								icon: <LuUsers />,
 								component: <Friends />,
 							},
 							{
 								title: "nav.chat",
 								id: "chat",
-								icon: <FaComments />,
+								icon: <LuMessageSquare />,
 								component: <Chat />,
 							},
 							{
 								title: "nav.tools",
 								id: "tools",
-								icon: <FaWrench />,
+								icon: <LuWrench />,
 								component: <Tools />,
 							},
 							{
 								title: "nav.store",
 								id: "store",
-								icon: <FaStore />,
+								icon: <LuStore />,
 								component: <Store />,
 							},
 							{
 								title: "nav.battlePass",
 								id: "battle-pass",
-								icon: <FaTicket />,
+								icon: <LuTicket />,
 								component: <BattlePass />,
 							},
 							{
 								title: "nav.settings",
 								id: "settings",
-								icon: <FaGear />,
+								icon: <LuSettings />,
 								component: <Settings />,
 							},
 							{
 								title: "nav.about",
 								id: "about",
-								icon: <FaQuestion />,
+								icon: <LuInfo />,
 								component: <About />,
 							},
 							{
 								title: "nav.dummyBot",
 								id: "fake-player",
-								icon: <FaRobot />,
+								icon: <LuBot />,
 								component: <DummyBotPage />,
 							},
 						]}

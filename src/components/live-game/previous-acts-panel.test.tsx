@@ -17,6 +17,7 @@ void i18n.use(initReactI18next).init({
 					unrated: "Unrated",
 					winRate: "WR",
 					actMatches: "Matches {{count}}",
+					actMatchesLabel: "Matches",
 				},
 			},
 		},
@@ -66,7 +67,9 @@ describe("PreviousActsPanel", () => {
 		expect(markup).toContain("V26:A4");
 		expect(markup).toContain("Diamond 1");
 		expect(markup).toContain("Peak Rating");
-		expect(markup).toContain("Matches 19");
+		// Label and count are separate cells now so the strip's numbers align.
+		expect(markup).toContain("Matches");
+		expect(markup).toContain(">19<");
 		expect(markup).toContain("Unrated");
 		expect(markup).toContain("V25:A6");
 		expect(markup).not.toContain("V26:A5");

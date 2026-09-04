@@ -1,4 +1,6 @@
 import type { ChatFriend } from "@/types/chat";
+import { LoginRequiredPanel } from "@/components/login-required-panel";
+import { LuMessageSquare } from "react-icons/lu";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ChatComposer } from "./chat/chat-composer";
@@ -36,7 +38,10 @@ const Chat = () => {
 	const emptyLabel = t("chat.emptyFriends");
 	const disabledReason = controller.loginRequired ? t("chat.loginRequiredDesc") : t("chat.noRoom");
 	const placeholder = t("chat.placeholder");
-	const pageError = controller.summaryError || controller.friendActionError;
+	// markReadError included so a rejected mark-read is visible rather than
+	// leaving the badge silently hidden.
+	const pageError =
+		controller.summaryError || controller.friendActionError || controller.markReadError;
 
 	const closeFriendsDrawer = () => {
 		setFriendsDrawerOpen(false);
@@ -76,19 +81,20 @@ const Chat = () => {
 						{t("chat.loading")}
 					</div>
 				) : controller.loginRequired ? (
-					<div className="flex min-h-0 flex-1 items-center justify-center p-6">
-						<div className="max-w-md">
-							<p className="text-[13px] font-medium text-(--text-primary)">{t("chat.loginRequired")}</p>
-							<p className="mt-1 text-[12px] leading-5 text-(--text-muted)">{t("chat.loginRequiredDesc")}</p>
-							<button
-								type="button"
-								className="mt-4 h-7 rounded-[6px] border border-(--border) bg-(--control) px-3 text-[12px] font-medium text-(--text-primary) hover:bg-(--surface-hover)"
-								onClick={controller.refreshSummary}
-							>
-								{t("chat.refresh")}
-							</button>
-						</div>
-					</div>
+					<LoginRequiredPanel
+						onRetry={controller.refreshSummary}
+						icon={<LuMessageSquare />}
+						title={t("chat.loginRequired")}
+						description={t("chat.loginRequiredDesc")}
+					>
+						<button
+							type="button"
+							className="h-8 rounded-[6px] border border-(--border) bg-(--control) px-3 text-[12px] font-medium text-(--text-primary) hover:bg-(--surface-hover)"
+							onClick={controller.refreshSummary}
+						>
+							{t("chat.refresh")}
+						</button>
+					</LoginRequiredPanel>
 				) : (
 					<>
 						<ChatThread

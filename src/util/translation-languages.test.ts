@@ -87,3 +87,27 @@ describe("translation language catalog", () => {
 		);
 	});
 });
+
+describe("displayTranslationLanguage fallbacks", () => {
+	test("uses the catalog name when Intl echoes the tag back", () => {
+		// ICU coverage varies by runtime — Chromium has no name for some tags
+		// while Node does — so this pins the behaviour with a tag nothing knows.
+		// Without the guard the row renders as "zz zz" beside the code.
+		const unknown = {
+			provider: "google",
+			canonicalId: "zz",
+			code: "zz",
+			englishName: "Testish",
+			source: true,
+			target: true,
+		} as const;
+		expect(displayTranslationLanguage(unknown, "en")).toBe("Testish");
+	});
+
+	test("still prefers a real localized name when Intl knows one", () => {
+		const french = getTranslationLanguages("google", "target").find(
+			(item) => item.code === "fr",
+		);
+		expect(displayTranslationLanguage(french!, "en").toLowerCase()).toContain("french");
+	});
+});

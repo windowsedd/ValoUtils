@@ -18,6 +18,15 @@ export const QUEUE_LABELS: Record<string, string> = {
 export const queueLabel = (queueId: string | null | undefined) =>
 	QUEUE_LABELS[(queueId ?? "").toLowerCase()] ?? queueId ?? "";
 
-/** Accent for a queue chip — ranked play is the only one that gets colour. */
+/**
+ * Chip styling for a queue — ranked play is the only one that gets colour.
+ *
+ * Returns classes rather than a hex so the chip reads from the design tokens.
+ * It used to hand back Riot red, which put every competitive match behind the
+ * app's negative signal colour and made a routine mode label look like a
+ * warning; the accent says "notable" without saying "bad".
+ */
 export const queueAccent = (queueId: string | null | undefined) =>
-	(queueId ?? "").toLowerCase() === "competitive" ? "#ff4655" : "#6b7280";
+	(queueId ?? "").toLowerCase() === "competitive"
+		? "border-(--accent-border) bg-(--accent-soft) text-(--accent-selected)"
+		: "border-(--border) bg-(--control) text-(--text-secondary)";

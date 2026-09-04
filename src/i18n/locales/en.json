@@ -26,7 +26,12 @@
     "name": "Name",
     "createdOn": "Created On",
     "actions": "Actions",
-    "add": "Add"
+    "add": "Add",
+    "launchWithRelay": "Launch with XMPP relay",
+    "launching": "Launching…",
+    "launchFailed": "Launch failed.",
+    "riotClientRunningHint": "Riot Client is already open. Close it completely, including the tray icon, then launch again.",
+    "launchNormal": "Normal startup"
   },
   "riotStatus": {
     "connecting": "Connecting...",
@@ -116,7 +121,7 @@
   "tools": {
     "title": "Tools",
     "subtitle": "Look up any player",
-    "lookup": "Player",
+    "lookup": "Player lookup",
     "inventory": "Inventory",
     "searchPlaceholder": "GameName#Tag or PUUID",
     "search": "Search",
@@ -124,7 +129,10 @@
     "invalidInput": "Enter a Riot ID (Name#Tag) or player PUUID.",
     "playerNotFound": "No Valorant player matched that lookup.",
     "loginRequired": "Open the Riot Client and sign in to look up a player.",
-    "unavailable": "This player profile is unavailable right now."
+    "unavailable": "This player profile is unavailable right now.",
+    "lookupDesc": "Find any player's rank, act history and recent matches by Riot ID or PUUID.",
+    "inventoryDesc": "Browse the skins, accessories and complete sets on your account.",
+    "allTools": "All tools"
   },
   "store": {
     "title": "Store",
@@ -137,7 +145,8 @@
     "nightMarket": "Night Market",
     "accessoryStore": "Accessory Store",
     "hiddenCard": "Not revealed",
-    "unknownItem": "Unknown item"
+    "unknownItem": "Unknown item",
+    "resetsIn": "Resets in"
   },
   "inventory": {
     "title": "Inventory",
@@ -205,7 +214,11 @@
     "daysLeft": "{{count}} days left",
     "endsToday": "Ends today",
     "ended": "Ended",
-    "notStarted": "No progress yet"
+    "notStarted": "No progress yet",
+    "chapterPosition": "{{page}} / {{total}}",
+    "prevChapter": "Previous chapter",
+    "nextChapter": "Next chapter",
+    "currentChapter": "Your current chapter"
   },
   "career": {
     "title": "Career",
@@ -301,7 +314,8 @@
     "previousActs": "Previous Acts",
     "peakRating": "Peak Rating",
     "unrated": "Unrated",
-    "actMatches": "Matches {{count}}"
+    "actMatches": "Matches {{count}}",
+    "actMatchesLabel": "Matches"
   },
   "chat": {
     "title": "Chat",
@@ -524,14 +538,22 @@
     }
   },
   "about": {
-    "rebuildVersion": "Rebuild Version",
     "tagline": "Your ultimate Valorant utility companion",
     "madeBy": "Made by",
     "version": "Version",
     "checkForUpdates": "Check for Updates",
     "disclaimer": "ValoUtils is not affiliated with Riot Games or Valorant",
     "sectionApp": "Application",
-    "sectionLegal": "Legal"
+    "sectionLegal": "Legal",
+    "sectionUpdates": "Updates",
+    "sectionCredits": "Credits",
+    "currentVersion": "Current version",
+    "checking": "Checking for updates…",
+    "downloading": "Downloading update…",
+    "downloadingVersion": "Downloading v{{version}}…",
+    "installed": "Update installed — restarting…",
+    "upToDate": "You're on the latest version.",
+    "updateFailed": "Update check failed."
   },
   "dummyBot": {
     "title": "In-game Bot",
@@ -561,7 +583,7 @@
       "help": "List commands"
     },
     "translateSyntax": ".send {party|pregame|team|all} {language|code} {message}",
-    "translateDesc": "Whisper this to the bot. Only the translation is sent to that room. Language can be a name or code: french, de, ko, ko-KR, ja-JP, zh_tw, zh-TW. Omit language to use Settings.",
+    "translateDesc": "Whisper this to the bot. Only the translation is sent to that room. Language can be a name or code: french, de, ko, ko-KR, ja-JP, zh_tw, zh-TW. Use auto for the Settings language, or none to send it untranslated.",
     "translateExample": ".send party ko-KR hello everyone",
     "historySyntax": ".tran [n]   or   .translate [n]",
     "historyDesc": "Whisper this to the bot. Reads the last n party/team/all lines and whispers the translations back to you. Optional channel: .tran team 5.",
@@ -639,7 +661,24 @@
       "online": "Online",
       "offline": "Offline",
       "mobile": "Mobile"
-    }
+    },
+    "relayStopped": "Not running",
+    "clients": "Connected clients",
+    "endpoint": "Endpoint",
+    "launchBlocked": "Close the Riot Client completely, including the tray icon, then launch.",
+    "customNew": "New command",
+    "customEmpty": "No custom commands yet.",
+    "customTriggerLabel": "Trigger",
+    "customActionLabel": "Does",
+    "customLanguageLabel": "Language",
+    "customMessageLabel": "Message",
+    "customCountLabel": "Lines",
+    "customLifecycleNote": "Fires automatically and whispers you through Dummy Bot. No trigger needed.",
+    "customLineCount": "last {{count}} lines",
+    "customEdit": "Edit command",
+    "customEditing": "Edit command",
+    "customLanguageNone": "Don't translate",
+    "customLanguageAuto": "Use the Settings language"
   },
   "apiReference": {
     "subtitle": "Riot Client REST API",

@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { Toast } from "@heroui/react";
 import { useTranslation } from "react-i18next";
-import { FaGlobe, FaRocket, FaCode, FaChartBar, FaLanguage, FaKey, FaArrowUpRightFromSquare, FaCopy, FaCheck, FaGear, FaEye, FaEyeSlash, FaRobot, FaBook, FaComments } from "react-icons/fa6";
+import { FaGlobe, FaRocket, FaCode, FaChartBar, FaLanguage, FaKey, FaArrowUpRightFromSquare, FaCopy, FaCheck, FaEye, FaEyeSlash, FaBook, FaComments } from "react-icons/fa6";
+import { LuBot, LuSettings } from "react-icons/lu";
 import { PageHeader, SectionCard, pageBodyClass } from "@/components/section-card";
 import { useConfiguredRoutes } from "@/components/router";
 import SwaggerPage from "@/pages/SwaggerPage";
@@ -264,7 +265,7 @@ const Settings = () => {
 
 	return (
 		<div className="h-full flex flex-col animate-fade-in">
-			<PageHeader icon={<FaGear className="text-[#ff4655] text-lg" />} title={t("settings.title")} />
+			<PageHeader icon={<LuSettings className="text-lg" />} title={t("settings.title")} />
 
 			<div className={pageBodyClass}>
 
@@ -447,11 +448,11 @@ const Settings = () => {
 
 				<SectionCard title={t("settings.sectionDeveloper")} accent="#6b7280">
 					<div className="flex flex-col px-1">
-				<SettingRow icon={<FaRobot />} label="Presence masking" description="Allow Bot commands to rewrite your Riot presence." right={<Toggle checked={appConfig.presenceEnabled} onChange={v => setPresence(v ? "enable" : "disable")} />} />
-				<SettingRow icon={<FaRobot />} label="Lobby / MUC forwarding" description="Forward lobby presence while masking is active." right={<Toggle checked={appConfig.presenceMucEnabled} onChange={v => setPresence("muc", v)} />} />
-				<SettingRow icon={<FaRobot />} label="Startup presence" description="Choose the status used when the relay starts." right={<select value={appConfig.presenceStartup} onChange={event => setPresence("startup", event.target.value)} className="h-7 rounded-[6px] border border-(--border) bg-(--control) px-2 text-[11px] text-(--text-primary) outline-none focus:border-(--accent) focus:shadow-[0_0_0_2px_var(--accent-soft)]"><option value="last">Remember last</option><option value="online">Online</option><option value="offline">Offline</option><option value="mobile">Mobile</option></select>} />
+				<SettingRow icon={<LuBot />} label="Presence masking" description="Allow Bot commands to rewrite your Riot presence." right={<Toggle checked={appConfig.presenceEnabled} onChange={v => setPresence(v ? "enable" : "disable")} />} />
+				<SettingRow icon={<LuBot />} label="Lobby / MUC forwarding" description="Forward lobby presence while masking is active." right={<Toggle checked={appConfig.presenceMucEnabled} onChange={v => setPresence("muc", v)} />} />
+				<SettingRow icon={<LuBot />} label="Startup presence" description="Choose the status used when the relay starts." right={<select value={appConfig.presenceStartup} onChange={event => setPresence("startup", event.target.value)} className="h-7 rounded-[6px] border border-(--border) bg-(--control) px-2 text-[11px] text-(--text-primary) outline-none focus:border-(--accent) focus:shadow-[0_0_0_2px_var(--accent-soft)]"><option value="last">Remember last</option><option value="online">Online</option><option value="offline">Offline</option><option value="mobile">Mobile</option></select>} />
 				<SettingRow
-					icon={<FaRobot />}
+					icon={<LuBot />}
 					label="Chat certificate"
 					description={`TLS identity the local chat relay presents. Active host: ${CERT_OPTIONS.find(option => option.id === appConfig.presenceCert)?.host ?? appConfig.presenceCert}.`}
 					right={

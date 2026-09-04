@@ -8,20 +8,21 @@ import {
 	filterChatFriends,
 	filterFriendConversations,
 	findFriendConversationCid,
+	forgetMarkedUnread,
+	forgetMarkedUnreadIfCleared,
 	formatClock,
 	isComposerCommand,
+	lastConversationMessageId,
 	mergeChatMessages,
+	rememberMarkedUnread,
 	resolveChannelCid,
 	resolveFriendGameStatus,
-	supportsConversationHistory,
-	shouldStickToBottom,
-	shouldResetThreadPosition,
-	startsMessageGroup,
-	visibleUnreadCount,
-	lastConversationMessageId,
-	rememberMarkedUnread,
-	forgetMarkedUnreadIfCleared,
 	sessionMarkedUnread,
+	shouldResetThreadPosition,
+	shouldStickToBottom,
+	startsMessageGroup,
+	supportsConversationHistory,
+	visibleUnreadCount,
 } from "./chat-model";
 
 const message = (overrides: Partial<ChatMessage>): ChatMessage => ({
@@ -592,5 +593,26 @@ describe("isComposerCommand", () => {
 		expect(isComposerCommand("nice one")).toBe(false);
 		expect(isComposerCommand("...")).toBe(true);
 		expect(isComposerCommand("")).toBe(false);
+	});
+});
+
+describe("forgetMarkedUnread", () => {
+	test("restores the badge after a rejected mark-read", () => {
+		// The badge is hidden optimistically on click; if Riot refuses, the count
+		// has to come back or the app lies about what the game shows.
+		sessionMarkedUnread["cid-1"] = 3;
+		const next = forgetMarkedUnread("cid-1", { "cid-1": 3, "cid-2": 1 });
+
+		expect(next["cid-1"]).toBeUndefined();
+		expect(sessionMarkedUnread["cid-1"]).toBeUndefined();
+		// Suppression survives Chat remounts, so the session record must clear too.
+		expect(visibleUnreadCount(3, next["cid-1"])).toBe(3);
+		// Other conversations are untouched.
+		expect(next["cid-2"]).toBe(1);
+	});
+
+	test("is a no-op for a conversation that was never marked", () => {
+		const marked = { "cid-2": 1 };
+		expect(forgetMarkedUnread("cid-absent", marked)).toBe(marked);
 	});
 });

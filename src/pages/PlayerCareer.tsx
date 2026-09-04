@@ -1,13 +1,15 @@
 import { FriendMatchHistory } from "@/components/friends/friend-competitive-history";
 import { initialSeasonId } from "@/components/live-game/act-rank";
 import { ActRankPanel } from "@/components/live-game/act-rank-panel";
+import { LoginRequiredPanel } from "@/components/login-required-panel";
 import { PageHeader, SectionCard, pageBodyClass } from "@/components/section-card";
 import type { CompetitiveSeason } from "@/types/live-game";
 import { getSeasonAssets, getTiers, type SeasonAsset, type TierAsset } from "@/util/valorant-assets";
 import { tierColor, tierName } from "@/util/valorant-ranks";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { FaTrophy } from "react-icons/fa6";
+
+import { LuTrophy } from "react-icons/lu";
 import { normalizeCareerMatches } from "./player-career-history";
 
 type CareerData = {
@@ -42,6 +44,9 @@ const RankBadge = ({
 
 const PlayerCareer = () => {
 	const [data, setData] = useState<CareerData | null>(null);
+	// Bumped when the login panel sees a Riot Client appear, so the fetch
+	// below re-runs without the user having to leave and re-enter the page.
+	const [reloadKey, setReloadKey] = useState(0);
 	const [tiers, setTiers] = useState<Map<number, TierAsset>>(new Map());
 	const [seasons, setSeasons] = useState<Map<string, SeasonAsset>>(new Map());
 	const [selectedSeasonId, setSelectedSeasonId] = useState<string | null>(null);
@@ -77,6 +82,10 @@ const PlayerCareer = () => {
 				setLoading(false);
 				return;
 			}
+			// A retry got through — drop the signed-out state so the panel makes way
+			// for the content instead of hiding a successful load behind it.
+			setLoginRequired(false);
+			setError(null);
 			setData({
 				puuid: response.puuid,
 				mmr: response.mmr,
@@ -90,7 +99,7 @@ const PlayerCareer = () => {
 		window.Main.on("career:get", onResponse);
 		window.Main.send("career:get");
 		return () => window.Main.removeAllListeners("career:get");
-	}, [t]);
+	}, [t, reloadKey]);
 
 	const competitiveMatches: any[] = data?.competitiveUpdates?.Matches ?? [];
 	const matches = useMemo(
@@ -112,7 +121,7 @@ const PlayerCareer = () => {
 
 	return (
 		<div className="flex h-full flex-col animate-fade-in">
-			<PageHeader icon={<FaTrophy className="text-lg text-[#ff4655]" />} title={t("career.title")} />
+			<PageHeader icon={<LuTrophy className="text-lg" />} title={t("career.title")} />
 
 			<div className={pageBodyClass}>
 				{loading && (
@@ -120,13 +129,12 @@ const PlayerCareer = () => {
 				)}
 
 				{!loading && loginRequired && (
-					<div className="flex flex-1 items-center justify-center">
-						<div className="glass flex max-w-md flex-col items-center gap-2 p-6 text-center">
-							<FaTrophy className="mb-1 text-3xl text-gray-700" />
-							<p className="font-semibold text-white">{t("career.loginRequired")}</p>
-							<p className="text-sm text-gray-500">{t("career.loginRequiredDesc")}</p>
-						</div>
-					</div>
+					<LoginRequiredPanel
+						onRetry={() => setReloadKey((key) => key + 1)}
+						icon={<LuTrophy />}
+						title={t("career.loginRequired")}
+						description={t("career.loginRequiredDesc")}
+					/>
 				)}
 
 				{!loading && error && !loginRequired && (
@@ -163,6 +171,7 @@ const PlayerCareer = () => {
 						</SectionCard>
 
 						<ActRankPanel
+							defaultExpanded
 							competitiveSeasons={data.competitiveSeasons}
 							assets={{ seasons }}
 							selectedSeasonId={selectedSeasonId}

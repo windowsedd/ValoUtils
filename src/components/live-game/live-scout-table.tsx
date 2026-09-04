@@ -4,13 +4,14 @@ import { mapIcon, mapName } from "@/util/valorant-maps";
 import { queueLabel } from "@/util/valorant-queues";
 import { tierColor, tierName } from "@/util/valorant-ranks";
 import { useEffect, useMemo, useState } from "react";
-import { FaArrowRotateRight, FaChevronDown, FaCrosshairs } from "react-icons/fa6";
+import { FaArrowRotateRight, FaChevronDown } from "react-icons/fa6";
+import { LuCrosshair } from "react-icons/lu";
 import { useTranslation } from "react-i18next";
 import { initialSeasonId } from "./act-rank";
 import { ActRankPanel } from "./act-rank-panel";
 import { buildTeamMatchup } from "./live-game-metrics";
 import { livePlayerStatsKey } from "./live-game-events";
-import { groupPlayersByParty } from "./live-party-order";
+import { groupPlayersByParty, orderTeamsSelfFirst, selfTeamId } from "./live-party-order";
 import { LivePlayerHistory } from "./live-player-history";
 import { LiveTeamMatchup } from "./live-team-matchup";
 import { PreviousActsPanel } from "./previous-acts-panel";
@@ -104,7 +105,7 @@ const SkinCard = ({ weapon, label, assets }: { weapon: WeaponSkin; label: string
 	return (
 		<div className="min-w-0 rounded-lg bg-black/20 border border-white/6 px-2 py-1.5">
 			<div className="h-7 flex items-center justify-center">
-				{skin?.icon ? <img src={skin.icon} alt={name} className="max-h-7 w-full object-contain" /> : <FaCrosshairs aria-hidden="true" className="text-gray-700" />}
+				{skin?.icon ? <img src={skin.icon} alt={name} className="max-h-7 w-full object-contain" /> : <LuCrosshair aria-hidden="true" className="text-(--text-muted)" />}
 			</div>
 			<p className="mt-1 text-[10px] uppercase tracking-wider text-gray-600">{label}</p>
 			<p className="text-xs text-gray-300 truncate" title={name}>{name}</p>
@@ -248,6 +249,7 @@ export const LiveScoutTable = ({ snapshot, assets, recent, refreshing, refreshEr
 	const { t } = useTranslation();
 	const [expanded, setExpanded] = useState<string | null>(null);
 	const [summaryExpanded, setSummaryExpanded] = useState(false);
+	const self = useMemo(() => selfTeamId(snapshot.players), [snapshot.players]);
 	const teams = useMemo(() => {
 		const groups = new Map<string, LivePlayer[]>();
 		for (const player of snapshot.players) {
@@ -255,9 +257,12 @@ export const LiveScoutTable = ({ snapshot, assets, recent, refreshing, refreshEr
 			if (!groups.has(key)) groups.set(key, []);
 			groups.get(key)!.push(player);
 		}
-		const rank = (id: string) => (id === "Ally" || id === "Blue" ? 0 : id === "Enemy" || id === "Red" ? 1 : 2);
-		return [...groups.entries()].sort(([a], [b]) => rank(a) - rank(b));
-	}, [snapshot.players]);
+		return orderTeamsSelfFirst([...groups.entries()], ([id]) => id, self);
+	}, [snapshot.players, self]);
+	const teamSummaries = useMemo(
+		() => orderTeamsSelfFirst(snapshot.teams ?? [], (team) => team.id, self),
+		[snapshot.teams, self],
+	);
 	const parties = new Set(snapshot.players.map((player) => player.party).filter(Boolean)).size;
 	const matchup = useMemo(() => buildTeamMatchup(snapshot.players, recent), [snapshot.players, recent]);
 	const map = mapName(snapshot.match?.mapId, assets.maps);
@@ -325,7 +330,7 @@ export const LiveScoutTable = ({ snapshot, assets, recent, refreshing, refreshEr
 				)}
 				<div id={summaryId} hidden={!summaryExpanded}>
 					<div className="grid grid-cols-2 lg:grid-cols-4 border-t border-white/6">
-						{[0, 1].map((index) => { const team = snapshot.teams[index]; const meta = team ? teamMeta(team.id, t) : { label: t(index === 0 ? "liveGame.teamAlly" : "liveGame.teamEnemy"), color: index === 0 ? "#4ade80" : "#f87171" }; return <div key={team?.id ?? index} className="px-4 py-2.5 border-r border-b lg:border-b-0 border-white/6"><p className="text-[10px] uppercase tracking-wider" style={{ color: meta.color }}>{meta.label} · {t("liveGame.teamAverage")}</p><p className="text-sm font-semibold text-white">{team?.averageTier != null ? tierName(Math.round(team.averageTier)) : <span aria-label={t("liveGame.unavailable")}>—</span>}</p><p className="text-[10px] text-gray-600">{t("liveGame.ratedPlayers", { count: team?.ratedPlayers ?? 0 })}</p></div>; })}
+						{[0, 1].map((index) => { const team = teamSummaries[index]; const meta = team ? teamMeta(team.id, t) : { label: t(index === 0 ? "liveGame.teamAlly" : "liveGame.teamEnemy"), color: index === 0 ? "#4ade80" : "#f87171" }; return <div key={team?.id ?? index} className="px-4 py-2.5 border-r border-b lg:border-b-0 border-white/6"><p className="text-[10px] uppercase tracking-wider" style={{ color: meta.color }}>{meta.label} · {t("liveGame.teamAverage")}</p><p className="text-sm font-semibold text-white">{team?.averageTier != null ? tierName(Math.round(team.averageTier)) : <span aria-label={t("liveGame.unavailable")}>—</span>}</p><p className="text-[10px] text-gray-600">{t("liveGame.ratedPlayers", { count: team?.ratedPlayers ?? 0 })}</p></div>; })}
 						<div className="px-4 py-2.5 border-r border-white/6"><p className="text-[10px] uppercase tracking-wider text-gray-500">{t("liveGame.detectedParties")}</p><p className="text-lg font-semibold tabular-nums">{parties}</p></div>
 						<div className="px-4 py-2.5"><p className="text-[10px] uppercase tracking-wider text-gray-500">{t("liveGame.rosterSize")}</p><p className="text-lg font-semibold tabular-nums">{snapshot.players.length}</p></div>
 					</div>

@@ -18,6 +18,9 @@ const requiredToolsKeys = [
 	"unavailable",
 	"lookup",
 	"inventory",
+	"lookupDesc",
+	"inventoryDesc",
+	"allTools",
 ] as const;
 
 describe("Tools navigation and player lookup shell", () => {
@@ -36,8 +39,20 @@ describe("Tools navigation and player lookup shell", () => {
 		expect(page).toContain("<FriendProfile");
 		expect(page).toContain("embedded");
 		expect(page).toContain('send("analytics:track", "tools:player:lookup"');
-		expect(page).toContain('data-tools-switch=""');
 		expect(page).toContain("<Inventory embedded");
+	});
+
+	test("opens on a grid of tool cards that each select a tool", () => {
+		expect(page).toContain('data-tools-grid=""');
+		expect(page).toContain('data-tool={entry.id}');
+		expect(page).toContain("setTool(entry.id)");
+		// The index is the landing state, and every tool can get back to it.
+		expect(page).toContain("useState<ToolId | null>(null)");
+		expect(page).toContain('data-tools-back=""');
+		expect(page).toContain("setTool(null)");
+		// A tool takes the page over rather than rendering beneath the grid.
+		expect(page).toContain('{tool === "lookup" && (');
+		expect(page).toContain('{tool === "inventory" && (');
 	});
 
 	test("stacks the search bar above the profile instead of sharing a row", () => {

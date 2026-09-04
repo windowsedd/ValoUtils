@@ -1,3 +1,4 @@
+import { LoginRequiredPanel } from "@/components/login-required-panel";
 import { PageHeader, SectionCard, pageBodyClass } from "@/components/section-card";
 import {
 	buildChapterViews,
@@ -29,7 +30,7 @@ import {
 } from "@/util/valorant-assets";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { FaCheck, FaLock, FaTicket } from "react-icons/fa6";
+import { LuCheck, LuChevronLeft, LuChevronRight, LuLock, LuTicket } from "react-icons/lu";
 
 type BattlepassResponse = {
 	success: boolean;
@@ -43,7 +44,7 @@ const RewardArt = ({ asset, className = "" }: { asset: SkinAsset | null; classNa
 	asset?.icon ? (
 		<img src={asset.icon} alt={localize(asset.name)} className={`object-contain ${className}`} />
 	) : (
-		<div className={`flex items-center justify-center px-1 text-center text-[10px] text-(--ink-faint) ${className}`}>
+		<div className={`flex items-center justify-center px-1 text-center text-[10px] text-(--text-muted) ${className}`}>
 			{asset ? localize(asset.name) : "—"}
 		</div>
 	);
@@ -65,27 +66,40 @@ const RewardTile = ({
 	const name = asset ? localize(asset.name) : view.reward.type;
 	const amount = currencyDisplayAmount(view.reward.uuid, view.reward.amount);
 	const showAmount = view.reward.type.toLowerCase() === "currency" || amount > 1;
+	/*
+	 * Claimed and premium-locked used to be two near-identical grey glyphs, so
+	 * "already yours" and "needs the premium pass" read the same at a glance.
+	 * Colour separates them: earned is positive, paywalled is a warning, and a
+	 * plain lock stays neutral for "not there yet".
+	 */
+	const status = {
+		claimed: { icon: <LuCheck title={claimedLabel} />, tone: "text-(--signal-pos)" },
+		premiumLocked: { icon: <LuLock title={premiumLabel} />, tone: "text-(--signal-warn)" },
+		locked: { icon: <LuLock title={lockedLabel} />, tone: "text-(--text-muted)" },
+	}[view.status as "claimed" | "premiumLocked" | "locked"];
 	return (
 		<div
 			data-battlepass-reward={view.reward.uuid}
 			data-status={view.status}
-			className={`relative flex flex-col gap-2 rounded-lg border p-2.5 ${
-				view.isCurrent ? "border-(--accent-border) bg-(--accent-soft)" : "border-(--line)"
-			} ${dimmed ? "opacity-55" : ""}`}
+			className={`relative flex flex-col gap-2 rounded-[8px] border p-2.5 ${
+				view.isCurrent
+					? "border-(--accent-border) bg-(--accent-soft)"
+					: view.status === "claimed"
+						? "border-(--signal-pos)/25 bg-(--signal-pos)/5"
+						: "border-(--line)"
+			} ${dimmed ? "opacity-60" : ""}`}
 		>
 			{view.tier !== null && (
-				<span className="absolute left-2 top-2 text-[10px] tabular-nums text-(--ink-faint)">{view.tier}</span>
+				<span className="absolute left-2 top-2 text-[10px] tabular-nums text-(--text-muted)">{view.tier}</span>
 			)}
-			<div className="absolute right-2 top-2 text-[10px] text-(--ink-faint)">
-				{view.status === "claimed" && <FaCheck title={claimedLabel} />}
-				{view.status === "premiumLocked" && <FaLock title={premiumLabel} />}
-				{view.status === "locked" && <FaLock title={lockedLabel} />}
+			<div className={`absolute right-2 top-2 text-[11px] ${status?.tone ?? "text-(--text-muted)"}`}>
+				{status?.icon}
 			</div>
 			<RewardArt asset={asset} className="mt-4 h-14 w-full" />
 			<div className="min-w-0">
-				<p className="truncate text-xs text-(--ink)">{name}</p>
+				<p className="truncate text-xs text-(--text-primary)">{name}</p>
 				{showAmount && (
-					<p className="text-[10px] tabular-nums text-(--ink-faint)">
+					<p className="text-[10px] tabular-nums text-(--text-muted)">
 						×{amount}
 						{view.reward.uuid.toLowerCase() === RADIANITE_UUID ? " RAD" : ""}
 					</p>
@@ -95,9 +109,15 @@ const RewardTile = ({
 	);
 };
 
+const stepClass =
+	"grid h-6 w-6 place-items-center rounded-[5px] border border-(--border) bg-(--control) text-(--text-secondary) transition-colors hover:bg-(--surface-hover) hover:text-(--text-primary) disabled:cursor-not-allowed disabled:opacity-35";
+
 const BattlePass = () => {
 	const { t } = useTranslation();
 	const [catalog, setCatalog] = useState<BattlepassCatalogEntry[]>([]);
+	// Bumped when the login panel sees a Riot Client appear, so the fetch
+	// below re-runs without the user having to leave and re-enter the page.
+	const [reloadKey, setReloadKey] = useState(0);
 	const [seasons, setSeasons] = useState<Map<string, SeasonAsset>>(new Map());
 	const [events, setEvents] = useState<Map<string, EventAsset>>(new Map());
 	const [progress, setProgress] = useState<BattlepassProgress[]>([]);
@@ -152,6 +172,10 @@ const BattlePass = () => {
 				setLoading(false);
 				return;
 			}
+			// A retry got through — drop the signed-out state so the panel makes way
+			// for the content instead of hiding a successful load behind it.
+			setLoginRequired(false);
+			setError(null);
 			setProgress(response.contracts ?? []);
 			setPremiumIds(response.premiumContractIds ?? []);
 			setLoading(false);
@@ -160,7 +184,7 @@ const BattlePass = () => {
 		window.Main.send("analytics:track", "battlepass:view", JSON.stringify({}));
 		window.Main.send("battlepass:get");
 		return () => window.Main.removeAllListeners("battlepass:get");
-	}, [t]);
+	}, [t, reloadKey]);
 
 	const seasonWindows: SeasonWindow[] = useMemo(
 		() =>
@@ -262,18 +286,21 @@ const BattlePass = () => {
 				? seasons.get(entry.seasonId.toLowerCase())
 				: events.get(entry.seasonId.toLowerCase());
 	const remaining = schedule ? daysRemaining(schedule.endMillis, Date.now()) : null;
+	const chapterCount = entry?.chapters.length ?? 0;
+	/** Chapter the player's level actually falls in, distinct from the one on screen. */
+	const liveChapter = entry ? pageIndexForLevel(entry.chapters, level) : -1;
 	const showPremiumBadge = Boolean(entry?.premiumRequired && premium);
 	const waiting = loading || !catalogReady;
 
 	return (
 		<div className="flex h-full flex-col animate-fade-in">
 			<PageHeader
-				icon={<FaTicket className="text-lg" />}
+				icon={<LuTicket className="text-lg" />}
 				title={kind === "event" ? t("battlepass.kindEvent") : t("battlepass.title")}
 				subtitle={entry ? localize(entry.name) : undefined}
 			>
 				<div className="flex items-center gap-2">
-					<div data-battlepass-kind="" className="flex rounded-sm border border-(--line)">
+					<div data-battlepass-kind="" className="flex overflow-hidden rounded-[6px] border border-(--border)">
 						{(
 							[
 								["season", t("battlepass.kindBattle")],
@@ -285,8 +312,10 @@ const BattlePass = () => {
 								type="button"
 								data-kind={value}
 								onClick={() => setKind(value)}
-								className={`h-8 px-2.5 text-xs ${
-									kind === value ? "bg-white/8 text-(--ink)" : "text-(--ink-faint) hover:bg-white/6"
+								className={`h-8 px-2.5 text-[12px] transition-colors ${
+									kind === value
+										? "bg-(--accent-soft) text-(--accent-selected)"
+										: "text-(--text-muted) hover:bg-(--surface-hover) hover:text-(--text-primary)"
 								}`}
 							>
 								{label}
@@ -300,7 +329,7 @@ const BattlePass = () => {
 							onChange={(event) =>
 								setSelectedByKind((current) => ({ ...current, [kind]: event.target.value }))
 							}
-							className="h-8 max-w-56 rounded-sm border border-(--line) bg-(--panel-raised) px-2 text-xs text-(--ink)"
+							className="h-8 max-w-56 rounded-[6px] border border-(--border) bg-(--control) px-2 text-[12px] text-(--text-primary) outline-none focus-visible:border-(--accent) focus-visible:shadow-[0_0_0_2px_var(--accent-soft)]"
 						>
 							{passes.map((pass) => (
 								<option key={pass.id} value={pass.id}>
@@ -314,36 +343,35 @@ const BattlePass = () => {
 
 			<div className={pageBodyClass}>
 				{loginRequired && (
-					<div className="flex flex-1 items-center justify-center">
-						<div className="glass flex max-w-md flex-col items-center gap-2 p-6 text-center">
-							<FaTicket className="mb-1 text-3xl text-(--ink-faint)" />
-							<p className="font-semibold text-(--ink)">{t("battlepass.loginRequired")}</p>
-							<p className="text-sm text-(--ink-faint)">{t("battlepass.loginRequiredDesc")}</p>
-						</div>
-					</div>
+					<LoginRequiredPanel
+						onRetry={() => setReloadKey((key) => key + 1)}
+						icon={<LuTicket />}
+						title={t("battlepass.loginRequired")}
+						description={t("battlepass.loginRequiredDesc")}
+					/>
 				)}
 
 				{waiting && !loginRequired && !error && (
-					<div className="flex flex-1 items-center justify-center text-sm text-(--ink-faint)">
+					<div className="flex flex-1 items-center justify-center text-sm text-(--text-muted)">
 						{t("battlepass.loading")}
 					</div>
 				)}
 
 				{!waiting && error && !loginRequired && (
-					<div className="glass rounded-lg px-4 py-3">
-						<p className="text-sm font-semibold text-red-300">{t("battlepass.failedToLoad")}</p>
-						<p className="mt-0.5 text-xs text-(--ink-faint)">{error}</p>
+					<div className="panel px-4 py-3">
+						<p className="text-[12px] font-semibold text-(--signal-neg)">{t("battlepass.failedToLoad")}</p>
+						<p className="mt-0.5 text-xs text-(--text-muted)">{error}</p>
 					</div>
 				)}
 
 				{!waiting && !error && !loginRequired && !entry && (
 					<div className="flex flex-1 items-center justify-center">
-						<div className="glass flex max-w-md flex-col items-center gap-2 p-6 text-center">
-							<FaTicket className="mb-1 text-3xl text-(--ink-faint)" />
-							<p className="font-semibold text-(--ink)">
+						<div className="panel flex max-w-md flex-col items-center gap-2 p-6 text-center">
+							<LuTicket className="mb-1 text-3xl text-(--text-muted)" />
+							<p className="font-semibold text-(--text-primary)">
 								{kind === "event" ? t("battlepass.noEvent") : t("battlepass.noPass")}
 							</p>
-							<p className="text-sm text-(--ink-faint)">
+							<p className="text-sm text-(--text-muted)">
 								{kind === "event" ? t("battlepass.noEventDesc") : t("battlepass.noPassDesc")}
 							</p>
 						</div>
@@ -375,10 +403,10 @@ const BattlePass = () => {
 						>
 							<div className="flex flex-col gap-2 px-3 py-2">
 								<div className="flex items-baseline justify-between gap-3">
-									<p className="text-sm font-semibold text-(--ink)">
+									<p className="text-sm font-semibold text-(--text-primary)">
 										{t("battlepass.levelValue", { level: Math.min(level, levelsTotal), total: levelsTotal })}
 									</p>
-									<p className="text-xs tabular-nums text-(--ink-faint)">
+									<p className="text-xs tabular-nums text-(--text-muted)">
 										{complete
 											? t("battlepass.complete")
 											: contract
@@ -386,34 +414,11 @@ const BattlePass = () => {
 												: t("battlepass.notStarted")}
 									</p>
 								</div>
-								<div className="h-1.5 overflow-hidden rounded-full bg-white/8">
+								<div className="h-1.5 overflow-hidden rounded-full bg-(--control)">
 									<div className="h-full bg-(--accent)" style={{ width: `${xpPercent}%` }} />
 								</div>
 							</div>
 						</SectionCard>
-
-						{entry.chapters.length > 1 && (
-						<div data-battlepass-pages="" className="flex shrink-0 flex-wrap gap-1.5">
-							{entry.chapters.map((item, index) => {
-								const currentPage = pageIndexForLevel(entry.chapters, level) === index;
-								return (
-									<button
-										key={`${entry.id}-${index}`}
-										type="button"
-										data-current={currentPage ? "" : undefined}
-										onClick={() => setPage(index)}
-										className={`h-8 min-w-8 rounded-sm border px-2 text-xs ${
-											page === index
-												? "border-(--accent-border) bg-(--accent-soft) text-(--text-primary)"
-												: "border-(--line) text-(--ink-faint) hover:bg-white/6"
-										}`}
-									>
-										{item.isEpilogue ? t("battlepass.epilogue") : index + 1}
-									</button>
-								);
-							})}
-						</div>
-						)}
 
 						<SectionCard
 							title={
@@ -423,11 +428,76 @@ const BattlePass = () => {
 										? t("battlepass.epilogue")
 										: t("battlepass.page", { page: page + 1 })
 							}
+							right={
+								chapterCount > 1 ? (
+									<span className="flex items-center gap-1">
+										<button
+											type="button"
+											data-battlepass-prev=""
+											onClick={() => setPage((current) => Math.max(0, current - 1))}
+											disabled={page === 0}
+											aria-label={t("battlepass.prevChapter")}
+											className={stepClass}
+										>
+											<LuChevronLeft className="h-3 w-3" />
+										</button>
+										<span className="min-w-16 text-center text-[11px] tabular-nums text-(--text-secondary)">
+											{t("battlepass.chapterPosition", { page: page + 1, total: chapterCount })}
+										</span>
+										<button
+											type="button"
+											data-battlepass-next=""
+											onClick={() => setPage((current) => Math.min(chapterCount - 1, current + 1))}
+											disabled={page >= chapterCount - 1}
+											aria-label={t("battlepass.nextChapter")}
+											className={stepClass}
+										>
+											<LuChevronRight className="h-3 w-3" />
+										</button>
+									</span>
+								) : undefined
+							}
 						>
+							{chapterCount > 1 && (
+								<div
+									data-battlepass-pages=""
+									className="flex flex-wrap gap-1.5 border-b border-(--line) px-2.5 pb-2.5 pt-1"
+								>
+									{entry.chapters.map((item, index) => {
+										// Where the player actually is, as opposed to what they're
+										// looking at — the old row only expressed the latter.
+										const atLevel = liveChapter === index;
+										const viewing = page === index;
+										return (
+											<button
+												key={`${entry.id}-${index}`}
+												type="button"
+												data-current={atLevel ? "" : undefined}
+												onClick={() => setPage(index)}
+												title={atLevel ? t("battlepass.currentChapter") : undefined}
+												className={`relative h-7 min-w-7 rounded-[6px] border px-2 text-[11px] tabular-nums transition-colors ${
+													viewing
+														? "border-(--accent-border) bg-(--accent-soft) text-(--accent-selected)"
+														: "border-(--border) text-(--text-muted) hover:bg-(--surface-hover) hover:text-(--text-primary)"
+												}`}
+											>
+												{item.isEpilogue ? t("battlepass.epilogue") : index + 1}
+												{atLevel && (
+													<span
+														aria-hidden="true"
+														className="absolute -bottom-px left-1/2 h-0.5 w-3 -translate-x-1/2 rounded-full bg-(--signal-pos)"
+													/>
+												)}
+											</button>
+										);
+									})}
+								</div>
+							)}
+
 							<div className="flex flex-col gap-4 px-3 py-2">
 								{views.free.length > 0 && (
 									<div>
-										<p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-(--ink-dim)">
+										<p className="mb-2 text-[10px] font-medium uppercase tracking-widest text-(--text-muted)">
 											{t("battlepass.freeTrack")}
 										</p>
 										<div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
@@ -445,7 +515,7 @@ const BattlePass = () => {
 									</div>
 								)}
 								<div>
-									<p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-(--ink-dim)">
+									<p className="mb-2 text-[10px] font-medium uppercase tracking-widest text-(--text-muted)">
 										{entry.kind === "event"
 											? t("battlepass.rewards")
 											: chapter?.isEpilogue

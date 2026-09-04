@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { LivePlayer } from "@/types/live-game";
-import { groupPlayersByParty } from "./live-party-order";
+import { groupPlayersByParty, orderTeamsSelfFirst, selfTeamId } from "./live-party-order";
 
 const player = (puuid: string, party: string | null): LivePlayer =>
 	({ puuid, party }) as LivePlayer;
@@ -55,5 +55,48 @@ describe("groupPlayersByParty", () => {
 			"enemy-party-2",
 			"enemy-solo",
 		]);
+	});
+});
+
+const member = (puuid: string, teamId: string | null, isSelf = false): LivePlayer =>
+	({ puuid, teamId, isSelf }) as LivePlayer;
+
+describe("selfTeamId", () => {
+	test("reports the team the signed-in player is on", () => {
+		expect(selfTeamId([member("a", "Blue"), member("b", "Red", true)])).toBe("Red");
+	});
+
+	test("is null when no player is flagged as self", () => {
+		expect(selfTeamId([member("a", "Blue"), member("b", "Red")])).toBeNull();
+	});
+});
+
+describe("orderTeamsSelfFirst", () => {
+	const ids = (entries: string[], self: string | null) =>
+		orderTeamsSelfFirst(entries, (id) => id, self);
+
+	test("puts our own team first even when we are on Red", () => {
+		expect(ids(["Blue", "Red"], "Red")).toEqual(["Red", "Blue"]);
+	});
+
+	test("leaves our own team first when we are already on Blue", () => {
+		expect(ids(["Blue", "Red"], "Blue")).toEqual(["Blue", "Red"]);
+	});
+
+	test("handles the pregame Ally/Enemy naming", () => {
+		expect(ids(["Enemy", "Ally"], "Ally")).toEqual(["Ally", "Enemy"]);
+	});
+
+	test("falls back to Riot's naming when there is no self player", () => {
+		expect(ids(["Red", "Blue"], null)).toEqual(["Blue", "Red"]);
+		expect(ids(["Enemy", "Ally"], null)).toEqual(["Ally", "Enemy"]);
+	});
+
+	test("sinks the unresolved bucket to the end", () => {
+		expect(ids(["all", "Red", "Blue"], "Red")).toEqual(["Red", "Blue", "all"]);
+	});
+
+	test("is stable for teams that rank equally", () => {
+		expect(ids(["Red", "Blue", "Green"], "Blue")).toEqual(["Blue", "Red", "Green"]);
 	});
 });

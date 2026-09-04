@@ -7,8 +7,9 @@ import { Profile } from "@/types/profile.ts";
 import formatUnixMillis from "@/util/format-date.ts";
 import { Input, Label, TextField } from "@heroui/react";
 import { useEffect, useState } from "react";
-import { FaCogs, FaEdit } from "react-icons/fa";
-import { FaCodeCompare, FaCopy, FaEye, FaPlus, FaShare, FaTrash, FaTriangleExclamation, FaUsers } from "react-icons/fa6";
+import { FaEdit } from "react-icons/fa";
+import { FaCodeCompare, FaCopy, FaEye, FaPlus, FaShare, FaTrash, FaTriangleExclamation } from "react-icons/fa6";
+import { LuSlidersHorizontal, LuUsers } from "react-icons/lu";
 import { getData } from "@/util/share.ts";
 import { useTranslation, Trans } from "react-i18next";
 
@@ -515,7 +516,7 @@ const SettingsProfiles = () => {
 	return (
 		<div className="h-full flex flex-col animate-fade-in">
 			<PageHeader
-				icon={<FaCogs className="text-[#ff4655] text-lg" />}
+				icon={<LuSlidersHorizontal className="text-lg" />}
 				title={t("profiles.title")}
 				subtitle={t("profiles.savedCount", { count: profiles.length })}
 			>
@@ -536,7 +537,7 @@ const SettingsProfiles = () => {
 
 				{profiles.length === 0 ? (
 					<div className="flex-1 flex flex-col items-center justify-center gap-2 text-(--text-muted)">
-						<FaUsers className="text-4xl opacity-30" />
+						<LuUsers className="text-4xl opacity-30" />
 						<p className="text-[12px] text-(--text-secondary)">{t("profiles.noProfilesYet")}</p>
 						<p className="text-[11px]">
 							<Trans i18nKey="profiles.noProfilesHint" components={{ bold: <b className="text-(--text-secondary)" /> }} />
@@ -547,7 +548,7 @@ const SettingsProfiles = () => {
 						{profiles.map((profile) => (
 							<SectionRow key={profile.name}>
 								<div className="w-8 h-8 rounded-[6px] bg-(--control) border border-(--border) flex items-center justify-center text-(--accent-selected) shrink-0">
-									<FaCogs className="text-[13px]" />
+									<LuSlidersHorizontal className="text-[13px]" />
 								</div>
 								<div className="min-w-0 flex-1">
 									<p className="text-[12px] font-medium text-(--text-primary) truncate">{profile.name}</p>
