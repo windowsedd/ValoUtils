@@ -1,7 +1,8 @@
 import { PageHeader, SectionCard, pageBodyClass } from "@/components/section-card";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { FaArrowLeft, FaArrowUpRightFromSquare, FaBook } from "react-icons/fa6";
+import { FaArrowLeft, FaArrowUpRightFromSquare } from "react-icons/fa6";
+import { LuBookOpen } from "react-icons/lu";
 
 // The Riot Client serves a genuine OpenAPI 3 document at
 // `/swagger/v3/openapi.json`. `swagger:open` hosts it on a loopback port (see
@@ -36,7 +37,7 @@ const SwaggerPage = ({ onBack }: SwaggerPageProps) => {
 	return (
 		<div className="h-full flex flex-col animate-fade-in">
 			<PageHeader
-				icon={<FaBook className="text-(--accent) text-lg" />}
+				icon={<LuBookOpen className="text-lg" />}
 				title={t("nav.apiReference")}
 				subtitle={t("apiReference.subtitle")}
 			>

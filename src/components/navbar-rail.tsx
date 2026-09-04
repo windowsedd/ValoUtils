@@ -88,7 +88,6 @@ const RailRouteButton = ({ route, active, translate, onSelect }: RailRouteButton
       onFocus={() => setTooltipVisible(true)}
       onBlur={() => setTooltipVisible(false)}
     >
-      {active && <span className={navbarLayout.railSelectionMarker} aria-hidden="true" />}
       <span className={navbarLayout.railIcon} aria-hidden="true">{route.icon}</span>
       {typeof document === "undefined" ? tooltip : createPortal(tooltip, document.body)}
     </button>

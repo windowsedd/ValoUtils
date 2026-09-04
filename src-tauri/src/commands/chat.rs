@@ -1656,14 +1656,18 @@ async fn mark_conversation_read(
     let body = conversation_read_ack_body(cid, &resolved_mid, conv_type);
     // Riot's mark-read route is POST /chat/v7/conversations/read. Older clients
     // expose the same operation on v6/v5/v4; stop at the first success.
-    let mut last_error = String::new();
+    //
+    // Every failure is kept, not just the last one. Reporting only the final
+    // attempt named the oldest route we try, which points at the wrong thing
+    // when the real answer is "v7 said 404 and the rest never existed".
+    let mut failures = Vec::new();
     for (path, method) in mark_read_write_targets(cid) {
         match riot_client::send_internal_request(riot, &path, method, Some(body.clone())).await {
             Ok(value) => return Ok(value),
-            Err(error) => last_error = error,
+            Err(error) => failures.push(format!("{path}: {error}")),
         }
     }
-    Err(last_error)
+    Err(failures.join(" | "))
 }
 
 #[tauri::command]

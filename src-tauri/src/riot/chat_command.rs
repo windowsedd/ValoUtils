@@ -375,6 +375,22 @@ fn parse_dot_send(
             return Err(RiotError::EmptyMessage);
         }
         ("none".to_string(), first.to_string(), remainder.to_string())
+    } else if first.eq_ignore_ascii_case("auto") {
+        // Explicit "use whatever Settings is set to". Omitting the token reaches
+        // the same default in the branch below, but only by failing to parse the
+        // first word — which silently swallows it when a message happens to open
+        // with a language name. Naming the intent keeps the message intact.
+        let Some(default) = default_language
+            .and_then(|value| crate::translate::resolve_target_language(provider, value))
+        else {
+            return Err(RiotError::InvalidCommand(
+                "No default translation language is set. Pick one in Settings.".into(),
+            ));
+        };
+        if remainder.trim().is_empty() {
+            return Err(RiotError::EmptyMessage);
+        }
+        (default, first.to_string(), remainder.to_string())
     } else if let Some(language) = crate::translate::resolve_target_language(provider, first) {
         if remainder.trim().is_empty() {
             return Err(RiotError::EmptyMessage);
@@ -552,6 +568,56 @@ mod tests {
             expand_matched_custom_command(&history, ""),
             Some(ExpandedCustomCommand::History(".tran team 1".into()))
         );
+    }
+
+    #[test]
+    fn auto_uses_the_settings_language_without_eating_the_message() {
+        let command =
+            parse_translation_command_with_fallback(".send team auto gl hf", "google", Some("zh-TW"))
+                .unwrap();
+        assert_eq!(command.channel, ChatChannel::Team);
+        assert_eq!(command.language, "zh-TW");
+        assert_eq!(command.language_input, "auto");
+        // The whole message survives; only the "auto" token is consumed.
+        assert_eq!(command.message, "gl hf");
+    }
+
+    #[test]
+    fn auto_is_case_insensitive_like_the_other_language_tokens() {
+        let command =
+            parse_translation_command_with_fallback(".send all AUTO hello", "google", Some("ko"))
+                .unwrap();
+        assert_eq!(command.language, "ko");
+        assert_eq!(command.message, "hello");
+    }
+
+    #[test]
+    fn auto_without_a_configured_default_is_rejected_rather_than_sent_untranslated() {
+        let error = parse_translation_command_with_fallback(".send team auto gg", "google", None)
+            .unwrap_err();
+        assert!(matches!(error, RiotError::InvalidCommand(_)), "{error:?}");
+    }
+
+    #[test]
+    fn auto_still_requires_a_message() {
+        let error =
+            parse_translation_command_with_fallback(".send team auto", "google", Some("ko"))
+                .unwrap_err();
+        assert!(matches!(error, RiotError::EmptyMessage), "{error:?}");
+    }
+
+    #[test]
+    fn a_message_opening_with_a_language_word_is_kept_whole_under_auto() {
+        // Without the explicit token this message would lose "german" to the
+        // language slot; "auto" is what makes the intent unambiguous.
+        let command = parse_translation_command_with_fallback(
+            ".send team auto german players incoming",
+            "google",
+            Some("ko"),
+        )
+        .unwrap();
+        assert_eq!(command.language, "ko");
+        assert_eq!(command.message, "german players incoming");
     }
 
     #[test]

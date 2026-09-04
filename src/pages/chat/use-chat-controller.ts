@@ -21,6 +21,7 @@ import {
 	visibleUnreadCount,
 	forgetMarkedUnreadIfCleared,
 	lastConversationMessageId,
+	forgetMarkedUnread,
 	rememberMarkedUnread,
 	sessionMarkedUnread,
 	isComposerCommand,
@@ -79,6 +80,7 @@ export const useChatController = () => {
 		Record<string, string>
 	>({});
 	const [friendActionError, setFriendActionError] = useState<string | null>(null);
+	const [markReadError, setMarkReadError] = useState<string | null>(null);
 	const [pendingFriendAction, setPendingFriendAction] = useState<string | null>(null);
 	const [markedUnreadByCid, setMarkedUnreadByCid] = useState<Record<string, number>>(
 		() => ({ ...sessionMarkedUnread }),
@@ -232,6 +234,20 @@ export const useChatController = () => {
 			refreshSummary();
 		};
 
+		const onMarkRead = (payload: string) => {
+			const response = parsePayload<{ success: boolean; cid?: string; error?: string }>(payload);
+			// A failed mark-read used to vanish: nothing listened on this channel,
+			// so the badge stayed hidden while the game still showed the messages
+			// as unread. Put the count back and say why.
+			if (response && !response.success) {
+				const cid = response.cid ?? "";
+				if (cid) setMarkedUnreadByCid((current) => forgetMarkedUnread(cid, current));
+				setMarkReadError(response.error || "Could not mark the conversation as read.");
+				return;
+			}
+			setMarkReadError(null);
+		};
+
 		const onCommand = (payload: string) => {
 			// The command that produced this reply — the reply itself carries no
 			// room, and the player may have switched channels while it ran.
@@ -261,6 +277,7 @@ export const useChatController = () => {
 		window.Main.on("chat:command", onCommand);
 		window.Main.on("chat:translate", onTranslate);
 		window.Main.on("chat:friend-action", onFriendAction);
+		window.Main.on("chat:mark-read", onMarkRead);
 		refreshSummary();
 		const interval = window.setInterval(refreshSummary, POLL_MS);
 
@@ -274,6 +291,7 @@ export const useChatController = () => {
 			window.Main.removeListener("chat:command", onCommand);
 			window.Main.removeListener("chat:translate", onTranslate);
 			window.Main.removeListener("chat:friend-action", onFriendAction);
+			window.Main.removeListener("chat:mark-read", onMarkRead);
 		};
 	}, [refreshSummary, requestHistory]);
 
@@ -532,6 +550,7 @@ export const useChatController = () => {
 		translatingMessageId,
 		pendingFriendAction,
 		friendActionError,
+		markReadError,
 		selectChannel,
 		selectConversation,
 		markConversationRead,

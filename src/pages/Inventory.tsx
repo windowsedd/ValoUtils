@@ -1,3 +1,4 @@
+import { LoginRequiredPanel } from "@/components/login-required-panel";
 import { PageHeader, SectionCard, SectionRow } from "@/components/section-card";
 import { groupAccessories, resolveOwnedAccessories } from "@/pages/inventory/inventory-accessories";
 import {
@@ -15,7 +16,8 @@ import {
 import { getInventoryIndex, localize, type InventoryIndex, type SkinAsset } from "@/util/valorant-assets";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { FaBoxesStacked } from "react-icons/fa6";
+
+import { LuBoxes } from "react-icons/lu";
 
 type InventoryResponse = {
 	success: boolean;
@@ -37,6 +39,9 @@ const ItemArt = ({ asset, className = "" }: { asset: SkinAsset | null; className
 
 const Inventory = ({ embedded = false }: { embedded?: boolean }) => {
 	const [items, setItems] = useState<InventoryItem[]>([]);
+	// Bumped when the login panel sees a Riot Client appear, so the fetch
+	// below re-runs without the user having to leave and re-enter the page.
+	const [reloadKey, setReloadKey] = useState(0);
 	const [index, setIndex] = useState<InventoryIndex | null>(null);
 	const [kind, setKind] = useState<"all" | InventoryKind>("all");
 	const [query, setQuery] = useState("");
@@ -60,6 +65,10 @@ const Inventory = ({ embedded = false }: { embedded?: boolean }) => {
 				setLoading(false);
 				return;
 			}
+			// A retry got through — drop the signed-out state so the panel makes way
+			// for the content instead of hiding a successful load behind it.
+			setLoginRequired(false);
+			setError(null);
 			setItems(Array.isArray(response.items) ? response.items : []);
 			setLoading(false);
 		};
@@ -67,7 +76,7 @@ const Inventory = ({ embedded = false }: { embedded?: boolean }) => {
 		window.Main.send("inventory:get");
 		window.Main.send("analytics:track", "inventory:view");
 		return () => window.Main.removeAllListeners("inventory:get");
-	}, [t]);
+	}, [t, reloadKey]);
 
 	useEffect(() => {
 		let cancelled = false;
@@ -134,7 +143,7 @@ const Inventory = ({ embedded = false }: { embedded?: boolean }) => {
 	return (
 		<div className={`flex min-h-0 flex-1 flex-col ${embedded ? "" : "h-full animate-fade-in"}`}>
 			{!embedded && (
-				<PageHeader icon={<FaBoxesStacked className="text-lg" />} title={t("inventory.title")}>
+				<PageHeader icon={<LuBoxes className="text-lg" />} title={t("inventory.title")}>
 					<div className="flex shrink-0 items-center gap-4 text-sm">{totals}</div>
 				</PageHeader>
 			)}
@@ -147,13 +156,12 @@ const Inventory = ({ embedded = false }: { embedded?: boolean }) => {
 				)}
 
 				{!loading && loginRequired && (
-					<div className="flex flex-1 items-center justify-center">
-						<div className="glass flex max-w-md flex-col items-center gap-2 p-6 text-center">
-							<FaBoxesStacked className="mb-1 text-3xl text-(--ink-faint)" />
-							<p className="font-semibold text-(--ink)">{t("inventory.loginRequired")}</p>
-							<p className="text-sm text-(--ink-faint)">{t("inventory.loginRequiredDesc")}</p>
-						</div>
-					</div>
+					<LoginRequiredPanel
+						onRetry={() => setReloadKey((key) => key + 1)}
+						icon={<LuBoxes />}
+						title={t("inventory.loginRequired")}
+						description={t("inventory.loginRequiredDesc")}
+					/>
 				)}
 
 				{!loading && error && !loginRequired && (

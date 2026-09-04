@@ -48,6 +48,25 @@ export const rememberMarkedUnread = (cid: string, riotUnread: number) => {
 	return next;
 };
 
+/**
+ * Undo an optimistic mark-read.
+ *
+ * The badge is hidden the moment it is clicked, before Riot has accepted
+ * anything. When the request comes back a failure the count has to return, or
+ * the app quietly claims to have read a conversation the game still shows as
+ * unread.
+ */
+export const forgetMarkedUnread = (
+	cid: string,
+	marked: Record<string, number>,
+): Record<string, number> => {
+	delete sessionMarkedUnread[cid];
+	if (marked[cid] == null) return marked;
+	const next = { ...marked };
+	delete next[cid];
+	return next;
+};
+
 export const forgetMarkedUnreadIfCleared = (
 	conversations: Array<{ cid: string; unreadCount: number }>,
 	marked: Record<string, number>,

@@ -1,5 +1,7 @@
-import { FaArrowRotateRight, FaTriangleExclamation, FaUsers } from "react-icons/fa6";
+import { FaArrowRotateRight } from "react-icons/fa6";
+import { LuTriangleAlert, LuUsers } from "react-icons/lu";
 import { useTranslation } from "react-i18next";
+import { LoginRequiredPanel } from "@/components/login-required-panel";
 
 type Props = {
 	kind: "loading" | "idle" | "login" | "error";
@@ -23,13 +25,24 @@ export const LiveGameStatePanel = ({ kind, detail, onRetry }: Props) => {
 		);
 	}
 
+	if (kind === "login") {
+		return (
+			<LoginRequiredPanel
+				onRetry={onRetry}
+				icon={<LuUsers />}
+				title={t("liveGame.loginRequired")}
+				description={detail ?? t("liveGame.loginRequiredDesc")}
+			/>
+		);
+	}
+
 	const isError = kind === "error";
-	const title = kind === "login" ? t("liveGame.loginRequired") : kind === "idle" ? t("liveGame.idle") : t("liveGame.failedToLoad");
-	const body = detail ?? (kind === "login" ? t("liveGame.loginRequiredDesc") : kind === "idle" ? t("liveGame.idleDesc") : "");
+	const title = kind === "idle" ? t("liveGame.idle") : t("liveGame.failedToLoad");
+	const body = detail ?? (kind === "idle" ? t("liveGame.idleDesc") : "");
 	return (
 		<div className="flex-1 flex items-center justify-center px-6 pt-4 pb-6">
 			<div className="glass rounded-2xl p-7 text-center max-w-md flex flex-col items-center gap-2" role={isError ? "alert" : undefined}>
-				{isError ? <FaTriangleExclamation className="text-2xl text-red-400" /> : <FaUsers className="text-3xl text-gray-600" />}
+				{isError ? <LuTriangleAlert className="text-2xl text-(--signal-neg)" /> : <LuUsers className="text-3xl text-(--text-muted)" />}
 				<p className="text-white font-semibold">{title}</p>
 				<p className="text-gray-400 text-sm leading-relaxed">{body}</p>
 				{isError && onRetry && (

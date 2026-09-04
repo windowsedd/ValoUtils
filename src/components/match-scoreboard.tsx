@@ -126,7 +126,7 @@ export const formatDuration = (ms: number) => {
 
 const Stat = ({ label, value, color }: { label: string; value: string; color?: string }) => (
 	<div className="min-w-0">
-		<p className="text-[10px] uppercase tracking-widest text-gray-600">{label}</p>
+		<p className="text-[10px] uppercase tracking-widest text-(--text-muted)">{label}</p>
 		<p className="text-sm font-semibold tabular-nums truncate" style={color ? { color } : undefined}>
 			{value}
 		</p>
@@ -150,31 +150,31 @@ const ScoreboardRow = ({ player, assets, highlighted, onPlayerSelect, coachLabel
 			{agent?.icon ? (
 				<img src={agent.icon} alt={localize(agent.name)} title={localize(agent.name)} className="w-7 h-7 rounded shrink-0" />
 			) : (
-				<span className="w-7 h-7 rounded bg-white/5 shrink-0" />
+				<span className="h-7 w-7 shrink-0 rounded bg-(--control)" />
 			)}
 			<div className="min-w-0 flex-1">
 				<p className="text-xs font-semibold truncate">
-					<span className={highlighted ? "text-white" : "text-gray-300"}>{player.gameName || "—"}</span>
-					{player.tagLine && <span className="text-gray-600">#{player.tagLine}</span>}
+					<span className={highlighted ? "text-(--text-primary)" : "text-(--text-secondary)"}>{player.gameName || "—"}</span>
+					{player.tagLine && <span className="text-(--text-muted)">#{player.tagLine}</span>}
 				</p>
-				<p className="text-[10px] text-gray-600 truncate">
+				<p className="truncate text-[10px] text-(--text-muted)">
 					{matchPlayerSubtitle(player, agent ? localize(agent.name) : "", coachLabel)}
 				</p>
 			</div>
 			{tierIcon && (
 				<img src={tierIcon} alt={tierName(player.competitiveTier)} title={tierName(player.competitiveTier)} className="w-5 h-5 shrink-0" />
 			)}
-			<span className="w-20 text-right text-xs tabular-nums text-gray-300 shrink-0">
+			<span className="w-20 shrink-0 text-right text-[11px] tabular-nums text-(--text-secondary)">
 				{player.kills} / {player.deaths} / {player.assists}
 			</span>
-			<span className="w-12 text-right text-xs font-semibold tabular-nums text-white shrink-0">{player.acs}</span>
-			<span className="w-12 text-right text-xs tabular-nums text-gray-400 shrink-0">{formatDpr(player)}</span>
-			<span className="w-10 text-right text-xs tabular-nums text-gray-400 shrink-0">{player.firstBloods ?? 0}</span>
-			<span className="w-12 text-right text-xs tabular-nums text-gray-400 shrink-0">{player.headshotPercent.toFixed(0)}%</span>
+			<span className="w-12 shrink-0 text-right text-[11px] font-semibold tabular-nums text-(--text-primary)">{player.acs}</span>
+			<span className="w-12 shrink-0 text-right text-[11px] tabular-nums text-(--text-muted)">{formatDpr(player)}</span>
+			<span className="w-10 shrink-0 text-right text-[11px] tabular-nums text-(--text-muted)">{player.firstBloods ?? 0}</span>
+			<span className="w-12 shrink-0 text-right text-[11px] tabular-nums text-(--text-muted)">{player.headshotPercent.toFixed(0)}%</span>
 		</>
 	);
 	const className = `flex w-full items-center gap-3 rounded-lg px-2 py-1.5 text-left transition-colors ${
-		highlighted ? "bg-white/6" : "hover:bg-white/4"
+		highlighted ? "bg-(--accent-soft)" : "hover:bg-(--surface-hover)"
 	}`;
 
 	return interaction.selectable ? (
@@ -182,7 +182,7 @@ const ScoreboardRow = ({ player, assets, highlighted, onPlayerSelect, coachLabel
 			type="button"
 			onClick={interaction.activate}
 			aria-label={interaction.label}
-			className={`${className} cursor-pointer hover:bg-white/6 focus-visible:outline-none focus-visible:shadow-[inset_0_0_0_2px_var(--accent-soft)]`}
+			className={`${className} cursor-pointer hover:bg-(--surface-hover) focus-visible:outline-none focus-visible:shadow-[inset_0_0_0_2px_var(--accent-soft)]`}
 		>
 			{content}
 		</button>
@@ -211,8 +211,8 @@ export const MatchScoreboard = ({
 	onPlayerSelect?: (player: MatchPlayer) => void;
 }) => {
 	const { t } = useTranslation();
-	if (loading) return <p className="text-xs text-gray-500 px-2 py-3">{t("matches.loadingDetails")}</p>;
-	if (error) return <p className="text-xs text-red-300 px-2 py-3">{error}</p>;
+	if (loading) return <p className="px-2 py-3 text-[11px] text-(--text-muted)">{t("matches.loadingDetails")}</p>;
+	if (error) return <p className="px-2 py-3 text-[11px] text-(--signal-neg)">{error}</p>;
 	if (!details) return null;
 
 	const self = details.players.find((player) => isMatchPlayerHighlighted(player, highlightPuuid));
@@ -227,7 +227,7 @@ export const MatchScoreboard = ({
 		<div className="flex flex-col gap-3">
 			{self && (
 				<div className="flex flex-wrap items-stretch gap-2">
-					<div className="flex min-w-0 flex-1 items-center gap-4 flex-wrap rounded-lg bg-black/20 px-3 py-2.5">
+					<div className="flex min-w-0 flex-1 flex-wrap items-center gap-4 rounded-[8px] border border-(--line) bg-(--surface) px-3 py-2.5">
 						{assets.agents.get(self.characterId.toLowerCase())?.icon && (
 							<img src={assets.agents.get(self.characterId.toLowerCase())!.icon} alt="" className="w-10 h-10 rounded shrink-0" />
 						)}
@@ -240,7 +240,7 @@ export const MatchScoreboard = ({
 						<Stat
 							label={t("matches.result")}
 							value={won === undefined ? "—" : won ? t("matches.victory") : t("matches.defeat")}
-							color={won === undefined ? undefined : won ? "#4ade80" : "#f87171"}
+							color={won === undefined ? undefined : won ? "var(--signal-pos)" : "var(--signal-neg)"}
 						/>
 					</div>
 					<MatchAccuracy player={self} />
@@ -248,7 +248,7 @@ export const MatchScoreboard = ({
 			)}
 
 			<div className="flex flex-col gap-0.5">
-				<div className="flex items-center gap-3 px-2 pb-1 text-[10px] uppercase tracking-widest text-gray-600">
+				<div className="flex items-center gap-3 px-2 pb-1 text-[10px] uppercase tracking-widest text-(--text-muted)">
 					<span className="w-0.5 shrink-0" />
 					<span className="w-7 shrink-0" />
 					<span className="flex-1">{t("matches.player")}</span>
@@ -271,7 +271,7 @@ export const MatchScoreboard = ({
 				))}
 			</div>
 
-			<div className="flex flex-wrap gap-x-6 gap-y-1 px-2 pt-1 text-[10px] text-gray-600 border-t border-white/5">
+			<div className="flex flex-wrap gap-x-6 gap-y-1 border-t border-(--line) px-2 pt-1 text-[10px] text-(--text-muted)">
 				<span>
 					{t("matches.started")} {formatDateTime(details.startMillis)}
 				</span>

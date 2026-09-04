@@ -1,3 +1,4 @@
+import { LoginRequiredPanel } from "@/components/login-required-panel";
 import type { Friend, FriendRequest, FriendsResponse } from "@/types/friends";
 import type { FriendProfileData } from "@/types/friend-profile";
 import { getMaps, getPlayerCard, getTiers, type CardAsset, type MapAsset, type TierAsset } from "@/util/valorant-assets";
@@ -13,7 +14,8 @@ import {
 	matchesFriendSearch,
 } from "@/components/friends/friend-identity";
 import { useTranslation } from "react-i18next";
-import { FaMagnifyingGlass, FaUserGroup } from "react-icons/fa6";
+import { FaMagnifyingGlass } from "react-icons/fa6";
+import { LuUsers } from "react-icons/lu";
 
 const POLL_MS = 10000;
 
@@ -276,7 +278,7 @@ const Friends = () => {
 	const partyCard = (party: (typeof valorantParties.parties)[number]) => (
 		<div key={party.id} className="rounded-xl bg-white/2 px-2 py-2">
 			<div className="flex items-center gap-2 px-2 pb-1.5 text-xs text-gray-500">
-				<FaUserGroup className="text-[10px]" />
+				<LuUsers className="text-[10px]" />
 				<span>{t("friends.partySize", { size: party.size, max: party.maxSize })}</span>
 			</div>
 			{party.members.map((m) => friendRow(m, true))}
@@ -354,13 +356,11 @@ const Friends = () => {
 				{loading && <div className="flex-1 flex items-center justify-center text-gray-500 text-sm">{t("friends.loading")}</div>}
 
 				{!loading && loginRequired && (
-					<div className="flex-1 flex items-center justify-center">
-						<div className="glass p-6 text-center max-w-md flex flex-col items-center gap-2">
-							<FaUserGroup className="text-3xl text-gray-700 mb-1" />
-							<p className="text-white font-semibold">{t("friends.loginRequired")}</p>
-							<p className="text-gray-500 text-sm">{t("friends.loginRequiredDesc")}</p>
-						</div>
-					</div>
+					<LoginRequiredPanel
+						icon={<LuUsers />}
+						title={t("friends.loginRequired")}
+						description={t("friends.loginRequiredDesc")}
+					/>
 				)}
 
 				{!loading && error && !loginRequired && (
@@ -369,7 +369,7 @@ const Friends = () => {
 
 				{!loading && !loginRequired && nothingToShow && (
 					<div className="flex-1 flex flex-col items-center justify-center gap-2 text-gray-500">
-						<FaUserGroup className="text-4xl opacity-30" />
+						<LuUsers className="text-4xl opacity-30" />
 						<p className="text-sm">{search ? t("friends.noMatches") : t("friends.noFriends")}</p>
 					</div>
 				)}

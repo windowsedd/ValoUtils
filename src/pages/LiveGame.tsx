@@ -5,7 +5,7 @@ import { useLiveGameAssets } from "@/components/live-game/use-live-game-assets";
 import { PageHeader } from "@/components/section-card";
 import type { LiveGameResponse, LivePlayer, RecentStatsEvent, RecentStatsState } from "@/types/live-game";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FaCrosshairs } from "react-icons/fa6";
+import { LuCrosshair } from "react-icons/lu";
 import { useTranslation } from "react-i18next";
 
 const POLL_MS = 5000;
@@ -178,10 +178,12 @@ const LiveGame = () => {
 
 	return (
 		<div className="h-full min-h-0 flex flex-col animate-fade-in motion-reduce:animate-none">
-			<PageHeader icon={<FaCrosshairs className="text-[#ff4655] text-lg" />} title={t("liveGame.title")} />
+			<PageHeader icon={<LuCrosshair className="text-lg" />} title={t("liveGame.title")} />
 
 			{loading && !snapshot && <LiveGameStatePanel kind="loading" />}
-			{!loading && loginRequired && <LiveGameStatePanel kind="login" />}
+			{!loading && loginRequired && (
+				<LiveGameStatePanel kind="login" onRetry={refreshSnapshot} />
+			)}
 			{!loading && !loginRequired && error && !snapshot && (
 				<LiveGameStatePanel kind="error" detail={error} onRetry={requestSnapshot} />
 			)}

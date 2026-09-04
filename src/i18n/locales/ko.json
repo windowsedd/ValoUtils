@@ -26,7 +26,12 @@
     "name": "이름",
     "createdOn": "생성 날짜",
     "actions": "작업",
-    "add": "추가"
+    "add": "추가",
+    "launchWithRelay": "XMPP 릴레이로 실행",
+    "launching": "실행 중…",
+    "launchFailed": "실행하지 못했습니다.",
+    "riotClientRunningHint": "Riot 클라이언트가 이미 실행 중입니다. 트레이 아이콘까지 완전히 종료한 뒤 다시 실행하세요.",
+    "launchNormal": "일반 실행"
   },
   "riotStatus": {
     "connecting": "연결 중...",
@@ -115,7 +120,7 @@
   "tools": {
     "title": "도구",
     "subtitle": "플레이어 조회",
-    "lookup": "플레이어",
+    "lookup": "플레이어 조회",
     "inventory": "인벤토리",
     "searchPlaceholder": "게임이름#태그 또는 PUUID",
     "search": "검색",
@@ -123,7 +128,10 @@
     "invalidInput": "Riot ID(이름#태그) 또는 플레이어 PUUID를 입력하세요.",
     "playerNotFound": "해당 플레이어를 찾을 수 없습니다.",
     "loginRequired": "플레이어를 조회하려면 Riot 클라이언트를 열고 로그인하세요.",
-    "unavailable": "지금 이 플레이어 프로필을 불러올 수 없습니다."
+    "unavailable": "지금 이 플레이어 프로필을 불러올 수 없습니다.",
+    "lookupDesc": "Riot ID 또는 PUUID로 플레이어의 티어, 액트 기록, 최근 경기를 찾습니다.",
+    "inventoryDesc": "계정의 스킨, 액세서리, 완성된 세트를 둘러봅니다.",
+    "allTools": "전체 도구"
   },
   "store": {
     "title": "상점",
@@ -136,7 +144,8 @@
     "nightMarket": "야시장",
     "accessoryStore": "액세서리 상점",
     "hiddenCard": "공개되지 않음",
-    "unknownItem": "알 수 없는 항목"
+    "unknownItem": "알 수 없는 항목",
+    "resetsIn": "갱신까지"
   },
   "inventory": {
     "title": "인벤토리",
@@ -204,7 +213,11 @@
     "daysLeft": "{{count}}일 남음",
     "endsToday": "오늘 종료",
     "ended": "종료됨",
-    "notStarted": "아직 진행도가 없습니다"
+    "notStarted": "아직 진행도가 없습니다",
+    "chapterPosition": "{{page}} / {{total}}",
+    "prevChapter": "이전 챕터",
+    "nextChapter": "다음 챕터",
+    "currentChapter": "현재 챕터"
   },
   "career": {
     "title": "전적",
@@ -300,7 +313,8 @@
     "previousActs": "이전 액트",
     "peakRating": "최고 등급",
     "unrated": "미배정",
-    "actMatches": "경기 {{count}}"
+    "actMatches": "경기 {{count}}",
+    "actMatchesLabel": "경기"
   },
   "chat": {
     "title": "채팅",
@@ -516,14 +530,22 @@
     }
   },
   "about": {
-    "rebuildVersion": "리빌드 버전",
     "tagline": "당신의 궁극적인 발로란트 유틸리티 도우미",
     "madeBy": "제작",
     "version": "버전",
     "checkForUpdates": "업데이트 확인",
     "disclaimer": "ValoUtils는 라이엇 게임즈 또는 발로란트와 관계가 없습니다",
     "sectionApp": "애플리케이션",
-    "sectionLegal": "법적 고지"
+    "sectionLegal": "법적 고지",
+    "sectionUpdates": "업데이트",
+    "sectionCredits": "만든 사람",
+    "currentVersion": "현재 버전",
+    "checking": "업데이트 확인 중…",
+    "downloading": "업데이트 다운로드 중…",
+    "downloadingVersion": "v{{version}} 다운로드 중…",
+    "installed": "업데이트 설치 완료 — 재시작 중…",
+    "upToDate": "최신 버전을 사용 중입니다.",
+    "updateFailed": "업데이트 확인에 실패했습니다."
   },
   "dummyBot": {
     "title": "게임 내 봇",
@@ -553,7 +575,7 @@
       "help": "명령 목록"
     },
     "translateSyntax": ".send {party|pregame|team|all} {language|code} {message}",
-    "translateDesc": "봇에게 귓속말로 보내세요. 해당 채널에는 번역문만 전송됩니다. 언어는 이름 또는 코드: french, de, ko, ko-KR, ja-JP, zh_tw, zh-TW. 언어를 생략하면 설정을 사용합니다.",
+    "translateDesc": "봇에게 귀족말로 보내세요. 해당 방에는 번역문만 전송됩니다. 언어는 이름 또는 코드: french, de, ko, ko-KR, ja-JP, zh_tw, zh-TW. 설정의 언어를 쓰려면 auto, 번역 없이 보내려면 none을 사용하세요.",
     "translateExample": ".send party ko-KR hello everyone",
     "historySyntax": ".tran [n]   or   .translate [n]",
     "historyDesc": "봇에게 귓속말로 보내세요. 최근 n개의 파티/팀/전체 채팅을 읽어 번역을 귓속말로 돌려줍니다. 채널 지정: .tran team 5.",
@@ -631,7 +653,24 @@
       "online": "온라인",
       "offline": "오프라인",
       "mobile": "모바일"
-    }
+    },
+    "relayStopped": "실행 중 아님",
+    "clients": "연결된 클라이언트",
+    "endpoint": "엔드포인트",
+    "launchBlocked": "트레이 아이콘까지 Riot 클라이언트를 완전히 종료한 뒤 실행하세요.",
+    "customNew": "새 명령",
+    "customEmpty": "아직 사용자 명령이 없습니다.",
+    "customTriggerLabel": "트리거",
+    "customActionLabel": "동작",
+    "customLanguageLabel": "언어",
+    "customMessageLabel": "메시지",
+    "customCountLabel": "줄 수",
+    "customLifecycleNote": "자동으로 실행되어 Dummy Bot이 귀족말로 보냅니다. 트리거가 필요 없습니다.",
+    "customLineCount": "최근 {{count}}줄",
+    "customEdit": "명령 편집",
+    "customEditing": "명령 편집",
+    "customLanguageNone": "번역하지 않음",
+    "customLanguageAuto": "설정의 언어 사용"
   },
   "apiReference": {
     "subtitle": "라이엇 클라이언트 REST API",

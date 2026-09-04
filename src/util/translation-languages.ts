@@ -117,10 +117,15 @@ export const displayTranslationLanguage = (
 	locale: string,
 ) => {
 	try {
-		return (
-			new Intl.DisplayNames([locale], { type: "language" }).of(language.code) ??
-			language.englishName
+		const resolved = new Intl.DisplayNames([locale], { type: "language" }).of(
+			language.code,
 		);
+		// Intl echoes the tag back when it has no name for it, which renders as
+		// "ab ab" next to the code. The catalog's own name is the better answer.
+		if (!resolved || resolved.toLowerCase() === language.code.toLowerCase()) {
+			return language.englishName;
+		}
+		return resolved;
 	} catch {
 		return language.englishName;
 	}

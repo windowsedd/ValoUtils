@@ -42,7 +42,7 @@ export const MatchAccuracy = ({
 	>;
 
 	return (
-		<div data-match-accuracy="" className="flex min-w-[15rem] shrink-0 flex-col rounded-lg bg-black/20 px-3 py-2.5">
+		<div data-match-accuracy="" className="flex min-w-[15rem] shrink-0 flex-col rounded-[8px] border border-(--line) bg-(--surface) px-3 py-2.5">
 			<p className="text-sm font-semibold text-(--ink)">{t("matches.accuracy")}</p>
 			<div className="mt-1 flex items-center gap-4">
 				<AccuracySilhouette

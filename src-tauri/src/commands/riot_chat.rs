@@ -287,8 +287,20 @@ fn direct_translation_request(
     if language.is_empty() || language.eq_ignore_ascii_case("none") {
         return Ok(None);
     }
-    let target_language = crate::translate::resolve_target_language(&config.provider, language)
-        .ok_or_else(|| RiotError::InvalidCommand(format!("Unknown language '{language}'.")))?;
+    // "auto" defers to the Settings target language; the group path resolves it
+    // in the .send parser, and direct whispers never touch that parser.
+    let requested = if language.eq_ignore_ascii_case("auto") {
+        config.target_language.trim()
+    } else {
+        language
+    };
+    if requested.is_empty() {
+        return Err(RiotError::InvalidCommand(
+            "No default translation language is set. Pick one in Settings.".into(),
+        ));
+    }
+    let target_language = crate::translate::resolve_target_language(&config.provider, requested)
+        .ok_or_else(|| RiotError::InvalidCommand(format!("Unknown language '{requested}'.")))?;
     Ok(Some(DirectTranslationRequest {
         message: message.to_string(),
         provider: config.provider.clone(),

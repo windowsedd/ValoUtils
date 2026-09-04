@@ -7,6 +7,7 @@ import {
 	type MatchAssets,
 } from "@/components/match-scoreboard";
 import { useMatchPlayerProfileModal } from "@/components/match-player-profile-modal";
+import { LoginRequiredPanel } from "@/components/login-required-panel";
 import { PageHeader, SectionCard, pageBodyClass } from "@/components/section-card";
 import { localize } from "@/util/valorant-assets";
 import type { MatchDetails, MatchListEntry, MatchListResponse } from "@/types/matches";
@@ -14,14 +15,14 @@ import { mapIcon, mapName } from "@/util/valorant-maps";
 import { queueAccent, queueLabel } from "@/util/valorant-queues";
 import { useEffect, useState, type ComponentProps } from "react";
 import { useTranslation } from "react-i18next";
-import { FaChevronDown, FaClockRotateLeft } from "react-icons/fa6";
+import { LuChevronDown, LuHistory } from "react-icons/lu";
 
 const PAGE_SIZE = 20;
 
 const matchListGrid =
 	"grid w-full items-center gap-x-3 px-3 " +
 	"grid-cols-[6.75rem_3.5rem_minmax(0,1fr)_0.75rem] " +
-	"md:grid-cols-[6.75rem_3.5rem_minmax(5.5rem,1fr)_1.75rem_5.5rem_3rem_3rem_2rem_3.25rem_9.5rem_0.75rem]";
+	"md:grid-cols-[6.75rem_3.5rem_minmax(8rem,1fr)_1.75rem_5.5rem_3rem_3rem_2rem_3.25rem_9.5rem_0.75rem]";
 
 const MatchListHeader = () => {
 	const { t } = useTranslation();
@@ -80,32 +81,53 @@ const MatchCard = ({
 	const myTeam = self ? scoreTeams.find((team) => team.teamId === self.teamId) : undefined;
 	const theirTeam = scoreTeams.find((team) => team.teamId !== myTeam?.teamId);
 	const won = myTeam?.won;
+	const resultAccent =
+		won === true ? "var(--signal-pos)" : won === false ? "var(--signal-neg)" : "var(--text-muted)";
 
 	return (
-		<div className="rounded-xl bg-white/2 overflow-hidden">
+		<div
+			className="overflow-hidden rounded-[8px] border border-(--line) bg-(--panel-raised)"
+			/* Result as a stripe as well as a colour — the score alone encodes
+			   win/loss in hue only, which disappears for a colour-blind reader. */
+			style={{ borderLeft: `3px solid ${resultAccent}` }}
+			data-match-result={won === true ? "win" : won === false ? "loss" : undefined}
+		>
 			<button
 				onClick={onToggle}
 				aria-expanded={expanded}
-				className={`${matchListGrid} py-2.5 text-left hover:bg-white/4 transition-colors`}
+				className={`${matchListGrid} py-2.5 text-left transition-colors hover:bg-(--surface-hover)`}
 			>
 				<span
-					className="truncate text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded"
-					style={{ color: queueAccent(entry.queueId), background: `${queueAccent(entry.queueId)}1a` }}
+					className={`truncate rounded-[5px] border px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-widest ${queueAccent(entry.queueId)}`}
 				>
 					{queueLabel(entry.queueId)}
 				</span>
 				{thumb ? (
 					<img src={thumb} alt="" className="w-14 h-8 rounded object-cover" />
 				) : (
-					<span className="w-14 h-8 rounded bg-white/5" />
+					<span className="h-8 w-14 rounded bg-(--control)" />
 				)}
 				<span className="flex min-w-0 items-baseline gap-2">
-					<span className="truncate text-sm font-semibold text-white">{map || "—"}</span>
+					<span className="truncate text-[12px] font-medium text-(--text-primary)">{map || "—"}</span>
 					{myTeam && theirTeam && (
-						<span className="shrink-0 text-sm font-bold tabular-nums">
-							<span style={{ color: won ? "#4ade80" : "#f87171" }}>{myTeam.roundsWon}</span>
-							<span className="text-gray-600"> - </span>
-							<span className="text-gray-400">{theirTeam.roundsWon}</span>
+						<span className="flex shrink-0 items-baseline gap-1.5">
+							{/*
+							 * The word is the only non-colour cue for the result, but it is
+							 * also the widest thing competing with the map name. Kept from
+							 * lg up where the row has room; below that the score colour and
+							 * the row's left stripe carry it.
+							 */}
+							<span
+								className="hidden text-[10px] font-semibold uppercase lg:inline"
+								style={{ color: resultAccent }}
+							>
+								{won === true ? t("matches.victory") : won === false ? t("matches.defeat") : "—"}
+							</span>
+							<span className="text-[12px] font-semibold tabular-nums">
+								<span style={{ color: resultAccent }}>{myTeam.roundsWon}</span>
+								<span className="text-(--text-muted)">-</span>
+								<span className="text-(--text-secondary)">{theirTeam.roundsWon}</span>
+							</span>
 						</span>
 					)}
 				</span>
@@ -121,19 +143,19 @@ const MatchCard = ({
 				)}
 				{self ? (
 					<>
-						<span className="hidden text-right text-xs tabular-nums text-gray-300 md:block">
+						<span className="hidden text-right text-[11px] tabular-nums text-(--text-primary) md:block">
 							{self.kills} / {self.deaths} / {self.assists}
 						</span>
-						<span className="hidden text-right text-xs tabular-nums text-gray-500 md:block" title={t("matches.acs")}>
+						<span className="hidden text-right text-[11px] tabular-nums text-(--text-muted) md:block" title={t("matches.acs")}>
 							{self.acs}
 						</span>
-						<span className="hidden text-right text-xs tabular-nums text-gray-500 md:block" title={t("matches.dpr")}>
+						<span className="hidden text-right text-[11px] tabular-nums text-(--text-muted) md:block" title={t("matches.dpr")}>
 							{formatDpr(self)}
 						</span>
-						<span className="hidden text-right text-xs tabular-nums text-gray-500 md:block" title={t("matches.firstBloods")}>
+						<span className="hidden text-right text-[11px] tabular-nums text-(--text-muted) md:block" title={t("matches.firstBloods")}>
 							{self.firstBloods ?? 0}
 						</span>
-						<span className="hidden text-right text-xs tabular-nums text-gray-500 md:block" title={t("matches.headshot")}>
+						<span className="hidden text-right text-[11px] tabular-nums text-(--text-muted) md:block" title={t("matches.headshot")}>
 							{self.headshotPercent.toFixed(0)}%
 						</span>
 					</>
@@ -146,14 +168,14 @@ const MatchCard = ({
 						<span className="hidden md:block" />
 					</>
 				)}
-				<span className="hidden truncate text-right text-xs text-gray-600 md:block">
+				<span className="hidden truncate text-right text-[11px] tabular-nums text-(--text-muted) md:block">
 					{formatDateTime(entry.startMillis)}
 				</span>
-				<FaChevronDown className={`justify-self-end text-gray-600 text-xs transition-transform ${expanded ? "rotate-180" : ""}`} />
+				<LuChevronDown className={`justify-self-end text-[11px] text-(--text-muted) transition-transform ${expanded ? "rotate-180" : ""}`} />
 			</button>
 
 			{expanded && (
-				<div className="px-3 pb-3">
+				<div className="border-t border-(--line) px-3 py-3">
 					<MatchScoreboard details={details} assets={assets} loading={loading} error={error} onPlayerSelect={onPlayerSelect} />
 				</div>
 			)}
@@ -164,6 +186,9 @@ const MatchCard = ({
 const Matches = () => {
 	const { t } = useTranslation();
 	const [entries, setEntries] = useState<MatchListEntry[]>([]);
+	// Bumped when the login panel sees a Riot Client appear, so the fetch
+	// below re-runs without the user having to leave and re-enter the page.
+	const [reloadKey, setReloadKey] = useState(0);
 	const [total, setTotal] = useState(0);
 	const [expanded, setExpanded] = useState<Set<string>>(new Set());
 	const [loading, setLoading] = useState(true);
@@ -191,7 +216,7 @@ const Matches = () => {
 		});
 		window.Main.send("match:list", 0, PAGE_SIZE);
 		return () => window.Main.removeAllListeners("match:list");
-	}, [t]);
+	}, [t, reloadKey]);
 
 	useEffect(() => {
 		const ids = entries.map((e) => e.matchId).filter(Boolean);
@@ -211,38 +236,37 @@ const Matches = () => {
 	return (
 		<div className="h-full flex flex-col animate-fade-in">
 			<PageHeader
-				icon={<FaClockRotateLeft className="text-[#ff4655] text-lg" />}
+				icon={<LuHistory className="text-lg" />}
 				title={t("matches.title")}
 				subtitle={total ? t("matches.count", { count: total }) : undefined}
 			/>
 
 			<div className={pageBodyClass}>
 				{loading && (
-					<div className="flex-1 flex items-center justify-center text-gray-500 text-sm">{t("matches.loading")}</div>
+					<div className="flex flex-1 items-center justify-center text-[12px] text-(--text-muted)">{t("matches.loading")}</div>
 				)}
 
 				{!loading && loginRequired && (
-					<div className="flex-1 flex items-center justify-center">
-						<div className="glass p-6 text-center max-w-md flex flex-col items-center gap-2">
-							<FaClockRotateLeft className="text-3xl text-gray-700 mb-1" />
-							<p className="text-white font-semibold">{t("matches.loginRequired")}</p>
-							<p className="text-gray-500 text-sm">{t("matches.loginRequiredDesc")}</p>
-						</div>
-					</div>
+					<LoginRequiredPanel
+						onRetry={() => setReloadKey((key) => key + 1)}
+						icon={<LuHistory />}
+						title={t("matches.loginRequired")}
+						description={t("matches.loginRequiredDesc")}
+					/>
 				)}
 
 				{!loading && error && !loginRequired && (
-					<div className="glass rounded-2xl px-4 py-3">
-						<p className="text-sm text-red-300 font-semibold">{t("matches.failedToLoad")}</p>
-						<p className="text-xs text-gray-500 mt-0.5">{error}</p>
+					<div className="panel px-4 py-3">
+						<p className="text-[12px] font-semibold text-(--signal-neg)">{t("matches.failedToLoad")}</p>
+						<p className="mt-0.5 text-[11px] text-(--text-muted)">{error}</p>
 					</div>
 				)}
 
 				{!loading && !error && !loginRequired && (
-					<SectionCard title={t("matches.recentMatches")} count={entries.length} accent="#ff4655">
+					<SectionCard title={t("matches.recentMatches")} count={entries.length}>
 						{entries.length === 0 ? (
-							<div className="flex flex-col items-center justify-center gap-2 py-10 text-gray-500">
-								<FaClockRotateLeft className="text-4xl opacity-30" />
+							<div className="flex flex-col items-center justify-center gap-2 py-10 text-(--text-muted)">
+								<LuHistory className="text-4xl opacity-30" />
 								<p className="text-sm">{t("matches.noMatches")}</p>
 							</div>
 						) : (

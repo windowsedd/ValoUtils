@@ -70,7 +70,7 @@ describe("NavbarRail", () => {
     expect(navbarLayout.railRoutes).toContain("command-rail-scroll");
     expect(navbarLayout.tooltip).toContain("fixed");
     expect(navbarLayout.tooltip).not.toContain("absolute");
-    expect(navbarLayout.railSelectionMarker).not.toContain("-left-");
+    expect(navbarLayout.railButtonActive).toContain("bg-(--accent)");
     expect(navbarLayout.railBottom).not.toContain("overflow");
     expect(navbarLayout.railStatus).not.toContain("overflow");
   });

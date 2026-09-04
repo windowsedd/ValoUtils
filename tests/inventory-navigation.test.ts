@@ -43,8 +43,10 @@ describe("Inventory navigation and filters", () => {
 		expect(tools).toContain('import Inventory from "@/pages/Inventory.tsx"');
 		expect(tools).toContain('data-tools-inventory=""');
 		expect(tools).toContain("<Inventory embedded");
-		expect(tools).toContain("data-tool={value}");
-		expect(tools).toContain('["inventory", t("tools.inventory")]');
+		// Reachable as a card on the Tools index rather than a segment in a switch.
+		expect(tools).toContain("data-tool={entry.id}");
+		expect(tools).toContain('id: "inventory"');
+		expect(tools).toContain('t("tools.inventory")');
 	});
 
 	test("loads entitlements over IPC and joins valorant-api.com catalogs", () => {

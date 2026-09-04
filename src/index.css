@@ -284,12 +284,8 @@ h6 {
 		background-color 150ms ease,
 		border-color 150ms ease,
 		color 150ms ease,
-		box-shadow 150ms ease;
-}
-
-.button:active,
-.button[data-pressed="true"] {
-	transform: none;
+		box-shadow 150ms ease,
+		scale 90ms ease-out;
 }
 
 .button--primary {
@@ -305,6 +301,45 @@ h6 {
 .button--ghost,
 .button--outline {
 	border-radius: 6px;
+}
+
+/* ---------------------------------------------------------------------------
+ * Press feedback
+ *
+ * Anything clickable dips under the pointer, so a click is felt as well as
+ * seen. Two deliberate choices here:
+ *
+ * - `scale`, not `transform: scale()`. Plenty of controls already carry a
+ *   translate utility (tooltips sit on `-translate-y-1/2`); writing `transform`
+ *   would silently wipe those out. The standalone property composes instead.
+ * - HeroUI drives its buttons through React Aria, which sets `data-pressed`
+ *   rather than matching `:active`, so both selectors are needed.
+ *
+ * `.press-flat` opts a control out. It exists for the ones that parent an
+ * absolutely positioned tooltip — scaling the button would drag the tooltip
+ * along with it — which get a background shift instead.
+ * ------------------------------------------------------------------------- */
+button,
+[role="button"] {
+	transition: scale 90ms ease-out;
+}
+
+button:not(:disabled):not([aria-disabled="true"]):not(.press-flat):active,
+button:not(:disabled):not([aria-disabled="true"]):not(.press-flat)[data-pressed="true"],
+[role="button"]:not([aria-disabled="true"]):not(.press-flat):active {
+	scale: 0.96;
+}
+
+/* Icon-only tiles are small enough that 0.96 barely reads — dip them further.
+   Qualified with `button` so this outranks the generic rule above. */
+button.press-tile:not(:disabled):not([aria-disabled="true"]):not(.press-flat):active,
+button.press-tile:not(:disabled):not([aria-disabled="true"]):not(.press-flat)[data-pressed="true"] {
+	scale: 0.92;
+}
+
+.press-flat:not(:disabled):active,
+.press-flat:not(:disabled)[data-pressed="true"] {
+	background: var(--surface-hover);
 }
 
 .button--danger {
@@ -544,5 +579,13 @@ input[type="range"]::-moz-range-thumb {
 		animation-duration: 0.01ms !important;
 		animation-iteration-count: 1 !important;
 		transition-duration: 0.01ms !important;
+	}
+
+	/* Zeroing the duration would still snap the control to 0.96 and back.
+	   Drop the press dip outright and let the hover fill carry the feedback. */
+	button:active,
+	button[data-pressed="true"],
+	[role="button"]:active {
+		scale: none !important;
 	}
 }
