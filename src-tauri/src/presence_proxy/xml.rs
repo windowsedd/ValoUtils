@@ -576,18 +576,26 @@ pub fn rewrite_presence(stanza: &str, mode: PresenceMode) -> Result<Option<Strin
     remove_children_named(&mut root, &["status"]);
     if let Some(games) = root.get_mut_child("games") {
         if mode == PresenceMode::Mobile {
-            if let Some(mobile) = games.get_mut_child("keystone") {
-                set_child_text(mobile, "st", "mobile");
-                remove_children_named(mobile, &["m", "p"]);
+            // The chat-capable products carry the mobile flag. Keystone (which
+            // some clients name `riot_client`) is what a Riot Mobile session
+            // reports, and League is the carrier Deceive marks; flagging every
+            // one that is present keeps the flag on whichever the account
+            // actually has. `s.t` is restamped because Riot clients display the
+            // newest presence per product, so a replay of the cached stanza on
+            // a mode switch would otherwise lose to what peers already hold.
+            let stamp = unix_millis().to_string();
+            for carrier in ["keystone", "riot_client", "league_of_legends"] {
+                if let Some(product) = games.get_mut_child(carrier) {
+                    set_child_text(product, "st", "mobile");
+                    set_child_text(product, "s.t", &stamp);
+                    // `m` and `p` describe the PC session behind the presence.
+                    remove_children_named(product, &["m", "p"]);
+                }
             }
-            if let Some(valorant) = games.get_mut_child("valorant") {
-                set_child_text(valorant, "st", "offline");
-                remove_children_named(valorant, &["m", "p"]);
-            }
-            remove_children_named(
-                games,
-                &["riot_client", "league_of_legends", "bacon", "lion"],
-            );
+            // The PC game products go entirely. Keeping VALORANT and marking it
+            // `<st>offline</st>` published an explicit per-product offline claim
+            // beside the mobile flag, and that is the one peers acted on.
+            remove_children_named(games, &["valorant", "bacon", "lion", "teamfighttactics"]);
         } else {
             remove_children_named(
                 games,
@@ -598,6 +606,7 @@ pub fn rewrite_presence(stanza: &str, mode: PresenceMode) -> Result<Option<Strin
                     "league_of_legends",
                     "bacon",
                     "lion",
+                    "teamfighttactics",
                 ],
             );
         }
@@ -748,9 +757,45 @@ mod tests {
 
         assert!(output.contains("<show>mobile</show>"));
         assert!(output.contains("<keystone><st>mobile</st>"));
-        assert!(output.contains("<valorant><st>offline</st>"));
-        assert!(!output.contains("<league_of_legends>"));
+        // League is the carrier Riot's chat system reads for the mobile badge,
+        // so it stays and carries the flag rather than being dropped.
+        assert!(output.contains("<league_of_legends><st>mobile</st>"));
+        // No PC game product survives, and none claims a per-product state that
+        // would override the mobile flag.
+        assert!(!output.contains("<valorant>"));
+        assert!(!output.contains("offline"));
         assert!(!output.contains("<p>"));
+        assert!(!output.contains("<m>"));
+    }
+
+    #[test]
+    fn mobile_flags_a_riot_client_named_product() {
+        let stanza = r#"<presence><show>chat</show><games><riot_client><st>chat</st></riot_client><valorant><st>chat</st><p>secret</p></valorant></games></presence>"#;
+        let output = rewrite_presence(stanza, PresenceMode::Mobile)
+            .unwrap()
+            .unwrap();
+
+        assert!(output.contains("<riot_client><st>mobile</st>"));
+        assert!(!output.contains("<valorant>"));
+    }
+
+    #[test]
+    fn mobile_restamps_the_carrier_so_a_replayed_presence_wins() {
+        let stanza = r#"<presence><show>chat</show><games><keystone><st>chat</st><s.t>1</s.t></keystone></games></presence>"#;
+        let output = rewrite_presence(stanza, PresenceMode::Mobile)
+            .unwrap()
+            .unwrap();
+
+        assert!(!output.contains("<s.t>1</s.t>"));
+    }
+
+    #[test]
+    fn both_masking_modes_drop_teamfight_tactics() {
+        let stanza = r#"<presence><show>chat</show><games><keystone><st>chat</st></keystone><teamfighttactics><st>chat</st></teamfighttactics></games></presence>"#;
+        for mode in [PresenceMode::Mobile, PresenceMode::Offline] {
+            let output = rewrite_presence(stanza, mode).unwrap().unwrap();
+            assert!(!output.contains("teamfighttactics"), "{mode:?} leaked TFT");
+        }
     }
 
     #[test]
