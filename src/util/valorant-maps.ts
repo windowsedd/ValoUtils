@@ -7,12 +7,24 @@ import { localize, type MapAsset } from "@/util/valorant-assets";
  * new maps by letting `getMaps()` pick them up instead.
  */
 const FALLBACK_MAP_NAMES: Record<string, string> = {
-	ascent: "Ascent", bonsai: "Split", canyon: "Fracture",
-	duality: "Bind", foxtrot: "Breeze", jam: "Lotus",
-	juliett: "Sunset", pitt: "Pearl", port: "Icebox",
-	range: "The Range", triad: "Haven", infinity: "Abyss",
-	plummet: "Summit", hurm_bowl: "Kasbah", hurm_alley: "District",
-	hurm_helix: "Drift", hurm_yard: "Piazza", hurm_hightide: "Glitch",
+  ascent: "Ascent",
+  bonsai: "Split",
+  canyon: "Fracture",
+  duality: "Bind",
+  foxtrot: "Breeze",
+  jam: "Lotus",
+  juliett: "Sunset",
+  pitt: "Pearl",
+  port: "Icebox",
+  range: "The Range",
+  triad: "Haven",
+  infinity: "Abyss",
+  plummet: "Summit",
+  hurm_bowl: "Kasbah",
+  hurm_alley: "District",
+  hurm_helix: "Drift",
+  hurm_yard: "Piazza",
+  hurm_hightide: "Glitch",
 };
 
 /** Last path segment of a map url, lowercased: "/Game/Maps/Jam/Jam" -> "jam". */
@@ -24,17 +36,20 @@ const leafOf = (mapId: string) => mapId.split("/").filter(Boolean).pop()?.toLowe
  * segment, so an unknown or newly released map still renders something.
  */
 export const mapName = (mapId: string | null | undefined, maps?: Map<string, MapAsset>): string => {
-	if (!mapId) return "";
-	const key = mapId.toLowerCase();
-	const leaf = leafOf(mapId);
-	const fromApi = maps?.get(key) ?? maps?.get(leaf);
-	if (fromApi) return localize(fromApi.name);
-	return FALLBACK_MAP_NAMES[leaf] ?? mapId.split("/").filter(Boolean).pop() ?? "";
+  if (!mapId) return "";
+  const key = mapId.toLowerCase();
+  const leaf = leafOf(mapId);
+  const fromApi = maps?.get(key) ?? maps?.get(leaf);
+  if (fromApi) return localize(fromApi.name);
+  return FALLBACK_MAP_NAMES[leaf] ?? mapId.split("/").filter(Boolean).pop() ?? "";
 };
 
 /** Wide thumbnail for a map, or null when the CDN list hasn't loaded yet. */
-export const mapIcon = (mapId: string | null | undefined, maps?: Map<string, MapAsset>): string | null => {
-	if (!mapId) return null;
-	const asset = maps?.get(mapId.toLowerCase()) ?? maps?.get(leafOf(mapId));
-	return asset?.listViewIcon ?? null;
+export const mapIcon = (
+  mapId: string | null | undefined,
+  maps?: Map<string, MapAsset>,
+): string | null => {
+  if (!mapId) return null;
+  const asset = maps?.get(mapId.toLowerCase()) ?? maps?.get(leafOf(mapId));
+  return asset?.listViewIcon ?? null;
 };

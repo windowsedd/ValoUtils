@@ -1,7 +1,5 @@
 export const isMatchPlayerHighlighted = (
-	player: { subject: string; isSelf: boolean },
-	highlightPuuid?: string,
+  player: { subject: string; isSelf: boolean },
+  highlightPuuid?: string,
 ) =>
-	highlightPuuid
-		? player.subject.toLowerCase() === highlightPuuid.toLowerCase()
-		: player.isSelf;
+  highlightPuuid ? player.subject.toLowerCase() === highlightPuuid.toLowerCase() : player.isSelf;

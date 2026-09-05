@@ -7,11 +7,11 @@ const appCommand = readFileSync(join(root, "src-tauri/src/commands/app.rs"), "ut
 const tauriApp = readFileSync(join(root, "src-tauri/src/lib.rs"), "utf8");
 
 describe("hidden navigation config", () => {
-	test("defaults hiddenTabs to an empty array", () => {
-		expect(tauriApp).toContain('config_defaults.insert("hiddenTabs".into(), json!([]));');
-	});
+  test("defaults hiddenTabs to an empty array", () => {
+    expect(tauriApp).toContain('config_defaults.insert("hiddenTabs".into(), json!([]));');
+  });
 
-	test("returns hiddenTabs from config_get_all", () => {
-		expect(appCommand).toContain('"hiddenTabs": get_or("hiddenTabs", json!([]))');
-	});
+  test("returns hiddenTabs from config_get_all", () => {
+    expect(appCommand).toContain('"hiddenTabs": get_or("hiddenTabs", json!([]))');
+  });
 });

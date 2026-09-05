@@ -2,10 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-const friendsPage = readFileSync(
-  join(import.meta.dir, "..", "src/pages/Friends.tsx"),
-  "utf8",
-);
+const friendsPage = readFileSync(join(import.meta.dir, "..", "src/pages/Friends.tsx"), "utf8");
 
 describe("Friends note wiring", () => {
   test("uses note-aware search only for accepted friends", () => {

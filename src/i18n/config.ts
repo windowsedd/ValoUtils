@@ -8,14 +8,14 @@ const savedLangRaw = localStorage.getItem("valoutils-lang") ?? "en";
 const savedLang = savedLangRaw === "kr" ? "ko" : savedLangRaw;
 
 i18n.use(initReactI18next).init({
-	resources: {
-		en: { translation: en },
-		ko: { translation: ko },
-		"zh-TW": { translation: zhTW },
-	},
-	lng: savedLang,
-	fallbackLng: "en",
-	interpolation: { escapeValue: false },
+  resources: {
+    en: { translation: en },
+    ko: { translation: ko },
+    "zh-TW": { translation: zhTW },
+  },
+  lng: savedLang,
+  fallbackLng: "en",
+  interpolation: { escapeValue: false },
 });
 
 export default i18n;

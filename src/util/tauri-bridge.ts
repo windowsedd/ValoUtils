@@ -22,48 +22,48 @@ const listeners = new Map<string, Set<Callback>>();
 const unlistenFns = new Map<string, UnlistenFn>();
 
 function toCommandName(channel: string): string {
-    return channel.replace(/[:-]/g, "_");
+  return channel.replace(/[:-]/g, "_");
 }
 
 function ensureEventBridge(channel: string) {
-    if (unlistenFns.has(channel)) return;
-    unlistenFns.set(channel, () => {}); // placeholder to avoid double-subscribe races
-    listen<string>(channel, (event) => {
-        const cbs = listeners.get(channel);
-        if (cbs) cbs.forEach((cb) => cb(event.payload));
-    }).then((unlisten) => {
-        unlistenFns.set(channel, unlisten);
-    });
+  if (unlistenFns.has(channel)) return;
+  unlistenFns.set(channel, () => {}); // placeholder to avoid double-subscribe races
+  listen<string>(channel, (event) => {
+    const cbs = listeners.get(channel);
+    if (cbs) cbs.forEach((cb) => cb(event.payload));
+  }).then((unlisten) => {
+    unlistenFns.set(channel, unlisten);
+  });
 }
 
 const api = {
-    send: (channel: string, ...message: any[]) => {
-        invoke<string>(toCommandName(channel), { args: message })
-            .then((result) => {
-                const cbs = listeners.get(channel);
-                if (cbs) cbs.forEach((cb) => cb(result));
-            })
-            .catch((err) => {
-                console.error(`[tauri-bridge] invoke "${channel}" failed:`, err);
-            });
-    },
-    on: (channel: string, callback: Callback) => {
-        if (!listeners.has(channel)) listeners.set(channel, new Set());
-        listeners.get(channel)!.add(callback);
-        ensureEventBridge(channel);
-    },
-    removeAllListeners: (channel: string) => {
-        listeners.delete(channel);
-    },
-    removeListener: (channel: string, callback: Callback) => {
-        listeners.get(channel)?.delete(callback);
-    },
+  send: (channel: string, ...message: any[]) => {
+    invoke<string>(toCommandName(channel), { args: message })
+      .then((result) => {
+        const cbs = listeners.get(channel);
+        if (cbs) cbs.forEach((cb) => cb(result));
+      })
+      .catch((err) => {
+        console.error(`[tauri-bridge] invoke "${channel}" failed:`, err);
+      });
+  },
+  on: (channel: string, callback: Callback) => {
+    if (!listeners.has(channel)) listeners.set(channel, new Set());
+    listeners.get(channel)!.add(callback);
+    ensureEventBridge(channel);
+  },
+  removeAllListeners: (channel: string) => {
+    listeners.delete(channel);
+  },
+  removeListener: (channel: string, callback: Callback) => {
+    listeners.get(channel)?.delete(callback);
+  },
 };
 
 declare global {
-    interface Window {
-        Main: typeof api;
-    }
+  interface Window {
+    Main: typeof api;
+  }
 }
 
 window.Main = api;
