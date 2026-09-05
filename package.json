@@ -12,6 +12,7 @@
 		"release": "bun run build",
 		"version": "bun scripts/release-version.ts",
 		"version:check": "bun scripts/release-version.ts --check",
+		"banner": "bun scripts/generate-banner.ts",
 		"lint": "oxlint src",
 		"preview": "vite preview"
 	},
@@ -45,6 +46,7 @@
 		"oxlint": "1.76.0",
 		"postcss": "^8.5.26",
 		"tailwindcss": "^4.3.3",
+		"takumi-js": "^2.13.5",
 		"typescript": "^6.0.3",
 		"vite": "^8.2.1"
 	}
