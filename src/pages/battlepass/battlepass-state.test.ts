@@ -10,8 +10,12 @@ import {
   pageIndexForLevel,
   parseChapter,
   parseReward,
+  passXpProgress,
+  totalPassXp,
+  xpPerDayNeeded,
   passesOfKind,
   RADIANITE_UUID,
+  VP_UUID,
   selectBattlepassId,
   sortBattlepasses,
   totalLevels,
@@ -242,5 +246,57 @@ describe("chapter reward views", () => {
     expect(premium[0]?.status).toBe("claimed");
     expect(premium[1]?.status).toBe("current");
     expect(premium[2]?.status).toBe("locked");
+  });
+});
+
+describe("whole-pass XP progression", () => {
+  const chapters = [
+    { isEpilogue: false, freeRewards: [], levels: [{ xp: 100 }, { xp: 200 }] },
+    { isEpilogue: true, freeRewards: [], levels: [{ xp: 700 }] },
+  ].map((chapter) => parseChapter({
+    ...chapter,
+    levels: chapter.levels.map((level) => ({
+      ...level,
+      reward: { type: "Currency", uuid: VP_UUID, amount: 1 },
+    })),
+  }));
+
+  test("sums every tier, epilogue included", () => {
+    expect(totalPassXp(chapters)).toBe(1000);
+    expect(totalPassXp([])).toBe(0);
+  });
+
+  test("reports earned, remaining and percent against the pass total", () => {
+    expect(passXpProgress(chapters, 250)).toEqual({
+      earned: 250,
+      total: 1000,
+      remaining: 750,
+      percent: 25,
+    });
+  });
+
+  test("clamps once XP runs past the final tier", () => {
+    // XP keeps accruing after the pass is finished; the bar must not overflow
+    // and the remainder must not go negative.
+    const done = passXpProgress(chapters, 4000);
+    expect(done.percent).toBe(100);
+    expect(done.remaining).toBe(0);
+  });
+
+  test("treats missing or negative XP as zero", () => {
+    expect(passXpProgress(chapters, Number.NaN).earned).toBe(0);
+    expect(passXpProgress(chapters, -5).earned).toBe(0);
+  });
+
+  test("survives a catalog with no XP data", () => {
+    expect(passXpProgress([], 10)).toEqual({ earned: 10, total: 0, remaining: 0, percent: 0 });
+  });
+
+  test("paces the remaining XP over the days left", () => {
+    expect(xpPerDayNeeded(1000, 4)).toBe(250);
+    // Rounds up: 3 days at 333/day falls short.
+    expect(xpPerDayNeeded(1000, 3)).toBe(334);
+    expect(xpPerDayNeeded(0, 5)).toBeNull();
+    expect(xpPerDayNeeded(500, 0)).toBeNull();
   });
 });
