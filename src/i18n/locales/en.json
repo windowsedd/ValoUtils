@@ -218,7 +218,12 @@
     "chapterPosition": "{{page}} / {{total}}",
     "prevChapter": "Previous chapter",
     "nextChapter": "Next chapter",
-    "currentChapter": "Your current chapter"
+    "currentChapter": "Your current chapter",
+    "passProgress": "Pass XP",
+    "passXp": "{{earned}} / {{total}} XP · {{percent}}%",
+    "tiersLeft": "{{tiers}} tiers left · {{xp}} XP",
+    "allTiers": "All tiers unlocked",
+    "xpPerDay": "{{xp}} XP/day to finish"
   },
   "career": {
     "title": "Career",
@@ -315,7 +320,8 @@
     "peakRating": "Peak Rating",
     "unrated": "Unrated",
     "actMatches": "Matches {{count}}",
-    "actMatchesLabel": "Matches"
+    "actMatchesLabel": "Matches",
+    "rr": "RR"
   },
   "chat": {
     "title": "Chat",
@@ -651,7 +657,8 @@
       "queue": "Current Riot queue identifier",
       "phase": "Party, agent select, or live-game phase",
       "server": "Current match server",
-      "roster_count": "Total visible player count"
+      "roster_count": "Total visible player count",
+      "server_name": "Server datacenter name"
     },
     "customTriggerRequired": "Enter a trigger like .gg",
     "customTriggerReserved": "That trigger is reserved.",

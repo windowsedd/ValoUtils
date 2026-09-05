@@ -217,7 +217,12 @@
     "chapterPosition": "{{page}} / {{total}}",
     "prevChapter": "이전 챕터",
     "nextChapter": "다음 챕터",
-    "currentChapter": "현재 챕터"
+    "currentChapter": "현재 챕터",
+    "passProgress": "패스 XP",
+    "passXp": "{{earned}} / {{total}} XP · {{percent}}%",
+    "tiersLeft": "{{tiers}}티어 남음 · {{xp}} XP",
+    "allTiers": "모든 티어 해금",
+    "xpPerDay": "완료까지 하루 {{xp}} XP"
   },
   "career": {
     "title": "전적",
@@ -314,7 +319,8 @@
     "peakRating": "최고 등급",
     "unrated": "미배정",
     "actMatches": "경기 {{count}}",
-    "actMatchesLabel": "경기"
+    "actMatchesLabel": "경기",
+    "rr": "RR"
   },
   "chat": {
     "title": "채팅",
@@ -643,7 +649,8 @@
       "queue": "현재 Riot 대기열 식별자",
       "phase": "파티, 요원 선택 또는 진행 중인 게임 단계",
       "server": "현재 경기 서버",
-      "roster_count": "표시된 전체 플레이어 수"
+      "roster_count": "표시된 전체 플레이어 수",
+      "server_name": "서버 데이터센터 이름"
     },
     "customTriggerRequired": ".gg 같은 트리거를 입력하세요",
     "customTriggerReserved": "예약된 트리거입니다.",

@@ -70,8 +70,11 @@ describe("Live Match signed-in player marker", () => {
   });
 
   test("party members use their shared color on the player row rail and label", () => {
-    expect(table).toContain("rowAccentColor(player.party, teamColor)");
-    expect(table).toContain("borderLeft: `3px solid ${rowAccentColor(player.party, teamColor)}`");
+    // The rail marks a party, not a team: it no longer takes a team colour
+    // fallback, which used to put an identical bar on every row.
+    expect(table).toContain("rowAccentColor(player.party)");
+    expect(table).toContain("borderLeft: `3px solid ${rowAccentColor(player.party)}`");
+    expect(table).not.toContain("teamColor");
     expect(table).toContain("color: partyColor(player.party)");
     expect(table).toContain(
       'const partyLabel = player.party ? t("liveGame.partyDetected", { party: player.party }) : null;',

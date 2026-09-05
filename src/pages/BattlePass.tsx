@@ -8,10 +8,12 @@ import {
 	nextLevelXp,
 	pageIndexForLevel,
 	passesOfKind,
+	passXpProgress,
 	RADIANITE_UUID,
 	selectBattlepassId,
 	sortBattlepasses,
 	totalLevels,
+	xpPerDayNeeded,
 	type BattlepassCatalogEntry,
 	type BattlepassKind,
 	type BattlepassProgress,
@@ -286,6 +288,11 @@ const BattlePass = () => {
 				? seasons.get(entry.seasonId.toLowerCase())
 				: events.get(entry.seasonId.toLowerCase());
 	const remaining = schedule ? daysRemaining(schedule.endMillis, Date.now()) : null;
+	const totalXp = contract?.totalXp ?? 0;
+	const passXp = passXpProgress(entry?.chapters ?? [], totalXp);
+	// Only a pace worth showing: the pass is unfinished and still has days on it.
+	const pace = remaining === null ? null : xpPerDayNeeded(passXp.remaining, remaining);
+	const tiersLeft = Math.max(0, levelsTotal - Math.min(level, levelsTotal));
 	const chapterCount = entry?.chapters.length ?? 0;
 	/** Chapter the player's level actually falls in, distinct from the one on screen. */
 	const liveChapter = entry ? pageIndexForLevel(entry.chapters, level) : -1;
@@ -417,6 +424,44 @@ const BattlePass = () => {
 								<div className="h-1.5 overflow-hidden rounded-full bg-(--control)">
 									<div className="h-full bg-(--accent)" style={{ width: `${xpPercent}%` }} />
 								</div>
+
+								{/* Whole-pass progression. The bar above only covers the
+								    current tier, which hides how far off the last tier is. */}
+								{passXp.total > 0 && (
+									<div className="mt-1 flex flex-col gap-2 border-t border-(--line) pt-2">
+										<div className="flex items-baseline justify-between gap-3">
+											<span className="text-xs text-(--text-secondary)">
+												{t("battlepass.passProgress")}
+											</span>
+											<span className="text-xs tabular-nums text-(--text-muted)">
+												{t("battlepass.passXp", {
+													earned: passXp.earned.toLocaleString(),
+													total: passXp.total.toLocaleString(),
+													percent: passXp.percent,
+												})}
+											</span>
+										</div>
+										<div className="h-1 overflow-hidden rounded-full bg-(--control)">
+											<div
+												className="h-full bg-(--accent-selected)"
+												style={{ width: `${passXp.percent}%` }}
+											/>
+										</div>
+										<div className="flex items-baseline justify-between gap-3 text-[11px] tabular-nums text-(--text-muted)">
+											<span>
+												{tiersLeft > 0
+													? t("battlepass.tiersLeft", {
+															tiers: tiersLeft,
+															xp: passXp.remaining.toLocaleString(),
+														})
+													: t("battlepass.allTiers")}
+											</span>
+											{pace !== null && (
+												<span>{t("battlepass.xpPerDay", { xp: pace.toLocaleString() })}</span>
+											)}
+										</div>
+									</div>
+								)}
 							</div>
 						</SectionCard>
 

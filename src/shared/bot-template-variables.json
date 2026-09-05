@@ -32,5 +32,6 @@
 	{ "id": "queue", "group": "match", "descriptionKey": "dummyBot.variable.queue", "example": "competitive", "dataLevel": "roster" },
 	{ "id": "phase", "group": "match", "descriptionKey": "dummyBot.variable.phase", "example": "Agent Select", "dataLevel": "roster" },
 	{ "id": "server", "group": "match", "descriptionKey": "dummyBot.variable.server", "example": "ap-gp-hongkong-1", "dataLevel": "roster" },
+	{ "id": "server_name", "group": "match", "descriptionKey": "dummyBot.variable.server_name", "example": "Hong Kong", "dataLevel": "roster" },
 	{ "id": "roster_count", "group": "match", "descriptionKey": "dummyBot.variable.roster_count", "example": "10", "dataLevel": "roster" }
 ]

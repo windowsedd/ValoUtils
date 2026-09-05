@@ -16,8 +16,26 @@ const RIOT_REQUEST_TIMEOUT: Duration = Duration::from_millis(1500);
 const HISTORY_FALLBACK_BUDGET: Duration = Duration::from_secs(4);
 const PD_REQUEST_SPACING: Duration = Duration::from_millis(200);
 const PD_RATE_LIMIT_COOLDOWN: Duration = Duration::from_secs(60);
+/// How far back a shared `partyId` still says anything about who is queued
+/// together *now*.
+///
+/// Party inference for strangers has no live source — Riot only exposes party
+/// ids through friend presence — so it falls back to "these two shared a
+/// partyId in a match they both played". Match history is pulled 25 deep with
+/// no time bound, and 25 matches can span weeks, so a duo from a fortnight ago
+/// kept labelling two solo-queued strangers as a party. Evidence older than
+/// this window is dropped; a match whose start time can't be read is kept,
+/// since an unreadable timestamp is not evidence of staleness.
+const HISTORICAL_PARTY_WINDOW_MS: i64 = 14 * 24 * 60 * 60 * 1000;
 
 pub(super) const RATE_LIMITED_ERROR: &str = "rateLimited";
+
+fn now_millis() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|since| since.as_millis() as i64)
+        .unwrap_or(0)
+}
 
 fn is_rate_limited_error(error: &str) -> bool {
     error.contains("\"status\":429")
@@ -304,9 +322,28 @@ fn shared_match_owners(
     owners_by_match
 }
 
+/// Match start time, from either spelling Riot uses for match details.
+fn match_start_millis(details: &Value) -> Option<i64> {
+    details
+        .pointer("/matchInfo/gameStartMillis")
+        .or_else(|| details.pointer("/MatchInfo/GameStartMillis"))
+        .or_else(|| details.get("gameStartMillis"))
+        .and_then(Value::as_i64)
+}
+
+/// Whether a past match is recent enough to say anything about current parties.
+/// Unknown start times pass — see [`HISTORICAL_PARTY_WINDOW_MS`].
+fn within_party_window(details: &Value, now_millis: i64) -> bool {
+    match match_start_millis(details) {
+        Some(start) => now_millis.saturating_sub(start) <= HISTORICAL_PARTY_WINDOW_MS,
+        None => true,
+    }
+}
+
 fn historical_groups_for_histories(
     histories: &HashMap<String, Vec<String>>,
     details_by_match: &HashMap<String, Value>,
+    now_millis: i64,
 ) -> Vec<Vec<String>> {
     let owners_by_match = shared_match_owners(histories);
     let unresolved: HashSet<String> = owners_by_match
@@ -317,6 +354,9 @@ fn historical_groups_for_histories(
         .into_iter()
         .filter_map(|(match_id, owners)| {
             let details = details_by_match.get(&match_id)?;
+            if !within_party_window(details, now_millis) {
+                return None;
+            }
             let players: Vec<Value> = details
                 .get("players")
                 .and_then(Value::as_array)
@@ -729,7 +769,7 @@ async fn fetch_historical_groups(
         }
     }
 
-    historical_groups_for_histories(&histories, &details_by_match)
+    historical_groups_for_histories(&histories, &details_by_match, now_millis())
 }
 
 #[cfg(test)]
@@ -973,9 +1013,61 @@ mod tests {
         )]);
 
         assert_eq!(
-            historical_groups_for_histories(&histories, &details),
+            historical_groups_for_histories(&histories, &details, 0),
             vec![vec!["p1".to_string(), "p2".to_string()]]
         );
+    }
+
+    #[test]
+    fn history_ignores_party_evidence_older_than_the_window() {
+        let now = 1_700_000_000_000i64;
+        let histories = HashMap::from([
+            ("p1".into(), vec!["stale".into()]),
+            ("p2".into(), vec!["stale".into()]),
+        ]);
+        let players = json!([
+            { "subject": "p1", "partyId": "party-a" },
+            { "subject": "p2", "partyId": "party-a" }
+        ]);
+
+        // A duo from three weeks ago says nothing about who queued together now.
+        let stale = HashMap::from([(
+            "stale".to_string(),
+            json!({
+                "matchInfo": { "gameStartMillis": now - 21 * 24 * 60 * 60 * 1000i64 },
+                "players": players
+            }),
+        )]);
+        assert!(historical_groups_for_histories(&histories, &stale, now).is_empty());
+
+        // The same duo from yesterday still counts.
+        let fresh = HashMap::from([(
+            "stale".to_string(),
+            json!({
+                "matchInfo": { "gameStartMillis": now - 24 * 60 * 60 * 1000i64 },
+                "players": players
+            }),
+        )]);
+        assert_eq!(
+            historical_groups_for_histories(&histories, &fresh, now),
+            vec![vec!["p1".to_string(), "p2".to_string()]]
+        );
+    }
+
+    #[test]
+    fn history_keeps_matches_whose_start_time_is_unreadable() {
+        // An unreadable timestamp is not evidence of staleness, so the match
+        // stays eligible rather than silently dropping a real party.
+        let now = 1_700_000_000_000i64;
+        assert!(within_party_window(&json!({ "players": [] }), now));
+        assert!(within_party_window(
+            &json!({ "matchInfo": { "gameStartMillis": "not-a-number" } }),
+            now
+        ));
+        assert!(!within_party_window(
+            &json!({ "matchInfo": { "gameStartMillis": 0 } }),
+            now
+        ));
     }
 
     #[test]

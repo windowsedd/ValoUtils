@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState } from "react";
 import { FaArrowRotateRight, FaChevronDown } from "react-icons/fa6";
 import { LuCrosshair } from "react-icons/lu";
 import { useTranslation } from "react-i18next";
+import { partyColor, rowAccentColor } from "./party-accent";
 import { initialSeasonId } from "./act-rank";
 import { ActRankPanel } from "./act-rank-panel";
 import { buildTeamMatchup } from "./live-game-metrics";
@@ -29,13 +30,7 @@ type Props = {
 	onRefresh: () => void;
 };
 
-const PARTY_COLORS = ["#22d3ee", "#f59e0b", "#a78bfa", "#34d399", "#fb7185"];
-const partyColor = (party: string) => {
-	const number = Number.parseInt(party.replace(/\D/g, ""), 10) || 1;
-	return PARTY_COLORS[(number - 1) % PARTY_COLORS.length];
-};
-const rowAccentColor = (party: string | null, teamColor: string) =>
-	party ? partyColor(party) : teamColor;
+
 const statsErrorText = (error: string, t: ReturnType<typeof useTranslation>["t"]) =>
 	error === "rateLimited"
 		? t("liveGame.rateLimited")
@@ -51,7 +46,17 @@ const teamMeta = (teamId: string, t: ReturnType<typeof useTranslation>["t"]) => 
 	}
 };
 
-const RankValue = ({ tier, rr, act, assets }: { tier: number; rr?: number; act?: string; assets: LiveGameAssets }) => {
+/** RR reads as its own column — mixing it into the rank cell made "Gold 2 · 66"
+ *  hard to scan and impossible to compare down the row. */
+const RrValue = ({ tier, rr }: { tier: number; rr?: number }) => {
+	const { t } = useTranslation();
+	if (tier <= 0 || typeof rr !== "number") {
+		return <span aria-label={t("liveGame.unavailable")} className="text-xs text-gray-700">—</span>;
+	}
+	return <span className="text-xs tabular-nums text-gray-300">{rr}</span>;
+};
+
+const RankValue = ({ tier, act, assets }: { tier: number; act?: string; assets: LiveGameAssets }) => {
 	const { t } = useTranslation();
 	const icon = assets.tiers.get(tier)?.icon;
 	return (
@@ -60,7 +65,6 @@ const RankValue = ({ tier, rr, act, assets }: { tier: number; rr?: number; act?:
 			<div className="min-w-0 flex items-baseline text-xs">
 				<span className="truncate font-semibold" style={{ color: tier > 0 ? tierColor(tier) : "#6b7280" }}>
 					{tier > 0 ? tierName(tier) : <span aria-label={t("liveGame.unavailable")}>—</span>}
-					{tier > 0 && typeof rr === "number" && <span className="text-gray-500 font-normal"> · {rr}</span>}
 				</span>
 				{tier > 0 && act && <span className="shrink-0 text-gray-500 font-normal"> · {act}</span>}
 			</div>
@@ -113,13 +117,12 @@ const SkinCard = ({ weapon, label, assets }: { weapon: WeaponSkin; label: string
 	);
 };
 
-const PlayerRow = ({ player, assets, stats, expanded, onToggle, teamColor, teamLabel, recentMode, inMatch, agentFallback }: {
+const PlayerRow = ({ player, assets, stats, expanded, onToggle, teamLabel, recentMode, inMatch, agentFallback }: {
 	player: LivePlayer;
 	assets: LiveGameAssets;
 	stats?: RecentStatsState;
 	expanded: boolean;
 	onToggle: () => void;
-	teamColor: string;
 	teamLabel: string;
 	recentMode: string;
 	inMatch: boolean;
@@ -129,7 +132,12 @@ const PlayerRow = ({ player, assets, stats, expanded, onToggle, teamColor, teamL
 	const agent = player.characterId ? assets.agents.get(player.characterId.toLowerCase()) : undefined;
 	const card = player.cardId ? assets.cards.get(player.cardId.toLowerCase()) : undefined;
 	const agentName = agent ? localize(agent.name) : agentFallback;
-	const displayName = player.incognito || !player.gameName ? t("liveGame.hidden") : `${player.gameName}#${player.tagLine}`;
+	// "Hide My Name" hides you from opponents, not from your own party — in game
+	// your premades still see you, and you obviously know your own name. Riot's
+	// name service returns these names regardless of the flag, so masking them
+	// here only hid them from the person already allowed to see them.
+	const nameHidden = player.incognito && !player.inMyParty;
+	const displayName = nameHidden || !player.gameName ? t("liveGame.hidden") : `${player.gameName}#${player.tagLine}`;
 	const partyLabel = player.party ? t("liveGame.partyDetected", { party: player.party }) : null;
 	const peakAct = player.peakSeasonId ? assets.seasons.get(player.peakSeasonId.toLowerCase())?.label : null;
 	const detailsId = `live-player-${player.puuid.replace(/[^a-z0-9]/gi, "-")}`;
@@ -151,14 +159,14 @@ const PlayerRow = ({ player, assets, stats, expanded, onToggle, teamColor, teamL
 		}
 	}, [defaultSeasonId, player.competitiveSeasons, selectedSeasonId]);
 	return (
-		<div className="border-b border-white/5 last:border-0" style={{ borderLeft: `3px solid ${rowAccentColor(player.party, teamColor)}` }}>
+		<div className="border-b border-white/5 last:border-0" style={{ borderLeft: `3px solid ${rowAccentColor(player.party)}` }}>
 			<button
 				type="button"
 				onClick={onToggle}
 				aria-expanded={expanded}
 				aria-controls={detailsId}
 				aria-label={`${t(expanded ? "liveGame.collapsePlayer" : "liveGame.expandPlayer", { player: displayName })}, ${teamLabel}${partyLabel ? `, ${partyLabel}` : ""}`}
-				className="w-full min-h-12 grid grid-cols-[minmax(150px,1.5fr)_88px_52px_56px_34px] md:grid-cols-[minmax(180px,300px)_110px_140px_52px_56px_52px_52px_minmax(34px,1fr)] xl:grid-cols-[minmax(180px,300px)_76px_110px_140px_52px_56px_52px_52px_100px_minmax(34px,1fr)] items-center gap-2 px-3 py-1.5 text-left hover:bg-white/4 focus-visible:outline-none focus-visible:shadow-[inset_0_0_0_2px_var(--accent-soft)] transition-colors motion-reduce:transition-none"
+				className="w-full min-h-12 grid grid-cols-[minmax(150px,1.5fr)_88px_44px_52px_56px_34px] md:grid-cols-[minmax(180px,300px)_110px_44px_140px_52px_56px_52px_52px_minmax(34px,1fr)] xl:grid-cols-[minmax(180px,300px)_76px_110px_44px_140px_52px_56px_52px_52px_100px_minmax(34px,1fr)] items-center gap-2 px-3 py-1.5 text-left hover:bg-white/4 focus-visible:outline-none focus-visible:shadow-[inset_0_0_0_2px_var(--accent-soft)] transition-colors motion-reduce:transition-none"
 			>
 				<div className="flex items-center gap-2 min-w-0">
 					<div className="relative w-8 h-9 rounded-md bg-white/5 overflow-hidden shrink-0">
@@ -180,7 +188,8 @@ const PlayerRow = ({ player, assets, stats, expanded, onToggle, teamColor, teamL
 				<div className="hidden xl:flex items-center min-w-0">
 					{player.party && <span className="text-[10px] font-medium truncate" style={{ color: partyColor(player.party) }}>{player.party}</span>}
 				</div>
-				<RankValue tier={player.currentTier} rr={player.currentRR} assets={assets} />
+				<RankValue tier={player.currentTier} assets={assets} />
+				<RrValue tier={player.currentTier} rr={player.currentRR} />
 				<div className="hidden md:block"><RankValue tier={player.peakTier} act={peakAct ?? undefined} assets={assets} /></div>
 				<StatValue state={stats} field="kd" />
 				<StatValue state={stats} field="winRate" />
@@ -345,10 +354,10 @@ export const LiveScoutTable = ({ snapshot, assets, recent, refreshing, refreshEr
 			</section>
 
 			<section className="glass rounded-2xl overflow-y-auto min-h-0" aria-label={t("liveGame.players")}>
-				<div className="sticky top-0 z-10 grid grid-cols-[minmax(150px,1.5fr)_88px_52px_56px_34px] md:grid-cols-[minmax(180px,300px)_110px_140px_52px_56px_52px_52px_minmax(34px,1fr)] xl:grid-cols-[minmax(180px,300px)_76px_110px_140px_52px_56px_52px_52px_100px_minmax(34px,1fr)] gap-2 px-3 py-2 bg-[#101218]/95 backdrop-blur border-b border-white/8 text-[9px] uppercase tracking-widest text-gray-600">
-					<span>{t("matches.player")}</span><span className="hidden xl:block">{t("liveGame.detectedParties")}</span><span>{t("liveGame.current")}</span><span className="hidden md:block">{t("liveGame.peak")}</span><span>{t("liveGame.kd")}</span><span>{t("liveGame.winRate")}</span><span className="hidden md:block">{t("liveGame.acs")}</span><span className="hidden md:block">{t("liveGame.dpr")}</span><span className="hidden xl:block">{t("liveGame.skins")}</span><span />
+				<div className="sticky top-0 z-10 grid grid-cols-[minmax(150px,1.5fr)_88px_44px_52px_56px_34px] md:grid-cols-[minmax(180px,300px)_110px_44px_140px_52px_56px_52px_52px_minmax(34px,1fr)] xl:grid-cols-[minmax(180px,300px)_76px_110px_44px_140px_52px_56px_52px_52px_100px_minmax(34px,1fr)] gap-2 px-3 py-2 bg-[#101218]/95 backdrop-blur border-b border-white/8 text-[9px] uppercase tracking-widest text-gray-600">
+					<span>{t("matches.player")}</span><span className="hidden xl:block">{t("liveGame.detectedParties")}</span><span>{t("liveGame.current")}</span><span>{t("liveGame.rr")}</span><span className="hidden md:block">{t("liveGame.peak")}</span><span>{t("liveGame.kd")}</span><span>{t("liveGame.winRate")}</span><span className="hidden md:block">{t("liveGame.acs")}</span><span className="hidden md:block">{t("liveGame.dpr")}</span><span className="hidden xl:block">{t("liveGame.skins")}</span><span />
 				</div>
-				{teams.map(([teamId, players]) => { const meta = teamMeta(teamId, t); return <div key={teamId}><div className="px-3 py-2 flex items-center gap-2 bg-black/15 border-b border-white/5"><span className="w-2 h-2 rounded-full" style={{ background: meta.color }} /><h2 className="text-[10px] font-bold uppercase tracking-widest" style={{ color: meta.color }}>{meta.label}</h2><span className="ml-auto text-[10px] text-gray-600">{players.length}</span></div>{groupPlayersByParty(players).map((player) => <PlayerRow key={player.puuid} player={player} assets={assets} stats={recent[livePlayerStatsKey(player.puuid)]} expanded={expanded === player.puuid} onToggle={() => setExpanded((current) => current === player.puuid ? null : player.puuid)} teamColor={meta.color} teamLabel={meta.label} recentMode={recentMode} inMatch={inMatch} agentFallback={agentFallback} />)}</div>; })}
+				{teams.map(([teamId, players]) => { const meta = teamMeta(teamId, t); return <div key={teamId}><div className="px-3 py-2 flex items-center gap-2 bg-black/15 border-b border-white/5"><span className="w-2 h-2 rounded-full" style={{ background: meta.color }} /><h2 className="text-[10px] font-bold uppercase tracking-widest" style={{ color: meta.color }}>{meta.label}</h2><span className="ml-auto text-[10px] text-gray-600">{players.length}</span></div>{groupPlayersByParty(players).map((player) => <PlayerRow key={player.puuid} player={player} assets={assets} stats={recent[livePlayerStatsKey(player.puuid)]} expanded={expanded === player.puuid} onToggle={() => setExpanded((current) => current === player.puuid ? null : player.puuid)} teamLabel={meta.label} recentMode={recentMode} inMatch={inMatch} agentFallback={agentFallback} />)}</div>; })}
 			</section>
 		</div>
 	);

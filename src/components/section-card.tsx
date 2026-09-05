@@ -1,4 +1,5 @@
-import { Children, type ReactNode } from "react";
+import { Children, useState, type ReactNode } from "react";
+import { LuChevronDown } from "react-icons/lu";
 
 /**
  * The card that carries every list in the app — Friends, Profiles, Matches,
@@ -10,6 +11,11 @@ import { Children, type ReactNode } from "react";
  * `accent` is a marker, not paint. It renders as a short tick beside the label
  * and never colors the type — a tier color says something, a section color
  * doesn't, and the component can't tell them apart, so it whispers either way.
+ *
+ * `collapsible` turns the header into a disclosure button. It is opt-in so the
+ * pages that want a plain panel keep one. A collapsed card does not render its
+ * body at all rather than hiding it with CSS — Inventory stacks a card per
+ * weapon, and mounting every skin row of every closed card is work no one sees.
  */
 export const SectionCard = ({
 	title,
@@ -18,6 +24,8 @@ export const SectionCard = ({
 	right,
 	children,
 	className = "",
+	collapsible = false,
+	defaultOpen = true,
 }: {
 	title: string;
 	accent?: string;
@@ -25,22 +33,58 @@ export const SectionCard = ({
 	right?: ReactNode;
 	children: ReactNode;
 	className?: string;
-}) => (
-	<section className={`panel ${className}`}>
-		<header className="flex items-center justify-between gap-3 border-b border-(--line) px-3 py-2">
-			<div className="flex min-w-0 items-center gap-2">
-				<span aria-hidden="true" className="h-3 w-0.5 shrink-0 rounded-full" style={{ background: accent }} />
-				<h2 className="truncate text-[12px] font-medium text-(--text-primary)">
-					{title}
-				</h2>
-			</div>
-			<div className="shrink-0 text-[11px] tabular-nums text-(--text-muted)">
-				{right ?? (typeof count === "number" ? count : null)}
-			</div>
-		</header>
-		<div className="flex flex-col px-1.5 py-1.5">{children}</div>
-	</section>
-);
+	collapsible?: boolean;
+	defaultOpen?: boolean;
+}) => {
+	const [open, setOpen] = useState(defaultOpen);
+	const shown = !collapsible || open;
+	const label = (
+		<div className="flex min-w-0 items-center gap-2">
+			<span aria-hidden="true" className="h-3 w-0.5 shrink-0 rounded-full" style={{ background: accent }} />
+			<h2 className="truncate text-[12px] font-medium text-(--text-primary)">
+				{title}
+			</h2>
+		</div>
+	);
+	const meta = (
+		<div className="flex shrink-0 items-center gap-2 text-[11px] tabular-nums text-(--text-muted)">
+			{right ?? (typeof count === "number" ? count : null)}
+			{collapsible && (
+				<LuChevronDown
+					aria-hidden="true"
+					className={`text-(--text-muted) transition-transform duration-150 motion-reduce:transition-none ${
+						open ? "" : "-rotate-90"
+					}`}
+				/>
+			)}
+		</div>
+	);
+	// The hairline belongs to the seam between header and body, so a closed card
+	// must not keep it — it would read as a rule under nothing.
+	const rule = shown ? "border-b border-(--line)" : "";
+
+	return (
+		<section className={`panel ${className}`}>
+			{collapsible ? (
+				<button
+					type="button"
+					onClick={() => setOpen((current) => !current)}
+					aria-expanded={open}
+					className={`flex w-full items-center justify-between gap-3 px-3 py-2 text-left transition-colors duration-150 hover:bg-(--surface-hover) motion-reduce:transition-none ${rule}`}
+				>
+					{label}
+					{meta}
+				</button>
+			) : (
+				<header className={`flex items-center justify-between gap-3 px-3 py-2 ${rule}`}>
+					{label}
+					{meta}
+				</header>
+			)}
+			{shown && <div className="flex flex-col px-1.5 py-1.5">{children}</div>}
+		</section>
+	);
+};
 
 /**
  * Standard row inside a SectionCard.

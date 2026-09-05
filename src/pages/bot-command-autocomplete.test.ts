@@ -10,7 +10,7 @@ import {
 describe("bot command template autocomplete", () => {
   test("catalog exposes every approved variable exactly once", () => {
     const ids = BOT_TEMPLATE_VARIABLES.map((item) => item.id);
-    expect(ids).toHaveLength(34);
+    expect(ids).toHaveLength(35);
     expect(new Set(ids).size).toBe(ids.length);
     expect(ids).toContain("enemy_team_kda");
     expect(ids).toContain("ally_team_agents");
@@ -21,6 +21,14 @@ describe("bot command template autocomplete", () => {
       group: "match",
       descriptionKey: "dummyBot.variable.server",
       example: "ap-gp-hongkong-1",
+      dataLevel: "roster",
+    });
+    // server_name is the human label; server stays the raw pod id beside it.
+    expect(BOT_TEMPLATE_VARIABLES.find((item) => item.id === "server_name")).toEqual({
+      id: "server_name",
+      group: "match",
+      descriptionKey: "dummyBot.variable.server_name",
+      example: "Hong Kong",
       dataLevel: "roster",
     });
   });

@@ -226,6 +226,47 @@ export const nextLevelXp = (chapters: readonly BattlepassChapter[], level: numbe
   return 0;
 };
 
+/**
+ * XP to clear every tier of the pass.
+ *
+ * Riot reports `totalXp` (TotalProgressionEarned) against this, so the pair is
+ * what turns "level 22" into "18% of the way through the pass". Epilogue
+ * chapters count: their tiers cost XP like any other.
+ */
+export const totalPassXp = (chapters: readonly BattlepassChapter[]): number =>
+  chapters.reduce(
+    (sum, chapter) => sum + chapter.levels.reduce((chapterSum, level) => chapterSum + level.xp, 0),
+    0,
+  );
+
+/**
+ * Whole-pass progression, distinct from the XP bar inside the current tier.
+ *
+ * `earned` can exceed `total` once the pass is finished — XP keeps accruing
+ * past the last tier — so the percentage is clamped and `remaining` floors at
+ * zero rather than going negative.
+ */
+export const passXpProgress = (
+  chapters: readonly BattlepassChapter[],
+  earnedXp: number,
+): { earned: number; total: number; remaining: number; percent: number } => {
+  const total = totalPassXp(chapters);
+  const earned = Number.isFinite(earnedXp) && earnedXp > 0 ? earnedXp : 0;
+  if (total <= 0) return { earned, total: 0, remaining: 0, percent: 0 };
+  return {
+    earned,
+    total,
+    remaining: Math.max(0, total - earned),
+    percent: Math.min(100, Math.round((earned / total) * 100)),
+  };
+};
+
+/** XP/day needed to finish the pass before it ends. `null` when it's moot. */
+export const xpPerDayNeeded = (remainingXp: number, daysLeft: number): number | null => {
+  if (remainingXp <= 0 || daysLeft <= 0) return null;
+  return Math.ceil(remainingXp / daysLeft);
+};
+
 export const currencyDisplayAmount = (uuid: string, amount: number): number => {
   if (uuid.toLowerCase() === RADIANITE_UUID && amount === 1) return 10;
   return amount;

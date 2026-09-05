@@ -109,10 +109,11 @@ mod tests {
     #[test]
     fn catalog_contains_all_approved_variables() {
         let ids: Vec<_> = catalog().iter().map(|item| item.id.as_str()).collect();
-        assert_eq!(ids.len(), 34);
+        assert_eq!(ids.len(), 35);
         assert!(ids.contains(&"enemy_team_kda"));
         assert!(ids.contains(&"roster_count"));
         assert!(ids.contains(&"server"));
+        assert!(ids.contains(&"server_name"));
     }
 
     #[test]

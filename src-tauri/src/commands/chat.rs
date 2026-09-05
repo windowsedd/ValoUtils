@@ -89,6 +89,14 @@ fn id_root(value: &str) -> String {
     value.split('@').next().unwrap_or(value).to_lowercase()
 }
 
+/// The Dummy Bot is a local fake player the relay injects into the roster, so
+/// its thread carries no read state worth pushing to Riot. Skipping the POST
+/// keeps its badge on the frontend's own watermark (`visibleUnreadCount`),
+/// which hides the count until genuinely newer bot messages arrive.
+fn is_fake_player_cid(value: &str) -> bool {
+    id_root(value).eq_ignore_ascii_case(crate::fake_player::PUUID)
+}
+
 fn is_party_cid(value: &str) -> bool {
     value.to_lowercase().contains("@ares-parties.")
 }
@@ -472,9 +480,16 @@ fn active_conversation_body_with_mid(cid: &str, mid: &str, conv_type: &str) -> V
 
 /// Body for `POST /chat/v7/conversations/read` (`PostChatV7ConversationsRead`).
 /// `mid` is the last message the player has seen.
+///
+/// The route's `ChatConvoCid` schema lists both `cid` and `id`, but sending
+/// `id` makes the client answer 404 `RPC_ERROR`/`not_found` even for a
+/// conversation it just listed itself — `id` alone is a 400, and `cid` alone is
+/// the 204 we want. Probed against a live Riot Client: `cid`, `cid`+`type`,
+/// `cid`+`mid` and `cid`+`type`+`mid` all return 204; adding `id` to any of
+/// them turns it into the 404. So `cid` carries the conversation and `id` must
+/// never be sent.
 fn conversation_read_ack_body(cid: &str, mid: &str, conv_type: &str) -> Value {
     let mut body = json!({
-        "id": cid,
         "cid": cid,
         "type": conv_type,
     });
@@ -525,8 +540,17 @@ fn find_listed_direct_conversation(payload: &Value, cid: &str) -> Option<Value> 
     })
 }
 
-fn mark_read_write_targets(cid: &str) -> Vec<(String, reqwest::Method)> {
-    let encoded = riot_client::urlencoding_encode(cid);
+/// Riot's mark-read route is `POST /chat/v7/conversations/read`, with v6 kept
+/// as the deprecated alias ("Endpoint deleted August 2021" in the client's own
+/// OpenAPI doc, but still mounted and still answering 204).
+///
+/// v5 and v4 are deliberately absent: the client mounts no read route at either
+/// version, so they answer 404 `RESOURCE_NOT_FOUND`, which
+/// `send_internal_request` reads as a dead client — it wipes the cached
+/// lockfile and tokens and reports "Riot Client is not ready (stale lockfile)".
+/// Probing them cost a token refetch and a bogus diagnosis on every mark-read
+/// that reached them.
+fn mark_read_write_targets(_cid: &str) -> Vec<(String, reqwest::Method)> {
     vec![
         (
             "/chat/v7/conversations/read".to_string(),
@@ -534,14 +558,6 @@ fn mark_read_write_targets(cid: &str) -> Vec<(String, reqwest::Method)> {
         ),
         (
             "/chat/v6/conversations/read".to_string(),
-            reqwest::Method::POST,
-        ),
-        (
-            "/chat/v5/conversations/read".to_string(),
-            reqwest::Method::POST,
-        ),
-        (
-            format!("/chat/v4/conversations/{encoded}/read"),
             reqwest::Method::POST,
         ),
     ]
@@ -1636,6 +1652,9 @@ async fn mark_conversation_read(
     mid: &str,
     conv_type: &str,
 ) -> Result<Value, String> {
+    if is_fake_player_cid(cid) {
+        return Ok(json!({ "skipped": "fake-player" }));
+    }
     let listed = match riot_client::get_chat_conversations(riot).await {
         Ok(payload) => find_listed_direct_conversation(&payload, cid),
         Err(_) => None,
@@ -1654,8 +1673,7 @@ async fn mark_conversation_read(
         }
     }
     let body = conversation_read_ack_body(cid, &resolved_mid, conv_type);
-    // Riot's mark-read route is POST /chat/v7/conversations/read. Older clients
-    // expose the same operation on v6/v5/v4; stop at the first success.
+    // Stop at the first success.
     //
     // Every failure is kept, not just the last one. Reporting only the final
     // attempt named the oldest route we try, which points at the wrong thing
@@ -1771,7 +1789,7 @@ mod tests {
     #[test]
     fn active_conversation_payload_uses_direct_chat_type() {
         let body = active_conversation_body("friend@jp1.pvp.net");
-        assert_eq!(body["id"], "friend@jp1.pvp.net");
+        assert_eq!(body.get("id"), None);
         assert_eq!(body["cid"], "friend@jp1.pvp.net");
         assert_eq!(body["type"], "chat");
         assert_eq!(
@@ -1788,9 +1806,34 @@ mod tests {
     fn conversation_read_ack_posts_cid_type_and_mid() {
         let body = conversation_read_ack_body("friend@jp1.pvp.net", "msg-9", "chat");
         assert_eq!(body["cid"], "friend@jp1.pvp.net");
-        assert_eq!(body["id"], "friend@jp1.pvp.net");
         assert_eq!(body["type"], "chat");
         assert_eq!(body["mid"], "msg-9");
+    }
+
+    #[test]
+    fn conversation_read_ack_never_sends_id() {
+        // Sending `id` alongside `cid` makes the live client answer 404
+        // RPC_ERROR/not_found for a conversation it listed itself, so no
+        // spelling of the body may carry it.
+        for (mid, conv_type) in [("", "chat"), ("msg-9", "chat"), ("msg-9", "groupchat")] {
+            let body = conversation_read_ack_body("friend@jp1.pvp.net", mid, conv_type);
+            assert_eq!(body.get("id"), None, "mid={mid:?} type={conv_type:?}");
+        }
+    }
+
+    #[test]
+    fn dummy_bot_conversations_skip_the_riot_mark_read_call() {
+        assert!(is_fake_player_cid(&format!(
+            "{}@jp1.pvp.net",
+            crate::fake_player::PUUID
+        )));
+        assert!(is_fake_player_cid(
+            &crate::fake_player::PUUID.to_ascii_uppercase()
+        ));
+        // A real friend still goes to Riot.
+        assert!(!is_fake_player_cid(
+            "75b1c191-a411-5a39-bb66-f302abc1a761@br1.pvp.net"
+        ));
     }
 
     #[test]
@@ -1799,13 +1842,20 @@ mod tests {
         assert_eq!(targets[0].0, "/chat/v7/conversations/read");
         assert_eq!(targets[0].1, reqwest::Method::POST);
         let paths: Vec<&str> = targets.iter().map(|(path, _)| path.as_str()).collect();
-        assert!(paths.contains(&"/chat/v6/conversations/read"));
-        assert!(paths.contains(&"/chat/v5/conversations/read"));
-        assert!(
-            paths
-                .iter()
-                .any(|path| path.contains("/chat/v4/conversations/friend%40") && path.ends_with("/read"))
-        );
+        assert_eq!(paths, vec!["/chat/v7/conversations/read", "/chat/v6/conversations/read"]);
+    }
+
+    #[test]
+    fn mark_read_never_probes_routes_the_client_does_not_mount() {
+        // v5/v4 have no read route, and their 404 RESOURCE_NOT_FOUND is what
+        // send_internal_request treats as a dead client — probing them wiped
+        // the lockfile and token caches and blamed a "stale lockfile".
+        let paths: Vec<String> = mark_read_write_targets("friend@jp1.pvp.net")
+            .into_iter()
+            .map(|(path, _)| path)
+            .collect();
+        assert!(!paths.iter().any(|path| path.contains("/chat/v5/")));
+        assert!(!paths.iter().any(|path| path.contains("/chat/v4/")));
     }
 
     #[test]
