@@ -217,7 +217,12 @@
     "chapterPosition": "{{page}} / {{total}}",
     "prevChapter": "上一章",
     "nextChapter": "下一章",
-    "currentChapter": "目前章節"
+    "currentChapter": "目前章節",
+    "passProgress": "通行證 XP",
+    "passXp": "{{earned}} / {{total}} XP · {{percent}}%",
+    "tiersLeft": "剩餘 {{tiers}} 階 · {{xp}} XP",
+    "allTiers": "已解鎖所有階級",
+    "xpPerDay": "每日需 {{xp}} XP 完成"
   },
   "career": {
     "title": "戰績",
@@ -314,7 +319,8 @@
     "peakRating": "巔峰段位",
     "unrated": "未定級",
     "actMatches": "{{count}} 場",
-    "actMatchesLabel": "場次"
+    "actMatchesLabel": "場次",
+    "rr": "RR"
   },
   "chat": {
     "title": "聊天",
@@ -643,7 +649,8 @@
       "queue": "目前 Riot 佇列識別碼",
       "phase": "組隊、選角或對戰中階段",
       "server": "目前對戰伺服器",
-      "roster_count": "可見的玩家總數"
+      "roster_count": "可見的玩家總數",
+      "server_name": "伺服器資料中心名稱"
     },
     "customTriggerRequired": "請輸入像 .gg 的觸發詞",
     "customTriggerReserved": "這個觸發詞已被保留。",
