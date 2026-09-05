@@ -42,6 +42,8 @@ export type LivePlayer = {
   party: string | null;
   isSelf: boolean;
   incognito: boolean;
+  /** In your actual Riot party (or you). Incognito never hides these names. */
+  inMyParty?: boolean;
   loadout: LiveLoadout | null;
 };
 

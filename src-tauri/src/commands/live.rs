@@ -84,6 +84,30 @@ pub struct LiveCache {
     enrichment: Mutex<HashMap<String, CachedEnrichment>>,
     continuity_roster: Mutex<Option<String>>,
     continuity_labels: Mutex<HashMap<String, String>>,
+    /// Last roster that resolved, for callers that cannot wait for a cold one.
+    /// A first pregame fetch does a name and MMR lookup for all ten players and
+    /// routinely outruns the bot's template budget; without this the message
+    /// rendered every variable as N/A.
+    last_snapshot: Mutex<Option<(Instant, String)>>,
+}
+
+/// How long a stored roster still describes the match you are in.
+pub(crate) const SNAPSHOT_FALLBACK_TTL: Duration = Duration::from_secs(90);
+
+impl LiveCache {
+    fn store_snapshot(&self, payload: &str, now: Instant) {
+        *self.last_snapshot.lock().unwrap() = Some((now, payload.to_string()));
+    }
+
+    pub(crate) fn recent_snapshot_at(&self, now: Instant) -> Option<String> {
+        let guard = self.last_snapshot.lock().unwrap();
+        let (stored_at, payload) = guard.as_ref()?;
+        (now.duration_since(*stored_at) < SNAPSHOT_FALLBACK_TTL).then(|| payload.clone())
+    }
+
+    pub(crate) fn recent_snapshot(&self) -> Option<String> {
+        self.recent_snapshot_at(Instant::now())
+    }
 }
 
 #[derive(Clone)]
@@ -719,13 +743,22 @@ async fn enrich_players(
     let mut refreshed_names: HashMap<String, (String, String)> = HashMap::new();
     for n in names_res.as_array().into_iter().flatten() {
         if let Some(subject) = n.get("Subject").and_then(|v| v.as_str()) {
+            let game_name = n
+                .get("GameName")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string();
+            // An empty GameName is Riot declining to answer, not an answer.
+            // Recording it marked the entry `complete`, which made it cache as
+            // fresh and stopped the retry — a pregame enemy that resolved on
+            // the next poll stayed "Hidden Player" for the whole TTL instead.
+            if game_name.is_empty() {
+                continue;
+            }
             refreshed_names.insert(
                 subject.to_ascii_lowercase(),
                 (
-                    n.get("GameName")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or_default()
-                        .to_string(),
+                    game_name,
                     n.get("TagLine")
                         .and_then(|v| v.as_str())
                         .unwrap_or_default()
@@ -834,11 +867,32 @@ async fn enrich_players(
                 "party": Value::Null,
                 "isSelf": puuid.eq_ignore_ascii_case(&api.puuid),
                 "incognito": identity.get("Incognito").and_then(|v| v.as_bool()).unwrap_or(false),
+                "inMyParty": puuid.eq_ignore_ascii_case(&api.puuid),
                 "loadout": loadout,
             })
         })
         .collect();
     (players, rate_limited)
+}
+
+/// Flag the players you are actually queued with.
+///
+/// `premade` is Riot's own party roster (`/parties/v1/parties/<id>` Members),
+/// not the anonymous party *inference* — the inference can group strangers, and
+/// this flag unmasks names, so it must come from the authoritative source only.
+fn apply_party_membership(players: &mut [Value], premade: &HashSet<String>) {
+    let premade: HashSet<String> = premade
+        .iter()
+        .map(|puuid| puuid.to_ascii_lowercase())
+        .collect();
+    for player in players {
+        let puuid = raw_puuid(player).to_ascii_lowercase();
+        let is_self = player
+            .get("isSelf")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        player["inMyParty"] = Value::Bool(is_self || premade.contains(&puuid));
+    }
 }
 
 fn apply_party_labels(players: &mut [Value], labels: &HashMap<String, String>) {
@@ -1048,6 +1102,7 @@ pub async fn live_game_fetch(
             None
         };
         apply_party_labels(&mut players, &party_labels);
+        apply_party_membership(&mut players, &premade_set);
         *cache.continuity_roster.lock().unwrap() = Some(roster_key.clone());
         *cache.continuity_labels.lock().unwrap() = party_labels;
 
@@ -1065,6 +1120,7 @@ pub async fn live_game_fetch(
             "pregameDebug": pregame_debug
         })
         .to_string();
+        cache.store_snapshot(&payload, Instant::now());
         Ok::<String, String>(payload)
     }
     .await;
@@ -1414,6 +1470,73 @@ pub async fn live_game_dump(app: AppHandle, riot: State<'_, RiotState>) -> Resul
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_stored_roster_is_served_until_it_goes_stale() {
+        // The bot's template falls back to this when a cold pregame fetch
+        // outruns its budget, instead of rendering every variable as N/A.
+        let cache = LiveCache::default();
+        let now = Instant::now();
+        assert_eq!(cache.recent_snapshot_at(now), None);
+
+        cache.store_snapshot("{\"success\":true}", now);
+        assert_eq!(
+            cache.recent_snapshot_at(now + Duration::from_secs(30)),
+            Some("{\"success\":true}".to_string())
+        );
+        // Past the TTL it is a different match's roster, so it is withheld.
+        assert_eq!(
+            cache.recent_snapshot_at(now + SNAPSHOT_FALLBACK_TTL + Duration::from_secs(1)),
+            None
+        );
+    }
+
+    #[test]
+    fn empty_name_service_answers_do_not_count_as_resolved() {
+        // Riot returns an empty GameName for some accounts. Treating that as a
+        // resolved name marked the enrichment `complete`, which cached it fresh
+        // for ENRICHMENT_TTL and stopped the retry, so a pregame enemy whose
+        // name would have arrived on the next poll stayed "Hidden Player".
+        let now = Instant::now();
+        assert!(!enrichment_is_fresh(now, false, now));
+        assert!(enrichment_is_fresh(now, true, now));
+        // An incomplete entry keeps its original timestamp, so a run of empty
+        // answers can never push the TTL forward.
+        let earlier = now - Duration::from_secs(60);
+        assert_eq!(
+            enrichment_refresh_timestamp(Some(earlier), false, true, now),
+            earlier
+        );
+        assert_eq!(
+            enrichment_refresh_timestamp(Some(earlier), true, true, now),
+            now
+        );
+    }
+
+    #[test]
+    fn party_membership_flags_premades_and_self_only() {
+        let mut players = vec![
+            json!({ "puuid": "SELF", "isSelf": true }),
+            json!({ "puuid": "duo", "isSelf": false }),
+            json!({ "puuid": "stranger", "isSelf": false }),
+        ];
+        // Riot's party roster, cased differently than the match roster.
+        let premade = HashSet::from(["Duo".to_string(), "self".to_string()]);
+        apply_party_membership(&mut players, &premade);
+
+        assert_eq!(players[0]["inMyParty"], json!(true));
+        assert_eq!(players[1]["inMyParty"], json!(true));
+        // A stranger stays masked no matter what the party *inference* said.
+        assert_eq!(players[2]["inMyParty"], json!(false));
+    }
+
+    #[test]
+    fn party_membership_keeps_self_flagged_without_a_party() {
+        // Solo queue: no party endpoint members, but you still know your own name.
+        let mut players = vec![json!({ "puuid": "SELF", "isSelf": true })];
+        apply_party_membership(&mut players, &HashSet::new());
+        assert_eq!(players[0]["inMyParty"], json!(true));
+    }
 
     #[test]
     fn party_labels_apply_by_puuid_without_exposing_internal_membership() {
