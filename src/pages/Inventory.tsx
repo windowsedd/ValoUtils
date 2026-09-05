@@ -220,7 +220,7 @@ const Inventory = ({ embedded = false }: { embedded?: boolean }) => {
 						)}
 
 						{skinSummary && skinSummary.rarities.length > 0 && (
-							<SectionCard title={t("inventory.rarity")}>
+							<SectionCard title={t("inventory.rarity")} collapsible>
 								{skinSummary.rarities.map((row) => (
 									<SectionRow key={row.tier}>
 										<span className="text-sm text-(--ink)">
@@ -236,6 +236,7 @@ const Inventory = ({ embedded = false }: { embedded?: boolean }) => {
 						{skinSummary && skinSummary.completeSets.length > 0 && (
 							<SectionCard
 								title={t("inventory.completeSets")}
+								collapsible
 								count={skinSummary.completeSets.length}
 								right={
 									<span className="tabular-nums">
@@ -261,6 +262,8 @@ const Inventory = ({ embedded = false }: { embedded?: boolean }) => {
 								title={
 									group.melee ? t("inventory.melee") : localize(group.weaponName)
 								}
+								collapsible
+								defaultOpen={false}
 								count={group.skins.length}
 								right={<span className="tabular-nums">{formatAmount(group.vp)} VP</span>}
 							>
@@ -285,6 +288,8 @@ const Inventory = ({ embedded = false }: { embedded?: boolean }) => {
 							<SectionCard
 								key={group.kind}
 								title={t(`inventory.filter.${group.kind}`)}
+								collapsible
+								defaultOpen={false}
 								count={group.items.length}
 							>
 								{group.items.map((row) => (
