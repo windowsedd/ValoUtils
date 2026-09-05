@@ -9,7 +9,10 @@ use std::time::Duration;
 use tauri::{AppHandle, Manager};
 use tokio::sync::Mutex as AsyncMutex;
 
-const TEMPLATE_RESOLUTION_TIMEOUT: Duration = Duration::from_secs(6);
+/// Budget for resolving one templated message. Agent select runs far longer
+/// than this, so a cold pregame roster is worth waiting on — the old 6s cut off
+/// a fetch that was still in flight and rendered the message as `N/A`.
+const TEMPLATE_RESOLUTION_TIMEOUT: Duration = Duration::from_secs(15);
 
 #[derive(Debug, Clone)]
 struct TemplatePlayer {
@@ -37,6 +40,81 @@ struct TemplateSnapshot {
 fn normalize_server(value: &str) -> String {
     let value = value.trim();
     value.rsplit('.').next().unwrap_or_default().to_string()
+}
+
+/// Datacenter cities whose pod segment runs the words together. Anything absent
+/// falls back to title-casing the segment, so a pod Riot adds tomorrow reads as
+/// "Osaka" rather than going blank.
+const POD_CITIES: &[(&str, &str)] = &[
+    // APAC
+    ("hongkong", "Hong Kong"),
+    ("kualalumpur", "Kuala Lumpur"),
+    ("hochiminh", "Ho Chi Minh City"),
+    ("hochiminhcity", "Ho Chi Minh City"),
+    ("newdelhi", "New Delhi"),
+    ("hyderabad", "Hyderabad"),
+    // EU / MENA
+    ("telaviv", "Tel Aviv"),
+    ("saintpetersburg", "Saint Petersburg"),
+    ("stpetersburg", "Saint Petersburg"),
+    // North America
+    ("nvirginia", "N. Virginia"),
+    ("northvirginia", "N. Virginia"),
+    ("ncalifornia", "N. California"),
+    ("northcalifornia", "N. California"),
+    ("newyork", "New York"),
+    ("losangeles", "Los Angeles"),
+    ("sanjose", "San Jose"),
+    ("saltlakecity", "Salt Lake City"),
+    // LATAM / BR
+    ("saopaulo", "Sao Paulo"),
+    ("mexicocity", "Mexico City"),
+    ("buenosaires", "Buenos Aires"),
+    ("riodejaneiro", "Rio de Janeiro"),
+];
+
+fn title_case(word: &str) -> String {
+    let mut chars = word.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().collect::<String>() + &chars.as_str().to_lowercase(),
+        None => String::new(),
+    }
+}
+
+/// Human name for a game pod: `aresriot.aws-ape1-prod.ap-gp-hongkong-1` →
+/// `Hong Kong`.
+///
+/// The pod tail is `<shard>-gp-<city>-<n>`, so the city is everything between
+/// the `gp` marker and the trailing pod index. Returns an empty string for a
+/// pod that doesn't carry a city, and the caller then leaves `server_name`
+/// unset so the template renders `N/A` instead of a half-parsed id.
+fn server_display_name(pod: &str) -> String {
+    let tail = normalize_server(pod);
+    if tail.is_empty() {
+        return String::new();
+    }
+    let parts: Vec<&str> = tail.split('-').filter(|part| !part.is_empty()).collect();
+    let start = match parts.iter().position(|part| *part == "gp") {
+        Some(index) => index + 1,
+        // No `gp` marker: nothing here is reliably a city name.
+        None => return String::new(),
+    };
+    let mut city = &parts[start..];
+    // Drop the trailing pod index (`...-hongkong-1`), but only when it is one.
+    if city.last().is_some_and(|last| last.chars().all(|c| c.is_ascii_digit())) {
+        city = &city[..city.len() - 1];
+    }
+    if city.is_empty() {
+        return String::new();
+    }
+    let key = city.concat().to_ascii_lowercase();
+    if let Some((_, name)) = POD_CITIES.iter().find(|(id, _)| *id == key) {
+        return (*name).to_string();
+    }
+    city.iter()
+        .map(|part| title_case(part))
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 impl TemplateSnapshot {
@@ -415,6 +493,10 @@ fn values_from_context(
     }
     if !snapshot.server.is_empty() {
         values.insert("server".into(), snapshot.server.clone());
+        let name = server_display_name(&snapshot.server);
+        if !name.is_empty() {
+            values.insert("server_name".into(), name);
+        }
     }
     if let Some(phase) = phase_label(&snapshot.state) {
         values.insert("phase".into(), phase.into());
@@ -582,23 +664,84 @@ async fn load_content_labels(
     Some(labels)
 }
 
+/// Whether the template asks for anything about the other team.
+fn wants_enemy_data(plan: &TemplatePlan) -> bool {
+    plan.variables
+        .iter()
+        .any(|variable| variable.starts_with("enemy_team"))
+}
+
+/// Whether this roster can actually answer the template.
+///
+/// Riot publishes a pregame match before it publishes the loadouts that leak
+/// the other team, so the first fetch after the transition routinely returns
+/// your five and nobody else.
+fn snapshot_is_usable(snapshot: &TemplateSnapshot, needs_enemies: bool) -> bool {
+    if snapshot.players.is_empty() {
+        return false;
+    }
+    if !needs_enemies {
+        return true;
+    }
+    !team_sides(snapshot).1.is_empty()
+}
+
+/// Gap between roster attempts while agent select fills in.
+const SNAPSHOT_RETRY_DELAY: Duration = Duration::from_millis(1200);
+
+/// The roster the template renders against.
+///
+/// The lifecycle trigger fires the moment pregame starts, which is *before*
+/// Riot has published the loadouts the enemy side is read from. Rendering that
+/// first answer produced the `N/A - N/A | N/A` whisper while the app's own
+/// Live Game view filled in seconds later. So this waits: it re-asks until the
+/// roster can answer the message, and only falls back to the last stored roster
+/// when the budget runs out.
 async fn load_snapshot(
     app: &AppHandle,
     deadline: tokio::time::Instant,
+    needs_enemies: bool,
 ) -> Option<TemplateSnapshot> {
-    let response = tokio::time::timeout_at(
-        deadline,
-        live::live_game_fetch(
-            app.state::<RiotState>(),
-            app.state::<live::LiveCache>(),
-            app.state::<LivePartyHistoryCache>(),
-        ),
-    )
-    .await
-    .ok()?
-    .ok()?;
-    let value: Value = serde_json::from_str(&response).ok()?;
-    TemplateSnapshot::from_value(&value)
+    let mut best: Option<TemplateSnapshot> = None;
+    loop {
+        let fetched = tokio::time::timeout_at(
+            deadline,
+            live::live_game_fetch(
+                app.state::<RiotState>(),
+                app.state::<live::LiveCache>(),
+                app.state::<LivePartyHistoryCache>(),
+            ),
+        )
+        .await
+        .ok()
+        .and_then(Result::ok);
+
+        if let Some(snapshot) = fetched
+            .as_deref()
+            .and_then(|response| serde_json::from_str::<Value>(response).ok())
+            .as_ref()
+            .and_then(TemplateSnapshot::from_value)
+        {
+            if snapshot_is_usable(&snapshot, needs_enemies) {
+                return Some(snapshot);
+            }
+            // Half a roster still beats N/A if nothing better arrives.
+            if !snapshot.players.is_empty() {
+                best = Some(snapshot);
+            }
+        }
+
+        if tokio::time::Instant::now() + SNAPSHOT_RETRY_DELAY >= deadline {
+            break;
+        }
+        tokio::time::sleep(SNAPSHOT_RETRY_DELAY).await;
+    }
+
+    best.or_else(|| {
+        let stored = app.state::<live::LiveCache>().recent_snapshot()?;
+        let value: Value = serde_json::from_str(&stored).ok()?;
+        TemplateSnapshot::from_value(&value)
+    })
 }
 
 fn render_custom_messages(
@@ -630,7 +773,7 @@ pub(crate) async fn resolve_custom_messages(
         return Ok(messages.to_vec());
     }
     let deadline = tokio::time::Instant::now() + TEMPLATE_RESOLUTION_TIMEOUT;
-    let Some(snapshot) = load_snapshot(app, deadline).await else {
+    let Some(snapshot) = load_snapshot(app, deadline, wants_enemy_data(&plan)).await else {
         return Ok(messages
             .iter()
             .map(|message| chat_template::render_template(message, &HashMap::new()))
@@ -769,8 +912,64 @@ mod tests {
     }
 
     #[test]
-    fn template_resolution_budget_is_six_seconds() {
-        assert_eq!(TEMPLATE_RESOLUTION_TIMEOUT, Duration::from_secs(6));
+    fn a_pregame_without_the_enemy_side_yet_is_not_usable() {
+        // Riot publishes the pregame match before the loadouts the enemy team
+        // is read from. Sending on that first answer is what produced
+        // "N/A - N/A | N/A" the instant agent select opened.
+        let ally_only = TemplateSnapshot::from_value(&json!({
+            "success": true,
+            "state": "pregame",
+            "match": { "queueId": "competitive" },
+            "players": [
+                { "puuid": "me", "teamId": "Ally", "isSelf": true },
+                { "puuid": "mate", "teamId": "Ally", "isSelf": false }
+            ]
+        }))
+        .unwrap();
+        assert!(!snapshot_is_usable(&ally_only, true));
+        // A message that never mentions the enemy can go out immediately.
+        assert!(snapshot_is_usable(&ally_only, false));
+
+        let full = TemplateSnapshot::from_value(&json!({
+            "success": true,
+            "state": "pregame",
+            "match": { "queueId": "competitive" },
+            "players": [
+                { "puuid": "me", "teamId": "Ally", "isSelf": true },
+                { "puuid": "foe", "teamId": "Enemy", "isSelf": false }
+            ]
+        }))
+        .unwrap();
+        assert!(snapshot_is_usable(&full, true));
+
+        let empty = TemplateSnapshot::from_value(&json!({
+            "success": true, "state": "idle", "match": Value::Null, "players": []
+        }))
+        .unwrap();
+        assert!(!snapshot_is_usable(&empty, false));
+    }
+
+    #[test]
+    fn only_enemy_variables_make_the_send_wait_for_the_other_team() {
+        assert!(wants_enemy_data(&chat_template::plan_template(
+            "{{enemy_team_rank}}"
+        )));
+        assert!(wants_enemy_data(&chat_template::plan_template(
+            "{{queue}} {{enemy_team_kd}}"
+        )));
+        assert!(!wants_enemy_data(&chat_template::plan_template(
+            "{{queue}} - {{server_name}} {{my_rank}}"
+        )));
+    }
+
+    #[test]
+    fn template_resolution_budget_outlasts_a_cold_pregame_fetch() {
+        // A cold pregame resolves a name and an MMR for ten players. At six
+        // seconds that fetch was still in flight when the budget expired, and
+        // the message rendered every variable as N/A. Agent select lasts far
+        // longer than this, so waiting costs nothing that matters.
+        assert_eq!(TEMPLATE_RESOLUTION_TIMEOUT, Duration::from_secs(15));
+        assert!(TEMPLATE_RESOLUTION_TIMEOUT < Duration::from_secs(60));
     }
 
     #[test]
@@ -805,6 +1004,109 @@ mod tests {
         assert_eq!(labels.maps["ascent-id"], "Ascent");
         assert_eq!(labels.maps["/game/maps/ascent/ascent"], "Ascent");
         assert_eq!(labels.maps["ascent"], "Ascent");
+    }
+
+    #[test]
+    fn converts_game_pods_to_region_names() {
+        for (pod, expected) in [
+            ("aresriot.aws-ape1-prod.ap-gp-hongkong-1", "Hong Kong"),
+            ("aresriot.aws-apne1-prod.ap-gp-tokyo-1", "Tokyo"),
+            ("aresriot.aws-euc1-prod.eu-gp-frankfurt-1", "Frankfurt"),
+            ("aresriot.aws-usw2-prod.na-gp-oregon-1", "Oregon"),
+            ("aresriot.aws-saeast1-prod.br-gp-saopaulo-1", "Sao Paulo"),
+            // Bare tail, no product/cloud prefix.
+            ("ap-gp-singapore-2", "Singapore"),
+            // Unknown city still reads as a place rather than going blank.
+            ("aresriot.aws-apne1-prod.ap-gp-osaka-1", "Osaka"),
+        ] {
+            assert_eq!(server_display_name(pod), expected, "pod={pod}");
+        }
+    }
+
+    #[test]
+    fn single_word_pod_cities_need_no_table_entry() {
+        // The title-case fallback already covers every one-word datacenter, in
+        // every shard, so the table only carries names it would get wrong.
+        for (pod, expected) in [
+            // APAC
+            ("ap-gp-tokyo-1", "Tokyo"),
+            ("ap-gp-singapore-2", "Singapore"),
+            ("ap-gp-mumbai-1", "Mumbai"),
+            ("ap-gp-sydney-1", "Sydney"),
+            ("ap-gp-jakarta-1", "Jakarta"),
+            ("ap-gp-seoul-1", "Seoul"),
+            ("ap-gp-taipei-1", "Taipei"),
+            ("ap-gp-osaka-1", "Osaka"),
+            // EU
+            ("eu-gp-frankfurt-1", "Frankfurt"),
+            ("eu-gp-london-1", "London"),
+            ("eu-gp-paris-1", "Paris"),
+            ("eu-gp-madrid-1", "Madrid"),
+            ("eu-gp-stockholm-1", "Stockholm"),
+            ("eu-gp-warsaw-1", "Warsaw"),
+            ("eu-gp-istanbul-1", "Istanbul"),
+            ("eu-gp-milan-1", "Milan"),
+            ("eu-gp-bahrain-1", "Bahrain"),
+            // North America
+            ("na-gp-ashburn-1", "Ashburn"),
+            ("na-gp-atlanta-1", "Atlanta"),
+            ("na-gp-chicago-1", "Chicago"),
+            ("na-gp-dallas-1", "Dallas"),
+            ("na-gp-oregon-1", "Oregon"),
+            ("na-gp-ohio-1", "Ohio"),
+        ] {
+            assert_eq!(server_display_name(pod), expected, "pod={pod}");
+        }
+    }
+
+    #[test]
+    fn multi_word_pod_cities_come_from_the_table() {
+        // Both spellings Riot could use — run together, or split across pod
+        // segments — normalize to the same key.
+        for (pod, expected) in [
+            ("ap-gp-kualalumpur-1", "Kuala Lumpur"),
+            ("ap-gp-kuala-lumpur-1", "Kuala Lumpur"),
+            ("ap-gp-hochiminh-1", "Ho Chi Minh City"),
+            ("eu-gp-telaviv-1", "Tel Aviv"),
+            ("na-gp-nvirginia-1", "N. Virginia"),
+            ("na-gp-n-virginia-1", "N. Virginia"),
+            ("na-gp-losangeles-1", "Los Angeles"),
+            ("na-gp-saltlakecity-1", "Salt Lake City"),
+            ("br-gp-saopaulo-1", "Sao Paulo"),
+            ("latam-gp-mexicocity-1", "Mexico City"),
+            ("latam-gp-buenosaires-1", "Buenos Aires"),
+        ] {
+            assert_eq!(server_display_name(pod), expected, "pod={pod}");
+        }
+    }
+
+    #[test]
+    fn leaves_unparseable_pods_without_a_name() {
+        // No `gp` marker, nothing else in the id is reliably a city, so the
+        // template renders N/A rather than a half-parsed pod.
+        assert_eq!(server_display_name(""), "");
+        assert_eq!(server_display_name("local-pod"), "");
+        assert_eq!(server_display_name("aresriot.aws-ape1-prod"), "");
+        // A `gp` marker with only an index behind it names nothing.
+        assert_eq!(server_display_name("ap-gp-1"), "");
+    }
+
+    #[test]
+    fn server_name_accompanies_the_raw_pod_id() {
+        let values = values_from_context(
+            &TemplateSnapshot::from_value(&json!({
+                "success": true,
+                "state": "ingame",
+                "match": { "server": "aresriot.aws-ape1-prod.ap-gp-hongkong-1" },
+                "players": []
+            }))
+            .unwrap(),
+            &HashMap::new(),
+            &ContentLabels::default(),
+        );
+        // The raw id stays put: existing templates must not change output.
+        assert_eq!(values["server"], "ap-gp-hongkong-1");
+        assert_eq!(values["server_name"], "Hong Kong");
     }
 
     #[test]
