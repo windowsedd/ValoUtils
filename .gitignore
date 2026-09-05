@@ -28,6 +28,7 @@ release
 src-tauri/target
 src-tauri/gen
 src-tauri/*.key
+/valoutils.key
 **/cert/*.key
 **/*.pfx
 

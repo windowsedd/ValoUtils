@@ -26,3 +26,22 @@ test("tag builds verify and publish without unsigned artifacts", () => {
 	expect(verify).toBeGreaterThan(-1);
 	expect(publish).toBeGreaterThan(verify);
 });
+
+test("tag builds refuse to publish an unsigned release", () => {
+	expect(workflow).toContain("- name: Verify signing key");
+	expect(workflow).toContain("- name: Verify updater assets");
+	const signingKey = workflow.indexOf("- name: Verify signing key");
+	const publish = workflow.indexOf("- name: Build & Publish");
+	const updaterAssets = workflow.indexOf("- name: Verify updater assets");
+	// The key check has to run before anything is built or released, and the
+	// asset check only means something once the release exists.
+	expect(signingKey).toBeGreaterThan(-1);
+	expect(publish).toBeGreaterThan(signingKey);
+	expect(updaterAssets).toBeGreaterThan(publish);
+});
+
+test("updater assets check looks for latest.json and the installer signature", () => {
+	expect(workflow).toContain("'latest.json'");
+	expect(workflow).toContain("*-setup.exe.sig");
+	expect(workflow).toContain("steps.publish.outputs.releaseId");
+});

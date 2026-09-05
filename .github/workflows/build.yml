@@ -37,8 +37,23 @@ jobs:
           $releaseVersion = '${{ github.ref_name }}'.Substring(1)
           bun run version:check $releaseVersion
 
+      # Without a signing key tauri builds the installer unsigned, tauri-action
+      # skips latest.json with only a log warning, and the release looks fine
+      # while the in-app updater 404s on latest.json ("Could not fetch a valid
+      # release JSON from the remote"). Fail here, before the release exists.
+      - name: Verify signing key
+        shell: pwsh
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:TAURI_SIGNING_PRIVATE_KEY)) {
+            Write-Host "::error::TAURI_SIGNING_PRIVATE_KEY is empty or unset. Add the contents of src-tauri/valoutils.key under Settings > Secrets and variables > Actions (plus TAURI_SIGNING_PRIVATE_KEY_PASSWORD if the key has a password). Without it the release ships unsigned and the auto-updater cannot read it."
+            exit 1
+          }
+
       # On a version tag → build, sign, and publish a GitHub Release.
       - name: Build & Publish
+        id: publish
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -49,3 +64,36 @@ jobs:
           releaseName: 'ValoUtils ${{ github.ref_name }}'
           releaseDraft: true
           prerelease: false
+
+      # The updater endpoint reads latest.json, and latest.json references the
+      # installer's .sig. A release missing either is dead on arrival, so assert
+      # both were uploaded rather than discovering it from a user bug report.
+      - name: Verify updater assets
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $releaseId = '${{ steps.publish.outputs.releaseId }}'
+          if ([string]::IsNullOrWhiteSpace($releaseId)) {
+            Write-Host "::error::tauri-action did not report a releaseId, so the release assets cannot be verified."
+            exit 1
+          }
+          # @() keeps this an array even when the release has a single asset,
+          # so -contains and Where-Object below behave.
+          $assets = @(gh api "repos/${{ github.repository }}/releases/$releaseId/assets" --paginate --jq '.[].name')
+          Write-Host ("Release assets:`n" + ($assets -join "`n"))
+          $missing = @()
+          if ($assets -notcontains 'latest.json') { $missing += 'latest.json' }
+          if (-not ($assets | Where-Object { $_ -like '*-setup.exe.sig' })) { $missing += '*-setup.exe.sig' }
+          if ($missing.Count -gt 0) {
+            Write-Host "::error::The release is missing $($missing -join ', '). The auto-updater will fail with 'Could not fetch a valid release JSON from the remote'. Check that the signing secrets are correct, delete the draft release and the tag, then retag."
+            exit 1
+          }
+
+      # releaseDraft keeps the release invisible until published by hand, and the
+      # updater endpoint (releases/latest/download/latest.json) 404s for as long
+      # as it stays a draft. Say so in the log so the release is not left half-cut.
+      - name: Publishing reminder
+        shell: pwsh
+        run: |
+          Write-Host "::notice::Draft release ${{ github.ref_name }} is ready at ${{ steps.publish.outputs.releaseHtmlUrl }} — publish it in the GitHub UI, or the auto-updater stays broken."
