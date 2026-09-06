@@ -458,19 +458,19 @@ git commit -m "feat(rank): show shields across player views"
 **Files:**
 - Modify only if verification exposes a defect in files already listed above.
 
-- [ ] **Step 1: Format changed Rust code**
+- [x] **Step 1: Format changed Rust code**
 
 Run: `cargo fmt --check` from `src-tauri/`.
 
 Expected: PASS. If formatting differs, run `cargo fmt`, inspect the scoped diff, and rerun `cargo fmt --check`.
 
-- [ ] **Step 2: Run the full frontend suite**
+- [x] **Step 2: Run the full frontend suite**
 
 Run: `bun test` from the repository root.
 
 Expected: all tests PASS with no unhandled errors.
 
-- [ ] **Step 3: Run frontend lint and type/build verification**
+- [x] **Step 3: Run frontend lint and type/build verification**
 
 Run from the repository root:
 
@@ -481,7 +481,7 @@ bun run build:vite
 
 Expected: both commands exit 0. Inspect any formatter changes made by the repository's lint script before keeping them.
 
-- [ ] **Step 4: Run the full Rust suite and lints**
+- [x] **Step 4: Run the full Rust suite and lints**
 
 Run from `src-tauri/`:
 
@@ -492,7 +492,7 @@ cargo clippy --all-targets --all-features -- -D warnings
 
 Expected: all tests PASS and clippy reports no warnings.
 
-- [ ] **Step 5: Inspect final scope and whitespace**
+- [x] **Step 5: Inspect final scope and whitespace**
 
 Run from the repository root:
 
@@ -504,7 +504,7 @@ git diff --stat HEAD~3..HEAD
 
 Expected: only the planned Rank Shield files and planning documents changed; no whitespace errors or unrelated edits.
 
-- [ ] **Step 6: Commit any verification-only correction**
+- [x] **Step 6: Commit any verification-only correction**
 
 If verification required a correction, stage the planned implementation paths (Git ignores unchanged paths) and commit it:
 
@@ -514,3 +514,9 @@ git commit -m "fix(rank): address rank shield verification"
 ```
 
 If no correction was needed, do not create an empty commit.
+
+Verification notes:
+
+- `cargo fmt --check` still reports formatting differences in seven pre-existing, unrelated Rust files; scoped `rustfmt --check` passes for all four changed Rust files.
+- `cargo test --lib` reports 419 passed, 2 ignored, and the same pre-existing `commands::live_party::tests::rate_gate_spaces_concurrent_request_starts` timing failure observed on the clean baseline. `cargo test rank_shields --lib` passes all six Rank Shield tests.
+- `cargo clippy --all-targets --all-features -- -D warnings` reports 24 pre-existing warnings in unrelated modules and no warning in Rank Shield code.
