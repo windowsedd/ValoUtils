@@ -13,6 +13,7 @@ pub mod matches;
 mod pregame_roster;
 pub mod presence;
 pub mod profiles;
+pub(crate) mod rank_shields;
 pub mod riot;
 pub mod riot_chat;
 pub mod riot_launch;

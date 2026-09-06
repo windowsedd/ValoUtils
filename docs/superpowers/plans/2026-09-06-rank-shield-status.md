@@ -38,7 +38,7 @@
 - Create: `src-tauri/src/commands/rank_shields.rs`
 - Modify: `src-tauri/src/commands/mod.rs`
 
-- [ ] **Step 1: Write failing Rust tests for the full shield lifecycle**
+- [x] **Step 1: Write failing Rust tests for the full shield lifecycle**
 
 Create tests whose fixtures are newest-first, matching Riot's competitive-update response:
 
@@ -116,13 +116,13 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: Run the focused test and verify RED**
+- [x] **Step 2: Run the focused test and verify RED**
 
 Run: `cargo test rank_shields --lib` from `src-tauri/`.
 
 Expected: FAIL because `commands::rank_shields` and `remaining_rank_shields` do not exist.
 
-- [ ] **Step 3: Implement the minimum pure calculator**
+- [x] **Step 3: Implement the minimum pure calculator**
 
 Register `pub(crate) mod rank_shields;` in `commands/mod.rs`, then implement:
 
@@ -175,13 +175,13 @@ pub(crate) fn remaining_rank_shields(
 }
 ```
 
-- [ ] **Step 4: Run the focused test and verify GREEN**
+- [x] **Step 4: Run the focused test and verify GREEN**
 
 Run: `cargo test rank_shields --lib` from `src-tauri/`.
 
 Expected: PASS for all new calculator tests.
 
-- [ ] **Step 5: Commit the calculator**
+- [x] **Step 5: Commit the calculator**
 
 ```bash
 git add src-tauri/src/commands/rank_shields.rs src-tauri/src/commands/mod.rs
