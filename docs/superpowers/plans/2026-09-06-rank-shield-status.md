@@ -195,7 +195,7 @@ git commit -m "feat(rank): calculate remaining rank shields"
 - Modify: `src-tauri/src/commands/friend_profile.rs`
 - Modify: `src-tauri/src/commands/live.rs`
 
-- [ ] **Step 1: Add failing response-normalization tests**
+- [x] **Step 1: Add failing response-normalization tests**
 
 In Career, extract a `career_rank_shields(mmr, competitive_updates)` helper, construct a current-tier fixture with an entry row, and assert:
 
@@ -219,7 +219,7 @@ assert_eq!(stats["rankShields"], 1);
 
 Also assert that ineligible or incomplete inputs serialize as JSON `null`, not an omitted field.
 
-- [ ] **Step 2: Run focused Rust tests and verify RED**
+- [x] **Step 2: Run focused Rust tests and verify RED**
 
 Run from `src-tauri/`:
 
@@ -231,7 +231,7 @@ cargo test attach_rank_shields --lib
 
 Expected: FAIL because the responses do not yet contain `rankShields` and the Live helper does not exist.
 
-- [ ] **Step 3: Normalize Career and shared profile responses**
+- [x] **Step 3: Normalize Career and shared profile responses**
 
 Use `extract_rank` plus the current season id already obtained from MMR, then call the calculator:
 
@@ -246,7 +246,7 @@ let rank_shields = remaining_rank_shields(
 
 Add `"rankShields": rank_shields` to Career output and to `normalize_friend_profile`. Add `"rankShields": Value::Null` to the fake-player profile.
 
-- [ ] **Step 4: Attach the value to existing Live Match background stats**
+- [x] **Step 4: Attach the value to existing Live Match background stats**
 
 After `competitive_updates` has been fetched and aggregate stats are available, derive tier/season from the newest competitive update and insert the stable field:
 
@@ -267,13 +267,13 @@ fn attach_rank_shields(stats: &mut Value, updates: Option<&Value>) {
 
 Call this helper before caching the stats. Do not add a request or alter the worker pool, cache key, rate-limit handling, or event shape.
 
-- [ ] **Step 5: Run focused Rust tests and verify GREEN**
+- [x] **Step 5: Run focused Rust tests and verify GREEN**
 
 Run the three commands from Step 2.
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit backend integration**
+- [x] **Step 6: Commit backend integration**
 
 ```bash
 git add src-tauri/src/commands/career.rs src-tauri/src/commands/friend_profile.rs src-tauri/src/commands/live.rs

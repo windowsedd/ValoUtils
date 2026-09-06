@@ -1,4 +1,5 @@
 use crate::commands::live::{extract_competitive_seasons, extract_rank};
+use crate::commands::rank_shields::remaining_rank_shields;
 use crate::riot::api;
 use crate::riot::client::RiotState;
 use serde_json::{json, Value};
@@ -113,6 +114,7 @@ fn local_friend_profile(puuid: &str) -> Option<Value> {
             json!({
                 "currentTier": 0,
                 "currentRR": 0,
+                "rankShields": null,
                 "peakTier": 0,
                 "peakSeasonId": null,
                 "currentSeasonId": null,
@@ -185,9 +187,15 @@ fn normalize_friend_profile(
     let (raw_current_tier, current_rr, peak_tier, peak_season_id) = extract_rank(Some(mmr));
     let current_tier = resolve_current_tier(raw_current_tier, current_rr, thresholds);
     let (current_season_id, competitive_seasons) = extract_competitive_seasons(Some(mmr));
+    let rank_shields = remaining_rank_shields(
+        current_tier,
+        current_season_id.as_deref(),
+        competitive_updates,
+    );
     json!({
         "currentTier": current_tier,
         "currentRR": current_rr,
+        "rankShields": rank_shields,
         "peakTier": peak_tier,
         "peakSeasonId": peak_season_id,
         "currentSeasonId": current_season_id,
@@ -336,6 +344,7 @@ mod tests {
         let profile = local_friend_profile(crate::fake_player::PUUID)
             .expect("the local fake player must have a local profile");
         assert_eq!(profile["currentTier"], 0);
+        assert_eq!(profile["rankShields"], Value::Null);
         assert_eq!(profile["competitiveSeasons"], json!([]));
         assert_eq!(profile["matches"], json!([]));
         assert!(local_friend_profile("real-riot-player").is_none());
@@ -346,16 +355,16 @@ mod tests {
         let mmr = json!({
             "LatestCompetitiveUpdate": {
                 "SeasonID": "act-current",
-                "TierAfterUpdate": 22,
+                "TierAfterUpdate": 12,
                 "RankedRatingAfterUpdate": 64
             },
             "QueueSkills": {"competitive": {"SeasonalInfoBySeasonID": {
                 "act-current": {
-                    "CompetitiveTier": 22,
+                    "CompetitiveTier": 12,
                     "RankedRating": 64,
                     "NumberOfWins": 12,
                     "NumberOfGames": 20,
-                    "WinsByTier": {"22": 8, "21": 4}
+                    "WinsByTier": {"12": 8, "11": 4}
                 },
                 "act-old": {
                     "CompetitiveTier": 19,
@@ -374,14 +383,17 @@ mod tests {
         ]});
         let updates = json!({"Matches": [{
             "MatchID": "c1",
-            "TierBeforeUpdate": 21,
-            "TierAfterUpdate": 22,
+            "SeasonID": "act-current",
+            "TierBeforeUpdate": 11,
+            "TierAfterUpdate": 12,
+            "RankedRatingBeforeUpdate": 46,
             "RankedRatingAfterUpdate": 64,
             "RankedRatingEarned": 18
         }]});
         let result = normalize_friend_profile(&mmr, &updates, &history, None);
-        assert_eq!(result["currentTier"], 22);
+        assert_eq!(result["currentTier"], 12);
         assert_eq!(result["currentRR"], 64);
+        assert_eq!(result["rankShields"], 2);
         assert_eq!(result["currentSeasonId"], "act-current");
         assert_eq!(result["competitiveSeasons"].as_array().unwrap().len(), 2);
         assert_eq!(result["matches"].as_array().unwrap().len(), 3);

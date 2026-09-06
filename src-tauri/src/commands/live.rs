@@ -1,5 +1,6 @@
 use super::live_party::{self, LivePartyHistoryCache, RATE_LIMITED_ERROR};
 use super::pregame_roster::{build_pregame_roster, log_pregame_debug, redact_secrets};
+use super::rank_shields::remaining_rank_shields;
 use crate::riot::api::{self, RiotApiClient};
 use crate::riot::client::{self, RiotState};
 use base64::Engine;
@@ -372,6 +373,32 @@ fn compute_streak(history: &[Value], rr_by_match: &HashMap<String, i64>) -> Valu
 
 fn aggregate_recent_stats(puuid: &str, matches: &[Value]) -> Result<Value, String> {
     aggregate_recent_stats_with_rr(puuid, matches, &HashMap::new())
+}
+
+fn attach_rank_shields(stats: &mut Value, updates: Option<&Value>) {
+    let latest = updates
+        .and_then(|value| value.get("Matches"))
+        .and_then(Value::as_array)
+        .and_then(|rows| rows.first());
+    let tier = latest
+        .and_then(|row| row.get("TierAfterUpdate"))
+        .and_then(|value| {
+            value
+                .as_i64()
+                .or_else(|| value.as_u64().map(|number| number as i64))
+        })
+        .unwrap_or(0);
+    let season_id = latest
+        .and_then(|row| row.get("SeasonID"))
+        .and_then(Value::as_str);
+    let shields = updates.and_then(|value| remaining_rank_shields(tier, season_id, value));
+
+    if let Some(object) = stats.as_object_mut() {
+        object.insert(
+            "rankShields".into(),
+            shields.map_or(Value::Null, Value::from),
+        );
+    }
 }
 
 fn aggregate_recent_stats_with_rr(
@@ -1197,11 +1224,12 @@ async fn fetch_recent_stats(
                 Err(_) => {}
             }
         }
-        let stats = aggregate_recent_stats_with_rr(
+        let mut stats = aggregate_recent_stats_with_rr(
             &puuid,
             &matches,
             &rr_by_match_id(competitive_updates.as_ref()),
         )?;
+        attach_rank_shields(&mut stats, competitive_updates.as_ref());
         let normalized_matches = stats["matches"].as_u64().unwrap_or_default() as usize;
         if should_cache_recent_stats(expected_matches, matches.len(), normalized_matches) {
             cache.lock().unwrap().insert(cache_key, stats.clone());
@@ -1716,6 +1744,25 @@ mod tests {
         assert_eq!(result["dpr"], 125.25);
         assert_eq!(result["streak"]["kind"], "win");
         assert_eq!(result["streak"]["matches"], 1);
+    }
+
+    #[test]
+    fn attach_rank_shields_enriches_recent_stats() {
+        let updates = json!({"Matches": [
+            { "SeasonID": "act", "TierBeforeUpdate": 12, "TierAfterUpdate": 12,
+              "RankedRatingBeforeUpdate": 0, "RankedRatingAfterUpdate": 0,
+              "RankedRatingEarned": -18 },
+            { "SeasonID": "act", "TierBeforeUpdate": 11, "TierAfterUpdate": 12,
+              "RankedRatingBeforeUpdate": 90, "RankedRatingAfterUpdate": 10,
+              "RankedRatingEarned": 20 }
+        ]});
+        let mut stats = json!({ "matches": 1 });
+
+        attach_rank_shields(&mut stats, Some(&updates));
+        assert_eq!(stats["rankShields"], 1);
+
+        attach_rank_shields(&mut stats, None);
+        assert_eq!(stats["rankShields"], Value::Null);
     }
 
     #[test]
