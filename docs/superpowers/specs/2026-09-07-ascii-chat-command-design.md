@@ -19,7 +19,7 @@ Examples:
 
 ```text
 .ascii hk gay
-.ascii team nice try
+.ascii team nice
 .ascii all gg
 .ascii party hello
 ```
@@ -50,11 +50,11 @@ Use a checked-in, deterministic three-row block font rather than a network servi
 
 Input is trimmed, converted to uppercase, and runs of whitespace are collapsed to one space. Any other character returns an unsupported-character error rather than being silently removed or replaced.
 
-Each glyph occupies a fixed compact cell. Glyphs use `█`, `▀`, `▄`, and `░` so three rows remain legible in VALORANT's fixed-width chat rendering. One background column separates adjacent characters, and a wider background gap separates words.
+Each glyph, including a normalized space, occupies a fixed three-column cell. Glyphs use `█`, `▀`, `▄`, and `░` so three rows remain legible in VALORANT's fixed-width chat rendering. One background column separates adjacent cells, which makes a space appear as a five-column word gap after the separators on both sides.
 
 The complete payload is five rows: one blank background row, three glyph rows, and one blank background row. Every row is padded to exactly 26 Unicode characters and rows are joined with newline characters in one message. The resulting payload is always 134 Unicode characters: 130 visible grid characters plus four newlines.
 
-Before padding, the renderer calculates the widest glyph row. If it exceeds 26 characters, rendering fails with a concise text-too-long error. The command never truncates artwork, reduces letter spacing, wraps words into another artwork block, or sends multiple messages.
+Before padding, the renderer calculates the widest glyph row. A normalized phrase of `n` characters occupies `4n - 1` columns, so the 26-column grid accepts at most six characters, including spaces. If it exceeds 26 characters, rendering fails with a concise text-too-long error. The command never truncates artwork, reduces letter spacing, wraps words into another artwork block, or sends multiple messages.
 
 The 26-column, five-row format is an application-owned conservative limit. It avoids depending on an undocumented Riot maximum and produces deterministic snapshots for tests.
 
@@ -112,6 +112,7 @@ Pure Rust tests cover:
 - destination-free parsing that retains the entire phrase;
 - the reserved first-token behavior for `team`, `all`, and `party`;
 - whitespace normalization and lowercase-to-uppercase conversion;
+- acceptance of six normalized characters and rejection of seven;
 - exact snapshot output for a representative phrase;
 - every supported glyph producing three equal-width rows;
 - the final payload being five rows of 26 characters and 134 characters total;
