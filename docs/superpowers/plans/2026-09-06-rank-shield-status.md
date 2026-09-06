@@ -389,7 +389,7 @@ git commit -m "feat(ui): add rank shield badge"
 - Modify: `tests/friend-profile-ui.test.ts`
 - Modify: `tests/match-player-profile-ui.test.ts`
 
-- [ ] **Step 1: Add failing type-fixture and source-wiring tests**
+- [x] **Step 1: Add failing type-fixture and source-wiring tests**
 
 Add `rankShields: 1` to every typed `FriendProfileData` fixture and `rankShields: null` to the typed `RecentPlayerStats` fixture in `tests/live-game-metrics.test.ts`. Assert each surface imports and renders the shared badge with its own normalized value:
 
@@ -401,7 +401,7 @@ expect(profile).toContain("remaining={profile.rankShields}");
 expect(modal).toContain("remaining={profile.rankShields}");
 ```
 
-- [ ] **Step 2: Run focused frontend tests and verify RED**
+- [x] **Step 2: Run focused frontend tests and verify RED**
 
 Run:
 
@@ -411,7 +411,7 @@ bun test tests/live-game-ui.test.ts tests/career-act-rank-ui.test.ts tests/frien
 
 Expected: FAIL because types and surfaces do not yet expose or render the field.
 
-- [ ] **Step 3: Extend frontend contracts**
+- [x] **Step 3: Extend frontend contracts**
 
 Add the stable nullable field:
 
@@ -429,7 +429,7 @@ export type FriendProfileData = {
 
 Add `rankShields: 0 | 1 | 2 | null` to `CareerData` and copy `response.rankShields ?? null` into component state.
 
-- [ ] **Step 4: Render without changing page layout structure**
+- [x] **Step 4: Render without changing page layout structure**
 
 Import `RankShieldBadge` in all four UI files.
 
@@ -440,13 +440,13 @@ Import `RankShieldBadge` in all four UI files.
 
 Do not add another table column; retain the current responsive grids.
 
-- [ ] **Step 5: Run focused frontend tests and verify GREEN**
+- [x] **Step 5: Run focused frontend tests and verify GREEN**
 
 Run the command from Step 2 plus `bun test src/components/rank-shield-badge.test.tsx`.
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit surface integration**
+- [x] **Step 6: Commit surface integration**
 
 ```bash
 git add src/types/live-game.ts src/types/friend-profile.ts src/pages/PlayerCareer.tsx src/components/live-game/live-scout-table.tsx src/components/friends/friend-profile.tsx src/components/match-player-profile-modal.tsx src/components/friends/friend-profile-state.test.ts src/components/match-player-profile-modal-state.test.ts src/pages/tools/tools-lookup-state.test.ts tests/live-game-metrics.test.ts tests/live-game-ui.test.ts tests/career-act-rank-ui.test.ts tests/friend-profile-ui.test.ts tests/match-player-profile-ui.test.ts

@@ -1,6 +1,7 @@
 import { ActRankPanel } from "@/components/live-game/act-rank-panel";
 import { initialSeasonId, seasonFallbackLabel } from "@/components/live-game/act-rank";
 import { PreviousActsPanel } from "@/components/live-game/previous-acts-panel";
+import { RankShieldBadge } from "@/components/rank-shield-badge";
 import { PageHeader } from "@/components/section-card";
 import type { FriendProfileData, FriendProfileResponse } from "@/types/friend-profile";
 import type { Friend } from "@/types/friends";
@@ -135,6 +136,7 @@ export const FriendProfile = ({ friend, card, tiers, presenceLabel, cachedProfil
 									<p className="text-[9px] uppercase tracking-widest text-(--text-muted)">{t("friends.profileCurrentRank")}</p>
 									<p className="truncate text-[15px] font-semibold" style={{ color }}>{tier > 0 ? tierName(tier) : t("career.unranked")}</p>
 									{tier > 0 && <p className="text-[11px] tabular-nums text-(--text-secondary)">{profile.currentRR} / 100 RR</p>}
+									<RankShieldBadge tier={tier} remaining={profile.rankShields} compact />
 								</div>
 							</div>
 

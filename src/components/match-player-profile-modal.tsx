@@ -3,6 +3,7 @@ import { FriendMatchHistory } from "@/components/friends/friend-competitive-hist
 import { ActRankPanel } from "@/components/live-game/act-rank-panel";
 import { initialSeasonId, seasonFallbackLabel } from "@/components/live-game/act-rank";
 import type { MatchAssets } from "@/components/match-scoreboard";
+import { RankShieldBadge } from "@/components/rank-shield-badge";
 import { SectionCard } from "@/components/section-card";
 import type { FriendProfileData } from "@/types/friend-profile";
 import type { MatchPlayer } from "@/types/matches";
@@ -108,7 +109,10 @@ const MatchPlayerProfileBody = ({ player, assets }: { player: MatchPlayer; asset
 						{currentIcon && <img src={currentIcon} alt={tierName(currentTier)} className="h-16 w-16 shrink-0 object-contain" />}
 						<div className="min-w-0">
 							<p className="truncate text-2xl font-bold" style={{ color: currentTier > 0 ? tierColor(currentTier) : "var(--text-muted)" }}>{currentTier > 0 ? tierName(currentTier) : t("career.unranked")}</p>
-							<p className="text-[12px] tabular-nums text-(--text-secondary)">{currentTier > 0 ? `${profile.currentRR} / 100 RR` : "â€”"}</p>
+							<div className="flex items-center gap-2">
+								<p className="text-[12px] tabular-nums text-(--text-secondary)">{currentTier > 0 ? `${profile.currentRR} / 100 RR` : "â€”"}</p>
+								<RankShieldBadge tier={currentTier} remaining={profile.rankShields} />
+							</div>
 						</div>
 					</div>
 					<div className="flex min-w-36 items-center gap-3 border-t border-(--line) pt-3 sm:border-l sm:border-t-0 sm:pl-5 sm:pt-0">

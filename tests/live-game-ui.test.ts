@@ -34,6 +34,13 @@ describe("Live Match signed-in player marker", () => {
     expect(table).toContain("stats.stats.dpr");
   });
 
+  test("shows rank shields beside RR after recent stats resolve", () => {
+    expect(table).toContain("<RankShieldBadge");
+    expect(table).toContain(
+      'remaining={stats?.status === "ready" ? stats.stats.rankShields : null}',
+    );
+  });
+
   test("does not expose the raw live-game dump control", () => {
     expect(liveGamePage).not.toContain('window.Main.send("live-game:dump")');
     expect(liveGamePage).not.toContain("FaDownload");

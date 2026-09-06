@@ -13,6 +13,7 @@ export type FriendMatch = {
 export type FriendProfileData = {
   currentTier: number;
   currentRR: number;
+  rankShields: 0 | 1 | 2 | null;
   peakTier: number;
   peakSeasonId: string | null;
   currentSeasonId: string | null;

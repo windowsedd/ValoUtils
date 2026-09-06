@@ -1,3 +1,4 @@
+import { RankShieldBadge } from "@/components/rank-shield-badge";
 import type { LiveGameResponse, LivePlayer, RecentStatsState, WeaponSkin } from "@/types/live-game";
 import { localize, weaponSkinKey } from "@/util/valorant-assets";
 import { mapIcon, mapName } from "@/util/valorant-maps";
@@ -48,12 +49,23 @@ const teamMeta = (teamId: string, t: ReturnType<typeof useTranslation>["t"]) => 
 
 /** RR reads as its own column — mixing it into the rank cell made "Gold 2 · 66"
  *  hard to scan and impossible to compare down the row. */
-const RrValue = ({ tier, rr }: { tier: number; rr?: number }) => {
+const RrValue = ({ tier, rr, stats }: { tier: number; rr?: number; stats?: RecentStatsState }) => {
 	const { t } = useTranslation();
 	if (tier <= 0 || typeof rr !== "number") {
 		return <span aria-label={t("liveGame.unavailable")} className="text-xs text-gray-700">—</span>;
 	}
-	return <span className="text-xs tabular-nums text-gray-300">{rr}</span>;
+	return (
+		<span className="flex flex-col items-start gap-0.5">
+			<span className="text-xs tabular-nums text-gray-300">{rr}</span>
+			{stats && stats.status !== "loading" && (
+				<RankShieldBadge
+					tier={tier}
+					remaining={stats?.status === "ready" ? stats.stats.rankShields : null}
+					compact
+				/>
+			)}
+		</span>
+	);
 };
 
 const RankValue = ({ tier, act, assets }: { tier: number; act?: string; assets: LiveGameAssets }) => {
@@ -189,7 +201,7 @@ const PlayerRow = ({ player, assets, stats, expanded, onToggle, teamLabel, recen
 					{player.party && <span className="text-[10px] font-medium truncate" style={{ color: partyColor(player.party) }}>{player.party}</span>}
 				</div>
 				<RankValue tier={player.currentTier} assets={assets} />
-				<RrValue tier={player.currentTier} rr={player.currentRR} />
+				<RrValue tier={player.currentTier} rr={player.currentRR} stats={stats} />
 				<div className="hidden md:block"><RankValue tier={player.peakTier} act={peakAct ?? undefined} assets={assets} /></div>
 				<StatValue state={stats} field="kd" />
 				<StatValue state={stats} field="winRate" />

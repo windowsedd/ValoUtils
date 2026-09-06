@@ -77,6 +77,7 @@ export type RecentPlayerStats = {
   winRate: number;
   acs: number;
   dpr: number;
+  rankShields: 0 | 1 | 2 | null;
   history: RecentMatchSummary[];
   streak?: PlayerStreak;
 };

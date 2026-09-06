@@ -35,6 +35,11 @@ describe("Friend profile rank summary", () => {
     expect(profile).toContain('t("friends.profileEpisodeAct")');
   });
 
+  test("shows rank shields in the shared Friends and Tools profile", () => {
+    expect(profile).toContain("<RankShieldBadge");
+    expect(profile).toContain("remaining={profile.rankShields}");
+  });
+
   test("shows the selected friend's agent portrait in match rows", () => {
     expect(matchHistory).toContain("assets.agents.get(player.characterId.toLowerCase())");
     expect(matchHistory).toContain("localize(agent.name)");

@@ -33,6 +33,11 @@ describe("Career Act Rank", () => {
     expect(currentRank).toContain("tierName(currentTier)");
     expect(currentRank).toContain("{currentRR} RR");
   });
+
+  test("shows rank shields in the current rank details", () => {
+    expect(career).toContain("<RankShieldBadge");
+    expect(career).toContain("remaining={data.rankShields}");
+  });
 });
 
 describe("match list column headers", () => {

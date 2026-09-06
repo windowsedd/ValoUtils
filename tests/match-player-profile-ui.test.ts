@@ -17,6 +17,8 @@ describe("clickable match player profiles", () => {
     expect(modal).toContain("<ActRankPanel");
     expect(modal).toContain("<FriendMatchHistory");
     expect(modal).toContain("playerProfilesEnabled={false}");
+    expect(modal).toContain("<RankShieldBadge");
+    expect(modal).toContain("remaining={profile.rankShields}");
   });
 
   test("wires profile selection into Matches and shared friend match history", () => {

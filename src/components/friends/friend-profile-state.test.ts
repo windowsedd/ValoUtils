@@ -5,6 +5,7 @@ import { acceptedFriendProfile } from "./friend-profile-state";
 const profile: FriendProfileData = {
   currentTier: 22,
   currentRR: 64,
+  rankShields: 1,
   peakTier: 23,
   peakSeasonId: "old",
   currentSeasonId: "current",

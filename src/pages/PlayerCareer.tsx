@@ -2,6 +2,7 @@ import { FriendMatchHistory } from "@/components/friends/friend-competitive-hist
 import { initialSeasonId } from "@/components/live-game/act-rank";
 import { ActRankPanel } from "@/components/live-game/act-rank-panel";
 import { LoginRequiredPanel } from "@/components/login-required-panel";
+import { RankShieldBadge } from "@/components/rank-shield-badge";
 import { PageHeader, SectionCard, pageBodyClass } from "@/components/section-card";
 import type { CompetitiveSeason } from "@/types/live-game";
 import { getSeasonAssets, getTiers, type SeasonAsset, type TierAsset } from "@/util/valorant-assets";
@@ -19,6 +20,7 @@ type CareerData = {
 	matchHistory: any;
 	currentSeasonId: string | null;
 	competitiveSeasons: CompetitiveSeason[];
+	rankShields: 0 | 1 | 2 | null;
 };
 
 const RankBadge = ({
@@ -93,6 +95,7 @@ const PlayerCareer = () => {
 				matchHistory: response.matchHistory,
 				currentSeasonId: response.currentSeasonId ?? null,
 				competitiveSeasons: response.competitiveSeasons ?? [],
+				rankShields: response.rankShields ?? null,
 			});
 			setLoading(false);
 		};
@@ -160,6 +163,7 @@ const PlayerCareer = () => {
 										<div className="mb-2.5 flex items-end gap-3">
 											<p className="text-3xl font-bold leading-none" style={{ color }}>{tierName(currentTier)}</p>
 											<p className="text-base leading-none text-gray-400">{currentRR} RR</p>
+											<RankShieldBadge tier={currentTier} remaining={data.rankShields} />
 										</div>
 										<div className="h-1.5 overflow-hidden rounded-full bg-white/10">
 											<div className="h-full rounded-full transition-all duration-700" style={{ width: `${currentRR}%`, background: color }} />

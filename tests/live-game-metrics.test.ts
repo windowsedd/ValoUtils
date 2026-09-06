@@ -18,6 +18,7 @@ const ready = (kd: number, winRate: number, acs: number, dpr: number): RecentSta
     winRate,
     acs,
     dpr,
+    rankShields: null,
     history: [],
   },
 });

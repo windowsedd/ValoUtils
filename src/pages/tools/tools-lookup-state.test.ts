@@ -12,6 +12,7 @@ import {
 const profileA: FriendProfileData = {
   currentTier: 22,
   currentRR: 10,
+  rankShields: 1,
   peakTier: 23,
   peakSeasonId: "old",
   currentSeasonId: "current",
