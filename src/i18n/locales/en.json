@@ -16,6 +16,10 @@
     "matches": "Matches",
     "more": "More"
   },
+  "rankShield": {
+    "remaining": "Rank Shields remaining: {{count}}",
+    "unavailable": "Shield status unavailable"
+  },
   "common": {
     "close": "Close",
     "cancel": "Cancel",

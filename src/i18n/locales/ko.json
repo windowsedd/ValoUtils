@@ -16,6 +16,10 @@
     "matches": "매치",
     "more": "더보기"
   },
+  "rankShield": {
+    "remaining": "남은 랭크 보호막: {{count}}개",
+    "unavailable": "랭크 보호막 상태를 확인할 수 없음"
+  },
   "common": {
     "close": "닫기",
     "cancel": "취소",

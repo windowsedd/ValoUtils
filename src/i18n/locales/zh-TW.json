@@ -16,6 +16,10 @@
     "matches": "對戰紀錄",
     "more": "更多"
   },
+  "rankShield": {
+    "remaining": "剩餘牌位護盾：{{count}} 個",
+    "unavailable": "無法取得牌位護盾狀態"
+  },
   "common": {
     "close": "關閉",
     "cancel": "取消",

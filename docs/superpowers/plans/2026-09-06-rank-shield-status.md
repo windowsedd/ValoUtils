@@ -289,7 +289,7 @@ git commit -m "feat(rank): expose shields in player responses"
 - Modify: `src/i18n/locales/ko.json`
 - Modify: `src/i18n/locales/zh-TW.json`
 
-- [ ] **Step 1: Write failing component and locale tests**
+- [x] **Step 1: Write failing component and locale tests**
 
 Render under an isolated i18next provider and assert these cases:
 
@@ -304,13 +304,13 @@ expect(renderBadge(27, 2)).toBe("");
 
 Read all three locale JSON files and assert non-empty `rankShield.remaining` and `rankShield.unavailable` values.
 
-- [ ] **Step 2: Run the component test and verify RED**
+- [x] **Step 2: Run the component test and verify RED**
 
 Run: `bun test src/components/rank-shield-badge.test.tsx`.
 
 Expected: FAIL because the badge module and translation keys do not exist.
 
-- [ ] **Step 3: Implement the shared badge and translations**
+- [x] **Step 3: Implement the shared badge and translations**
 
 Implement a small presentation-only component:
 
@@ -358,13 +358,13 @@ Add shared translations:
 
 Use `남은 랭크 보호막: {{count}}개` / `랭크 보호막 상태를 확인할 수 없음` in Korean and `剩餘牌位護盾：{{count}} 個` / `無法取得牌位護盾狀態` in Traditional Chinese.
 
-- [ ] **Step 4: Run the component test and verify GREEN**
+- [x] **Step 4: Run the component test and verify GREEN**
 
 Run: `bun test src/components/rank-shield-badge.test.tsx`.
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit the shared UI**
+- [x] **Step 5: Commit the shared UI**
 
 ```bash
 git add src/components/rank-shield-badge.tsx src/components/rank-shield-badge.test.tsx src/i18n/locales/en.json src/i18n/locales/ko.json src/i18n/locales/zh-TW.json
