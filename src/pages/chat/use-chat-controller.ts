@@ -415,7 +415,10 @@ export const useChatController = () => {
     if (isComposerCommand(text)) {
       commandRef.current = { cid: selectedCid, command: text };
       dispatch({ type: "setDraft", cid: selectedCid, draft: "" });
-      window.Main.send("chat:command", text);
+      // The selected conversation goes along so a command with no destination
+      // of its own (.ascii) knows which room the player is looking at. The
+      // backend reads only the channel out of it.
+      window.Main.send("chat:command", text, selectedCid);
       return;
     }
     const requestId = nextRequestId("send");

@@ -14,6 +14,7 @@ pub enum BotCommand {
     Translate,
     TranslateHistory,
     Dodge,
+    Ascii,
     Unknown,
     Consume,
 }
@@ -184,6 +185,8 @@ pub fn parse_bot_message(stanza: &str) -> Result<Option<(String, BotCommand)>, S
         BotCommand::Translate
     } else if crate::riot::chat_command::is_dodge_command(&body) {
         BotCommand::Dodge
+    } else if crate::riot::ascii_art::is_ascii_command(&body) {
+        BotCommand::Ascii
     } else {
         parse_bot_command(&body).unwrap_or(BotCommand::Unknown)
     };
@@ -894,6 +897,27 @@ mod tests {
         assert_eq!(
             parse_bot_message(&stanza).unwrap(),
             Some((jid, BotCommand::Dodge))
+        );
+    }
+
+    #[test]
+    fn intercepts_ascii_whispers_to_the_bot() {
+        let jid = format!("{}@na1.pvp.net", crate::fake_player::PUUID);
+        for body in [".ascii party lol", ".ascii hi", ".ASCII team gg"] {
+            let stanza =
+                format!(r#"<message to="{jid}" type="chat"><body>{body}</body></message>"#);
+            assert_eq!(
+                parse_bot_message(&stanza).unwrap(),
+                Some((jid.clone(), BotCommand::Ascii)),
+                "{body}"
+            );
+        }
+        // A near miss stays an ordinary whisper for the presence commands.
+        let stanza =
+            format!(r#"<message to="{jid}" type="chat"><body>.asciify gg</body></message>"#);
+        assert_eq!(
+            parse_bot_message(&stanza).unwrap(),
+            Some((jid, BotCommand::Unknown))
         );
     }
 

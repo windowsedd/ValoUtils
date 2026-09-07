@@ -1,4 +1,5 @@
 pub mod api;
+pub mod ascii_art;
 pub mod chat;
 pub mod chat_command;
 pub mod chat_lifecycle;

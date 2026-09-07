@@ -10,8 +10,10 @@ const MAX_MESSAGES: usize = 200;
 
 pub fn help_text() -> &'static str {
     // Valorant whispers collapse newlines and wrap long lines on top of
-    // themselves, so this has to stay one short ASCII line.
-    "$online $offline $mobile $enable $disable $status $help .send .tran .dodge"
+    // themselves, so this has to stay one short ASCII line. $help is the one
+    // command left out: this line is already its answer, and listing it costs
+    // the room .ascii needs. The Dummy Bot page still documents every command.
+    "$online $offline $mobile $enable $disable $status .send .tran .dodge .ascii"
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -97,10 +99,13 @@ mod tests {
     fn help_text_lists_presence_commands_and_the_translate_command() {
         let help = help_text();
         assert!(help.contains("$online"));
-        assert!(help.contains("$help"));
         assert!(help.contains(".send"));
         assert!(help.contains(".tran"));
         assert!(help.contains(".dodge"));
+        assert!(help.contains(".ascii"));
+        // $help is deliberately absent: this line is the answer to it, and the
+        // HUD width below leaves no room for a token that teaches nothing.
+        assert!(!help.contains("$help"));
         assert!(
             !help.contains('\n'),
             "Valorant whispers strip newlines, so help must stay one line"

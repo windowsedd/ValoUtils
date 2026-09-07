@@ -289,6 +289,8 @@ async fn client_to_remote(
                                         Ok(reply) => reply,
                                         Err(error) => error.to_string(),
                                     }
+                                } else if command == BotCommand::Ascii {
+                                    ascii_bot_command_on_connection(&body, &remote_write).await
                                 } else if command == BotCommand::Dodge {
                                     match crate::commands::riot_chat::execute_dodge(
                                         crate::presence_proxy::app_handle(),
@@ -442,6 +444,42 @@ async fn translate_bot_command_on_connection(
             &prepared.body,
         );
         return format!("Could not send translated message: {error}");
+    }
+
+    prepared.reply
+}
+
+/// Runs a `.ascii` whispered to the Dummy Bot.
+///
+/// Mirrors [`translate_bot_command_on_connection`]: resolve and render first,
+/// then write the artwork on this connection so it leaves as an ordinary game
+/// message. Nothing is written when the command is invalid or names no room.
+async fn ascii_bot_command_on_connection(
+    command: &str,
+    remote_write: &Arc<AsyncMutex<WriteHalf<RemoteTls>>>,
+) -> String {
+    let prepared = match tokio::time::timeout(
+        LIVE_TRANSLATION_TIMEOUT,
+        crate::commands::riot_chat::prepare_ascii_for_bot(
+            command,
+            crate::presence_proxy::app_handle(),
+        ),
+    )
+    .await
+    {
+        Ok(Ok(prepared)) => prepared,
+        Ok(Err(error)) => return error.to_string(),
+        Err(_) => return "ASCII art timed out. Please try again.".to_string(),
+    };
+
+    let stanza = crate::presence_proxy::game_groupchat_stanza(&prepared.live_cid, &prepared.body);
+    crate::commands::riot_chat::record_live_translation_echo(&prepared.live_cid, &prepared.body);
+    if let Err(error) = write_frame(remote_write, stanza.as_bytes()).await {
+        crate::commands::riot_chat::discard_live_translation_echo(
+            &prepared.live_cid,
+            &prepared.body,
+        );
+        return format!("Could not send ASCII art: {error}");
     }
 
     prepared.reply

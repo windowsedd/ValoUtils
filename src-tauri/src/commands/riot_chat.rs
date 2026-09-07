@@ -21,6 +21,7 @@
 //! no raw response body. Nothing here re-formats an error with extra context
 //! that could reintroduce those.
 
+use crate::riot::ascii_art;
 use crate::riot::chat::RiotChatClient;
 use crate::riot::chat_command::{self, TranslationCommand};
 use crate::riot::chat_lifecycle::{LifecycleTracker, LifecycleTransition, PhaseObservation};
@@ -434,6 +435,8 @@ pub enum ComposerCommand {
     Custom(chat_command::CustomBotCommand),
     /// `.dodge` — leave agent select.
     Dodge,
+    /// `.ascii` — render block text and post it to a group room.
+    Ascii(String),
     Unknown,
 }
 
@@ -468,6 +471,8 @@ pub fn classify_composer_command(
         ComposerCommand::Translate(expanded)
     } else if chat_command::is_dodge_command(&expanded) {
         ComposerCommand::Dodge
+    } else if ascii_art::is_ascii_command(&expanded) {
+        ComposerCommand::Ascii(expanded)
     } else {
         ComposerCommand::Unknown
     }
@@ -487,6 +492,9 @@ pub async fn chat_command(args: Vec<Value>, app: AppHandle) -> Result<String, ()
     if input.trim().is_empty() {
         return Ok(json!({ "success": false, "error": "Command is empty." }).to_string());
     }
+    // The conversation the composer had selected. Only the channel it names is
+    // used; see [`AsciiSource`].
+    let selected_cid = args.get(1).and_then(Value::as_str).unwrap_or_default();
 
     let commands = load_custom_commands(Some(&app));
     let outcome = match classify_composer_command(&input, &commands) {
@@ -514,6 +522,12 @@ pub async fn chat_command(args: Vec<Value>, app: AppHandle) -> Result<String, ()
             }
         }
         ComposerCommand::Dodge => execute_dodge(Some(&app)).await,
+        ComposerCommand::Ascii(line) => {
+            let source = ascii_source_from_selected_cid(selected_cid);
+            execute_ascii_command(&line, source.as_ref(), Some(&app))
+                .await
+                .map(|(channel, _)| format_ascii_reply(channel))
+        }
         ComposerCommand::Unknown => {
             return Ok(json!({
                 "success": false,
@@ -605,6 +619,148 @@ fn dodge_api_error(error: String) -> RiotError {
 fn is_not_in_game_error(error: &str) -> bool {
     let lower = error.to_ascii_lowercase();
     lower.contains("\"status\":404") || lower.contains("resource_not_found")
+}
+
+// ---------------------------------------------------------------------------
+// .ascii
+// ---------------------------------------------------------------------------
+
+/// Where a `.ascii` line without an explicit destination came from.
+///
+/// The two variants differ in how far the caller is trusted, not in what they
+/// mean. The poller reports a room it actually read a message out of, so that
+/// room can be used directly. The composer reports whatever CID the frontend
+/// had selected, so only the *channel* it names is taken and the room itself is
+/// re-resolved - an arbitrary CID can never become a destination.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum AsciiSource {
+    Observed { channel: ChatChannel, cid: String },
+    Selected(ChatChannel),
+}
+
+/// Reads the channel out of a CID supplied by the frontend.
+///
+/// Friend conversations have no channel, which is what makes a destination-free
+/// `.ascii` in a direct message an error rather than a guess.
+pub(crate) fn ascii_source_from_selected_cid(cid: &str) -> Option<AsciiSource> {
+    ChatChannel::EVERY
+        .into_iter()
+        .find(|channel| channel.matches_cid(cid))
+        .map(AsciiSource::Selected)
+}
+
+/// Raised when nothing names a room: a whisper, or a friend conversation in the
+/// composer. Worded to suit both, since neither can infer a group channel.
+fn ascii_group_channel_required() -> RiotError {
+    RiotError::InvalidCommand(
+        "Name a channel: .ascii {party|team|all} <text>, e.g. .ascii team gg.".into(),
+    )
+}
+
+/// Chooses the command's channel before any room lookup occurs.
+///
+/// An explicit destination intentionally drops an observed CID so the later
+/// lookup cannot reuse the room where the command was typed. A destination-
+/// free observed command keeps its exact live room, including pregame.
+fn resolve_ascii_destination(
+    explicit: Option<ChatChannel>,
+    source: Option<&AsciiSource>,
+) -> Result<(ChatChannel, Option<String>), RiotError> {
+    match explicit {
+        Some(channel) => Ok((channel, None)),
+        None => match source {
+            Some(AsciiSource::Observed { channel, cid }) => Ok((*channel, Some(cid.to_string()))),
+            Some(AsciiSource::Selected(channel)) => Ok((*channel, None)),
+            None => Err(ascii_group_channel_required()),
+        },
+    }
+}
+
+pub(crate) fn format_ascii_reply(channel: ChatChannel) -> String {
+    format!("Sent ASCII art to {channel}.")
+}
+
+/// Parses a `.ascii` line and resolves the room, without sending anything.
+///
+/// Split from delivery because the two callers send differently: the composer
+/// and the poller post through the shared chat path, while the Dummy Bot
+/// whisper path already holds the live relay connection and writes the stanza
+/// on it directly.
+async fn prepare_ascii_command(
+    line: &str,
+    source: Option<&AsciiSource>,
+    app: Option<&AppHandle>,
+) -> Result<(RiotChatClient, ChatChannel, InternalPreparedTranslation), RiotError> {
+    let parsed = ascii_art::parse_ascii_command(line)?;
+
+    let (channel, pinned_live_cid) = resolve_ascii_destination(parsed.channel, source)?;
+
+    let client = RiotChatClient::connect()?;
+    let config = app
+        .map(translator_config)
+        .unwrap_or_else(|| TranslatorConfig {
+            provider: "google".into(),
+            deepl_api_key: String::new(),
+            target_language: "en".into(),
+        });
+    // Artwork is posted verbatim, so it rides the untranslated path rather than
+    // getting its own copy of the room resolution and delivery logic.
+    let request = TranslationCommand {
+        channel,
+        language: "none".into(),
+        language_input: "none".into(),
+        message: parsed.payload,
+    };
+    let prepared = prepare_translation_command(
+        &client,
+        &request,
+        &config,
+        app,
+        pinned_live_cid.as_deref(),
+        pinned_live_cid.is_none(),
+    )
+    .await?;
+    Ok((client, channel, prepared))
+}
+
+/// Renders a `.ascii` line and posts the artwork as one message.
+///
+/// Returns the rendered payload alongside the channel so the poller can record
+/// it as an echo; nothing is sent if parsing, rendering or routing fails.
+async fn execute_ascii_command(
+    line: &str,
+    source: Option<&AsciiSource>,
+    app: Option<&AppHandle>,
+) -> Result<(ChatChannel, String), RiotError> {
+    let (client, channel, prepared) = prepare_ascii_command(line, source, app).await?;
+    deliver_translated_line(
+        &client,
+        channel,
+        &prepared.rest_cid,
+        &prepared.live_cid,
+        &prepared.body,
+        app,
+    )
+    .await?;
+
+    Ok((channel, prepared.body))
+}
+
+/// Prepares a `.ascii` line whispered to the Dummy Bot.
+///
+/// A whisper is not a group room, so there is nothing to infer a destination
+/// from: the command has to name one. The relay writes the returned stanza on
+/// its own connection, the same way it handles a whispered `.send`.
+pub(crate) async fn prepare_ascii_for_bot(
+    line: &str,
+    app: Option<&AppHandle>,
+) -> Result<PreparedTranslation, RiotError> {
+    let (_, channel, prepared) = prepare_ascii_command(line, None, app).await?;
+    Ok(PreparedTranslation {
+        live_cid: prepared.live_cid,
+        body: prepared.body,
+        reply: format_ascii_reply(channel),
+    })
 }
 
 pub async fn execute_history_translation(
@@ -1244,6 +1400,8 @@ enum OwnMessage {
     Custom(chat_command::CustomBotCommand),
     /// `.dodge` — leave agent select.
     Dodge,
+    /// `.ascii` — render block text and post it to a group room.
+    Ascii(String),
 }
 
 /// Classifies a line from the local player.
@@ -1264,6 +1422,9 @@ fn plan_own_message(
     }
     if chat_command::is_dodge_command(body) {
         return OwnMessage::Dodge;
+    }
+    if ascii_art::is_ascii_command(body) {
+        return OwnMessage::Ascii(body.to_string());
     }
     // A custom trigger expands to a full command. Triggers whose action is
     // `tran` expand to `.tran ...`, which produces a text summary with nowhere
@@ -1594,6 +1755,23 @@ async fn dispatch(
             },
             OwnMessage::Translate(command) => {
                 dispatch_translation_command(app, client, &command, memory).await;
+            }
+            OwnMessage::Ascii(line) => {
+                // The room this was read out of is the destination when the
+                // command named none - including the pregame team room.
+                let source = AsciiSource::Observed {
+                    channel: message.channel,
+                    cid: message.cid.clone(),
+                };
+                match execute_ascii_command(&line, Some(&source), Some(app)).await {
+                    Ok((channel, payload)) => {
+                        memory.echoes.remember(&payload);
+                        let _ = app.emit(EVENT_COMMAND, format_ascii_reply(channel));
+                    }
+                    Err(error) => {
+                        let _ = app.emit(EVENT_ERROR, error.to_string());
+                    }
+                }
             }
             OwnMessage::Custom(command) => {
                 match resolve_matched_custom_command(&command, Some(app)).await {
@@ -2448,6 +2626,164 @@ mod tests {
         };
 
         assert_eq!(no_translation_body(&parsed), Some("keep this exact text"));
+    }
+
+    const PARTY_CID: &str = "p-1@ares-parties.ap1.pvp.net";
+    const TEAM_CID: &str = "m-1-blue@ares-coregame.ap1.pvp.net";
+    const ALL_CID: &str = "m-1-all@ares-coregame.ap1.pvp.net";
+    const PREGAME_CID: &str = "m-1-blue@ares-pregame.ap1.pvp.net";
+    const FRIEND_CID: &str = "friend-puuid@ap1.pvp.net";
+
+    #[test]
+    fn the_composer_routes_ascii_to_its_own_executor() {
+        let commands = Vec::new();
+        assert_eq!(
+            classify_composer_command(".ascii gg", &commands),
+            ComposerCommand::Ascii(".ascii gg".into())
+        );
+        assert_eq!(
+            classify_composer_command("  .ASCII team nice", &commands),
+            ComposerCommand::Ascii(".ASCII team nice".into())
+        );
+        // A near miss is not a mangled .ascii, it is an unknown command.
+        assert_eq!(
+            classify_composer_command(".asciify gg", &commands),
+            ComposerCommand::Unknown
+        );
+        // The word alone still reaches the executor, which returns the usage.
+        assert_eq!(
+            classify_composer_command(".ascii", &commands),
+            ComposerCommand::Ascii(".ascii".into())
+        );
+    }
+
+    #[test]
+    fn a_saved_trigger_cannot_take_over_ascii() {
+        let commands = vec![chat_command::CustomBotCommand {
+            when: chat_command::CustomCommandWhen::Command,
+            trigger: ".ascii".into(),
+            action: "send".into(),
+            channel: "team".into(),
+            language: "none".into(),
+            message: "hijacked".into(),
+            count: 1,
+        }];
+        assert_eq!(
+            classify_composer_command(".ascii gg", &commands),
+            ComposerCommand::Ascii(".ascii gg".into())
+        );
+    }
+
+    #[test]
+    fn a_selected_group_conversation_supplies_only_its_channel() {
+        for (cid, expected) in [
+            (PARTY_CID, ChatChannel::Party),
+            (TEAM_CID, ChatChannel::Team),
+            (ALL_CID, ChatChannel::All),
+            (PREGAME_CID, ChatChannel::Pregame),
+        ] {
+            assert_eq!(
+                ascii_source_from_selected_cid(cid),
+                Some(AsciiSource::Selected(expected)),
+                "{cid}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_direct_conversation_is_not_an_ascii_destination() {
+        assert_eq!(ascii_source_from_selected_cid(FRIEND_CID), None);
+        assert_eq!(ascii_source_from_selected_cid(""), None);
+        // With no source - a friend conversation, or a whisper to the bot - a
+        // destination-free command has nowhere to go and says so rather than
+        // picking a room.
+        let error = ascii_group_channel_required().to_string();
+        assert!(error.contains("party|team|all"), "{error}");
+        assert!(error.contains(".ascii"), "{error}");
+    }
+
+    #[test]
+    fn an_in_game_ascii_command_keeps_its_observed_room() {
+        let mut echoes = PendingEchoes::default();
+        let commands = Vec::new();
+        assert_eq!(
+            plan_own_message(".ascii gg", &commands, &mut echoes),
+            OwnMessage::Ascii(".ascii gg".into())
+        );
+        assert_eq!(
+            plan_own_message(".ascii team gg", &commands, &mut echoes),
+            OwnMessage::Ascii(".ascii team gg".into())
+        );
+        assert_eq!(
+            plan_own_message(".asciify gg", &commands, &mut echoes),
+            OwnMessage::Ignore
+        );
+
+        let source = AsciiSource::Observed {
+            channel: ChatChannel::Pregame,
+            cid: PREGAME_CID.into(),
+        };
+        assert_eq!(
+            resolve_ascii_destination(None, Some(&source)).unwrap(),
+            (ChatChannel::Pregame, Some(PREGAME_CID.to_string()))
+        );
+    }
+
+    #[test]
+    fn a_sent_artwork_is_recognized_as_our_own_echo() {
+        let payload = ascii_art::parse_ascii_command(".ascii gg").unwrap().payload;
+        let mut echoes = PendingEchoes::default();
+        echoes.remember(&payload);
+        let commands = Vec::new();
+        assert_eq!(
+            plan_own_message(&payload, &commands, &mut echoes),
+            OwnMessage::Ignore
+        );
+        // Without the echo record the artwork is still inert: it never starts
+        // with a dot, so it cannot classify as a command.
+        assert_eq!(
+            plan_own_message(&payload, &commands, &mut echoes),
+            OwnMessage::Ignore
+        );
+    }
+
+    #[test]
+    fn the_ascii_reply_names_the_destination() {
+        assert_eq!(
+            format_ascii_reply(ChatChannel::Team),
+            "Sent ASCII art to Team."
+        );
+        assert_eq!(
+            format_ascii_reply(ChatChannel::All),
+            "Sent ASCII art to All."
+        );
+        assert_eq!(
+            format_ascii_reply(ChatChannel::Party),
+            "Sent ASCII art to Party."
+        );
+    }
+
+    #[test]
+    fn an_explicit_destination_overrides_the_source_room() {
+        let source = AsciiSource::Observed {
+            channel: ChatChannel::Pregame,
+            cid: PREGAME_CID.into(),
+        };
+
+        assert_eq!(
+            resolve_ascii_destination(Some(ChatChannel::All), Some(&source)).unwrap(),
+            (ChatChannel::All, None)
+        );
+        assert_eq!(
+            resolve_ascii_destination(None, Some(&source)).unwrap(),
+            (ChatChannel::Pregame, Some(PREGAME_CID.to_string()))
+        );
+        assert_eq!(
+            resolve_ascii_destination(None, Some(&AsciiSource::Selected(ChatChannel::Party)))
+                .unwrap(),
+            (ChatChannel::Party, None)
+        );
+        assert!(resolve_ascii_destination(None, None).is_err());
     }
 
     #[test]

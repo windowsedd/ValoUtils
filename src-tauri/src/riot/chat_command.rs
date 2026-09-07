@@ -68,6 +68,7 @@ pub fn is_reserved_custom_trigger(raw: &str) -> bool {
             | ".tran"
             | ".translate"
             | ".dodge"
+            | ".ascii"
             | "$online"
             | "$offline"
             | "$mobile"
@@ -299,6 +300,7 @@ pub fn is_skippable_history_line(body: &str) -> bool {
         || is_translation_command(body)
         || is_history_translate_command(body)
         || is_dodge_command(body)
+        || crate::riot::ascii_art::is_ascii_command(body)
         || body.starts_with('$')
 }
 
@@ -961,5 +963,31 @@ mod tests {
         assert!(!is_dodge_command("dodge"));
         assert!(is_reserved_custom_trigger("dodge"));
         assert!(is_reserved_custom_trigger(".dodge"));
+    }
+
+    #[test]
+    fn ascii_cannot_be_shadowed_by_a_custom_trigger() {
+        assert!(is_reserved_custom_trigger("ascii"));
+        assert!(is_reserved_custom_trigger(".ascii"));
+        assert!(is_reserved_custom_trigger(".ASCII"));
+        // A trigger that merely starts with the word is still the player's.
+        assert!(!is_reserved_custom_trigger(".asciify"));
+
+        let saved = vec![custom(
+            CustomCommandWhen::Command,
+            ".ascii",
+            "send",
+            "team",
+            "hijacked",
+        )];
+        assert!(find_custom_command(".ascii gg", &saved).is_none());
+        assert!(expand_custom_command(".ascii gg", &saved).is_none());
+    }
+
+    #[test]
+    fn ascii_commands_are_skipped_by_history_translation() {
+        assert!(is_skippable_history_line(".ascii gg"));
+        assert!(is_skippable_history_line(".ascii team nice"));
+        assert!(!is_skippable_history_line(".asciify gg"));
     }
 }

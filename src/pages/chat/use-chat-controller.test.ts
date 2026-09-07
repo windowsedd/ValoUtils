@@ -41,6 +41,13 @@ describe("useChatController IPC lifecycle", () => {
     expect(source).toContain('requestHistory(response.cid, response.type === "chat")');
   });
 
+  test("commands carry the selected conversation so .ascii knows the room", () => {
+    expect(source).toContain('window.Main.send("chat:command", text, selectedCid)');
+    // The raw command still never reaches the room.
+    expect(source).toContain("if (isComposerCommand(text)) {");
+    expect(source).not.toContain('window.Main.send("chat:send", requestId, selectedCid, text);\n    if (isComposerCommand');
+  });
+
   test("realtime messages update cache without selecting a channel", () => {
     expect(source).toContain('dispatch({ type: "realtimeMessage", message })');
     expect(source).not.toContain("selectChannel(channelForCid(message.conversationId))");
