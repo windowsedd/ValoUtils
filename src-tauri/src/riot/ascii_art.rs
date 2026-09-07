@@ -17,9 +17,9 @@
 //! draws as a hatched panel with the word standing out of it.
 //!
 //! The payload contains no newline characters. Instead, every visual row is
-//! padded to VALORANT's 26-column chat width and concatenated; the game wraps
-//! the single message back into the intended panel. The compact face is used
-//! so a six-character phrase such as `HK GAY` fits on one visual line.
+//! padded to VALORANT's 26-column chat width and separated by one ordinary
+//! space. Those spaces give the game legal wrap points without creating hard
+//! line breaks. The compact face lets `HK GAY` fit on one visual line.
 //!
 //! [`MAX_COLUMNS`] is the one number here that is a judgement call rather than
 //! arithmetic. See its comment before changing anything else.
@@ -33,9 +33,9 @@ use crate::riot::models::ChatChannel;
 /// for runtime verification: 234 characters divide into exactly nine rows of
 /// 26. Changing it changes the wire format, not just the visual padding.
 pub const MAX_COLUMNS: usize = 26;
-/// Nine complete wrapped rows (234 characters) stay below the game's message
-/// length limit while preserving the 26-column alignment.
-pub const MAX_PAYLOAD_CHARACTERS: usize = MAX_COLUMNS * 9;
+/// Nine complete rows plus the eight spaces between them stay below the
+/// game's message length limit while preserving the 26-column alignment.
+pub const MAX_PAYLOAD_CHARACTERS: usize = MAX_COLUMNS * 9 + 8;
 /// Background columns between adjacent glyphs.
 pub const GLYPH_GAP: usize = 1;
 /// Background rows between stacked words.
@@ -313,7 +313,7 @@ fn render_lines(lines: &[&str], face: Face) -> String {
         rows.extend(render_line(line, face, inner));
     }
     rows.extend(std::iter::repeat_n(blank, BORDER));
-    rows.concat()
+    rows.join(" ")
 }
 
 fn background_row(width: usize) -> String {
@@ -481,11 +481,7 @@ mod tests {
     use super::*;
 
     fn rows(payload: &str) -> Vec<String> {
-        let characters: Vec<char> = payload.chars().collect();
-        characters
-            .chunks(MAX_COLUMNS)
-            .map(|row| row.iter().collect())
-            .collect()
+        payload.split(' ').map(str::to_string).collect()
     }
 
     fn face_of(input: &str) -> Face {
@@ -613,16 +609,27 @@ mod tests {
 
         assert_eq!(face_of("hk gay"), Face::Compact);
         assert!(!parsed.payload.contains(['\r', '\n']));
-        assert_eq!(parsed.payload.chars().count(), MAX_COLUMNS * 5);
+        assert_eq!(parsed.payload.chars().count(), MAX_COLUMNS * 5 + 4);
         assert!(rows(&parsed.payload)
             .iter()
             .all(|row| row.chars().count() == 26));
     }
 
     #[test]
+    fn visual_rows_are_separated_by_breakable_spaces() {
+        let payload = parse_ascii_command(".ascii hk gay").unwrap().payload;
+        let rows: Vec<&str> = payload.split(' ').collect();
+
+        assert_eq!(rows.len(), 5);
+        assert!(rows.iter().all(|row| row.chars().count() == MAX_COLUMNS));
+        assert_eq!(payload.chars().count(), MAX_COLUMNS * 5 + 4);
+        assert!(!payload.contains(['\r', '\n']));
+    }
+
+    #[test]
     fn artwork_never_exceeds_nine_complete_chat_rows() {
         let two_lines = render_ascii_art("AAAAAA AAAAAA").unwrap();
-        assert_eq!(two_lines.chars().count(), MAX_COLUMNS * 9);
+        assert_eq!(two_lines.chars().count(), MAX_PAYLOAD_CHARACTERS);
 
         let error = render_ascii_art("AAAAAA AAAAAA AAAAAA")
             .unwrap_err()
@@ -634,7 +641,7 @@ mod tests {
     fn several_short_words_pack_around_one_boundary() {
         let payload = render_ascii_art("A B C D").unwrap();
 
-        assert_eq!(payload.chars().count(), MAX_COLUMNS * 9);
+        assert_eq!(payload.chars().count(), MAX_PAYLOAD_CHARACTERS);
         assert_eq!(rows(&payload).len(), 9);
     }
 
@@ -728,7 +735,7 @@ mod tests {
                 "░░░░░░░░░▀▄█░▀▄█░░░░░░░░░░",
                 "░░░░░░░░░░░░░░░░░░░░░░░░░░",
             ]
-            .concat()
+            .join(" ")
         );
     }
 
@@ -738,7 +745,11 @@ mod tests {
             let parsed = parse_ascii_command(input).unwrap();
             assert_eq!(parsed.text, "PROBE", "{input}");
             assert!(!parsed.payload.contains(['\r', '\n']), "{input}");
-            assert_eq!(parsed.payload.chars().count(), MAX_COLUMNS * 5, "{input}");
+            assert_eq!(
+                parsed.payload.chars().count(),
+                MAX_COLUMNS * 5 + 4,
+                "{input}"
+            );
         }
         assert_eq!(
             parse_ascii_command(".ascii party probe").unwrap().channel,

@@ -52,9 +52,9 @@ Input is trimmed, converted to uppercase, and runs of whitespace are collapsed t
 
 Each glyph, including a normalized space, occupies a fixed three-column cell. Glyphs use `█`, `▀`, `▄`, and `░` so three rows remain legible in VALORANT's fixed-width chat rendering. One background column separates adjacent cells, which makes a space appear as a five-column word gap after the separators on both sides.
 
-For a one-line phrase, the complete payload is five visual rows: one blank background row, three glyph rows, and one blank background row. Every row is padded to exactly 26 Unicode characters. The rows are concatenated with no newline or carriage-return characters, producing one 130-character payload that VALORANT wraps back into the five intended rows.
+For a one-line phrase, the complete payload is five visual rows: one blank background row, three glyph rows, and one blank background row. Every row is padded to exactly 26 Unicode characters. The rows are joined by one ordinary ASCII space and contain no newline or carriage-return characters. The four spaces provide legal wrap points, producing one 134-character payload that VALORANT wraps back into the five intended rows.
 
-Before padding, the renderer calculates the widest glyph row. A normalized phrase of `n` characters occupies `4n - 1` columns, so one visual line accepts at most six characters, including spaces. A longer phrase may stack at its existing word boundary when each word fits. At most two glyph lines are allowed: nine wrapped rows and 234 characters, matching the chat-safe shape supplied during runtime testing. A wider word or a third glyph line returns a concise error. The command never truncates artwork, reduces letter spacing, inserts explicit newlines, or sends multiple messages.
+Before padding, the renderer calculates the widest glyph row. A normalized phrase of `n` characters occupies `4n - 1` columns, so one visual line accepts at most six characters, including spaces. A longer phrase may stack at its existing word boundary when each word fits. At most two glyph lines are allowed: nine wrapped rows, eight separators, and 242 characters. A wider word or a third glyph line returns a concise error. The command never truncates artwork, reduces letter spacing, inserts explicit newlines, or sends multiple messages.
 
 The fixed 26-column format, capped at nine rows, is an application-owned conservative limit. It avoids depending on an undocumented Riot maximum and produces deterministic snapshots for tests.
 
@@ -115,8 +115,8 @@ Pure Rust tests cover:
 - acceptance of six normalized characters on one visual line and word-boundary stacking for a second line;
 - exact snapshot output for a representative phrase;
 - every supported glyph producing three equal-width rows;
-- the final payload containing no newline characters and dividing into fixed 26-character rows;
-- the final payload staying at or below nine rows and 234 characters;
+- the final payload containing no newline characters and using one ordinary space between fixed 26-character rows;
+- the final payload staying at or below nine rows and 242 characters;
 - empty, unsupported-character, and over-width errors;
 - `.ascii` being unavailable as a custom trigger.
 
@@ -148,7 +148,7 @@ Verification includes focused Rust tests, the full frontend test suite, frontend
 - `.ascii <text>` sends one compact artwork message to the current group channel.
 - `.ascii team <text>`, `.ascii all <text>`, and `.ascii party <text>` send only to the requested channel.
 - Explicit destinations never fall back to another channel.
-- The payload is deterministic, uses fixed 26-column wrapped rows with no newline characters, and is contained in one message.
+- The payload is deterministic, uses spaces between fixed 26-column wrapped rows with no newline characters, and is contained in one message.
 - Invalid or oversized input sends nothing and returns a readable error.
 - The command works through both the in-game local-message poller and the ValoUtils Chat composer.
 - `.ascii` cannot be shadowed by a saved custom command.
