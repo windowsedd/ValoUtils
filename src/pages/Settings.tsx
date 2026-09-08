@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Toast } from "@heroui/react";
 import { useTranslation } from "react-i18next";
 import { FaGlobe, FaRocket, FaCode, FaChartBar, FaLanguage, FaKey, FaArrowUpRightFromSquare, FaCopy, FaCheck, FaEye, FaEyeSlash, FaBook, FaComments } from "react-icons/fa6";
-import { LuBot, LuSettings } from "react-icons/lu";
+import { LuBot, LuScrollText, LuSettings } from "react-icons/lu";
 import { PageHeader, SectionCard, pageBodyClass } from "@/components/section-card";
 import { useConfiguredRoutes } from "@/components/router";
 import SwaggerPage from "@/pages/SwaggerPage";
@@ -39,6 +39,7 @@ type AppConfig = {
 	translatorTargetLanguage: string;
 	deeplApiKey: string;
 	hiddenTabs: string[];
+	showLogsTab: boolean;
 };
 
 const Toggle = ({
@@ -95,7 +96,11 @@ const SettingRow = ({ icon, label, description, badge, right }: SettingRowProps)
 const Settings = () => {
 	const { t, i18n } = useTranslation();
 	const configuredRoutes = useConfiguredRoutes();
-	const configurableRoutes = configuredRoutes.filter((route) => route.id !== "settings");
+	// Settings cannot be hidden, and Logs is not on the rail to begin with — it
+	// has its own toggle below, and the brand mark opens it either way.
+	const configurableRoutes = configuredRoutes.filter(
+		(route) => route.id !== "settings" && route.id !== "logs",
+	);
 	const [currentLang, setCurrentLang] = useState(i18n.language);
 	const [clientPort, setClientPort] = useState<number | null>(null);
 	const [clientPassword, setClientPassword] = useState<string | null>(null);
@@ -116,6 +121,7 @@ const Settings = () => {
 		translatorTargetLanguage: "en",
 		deeplApiKey: "",
 		hiddenTabs: [],
+		showLogsTab: false,
 	});
 	const [analytics, setAnalytics] = useState(() => localStorage.getItem("valoutils-analytics") !== "false");
 
@@ -430,6 +436,17 @@ const Settings = () => {
 								}
 							/>
 						))}
+						<SettingRow
+							icon={<LuScrollText />}
+							label={t("settings.showLogsTab")}
+							description={t("settings.showLogsTabDesc")}
+							right={
+								<Toggle
+									checked={appConfig.showLogsTab}
+									onChange={(shown) => setConfig("showLogsTab", shown)}
+								/>
+							}
+						/>
 					</div>
 				</SectionCard>
 

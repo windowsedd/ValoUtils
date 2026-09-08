@@ -227,11 +227,18 @@ fn normalize_conversations(payload: &Value) -> Vec<Value> {
                 ]
                 .map(|value| value.and_then(|value| value.as_str())),
             );
-            let unread_count = item
-                .get("unread_count")
-                .or_else(|| item.get("unreadCount"))
-                .and_then(|value| value.as_u64())
-                .unwrap_or(0);
+            // The Dummy Bot's whispers are this app talking to itself — match
+            // summaries it asked for, not messages from a person. Riot's client
+            // counts them as unread all the same, leaving a badge nobody can
+            // act on, so the thread is reported as already read.
+            let unread_count = if is_fake_player_cid(&cid) {
+                0
+            } else {
+                item.get("unread_count")
+                    .or_else(|| item.get("unreadCount"))
+                    .and_then(|value| value.as_u64())
+                    .unwrap_or(0)
+            };
             let message_history = item
                 .get("message_history")
                 .or_else(|| item.get("messageHistory"))
@@ -1784,6 +1791,27 @@ mod tests {
         assert_eq!(result[0]["unreadCount"], 3);
         assert_eq!(result[0]["messageHistory"], true);
         assert_eq!(result[0]["supportsHistory"], true);
+    }
+
+    #[test]
+    fn the_dummy_bot_thread_is_reported_as_already_read() {
+        let payload = json!({"conversations": [
+            {
+                "cid": format!("{}@jp1.pvp.net", crate::fake_player::PUUID),
+                "type": "chat",
+                "unread_count": 4
+            },
+            {
+                "cid": "friend@jp1.pvp.net",
+                "type": "chat",
+                "unread_count": 4
+            }
+        ]});
+        let result = normalize_conversations(&payload);
+
+        assert_eq!(result[0]["unreadCount"], 0);
+        // A real person's thread is untouched by the same pass.
+        assert_eq!(result[1]["unreadCount"], 4);
     }
 
     #[test]

@@ -13,6 +13,8 @@ import valoUtilsIcon from "../../src-tauri/icons/icon.png";
 
 type NavbarRailProps = {
   directRoutes: Route[];
+  /** Present only while the user has asked for the Logs tab. */
+  logsRoute?: Route;
   settingsRoute?: Route;
   selectedId: string;
   translate: (key: string) => string;
@@ -96,6 +98,7 @@ const RailRouteButton = ({ route, active, translate, onSelect }: RailRouteButton
 
 export const NavbarRail = ({
   directRoutes,
+  logsRoute,
   settingsRoute,
   selectedId,
   translate,
@@ -127,6 +130,14 @@ export const NavbarRail = ({
       </div>
 
       <div className={navbarLayout.railBottom} data-rail-section="bottom">
+        {logsRoute && (
+          <RailRouteButton
+            route={logsRoute}
+            active={logsRoute.id === selectedId}
+            translate={translate}
+            onSelect={onSelect}
+          />
+        )}
         {settingsRoute && (
           <RailRouteButton
             route={settingsRoute}

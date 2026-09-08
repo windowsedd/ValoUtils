@@ -17,10 +17,16 @@ type RouterProps = {
 
 type RouterContextValue = {
 	routes: Route[];
+	/** Whether the user has asked for the Logs tab on the rail. */
+	showLogsTab: boolean;
 	allRoutes: Route[];
 };
 
-const RouterContext = createContext<RouterContextValue>({ routes: [], allRoutes: [] });
+const RouterContext = createContext<RouterContextValue>({
+	routes: [],
+	showLogsTab: false,
+	allRoutes: [],
+});
 
 export const useConfiguredRoutes = () => useContext(RouterContext).allRoutes;
 
@@ -67,14 +73,18 @@ const RouterProvider: React.FC<
 	}
 > = ({ routes: allRoutes, children }) => {
 	const [hiddenTabs, setHiddenTabs] = useState<string[]>([]);
+	const [showLogsTab, setShowLogsTab] = useState(false);
 
 	useEffect(() => {
 		const onConfigLoaded = (message: string) => {
 			window.Main.removeListener("config:get-all", onConfigLoaded);
 			try {
-				setHiddenTabs(normalizeHiddenTabs(JSON.parse(message)?.hiddenTabs));
+				const config = JSON.parse(message);
+				setHiddenTabs(normalizeHiddenTabs(config?.hiddenTabs));
+				setShowLogsTab(config?.showLogsTab === true);
 			} catch {
 				setHiddenTabs([]);
+				setShowLogsTab(false);
 			}
 		};
 		window.Main.on("config:get-all", onConfigLoaded);
@@ -86,6 +96,7 @@ const RouterProvider: React.FC<
 		const onConfigChanged = (event: Event) => {
 			const detail = (event as CustomEvent<{ key?: string; value?: unknown }>).detail;
 			if (detail?.key === "hiddenTabs") setHiddenTabs(normalizeHiddenTabs(detail.value));
+			if (detail?.key === "showLogsTab") setShowLogsTab(detail.value === true);
 		};
 		window.addEventListener("valoutils:config-changed", onConfigChanged);
 		return () => window.removeEventListener("valoutils:config-changed", onConfigChanged);
@@ -95,19 +106,22 @@ const RouterProvider: React.FC<
 		() => filterVisibleRoutes(allRoutes, hiddenTabs),
 		[allRoutes, hiddenTabs],
 	);
-
 	return (
-		<RouterContext.Provider value={{ routes, allRoutes }}>
+		<RouterContext.Provider value={{ routes, showLogsTab, allRoutes }}>
 			{children}
 		</RouterContext.Provider>
 	);
 };
 
 const Router = () => {
-	const { routes } = useContext(RouterContext);
+	const { routes, showLogsTab } = useContext(RouterContext);
 	const { selectedId, body, goTo } = useRouter();
 	const { t } = useTranslation();
-	const { directRoutes, settingsRoute } = partitionNavbarRoutes(routes);
+	const { directRoutes, logsRoute, settingsRoute } = partitionNavbarRoutes(
+		routes,
+		"settings",
+		showLogsTab,
+	);
 
 	const selectRoute = (routeId: string) => {
 		goTo(routeId);
@@ -121,6 +135,7 @@ const Router = () => {
 		>
 			<NavbarRail
 				directRoutes={directRoutes}
+				logsRoute={logsRoute}
 				settingsRoute={settingsRoute}
 				selectedId={selectedId}
 				translate={t}

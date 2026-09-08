@@ -18,6 +18,7 @@ import {
 	LuHistory,
 	LuInfo,
 	LuMessageSquare,
+	LuScrollText,
 	LuSettings,
 	LuSlidersHorizontal,
 	LuStore,
@@ -36,6 +37,7 @@ import "./index.css";
 import "./i18n/config";
 import "./util/tauri-bridge";
 import About from "./pages/About.tsx";
+import Logs from "@/pages/Logs.tsx";
 
 // WebView2 shows the browser's own context menu (Back / Refresh / Save as /
 // Inspect …) on right-click, which is meaningless in a desktop app. Suppress
@@ -123,6 +125,12 @@ const AppShell = () => {
 								id: "settings",
 								icon: <LuSettings />,
 								component: <Settings />,
+							},
+							{
+								title: "nav.logs",
+								id: "logs",
+								icon: <LuScrollText />,
+								component: <Logs />,
 							},
 							{
 								title: "nav.about",

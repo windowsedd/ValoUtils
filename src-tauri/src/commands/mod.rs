@@ -8,6 +8,7 @@ pub mod friend_profile;
 pub mod friends;
 pub mod inventory;
 pub mod live;
+pub mod logs;
 pub(crate) mod live_party;
 pub mod matches;
 mod pregame_roster;

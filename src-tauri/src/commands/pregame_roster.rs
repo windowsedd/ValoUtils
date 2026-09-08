@@ -160,60 +160,6 @@ pub fn build_pregame_roster(
     PregameRoster { players, debug }
 }
 
-pub fn format_pregame_debug(debug: &Value) -> String {
-    let num = |key: &str| debug.get(key).and_then(Value::as_u64).unwrap_or(0);
-    let text = |key: &str| {
-        debug
-            .get(key)
-            .and_then(|v| v.as_str().map(str::to_string))
-            .or_else(|| debug.get(key).map(|v| v.to_string()))
-            .unwrap_or_else(|| "null".into())
-    };
-    let mut lines = vec![
-        "[PREGAME DEBUG]".to_string(),
-        String::new(),
-        format!("MatchID: {}", text("matchId").trim_matches('"')),
-        String::new(),
-        format!("AllyTeam players: {}", num("allyTeamPlayers")),
-        format!("Teams count: {}", num("teamsCount")),
-        format!("Teams player subjects: {}", num("teamsPlayerSubjects")),
-        String::new(),
-        "EnemyTeam:".to_string(),
-        text("enemyTeam").trim_matches('"').to_string(),
-        String::new(),
-        "Loadouts:".to_string(),
-        format!("{} entries", num("loadoutsEntries")),
-        format!("{} unique subjects", num("loadoutsUniqueSubjects")),
-        String::new(),
-        format!("Match token: {}", text("matchToken").trim_matches('"')),
-        format!(
-            "TeamMatchToken decoded player count: {}",
-            num("jwtPlayerCount")
-        ),
-        String::new(),
-        format!("Final roster:"),
-        format!("{} unique players", num("finalRoster")),
-        String::new(),
-        format!("ALLY: {}", num("ally")),
-        format!("ENEMY: {}", num("enemy")),
-        String::new(),
-    ];
-    if let Some(rows) = debug.get("sources").and_then(Value::as_array) {
-        for row in rows {
-            let puuid = row.get("puuid").and_then(Value::as_str).unwrap_or("?");
-            let source = row.get("source").and_then(Value::as_str).unwrap_or("?");
-            lines.push(format!("PUUID {puuid} source={source}"));
-        }
-    }
-    lines.join("\n")
-}
-
-pub fn log_pregame_debug(debug: &Value) {
-    for line in format_pregame_debug(debug).lines() {
-        log::info!("{line}");
-    }
-}
-
 pub fn redact_secrets(value: &mut Value) {
     match value {
         Value::Object(map) => {
@@ -874,9 +820,8 @@ mod tests {
         assert_eq!(roster.debug["finalRoster"], 10);
         assert_eq!(roster.debug["enemy"], 5);
         assert_eq!(roster.debug["matchToken"], "present (JWT)");
-        let debug = format_pregame_debug(&roster.debug);
-        assert!(debug.contains("TeamMatchToken decoded player count: 10"));
-        assert!(!debug.contains(&token));
+        // The token itself is evidence, not something to keep around.
+        assert!(!serde_json::to_string(&roster.debug).unwrap().contains(&token));
     }
 
     #[test]

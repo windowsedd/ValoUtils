@@ -27,7 +27,6 @@ type Props = {
 	recent: Record<string, RecentStatsState>;
 	refreshing: boolean;
 	refreshError?: string;
-	developer?: boolean;
 	onRefresh: () => void;
 };
 
@@ -266,7 +265,7 @@ const PlayerRow = ({ player, assets, stats, expanded, onToggle, teamLabel, recen
 	);
 };
 
-export const LiveScoutTable = ({ snapshot, assets, recent, refreshing, refreshError, developer = false, onRefresh }: Props) => {
+export const LiveScoutTable = ({ snapshot, assets, recent, refreshing, refreshError, onRefresh }: Props) => {
 	const { t } = useTranslation();
 	const [expanded, setExpanded] = useState<string | null>(null);
 	const [summaryExpanded, setSummaryExpanded] = useState(false);
@@ -294,36 +293,6 @@ export const LiveScoutTable = ({ snapshot, assets, recent, refreshing, refreshEr
 	const allyCount = snapshot.players.filter((player) => player.teamId === "Ally").length;
 	const enemyCount = snapshot.players.filter((player) => player.teamId === "Enemy").length;
 	const agentFallback = isPregame ? t("liveGame.hiddenAgent") : "";
-	const debug = snapshot.pregameDebug;
-	const debugText = debug
-		? [
-			"[PREGAME DEBUG]",
-			"",
-			`MatchID: ${debug.matchId ?? "null"}`,
-			"",
-			`AllyTeam players: ${debug.allyTeamPlayers ?? 0}`,
-			`Teams count: ${debug.teamsCount ?? 0}`,
-			`Teams player subjects: ${debug.teamsPlayerSubjects ?? 0}`,
-			"",
-			"EnemyTeam:",
-			debug.enemyTeam ?? "null",
-			"",
-			"Loadouts:",
-			`${debug.loadoutsEntries ?? 0} entries`,
-			`${debug.loadoutsUniqueSubjects ?? 0} unique subjects`,
-			"",
-			`Match token: ${debug.matchToken ?? "null"}`,
-			`TeamMatchToken decoded player count: ${debug.jwtPlayerCount ?? 0}`,
-			"",
-			"Final roster:",
-			`${debug.finalRoster ?? 0} unique players`,
-			"",
-			`ALLY: ${debug.ally ?? 0}`,
-			`ENEMY: ${debug.enemy ?? 0}`,
-			"",
-			...(debug.sources ?? []).map((row) => `PUUID ${row.puuid} source=${row.source}`),
-		].join("\n")
-		: "";
 	const summaryId = `live-match-summary-${(snapshot.rosterKey ?? "roster").replace(/[^a-z0-9]/gi, "-")}`;
 	return (
 		<div className="flex-1 min-h-0 px-6 pt-4 pb-5 flex flex-col gap-3 overflow-hidden">
@@ -356,12 +325,6 @@ export const LiveScoutTable = ({ snapshot, assets, recent, refreshing, refreshEr
 						<div className="px-4 py-2.5"><p className="text-[10px] uppercase tracking-wider text-gray-500">{t("liveGame.rosterSize")}</p><p className="text-lg font-semibold tabular-nums">{snapshot.players.length}</p></div>
 					</div>
 					{matchup && <LiveTeamMatchup matchup={matchup} mode={recentMode} />}
-					{developer && isPregame && debugText && (
-						<div className="border-t border-white/6 px-4 py-3">
-							<p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-gray-500">{t("liveGame.pregameDebug")}</p>
-							<pre className="max-h-56 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-black/30 p-3 text-[11px] leading-5 text-gray-300">{debugText}</pre>
-						</div>
-					)}
 				</div>
 			</section>
 

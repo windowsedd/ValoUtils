@@ -120,29 +120,6 @@ export type RecentStatsEvent =
       error: string;
     };
 
-export type PregameDebugSource = {
-  puuid: string;
-  source: string;
-};
-
-export type PregameDebug = {
-  matchId: string | null;
-  allyTeamPlayers: number;
-  teamsCount: number;
-  teamsPlayerSubjects: number;
-  enemyTeam: string;
-  loadoutsEntries: number;
-  loadoutsUniqueSubjects: number;
-  loadoutEnemyCandidates: number;
-  matchToken: string;
-  jwtPlayerCount: number;
-  jwtPayloadKeys: string[];
-  finalRoster: number;
-  ally: number;
-  enemy: number;
-  sources: PregameDebugSource[];
-};
-
 export type LiveGameResponse =
   | {
       success: true;
@@ -152,7 +129,8 @@ export type LiveGameResponse =
       teams: LiveTeamSummary[];
       players: LivePlayer[];
       warning?: "rateLimited" | "unavailable" | null;
-      pregameDebug?: PregameDebug | null;
+      /** Seconds until throttled requests are worth trying again. */
+      retryInSeconds?: number | null;
     }
   | { success: false; code: "loginRequired" }
   | { success: false; error: string };

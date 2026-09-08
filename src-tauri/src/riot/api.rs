@@ -206,13 +206,21 @@ impl RiotApiClient {
 
         let response = req.send().await.map_err(|e| e.to_string())?;
         let status = response.status();
+        // Riot answers a throttle with how long to stay away. Carry it into the
+        // error so the caller waits exactly that long instead of guessing.
+        let retry_after = response
+            .headers()
+            .get(reqwest::header::RETRY_AFTER)
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.trim().parse::<u64>().ok());
         let text = response.text().await.map_err(|e| e.to_string())?;
         if !status.is_success() {
             return Err(format!(
-                "{{\"status\":{},\"path\":{:?},\"message\":{:?}}}",
+                "{{\"status\":{},\"path\":{:?},\"message\":{:?},\"retryAfter\":{}}}",
                 status.as_u16(),
                 path,
-                text
+                text,
+                retry_after.map_or("null".to_string(), |seconds| seconds.to_string())
             ));
         }
         serde_json::from_str(&text).or(Ok(Value::String(text)))

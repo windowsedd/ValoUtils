@@ -22,4 +22,8 @@ describe("dynamic navigation routes", () => {
     expect(router).toContain("resolveSelectedRouteId(routerContext.routes, selectedId)");
     expect(router).not.toContain("routerContext.routes[selected]");
   });
+
+  test("the brand mark is not a control", () => {
+    expect(router).not.toContain("onBrandPress");
+  });
 });

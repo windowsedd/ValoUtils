@@ -31,13 +31,35 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
-            if cfg!(debug_assertions) {
-                app.handle().plugin(
-                    tauri_plugin_log::Builder::default()
-                        .level(log::LevelFilter::Info)
-                        .build(),
-                )?;
-            }
+            // Debug builds log everything to the console. Release builds keep a
+            // single rotating file in the app's log directory: without it, a
+            // report of "it stopped loading" arrives with nothing behind it,
+            // and a throttle is exactly the failure a user cannot describe.
+            let logger = tauri_plugin_log::Builder::default()
+                // Dependencies only speak up when something is wrong. Left at
+                // the app's own level, reqwest and hyper alone out-log the app
+                // two to one and push everything worth reading out of rotation.
+                .level(log::LevelFilter::Warn)
+                .level_for(
+                    "app_lib",
+                    if cfg!(debug_assertions) {
+                        log::LevelFilter::Debug
+                    } else {
+                        log::LevelFilter::Info
+                    },
+                )
+                // `targets` replaces the defaults rather than adding to them:
+                // the default set already carries an unnamed LogDir target, and
+                // keeping both would write every line to two files.
+                .targets([
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::LogDir {
+                        file_name: Some(commands::logs::LOG_FILE_NAME.into()),
+                    }),
+                ])
+                .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepOne)
+                .max_file_size(2 * 1024 * 1024);
+            app.handle().plugin(logger.build())?;
 
             let mut config_defaults = serde_json::Map::new();
             config_defaults.insert("openDevTools".into(), json!(false));
@@ -52,6 +74,7 @@ pub fn run() {
             config_defaults.insert("translatorTargetLanguage".into(), json!("en"));
             config_defaults.insert("deeplApiKey".into(), json!(""));
             config_defaults.insert("hiddenTabs".into(), json!([]));
+            config_defaults.insert("showLogsTab".into(), json!(false));
             config_defaults.insert("botCustomCommands".into(), json!([]));
             let config_store = Store::new("config", config_defaults);
             let saved_presence_mode = config_store
@@ -138,6 +161,9 @@ pub fn run() {
             commands::app::clipboard_get,
             commands::app::clipboard_set,
             commands::app::debug_save_json,
+            commands::logs::logs_read,
+            commands::logs::logs_open,
+            commands::logs::logs_clear,
             commands::app::analytics_track,
             commands::app::update_check,
             commands::app::config_get_all,

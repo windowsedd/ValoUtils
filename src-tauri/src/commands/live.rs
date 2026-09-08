@@ -1,5 +1,5 @@
 use super::live_party::{self, LivePartyHistoryCache, RATE_LIMITED_ERROR};
-use super::pregame_roster::{build_pregame_roster, log_pregame_debug, redact_secrets};
+use super::pregame_roster::{build_pregame_roster, redact_secrets};
 use super::rank_shields::remaining_rank_shields;
 use crate::riot::api::{self, RiotApiClient};
 use crate::riot::client::{self, RiotState};
@@ -22,6 +22,10 @@ const SOCKET_SKIN: &str = "bcef87d6-209b-46c6-8b19-fbe40bd95abc";
 const SOCKET_SKIN_LEVEL: &str = "e7c63390-eda7-46e0-bb7a-a6abdacd2433";
 const SOCKET_SKIN_CHROMA: &str = "3ad1b2b2-acdb-4524-852f-954a76ddae0a";
 const ENRICHMENT_TTL: Duration = Duration::from_secs(10 * 60);
+/// Documents that answer identically for the whole of a match id.
+const MATCH_DOCUMENT_TTL: Duration = Duration::from_secs(60);
+/// The party you queued with cannot change while that match runs.
+const PARTY_DOCUMENT_TTL: Duration = Duration::from_secs(30);
 const LIVE_PD_TIMEOUT: Duration = Duration::from_secs(2);
 const PUBLIC_UNAVAILABLE_ERROR: &str = "unavailable";
 
@@ -52,6 +56,122 @@ where
         })
 }
 
+/// A time-bounded store of Riot documents keyed by the id they describe.
+///
+/// The renderer polls every ~5s, and most of what a poll asked for cannot have
+/// changed since the previous one: a coregame roster, either side's loadouts,
+/// and the party behind a running match are all fixed under the same id.
+struct DocumentCache {
+    ttl: Duration,
+    entries: Mutex<HashMap<String, (Instant, Value)>>,
+}
+
+impl DocumentCache {
+    fn new(ttl: Duration) -> Self {
+        Self {
+            ttl,
+            entries: Mutex::new(HashMap::new()),
+        }
+    }
+
+    fn get_at(&self, key: &str, now: Instant) -> Option<Value> {
+        let entries = self.entries.lock().unwrap();
+        let (stored_at, document) = entries.get(key)?;
+        (now.duration_since(*stored_at) < self.ttl).then(|| document.clone())
+    }
+
+    fn put_at(&self, key: &str, document: Value, now: Instant) {
+        let mut entries = self.entries.lock().unwrap();
+        entries.retain(|_, (stored_at, _)| now.duration_since(*stored_at) < self.ttl);
+        entries.insert(key.to_string(), (now, document));
+    }
+
+    fn get(&self, key: &str) -> Option<Value> {
+        self.get_at(key, Instant::now())
+    }
+
+    fn put(&self, key: &str, document: Value) {
+        self.put_at(key, document, Instant::now());
+    }
+}
+
+/// Read `key` from `cache`, or fetch and store it. `use_cache` is false where a
+/// stale answer would be wrong — the lobby roster, which is the thing being
+/// watched — and the fresh answer still refreshes the entry for later.
+async fn cached_document<F, Fut>(
+    cache: &DocumentCache,
+    key: &str,
+    use_cache: bool,
+    fetch: F,
+) -> Result<Value, String>
+where
+    F: FnOnce() -> Fut,
+    Fut: Future<Output = Result<Value, String>>,
+{
+    if use_cache {
+        if let Some(document) = cache.get(key) {
+            return Ok(document);
+        }
+    }
+    log::debug!("live: fetching {key}");
+    let document = fetch().await?;
+    cache.put(key, document.clone());
+    Ok(document)
+}
+
+fn loadout_entry_count(loadouts: &Value) -> usize {
+    loadouts
+        .get("Loadouts")
+        .and_then(Value::as_array)
+        .map_or(0, Vec::len)
+}
+
+/// Pregame publishes the enemy side's loadouts after the ally side's, and those
+/// entries are the only place the enemy five come from. Caching a half-filled
+/// answer would hide those players for the rest of agent select, so a loadout
+/// document is only stored once it covers everyone it is expected to.
+async fn cached_loadouts<F, Fut>(
+    cache: &DocumentCache,
+    key: &str,
+    expected: usize,
+    fetch: F,
+) -> Option<Value>
+where
+    F: FnOnce() -> Fut,
+    Fut: Future<Output = Result<Value, String>>,
+{
+    if let Some(loadouts) = cache.get(key) {
+        return Some(loadouts);
+    }
+    log::debug!("live: fetching {key}");
+    let loadouts = fetch().await.ok()?;
+    let entries = loadout_entry_count(&loadouts);
+    if entries >= expected.max(1) {
+        cache.put(key, loadouts.clone());
+    } else {
+        log::debug!("live: {key} still filling in ({entries}/{expected}), not cached");
+    }
+    Some(loadouts)
+}
+
+/// How many loadout entries a complete pregame answer holds. Competitive hides
+/// `EnemyTeam` entirely, so the enemy side is assumed to match the ally side.
+fn pregame_expected_loadouts(match_data: &Value) -> usize {
+    let team = |pointer: &str| {
+        match_data
+            .pointer(pointer)
+            .and_then(Value::as_array)
+            .map_or(0, Vec::len)
+    };
+    let ally = team("/AllyTeam/Players");
+    let enemy = team("/EnemyTeam/Players");
+    if enemy > 0 {
+        ally + enemy
+    } else {
+        ally * 2
+    }
+}
+
 #[derive(Clone)]
 struct CachedEnrichment {
     game_name: String,
@@ -79,7 +199,6 @@ fn enrichment_refresh_timestamp(
 
 /// The renderer polls every ~5s. Current match fields are rebuilt each time,
 /// while PD-backed enrichment and same-roster party continuity are retained here.
-#[derive(Default)]
 pub struct LiveCache {
     refresh: AsyncMutex<()>,
     enrichment: Mutex<HashMap<String, CachedEnrichment>>,
@@ -90,6 +209,24 @@ pub struct LiveCache {
     /// routinely outruns the bot's template budget; without this the message
     /// rendered every variable as N/A.
     last_snapshot: Mutex<Option<(Instant, String)>>,
+    /// Coregame rosters and loadouts, keyed by match id.
+    match_documents: DocumentCache,
+    /// Party lookups, reused only while a match is running.
+    party_documents: DocumentCache,
+}
+
+impl Default for LiveCache {
+    fn default() -> Self {
+        Self {
+            refresh: AsyncMutex::default(),
+            enrichment: Mutex::default(),
+            continuity_roster: Mutex::default(),
+            continuity_labels: Mutex::default(),
+            last_snapshot: Mutex::default(),
+            match_documents: DocumentCache::new(MATCH_DOCUMENT_TTL),
+            party_documents: DocumentCache::new(PARTY_DOCUMENT_TTL),
+        }
+    }
 }
 
 /// How long a stored roster still describes the match you are in.
@@ -753,6 +890,14 @@ async fn enrich_players(
         }
     }
 
+    if !refresh_puuids.is_empty() {
+        log::debug!(
+            "live: enriching {} of {} players ({} served from cache)",
+            refresh_puuids.len(),
+            puuids.len(),
+            puuids.len().saturating_sub(refresh_puuids.len())
+        );
+    }
     let mut rate_limited = false;
     let names_result = if refresh_puuids.is_empty() {
         Ok(Value::Array(vec![]))
@@ -942,72 +1087,149 @@ struct DetectedState {
     premade: Vec<String>,
 }
 
-async fn detect_state(api: &RiotApiClient, puuid: &str) -> Result<DetectedState, String> {
-    let mut premade = Vec::new();
-    let mut party: Option<Value> = None;
-    let party_p = safe_get_player(|| api.party_get_by_player(puuid)).await?;
-    let party_id = party_p
-        .as_ref()
-        .and_then(|p| p.get("CurrentPartyID"))
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string());
-    if let Some(party_id) = &party_id {
-        party = api.party_get(party_id).await.ok();
-        premade = party
-            .as_ref()
-            .and_then(|p| p.get("Members"))
-            .and_then(|v| v.as_array())
-            .into_iter()
-            .flatten()
-            .filter_map(|m| {
-                m.get("Subject")
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string())
-            })
-            .collect();
-    }
+struct PartySnapshot {
+    party_id: Option<String>,
+    party: Option<Value>,
+    premade: Vec<String>,
+}
 
-    // 1. Live core game
+/// The caller's party, and the roster that decides who counts as a premade.
+///
+/// `in_match` reuses a recent answer: once a match is running the party behind
+/// it is settled, so these two lookups do not belong on the 5s poll path. In
+/// the lobby they are the live thing being watched, and are always re-asked.
+async fn fetch_party(
+    api: &RiotApiClient,
+    puuid: &str,
+    cache: &LiveCache,
+    in_match: bool,
+) -> Result<PartySnapshot, String> {
+    let player = cached_document(
+        &cache.party_documents,
+        &format!("player:{puuid}"),
+        in_match,
+        || async {
+            safe_get_player(|| api.party_get_by_player(puuid))
+                .await
+                .map(|player| player.unwrap_or(Value::Null))
+        },
+    )
+    .await?;
+
+    let Some(party_id) = player
+        .get("CurrentPartyID")
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+    else {
+        return Ok(PartySnapshot {
+            party_id: None,
+            party: None,
+            premade: Vec::new(),
+        });
+    };
+
+    let party_key = format!("party:{party_id}");
+    let mut party = in_match
+        .then(|| cache.party_documents.get(&party_key))
+        .flatten();
+    if party.is_none() {
+        // A lookup that failed is deliberately not stored: caching it would
+        // leave the roster without its premades for the whole of the TTL.
+        party = api.party_get(&party_id).await.ok();
+        if let Some(document) = party.as_ref() {
+            cache.party_documents.put(&party_key, document.clone());
+        }
+    }
+    let premade = party
+        .as_ref()
+        .and_then(|party| party.get("Members"))
+        .and_then(|members| members.as_array())
+        .into_iter()
+        .flatten()
+        .filter_map(|member| {
+            member
+                .get("Subject")
+                .and_then(|subject| subject.as_str())
+                .map(|subject| subject.to_string())
+        })
+        .collect();
+
+    Ok(PartySnapshot {
+        party_id: Some(party_id),
+        party,
+        premade,
+    })
+}
+
+async fn detect_state(
+    api: &RiotApiClient,
+    puuid: &str,
+    cache: &LiveCache,
+) -> Result<DetectedState, String> {
+    // 1. Live core game. Neither the roster nor the loadouts can change under
+    //    the same match id, so only "am I still in it" is asked every poll.
     if let Some(core_p) = safe_get_player(|| api.coregame_get_player(puuid)).await? {
         if let Some(match_id) = core_p.get("MatchID").and_then(|v| v.as_str()) {
-            let match_data = api.coregame_get_match(match_id).await?;
-            let loadouts = api.coregame_get_loadouts(match_id).await.ok();
+            let match_data = cached_document(
+                &cache.match_documents,
+                &format!("coregame:{match_id}"),
+                true,
+                || api.coregame_get_match(match_id),
+            )
+            .await?;
+            let loadouts = cached_loadouts(
+                &cache.match_documents,
+                &format!("coregame-loadouts:{match_id}"),
+                1,
+                || api.coregame_get_loadouts(match_id),
+            )
+            .await;
+            let party = fetch_party(api, puuid, cache, true).await?;
             return Ok(DetectedState {
                 state: LiveState::CoreGame,
                 match_id: Some(match_id.to_string()),
-                party_id,
+                party_id: party.party_id,
                 match_data: Some(match_data),
                 loadouts,
-                premade,
+                premade: party.premade,
             });
         }
     }
 
-    // 2. Agent select
+    // 2. Agent select. The match document stays live — agents lock during it —
+    //    while the loadouts settle once every player in them has appeared.
     if let Some(pre_p) = safe_get_player(|| api.pregame_get_player(puuid)).await? {
         if let Some(match_id) = pre_p.get("MatchID").and_then(|v| v.as_str()) {
             let match_data = api.pregame_get_match(match_id).await?;
-            let loadouts = api.pregame_get_loadouts(match_id).await.ok();
+            let loadouts = cached_loadouts(
+                &cache.match_documents,
+                &format!("pregame-loadouts:{match_id}"),
+                pregame_expected_loadouts(&match_data),
+                || api.pregame_get_loadouts(match_id),
+            )
+            .await;
+            let party = fetch_party(api, puuid, cache, true).await?;
             return Ok(DetectedState {
                 state: LiveState::PreGame,
                 match_id: Some(match_id.to_string()),
-                party_id,
+                party_id: party.party_id,
                 match_data: Some(match_data),
                 loadouts,
-                premade,
+                premade: party.premade,
             });
         }
     }
 
-    // 3. Party lobby
-    if let (Some(party_id), Some(party)) = (&party_id, &party) {
+    // 3. Party lobby, or nothing at all.
+    let party = fetch_party(api, puuid, cache, false).await?;
+    if let (Some(party_id), Some(document)) = (party.party_id, party.party) {
         return Ok(DetectedState {
             state: LiveState::Party,
             match_id: None,
-            party_id: Some(party_id.clone()),
-            match_data: Some(party.clone()),
+            party_id: Some(party_id),
+            match_data: Some(document),
             loadouts: None,
-            premade,
+            premade: party.premade,
         });
     }
 
@@ -1036,7 +1258,7 @@ pub async fn live_game_fetch(
     };
 
     let result = async {
-        let detected = detect_state(&api, &api.puuid).await?;
+        let detected = detect_state(&api, &api.puuid, &cache).await?;
 
         if detected.state == LiveState::Idle {
             let payload = json!({
@@ -1065,17 +1287,16 @@ pub async fn live_game_fetch(
         } else {
             None
         };
-        let (raw_players, pregame_debug) = if detected.state == LiveState::PreGame {
-            let roster = build_pregame_roster(
+        let raw_players = if detected.state == LiveState::PreGame {
+            build_pregame_roster(
                 &match_data,
                 detected.loadouts.as_ref(),
                 chat.as_ref(),
                 &api.puuid,
-            );
-            log_pregame_debug(&roster.debug);
-            (roster.players, Some(roster.debug))
+            )
+            .players
         } else {
-            (normalize_raw_players(detected.state, &match_data), None)
+            normalize_raw_players(detected.state, &match_data)
         };
 
         let loadout_map = detected.loadouts.as_ref().map(build_loadout_map);
@@ -1123,7 +1344,8 @@ pub async fn live_game_fetch(
             &party_history_cache,
         )
         .await;
-        let warning = if enrichment_rate_limited || party_history_cache.is_cooling_down().await {
+        let retry_in_seconds = party_history_cache.cooldown_seconds().await;
+        let warning = if enrichment_rate_limited || retry_in_seconds.is_some() {
             Some(RATE_LIMITED_ERROR)
         } else {
             None
@@ -1136,6 +1358,12 @@ pub async fn live_game_fetch(
         let match_context =
             extract_match_context(detected.state, &match_data, detected.match_id.as_deref());
         let teams = summarize_teams(&players);
+        log::debug!(
+            "live: {} snapshot, {} players{}",
+            detected.state.as_str(),
+            players.len(),
+            warning.map_or(String::new(), |warning| format!(" ({warning})"))
+        );
         let payload = json!({
             "success": true,
             "state": detected.state.as_str(),
@@ -1144,7 +1372,7 @@ pub async fn live_game_fetch(
             "teams": teams,
             "players": players,
             "warning": warning,
-            "pregameDebug": pregame_debug
+            "retryInSeconds": retry_in_seconds
         })
         .to_string();
         cache.store_snapshot(&payload, Instant::now());
@@ -1498,6 +1726,70 @@ pub async fn live_game_dump(app: AppHandle, riot: State<'_, RiotState>) -> Resul
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn match_documents_are_served_until_the_ttl_runs_out() {
+        let cache = DocumentCache::new(Duration::from_secs(60));
+        let now = Instant::now();
+        cache.put_at("coregame:m1", json!({ "Players": [] }), now);
+
+        assert!(cache.get_at("coregame:m1", now + Duration::from_secs(59)).is_some());
+        assert!(cache.get_at("coregame:m1", now + Duration::from_secs(61)).is_none());
+        assert!(cache.get_at("coregame:m2", now).is_none());
+    }
+
+    #[tokio::test]
+    async fn a_cached_document_is_only_reused_when_the_caller_allows_it() {
+        let cache = DocumentCache::new(Duration::from_secs(60));
+        let fetch = |tag: &'static str| move || async move { Ok(json!({ "tag": tag })) };
+
+        let first = cached_document(&cache, "party:p1", true, fetch("first")).await.unwrap();
+        let reused = cached_document(&cache, "party:p1", true, fetch("second")).await.unwrap();
+        let refreshed = cached_document(&cache, "party:p1", false, fetch("third")).await.unwrap();
+        let after_refresh = cached_document(&cache, "party:p1", true, fetch("fourth")).await.unwrap();
+
+        assert_eq!(first["tag"], "first");
+        assert_eq!(reused["tag"], "first");
+        assert_eq!(refreshed["tag"], "third");
+        assert_eq!(after_refresh["tag"], "third");
+    }
+
+    #[tokio::test]
+    async fn incomplete_pregame_loadouts_are_answered_but_never_stored() {
+        let cache = DocumentCache::new(Duration::from_secs(60));
+        let half = json!({ "Loadouts": [json!({}), json!({}), json!({}), json!({}), json!({})] });
+        let full = json!({ "Loadouts": vec![json!({}); 10] });
+
+        let served = cached_loadouts(&cache, "pregame-loadouts:m1", 10, || {
+            let half = half.clone();
+            async move { Ok(half) }
+        })
+        .await;
+
+        assert_eq!(loadout_entry_count(&served.unwrap()), 5);
+        assert!(cache.get("pregame-loadouts:m1").is_none());
+
+        let served = cached_loadouts(&cache, "pregame-loadouts:m1", 10, || {
+            let full = full.clone();
+            async move { Ok(full) }
+        })
+        .await;
+
+        assert_eq!(loadout_entry_count(&served.unwrap()), 10);
+        assert_eq!(loadout_entry_count(&cache.get("pregame-loadouts:m1").unwrap()), 10);
+    }
+
+    #[test]
+    fn a_hidden_enemy_team_still_expects_a_full_pregame_loadout_set() {
+        let hidden = json!({ "AllyTeam": { "Players": vec![json!({}); 5] }, "EnemyTeam": Value::Null });
+        assert_eq!(pregame_expected_loadouts(&hidden), 10);
+
+        let visible = json!({
+            "AllyTeam": { "Players": vec![json!({}); 5] },
+            "EnemyTeam": { "Players": vec![json!({}); 4] },
+        });
+        assert_eq!(pregame_expected_loadouts(&visible), 9);
+    }
 
     #[test]
     fn a_stored_roster_is_served_until_it_goes_stale() {
