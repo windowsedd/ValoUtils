@@ -54,13 +54,13 @@ const RrValue = ({ tier, rr, stats }: { tier: number; rr?: number; stats?: Recen
 		return <span aria-label={t("liveGame.unavailable")} className="text-xs text-gray-700">—</span>;
 	}
 	return (
-		<span className="flex flex-col items-start gap-0.5">
+		<span className="flex items-center gap-1.5">
 			<span className="text-xs tabular-nums text-gray-300">{rr}</span>
 			{stats && stats.status !== "loading" && (
 				<RankShieldBadge
 					tier={tier}
 					remaining={stats?.status === "ready" ? stats.stats.rankShields : null}
-					compact
+					inline
 				/>
 			)}
 		</span>

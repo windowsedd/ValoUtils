@@ -30,6 +30,13 @@ const renderBadge = (tier: number, remaining: number | null) =>
 		</I18nextProvider>,
 	);
 
+const renderInlineBadge = (tier: number, remaining: number | null) =>
+	renderToStaticMarkup(
+		<I18nextProvider i18n={i18n}>
+			<RankShieldBadge tier={tier} remaining={remaining} inline />
+		</I18nextProvider>,
+	);
+
 describe("RankShieldBadge", () => {
 	test("renders each known shield count with an accessible label", () => {
 		expect(renderBadge(12, 2)).toContain("2/2");
@@ -41,6 +48,14 @@ describe("RankShieldBadge", () => {
 		expect(renderBadge(12, null)).toContain("Shield status unavailable");
 		expect(renderBadge(13, 2)).toBe("");
 		expect(renderBadge(27, 2)).toBe("");
+	});
+
+	test("drops the pill chrome inline so a dense row keeps one line", () => {
+		const markup = renderInlineBadge(12, 2);
+		expect(markup).toContain("2/2");
+		expect(markup).toContain('aria-label="Rank Shields remaining: 2"');
+		expect(markup).not.toContain("border-cyan-300/20");
+		expect(markup).not.toContain("bg-cyan-300/8");
 	});
 
 	test("provides shared labels in every supported locale", () => {
