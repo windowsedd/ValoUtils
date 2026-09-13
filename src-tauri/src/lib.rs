@@ -122,6 +122,16 @@ pub fn run() {
             let auto_update = matches!(config_store.get("autoUpdate"), Some(v) if v == json!(true))
                 || config_store.get("autoUpdate").is_none();
 
+            // Before anything can send a request: the gate starts on the
+            // default pacing, and a saved preference has to replace it first.
+            riot::rate_gate::set_pacing(
+                config_store
+                    .get("riotRequestPacing")
+                    .as_ref()
+                    .and_then(|value| value.as_str())
+                    .unwrap_or_default(),
+            );
+
             app.manage(ConfigStore(config_store));
             presence_proxy::attach_app(app.handle().clone())
                 .expect("presence app handle initialized once");

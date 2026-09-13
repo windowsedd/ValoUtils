@@ -1,10 +1,11 @@
 use crate::riot::api::RiotApiClient;
+use crate::riot::rate_gate;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use tokio::sync::{Mutex as AsyncMutex, Semaphore};
+use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 
 const HISTORY_TTL: Duration = Duration::from_secs(30);
@@ -14,22 +15,6 @@ const MAX_MATCH_CACHE_ENTRIES: usize = 512;
 const EMPTY_PARTY_ID: &str = "00000000-0000-0000-0000-000000000000";
 const RIOT_REQUEST_TIMEOUT: Duration = Duration::from_millis(1500);
 const HISTORY_FALLBACK_BUDGET: Duration = Duration::from_secs(4);
-const PD_REQUEST_SPACING: Duration = Duration::from_millis(200);
-const PD_RATE_LIMIT_COOLDOWN: Duration = Duration::from_secs(60);
-/// Cloudflare 1015 escalates against a client that keeps coming back, so each
-/// strike waits twice as long as the last one before anything is tried again.
-const PD_RATE_LIMIT_MAX_COOLDOWN: Duration = Duration::from_secs(10 * 60);
-/// A strike this long after the previous one is a fresh incident, and starts
-/// the backoff over at the base cooldown.
-const PD_RATE_LIMIT_RESET: Duration = Duration::from_secs(15 * 60);
-/// The sustained ceiling, applied on top of the spacing floor.
-///
-/// Spacing alone allows 5 requests a second forever, which is what scouting ten
-/// cold players sustains for a full minute. These two shape that into a burst
-/// that stays snappy - the roster names and ranks the table is waiting on -
-/// settling to a rate the endpoint tolerates once the burst credit is spent.
-const PD_SUSTAINED_INTERVAL: Duration = Duration::from_millis(400);
-const PD_BURST_TOLERANCE: u32 = 20;
 /// How far back a shared `partyId` still says anything about who is queued
 /// together *now*.
 ///
@@ -49,152 +34,6 @@ fn now_millis() -> i64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|since| since.as_millis() as i64)
         .unwrap_or(0)
-}
-
-fn is_rate_limited_error(error: &str) -> bool {
-    error.contains("\"status\":429")
-        || error.contains("\"status\": 429")
-        || error.to_ascii_lowercase().contains("error code: 1015")
-}
-
-/// How often the gate reports what it has been sending, so a throttle can be
-/// read back against the volume that earned it rather than guessed at.
-const PD_LOG_WINDOW: Duration = Duration::from_secs(60);
-
-/// The endpoint a Riot error came from, for a log line that names the culprit.
-///
-/// Every id in it is replaced first: these paths carry PUUIDs and match ids,
-/// and the line they end up on is written to a file a user may pass around.
-fn error_path(error: &str) -> Option<String> {
-    let path = error
-        .split("\"path\":\"")
-        .nth(1)?
-        .split('"')
-        .next()
-        .filter(|path| !path.is_empty())?;
-    let redacted: Vec<&str> = path
-        .split('/')
-        .map(|segment| if looks_like_id(segment) { "<id>" } else { segment })
-        .collect();
-    Some(redacted.join("/"))
-}
-
-fn looks_like_id(segment: &str) -> bool {
-    segment.len() >= 32
-        && segment
-            .chars()
-            .all(|character| character.is_ascii_hexdigit() || character == '-')
-}
-
-/// The `Retry-After` seconds Riot attached to the refusal, if it sent one.
-fn retry_after_hint(error: &str) -> Option<Duration> {
-    let raw = error.split("\"retryAfter\":").nth(1)?;
-    let digits: String = raw
-        .trim_start()
-        .chars()
-        .take_while(|character| character.is_ascii_digit())
-        .collect();
-    let seconds: u64 = digits.parse().ok()?;
-    (seconds > 0).then(|| Duration::from_secs(seconds.min(PD_RATE_LIMIT_MAX_COOLDOWN.as_secs())))
-}
-
-#[derive(Default)]
-struct RateGate {
-    next_allowed: Option<Instant>,
-    cooldown_until: Option<Instant>,
-    /// Consecutive strikes, deciding how long the next cooldown lasts.
-    strikes: u32,
-    last_strike: Option<Instant>,
-    /// How long the current cooldown was set for, to report on resuming.
-    cooldown_len: Duration,
-    /// Virtual arrival time of the next request under the sustained ceiling.
-    /// Anything scheduled before it, less the burst tolerance, is free.
-    theoretical_arrival: Option<Instant>,
-    /// Rolling accounting, reported once per `PD_LOG_WINDOW`.
-    window_started: Option<Instant>,
-    window_requests: u32,
-    window_longest_wait: Duration,
-}
-
-impl RateGate {
-    /// Records a throttle and returns how long nothing may be sent for.
-    fn mark_rate_limited(&mut self, now: Instant, hint: Option<Duration>) -> Duration {
-        let consecutive = self
-            .last_strike
-            .is_some_and(|last| now.duration_since(last) < PD_RATE_LIMIT_RESET);
-        self.strikes = if consecutive { self.strikes + 1 } else { 1 };
-        self.last_strike = Some(now);
-
-        // Riot's own number wins where it sent one; otherwise double per strike.
-        let cooldown = hint.unwrap_or_else(|| {
-            PD_RATE_LIMIT_COOLDOWN
-                .saturating_mul(1u32 << (self.strikes - 1).min(8))
-                .min(PD_RATE_LIMIT_MAX_COOLDOWN)
-        });
-        self.cooldown_until = Some(now + cooldown);
-        self.cooldown_len = cooldown;
-        // Anything queued behind the spacing floor is void: the whole point of
-        // a cooldown is that nothing goes out during it.
-        self.next_allowed = None;
-        self.theoretical_arrival = None;
-        cooldown
-    }
-
-    fn is_cooling_down_at(&self, now: Instant) -> bool {
-        self.cooldown_until.is_some_and(|until| now < until)
-    }
-
-    fn cooldown_remaining_at(&self, now: Instant) -> Option<Duration> {
-        self.cooldown_until
-            .filter(|until| now < *until)
-            .map(|until| until.duration_since(now))
-    }
-
-    /// When the next request may start: no sooner than the spacing floor, and
-    /// no sooner than the sustained ceiling allows once the burst is spent.
-    fn reserve_at(&mut self, now: Instant) -> Instant {
-        if self.cooldown_until.is_some_and(|until| now >= until) {
-            self.cooldown_until = None;
-            log::info!(
-                "PD requests resuming after a {}s pause (strike {})",
-                self.cooldown_len.as_secs(),
-                self.strikes
-            );
-        }
-        let spaced = self.next_allowed.unwrap_or(now).max(now);
-        let arrival = self.theoretical_arrival.unwrap_or(now).max(now);
-        let burst = PD_SUSTAINED_INTERVAL * PD_BURST_TOLERANCE.saturating_sub(1);
-        let sustained = arrival.checked_sub(burst).unwrap_or(now);
-
-        let scheduled = spaced.max(sustained).max(now);
-        self.next_allowed = Some(scheduled + PD_REQUEST_SPACING);
-        self.theoretical_arrival = Some(arrival + PD_SUSTAINED_INTERVAL);
-        self.account_for(scheduled.duration_since(now), now);
-        scheduled
-    }
-
-    /// Counts a scheduled request, reporting the window once it closes. The
-    /// longest wait says how hard the ceiling is shaping: near zero means the
-    /// budget is untouched, seconds mean requests are queueing behind it.
-    fn account_for(&mut self, wait: Duration, now: Instant) {
-        let started = *self.window_started.get_or_insert(now);
-        self.window_requests += 1;
-        self.window_longest_wait = self.window_longest_wait.max(wait);
-
-        let elapsed = now.duration_since(started);
-        if elapsed < PD_LOG_WINDOW {
-            return;
-        }
-        log::info!(
-            "PD budget: {} requests in {}s, longest wait {}ms",
-            self.window_requests,
-            elapsed.as_secs(),
-            self.window_longest_wait.as_millis()
-        );
-        self.window_started = Some(now);
-        self.window_requests = 0;
-        self.window_longest_wait = Duration::ZERO;
-    }
 }
 
 fn valid_party_id(party_id: &str) -> bool {
@@ -221,7 +60,6 @@ pub(crate) struct LivePartyHistoryCache {
     history_documents: Arc<Mutex<HashMap<String, Timed<Value>>>>,
     matches: Arc<Mutex<HashMap<String, Timed<Value>>>>,
     permits: Arc<Semaphore>,
-    rate_gate: Arc<AsyncMutex<RateGate>>,
 }
 
 impl Default for LivePartyHistoryCache {
@@ -231,7 +69,6 @@ impl Default for LivePartyHistoryCache {
             history_documents: Arc::new(Mutex::new(HashMap::new())),
             matches: Arc::new(Mutex::new(HashMap::new())),
             permits: Arc::new(Semaphore::new(3)),
-            rate_gate: Arc::new(AsyncMutex::new(RateGate::default())),
         }
     }
 }
@@ -357,47 +194,20 @@ impl LivePartyHistoryCache {
         self.put_match_at(match_id, details, Instant::now());
     }
 
+    /// Runs a pd request and folds any throttle into the one word the live
+    /// screens branch on.
+    ///
+    /// The pacing and the cooldown live in [`crate::riot::rate_gate`], under
+    /// the API client, so an ungated caller on another screen cannot spend this
+    /// budget behind the live path's back. What is left here is the vocabulary:
+    /// the live snapshot reports `rateLimited` rather than a raw Riot body.
     pub(super) async fn run_pd<T, F>(&self, request: F) -> Result<T, String>
     where
         F: Future<Output = Result<T, String>>,
     {
-        let scheduled = {
-            let mut gate = self.rate_gate.lock().await;
-            let now = Instant::now();
-            if gate.is_cooling_down_at(now) {
-                return Err(RATE_LIMITED_ERROR.to_string());
-            }
-            gate.reserve_at(now)
-        };
-
-        tokio::time::sleep_until(tokio::time::Instant::from_std(scheduled)).await;
-        if self
-            .rate_gate
-            .lock()
-            .await
-            .is_cooling_down_at(Instant::now())
-        {
-            return Err(RATE_LIMITED_ERROR.to_string());
-        }
-
         match request.await {
             Ok(value) => Ok(value),
-            Err(error) if is_rate_limited_error(&error) => {
-                let hint = retry_after_hint(&error);
-                let mut gate = self.rate_gate.lock().await;
-                let cooldown = gate.mark_rate_limited(Instant::now(), hint);
-                log::warn!(
-                    "Riot throttled {} (strike {}); holding PD requests for {}s{}",
-                    error_path(&error)
-                        .unwrap_or_else(|| "a PD endpoint".to_string()),
-                    gate.strikes,
-                    cooldown.as_secs(),
-                    if hint.is_some() {
-                        ", as asked by Retry-After"
-                    } else {
-                        ""
-                    }
-                );
+            Err(error) if rate_gate::is_rate_limited_error(&error) => {
                 Err(RATE_LIMITED_ERROR.to_string())
             }
             Err(error) => Err(error),
@@ -407,11 +217,7 @@ impl LivePartyHistoryCache {
     /// Seconds until requests are worth trying again, so a caller can say when
     /// data is coming back rather than only that it is missing.
     pub(super) async fn cooldown_seconds(&self) -> Option<u64> {
-        self.rate_gate
-            .lock()
-            .await
-            .cooldown_remaining_at(Instant::now())
-            .map(|remaining| remaining.as_secs().max(1))
+        rate_gate::cooldown_seconds().await
     }
 }
 
@@ -1312,206 +1118,35 @@ mod tests {
         assert!(result.is_none());
     }
 
-    #[test]
-    fn rate_limit_detection_handles_http_429_and_riot_1015_only() {
-        assert!(is_rate_limited_error(
-            r#"{"status":429,"message":"limited"}"#
-        ));
-        assert!(is_rate_limited_error("error code: 1015"));
-        assert!(!is_rate_limited_error(r#"{"status":500}"#));
-    }
-
-    #[test]
-    fn a_logged_endpoint_path_carries_no_player_ids() {
-        let error = r#"{"status":429,"path":"/mmr/v1/players/1d4e93f0-8a5b-4c21-9f6e-0b7a5c3d2e14","message":"x"}"#;
-        assert_eq!(error_path(error).as_deref(), Some("/mmr/v1/players/<id>"));
-
-        let history = r#"{"status":429,"path":"/match-history/v1/history/1d4e93f08a5b4c219f6e0b7a5c3d2e14","message":"x"}"#;
-        assert_eq!(
-            error_path(history).as_deref(),
-            Some("/match-history/v1/history/<id>")
-        );
-        // Short, non-hex segments are route names and stay readable.
-        assert_eq!(
-            error_path(r#"{"status":429,"path":"/name-service/v2/players"}"#).as_deref(),
-            Some("/name-service/v2/players")
-        );
-        assert_eq!(error_path(r#"{"status":429}"#), None);
-    }
-
-    #[test]
-    fn the_request_window_reports_and_resets_once_it_closes() {
-        let now = Instant::now();
-        let mut gate = RateGate::default();
-
-        gate.account_for(Duration::from_millis(10), now);
-        gate.account_for(Duration::from_millis(900), now + Duration::from_secs(30));
-        assert_eq!(gate.window_requests, 2);
-        assert_eq!(gate.window_longest_wait, Duration::from_millis(900));
-
-        gate.account_for(Duration::ZERO, now + PD_LOG_WINDOW);
-        assert_eq!(gate.window_requests, 0);
-        assert_eq!(gate.window_longest_wait, Duration::ZERO);
-        assert_eq!(gate.window_started, Some(now + PD_LOG_WINDOW));
-    }
-
-    #[test]
-    fn rate_gate_doubles_the_cooldown_while_strikes_keep_coming() {
-        let now = Instant::now();
-        let mut gate = RateGate::default();
-
-        gate.mark_rate_limited(now, None);
-        assert!(!gate.is_cooling_down_at(now + Duration::from_secs(60)));
-
-        // A second strike right after the first cooldown ends waits twice as long.
-        let second = now + Duration::from_secs(61);
-        gate.mark_rate_limited(second, None);
-        assert!(gate.is_cooling_down_at(second + Duration::from_secs(119)));
-        assert!(!gate.is_cooling_down_at(second + Duration::from_secs(120)));
-
-        let third = second + Duration::from_secs(121);
-        gate.mark_rate_limited(third, None);
-        assert!(gate.is_cooling_down_at(third + Duration::from_secs(239)));
-        assert!(!gate.is_cooling_down_at(third + Duration::from_secs(240)));
-    }
-
-    #[test]
-    fn rate_gate_backoff_restarts_after_a_quiet_stretch() {
-        let now = Instant::now();
-        let mut gate = RateGate::default();
-        gate.mark_rate_limited(now, None);
-        gate.mark_rate_limited(now + Duration::from_secs(61), None);
-
-        let quiet = now + Duration::from_secs(61) + PD_RATE_LIMIT_RESET;
-        gate.mark_rate_limited(quiet, None);
-
-        assert!(gate.is_cooling_down_at(quiet + Duration::from_secs(59)));
-        assert!(!gate.is_cooling_down_at(quiet + Duration::from_secs(60)));
-    }
-
-    #[test]
-    fn rate_gate_never_waits_longer_than_the_ceiling() {
-        let mut gate = RateGate::default();
-        let mut now = Instant::now();
-        for _ in 0..12 {
-            gate.mark_rate_limited(now, None);
-            now += Duration::from_secs(1);
-        }
-
-        // Twelve doublings of 60s is over 40 hours; the ceiling holds it to ten
-        // minutes, measured from the last strike a second ago.
-        assert_eq!(
-            gate.cooldown_remaining_at(now).map(|left| left.as_secs()),
-            Some(PD_RATE_LIMIT_MAX_COOLDOWN.as_secs() - 1)
-        );
-    }
-
-    #[test]
-    fn riot_own_retry_after_overrides_the_computed_cooldown() {
-        assert_eq!(
-            retry_after_hint(r#"{"status":429,"message":"limited","retryAfter":45}"#),
-            Some(Duration::from_secs(45))
-        );
-        assert_eq!(retry_after_hint(r#"{"status":429,"retryAfter":null}"#), None);
-        assert_eq!(retry_after_hint(r#"{"status":429}"#), None);
-        // A hint longer than the ceiling is clamped rather than trusted outright.
-        assert_eq!(
-            retry_after_hint(r#"{"status":429,"retryAfter":86400}"#),
-            Some(PD_RATE_LIMIT_MAX_COOLDOWN)
-        );
-
-        let now = Instant::now();
-        let mut gate = RateGate::default();
-        gate.mark_rate_limited(now, Some(Duration::from_secs(5)));
-        assert!(gate.is_cooling_down_at(now + Duration::from_secs(4)));
-        assert!(!gate.is_cooling_down_at(now + Duration::from_secs(6)));
-    }
-
-    #[test]
-    fn rate_gate_spends_a_burst_then_settles_to_the_sustained_rate() {
-        let now = Instant::now();
-        let mut gate = RateGate::default();
-        let scheduled: Vec<Duration> = (0..60)
-            .map(|_| gate.reserve_at(now).duration_since(now))
-            .collect();
-
-        // The burst runs at the spacing floor, so the roster fills promptly.
-        assert_eq!(scheduled[0], Duration::ZERO);
-        assert_eq!(scheduled[10], PD_REQUEST_SPACING * 10);
-        // Once the burst credit is spent, the ceiling takes over.
-        let tail = scheduled[59] - scheduled[58];
-        assert_eq!(tail, PD_SUSTAINED_INTERVAL);
-        assert!(scheduled[59] > PD_REQUEST_SPACING * 59);
-    }
-
-    #[test]
-    fn a_cooldown_voids_everything_already_queued_behind_the_gate() {
-        let now = Instant::now();
-        let mut gate = RateGate::default();
-        for _ in 0..40 {
-            gate.reserve_at(now);
-        }
-        gate.mark_rate_limited(now, None);
-
-        let resumed = now + Duration::from_secs(61);
-        assert_eq!(gate.reserve_at(resumed), resumed);
-    }
-
-    #[test]
-    fn rate_gate_cools_down_for_sixty_seconds() {
-        let now = Instant::now();
-        let mut gate = RateGate::default();
-        gate.mark_rate_limited(now, None);
-
-        assert!(gate.is_cooling_down_at(now + Duration::from_secs(59)));
-        assert!(!gate.is_cooling_down_at(now + Duration::from_secs(60)));
-    }
-
     #[tokio::test]
-    async fn rate_gate_spaces_concurrent_request_starts() {
+    async fn any_throttle_reaches_the_live_screens_as_one_word() {
         let cache = LivePartyHistoryCache::default();
-        let starts = Arc::new(Mutex::new(Vec::new()));
-        let first_starts = starts.clone();
-        let second_starts = starts.clone();
 
-        let (first, second) = tokio::join!(
-            cache.run_pd(async move {
-                first_starts.lock().unwrap().push(Instant::now());
-                Ok::<_, String>(())
-            }),
-            cache.run_pd(async move {
-                second_starts.lock().unwrap().push(Instant::now());
-                Ok::<_, String>(())
-            })
-        );
-
-        assert!(first.is_ok());
-        assert!(second.is_ok());
-        let starts = starts.lock().unwrap();
-        assert!(starts[1].duration_since(starts[0]) >= PD_REQUEST_SPACING);
-    }
-
-    #[tokio::test]
-    async fn rate_gate_does_not_poll_queued_requests_during_cooldown() {
-        let cache = LivePartyHistoryCache::default();
+        // Riot's own refusal and the local gate's stand-in both mean the same
+        // thing to a snapshot: show the cached roster and say why it is stale.
         assert_eq!(
             cache
                 .run_pd(async { Err::<(), _>(r#"{"status":429}"#.to_string()) })
                 .await,
             Err(RATE_LIMITED_ERROR.to_string())
         );
-        let polled = Arc::new(AtomicBool::new(false));
-        let request_polled = polled.clone();
+        assert_eq!(
+            cache
+                .run_pd(async { Err::<(), _>(rate_gate::LOCAL_COOLDOWN_ERROR.to_string()) })
+                .await,
+            Err(RATE_LIMITED_ERROR.to_string())
+        );
+    }
 
-        let result = cache
-            .run_pd(async move {
-                request_polled.store(true, Ordering::SeqCst);
-                Ok::<_, String>(())
-            })
-            .await;
+    #[tokio::test]
+    async fn an_ordinary_failure_keeps_its_own_message() {
+        let cache = LivePartyHistoryCache::default();
+        let error = r#"{"status":404,"message":"no such match"}"#;
 
-        assert_eq!(result, Err(RATE_LIMITED_ERROR.to_string()));
-        assert!(!polled.load(Ordering::SeqCst));
+        assert_eq!(
+            cache.run_pd(async { Err::<(), _>(error.to_string()) }).await,
+            Err(error.to_string())
+        );
     }
 
     #[test]

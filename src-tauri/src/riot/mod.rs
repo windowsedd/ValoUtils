@@ -9,4 +9,5 @@ pub mod dedup;
 pub mod error;
 pub mod lockfile;
 pub mod models;
+pub mod rate_gate;
 pub mod settings;

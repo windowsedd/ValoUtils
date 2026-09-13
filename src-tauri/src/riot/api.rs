@@ -1,7 +1,10 @@
 use crate::riot::client::{self, RiotState};
+use crate::riot::rate_gate;
 use base64::Engine;
 use serde_json::Value;
-use std::sync::OnceLock;
+use std::collections::{HashMap, HashSet};
+use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant};
 
 pub(crate) fn region_to_shard(region: &str) -> String {
     match region.to_uppercase().as_str() {
@@ -165,6 +168,94 @@ pub fn party_muc_name(party: &Value) -> Option<&str> {
         .filter(|value| !value.trim().is_empty())
 }
 
+/// How long a resolved Riot ID is trusted. A rename inside this window shows
+/// the old name until it lapses, which is a far smaller cost than the throttle
+/// that re-asking every time earns.
+const NAME_CACHE_TTL: Duration = Duration::from_secs(30 * 60);
+const MAX_NAME_CACHE_ENTRIES: usize = 4096;
+
+struct CachedName {
+    game_name: String,
+    tag_line: String,
+    cached_at: Instant,
+}
+
+fn name_cache() -> &'static Mutex<HashMap<String, CachedName>> {
+    static CACHE: OnceLock<Mutex<HashMap<String, CachedName>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Splits a name request into the entries already known and the puuids that
+/// still have to be asked for.
+///
+/// A cached entry echoes the caller's own spelling of the puuid back as
+/// `Subject`: callers key their lookups off the id they passed in, so
+/// normalising it here would leave every cached player nameless.
+fn take_cached_names(puuids: &[String]) -> (Vec<Value>, Vec<String>) {
+    let now = Instant::now();
+    let mut cache = name_cache().lock().unwrap();
+    cache.retain(|_, entry| now.duration_since(entry.cached_at) <= NAME_CACHE_TTL);
+
+    let mut known = Vec::new();
+    let mut unknown = Vec::new();
+    let mut asked = HashSet::new();
+    for puuid in puuids {
+        let key = puuid.to_ascii_lowercase();
+        match cache.get(&key) {
+            Some(entry) => known.push(serde_json::json!({
+                "Subject": puuid,
+                "GameName": entry.game_name,
+                "TagLine": entry.tag_line,
+            })),
+            // Riot answers one entry per puuid, so a list that repeats one
+            // would pay for it twice.
+            None if asked.insert(key) => unknown.push(puuid.clone()),
+            None => {}
+        }
+    }
+    (known, unknown)
+}
+
+fn remember_names(response: &Value) {
+    let now = Instant::now();
+    let mut cache = name_cache().lock().unwrap();
+    for entry in response.as_array().into_iter().flatten() {
+        let Some(subject) = entry.get("Subject").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        let game_name = entry
+            .get("GameName")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default();
+        // An empty GameName is Riot declining to answer, not an answer.
+        // Caching it would render the player nameless for the whole TTL.
+        if subject.is_empty() || game_name.is_empty() {
+            continue;
+        }
+        if cache.len() >= MAX_NAME_CACHE_ENTRIES {
+            if let Some(oldest) = cache
+                .iter()
+                .min_by_key(|(_, entry)| entry.cached_at)
+                .map(|(key, _)| key.clone())
+            {
+                cache.remove(&oldest);
+            }
+        }
+        cache.insert(
+            subject.to_ascii_lowercase(),
+            CachedName {
+                game_name: game_name.to_string(),
+                tag_line: entry
+                    .get("TagLine")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
+                cached_at: now,
+            },
+        );
+    }
+}
+
 /// Authenticated client for Riot's `pd`/`glz` game APIs, built from local
 /// Riot Client tokens. Mirrors electron/util/riot/create-api.ts.
 #[derive(Clone)]
@@ -191,6 +282,13 @@ impl RiotApiClient {
         path: &str,
         body: Option<Value>,
     ) -> Result<Value, String> {
+        // Every pd call is spent from one process-wide budget, whichever screen
+        // asked for it. glz is a separate host carrying only the small,
+        // latency-sensitive session/party/match-state reads, so it is not paced.
+        if matches!(target, Target::Pd) {
+            rate_gate::acquire().await?;
+        }
+
         let url = format!("{}{}", self.base_url(&target), path);
         let mut req = public_client()
             .request(method, &url)
@@ -215,13 +313,17 @@ impl RiotApiClient {
             .and_then(|value| value.trim().parse::<u64>().ok());
         let text = response.text().await.map_err(|e| e.to_string())?;
         if !status.is_success() {
-            return Err(format!(
+            let error = format!(
                 "{{\"status\":{},\"path\":{:?},\"message\":{:?},\"retryAfter\":{}}}",
                 status.as_u16(),
                 path,
                 text,
                 retry_after.map_or("null".to_string(), |seconds| seconds.to_string())
-            ));
+            );
+            // A refusal on either host means this client is over its allowance,
+            // so it strikes the pd budget even when glz was the one to say so.
+            rate_gate::note_failure(&error).await;
+            return Err(error);
         }
         serde_json::from_str(&text).or(Ok(Value::String(text)))
     }
@@ -229,14 +331,40 @@ impl RiotApiClient {
     /// Resolve puuids -> Riot IDs. Note the hyphen: `/nameservice/...` (no
     /// hyphen) is a dead route that answers 503, so a typo here fails silently
     /// and every player renders nameless.
+    ///
+    /// Only the puuids that are not already known are asked for. A match list
+    /// resolved a page of names per match document, and the same teammates,
+    /// opponents and stack recur across those matches — twenty matches asked
+    /// twenty times for largely the same people. Names change rarely enough
+    /// that half an hour of memory costs nothing and removes most of the calls.
     pub async fn get_names(&self, puuids: &[String]) -> Result<Value, String> {
-        self.request(
-            Target::Pd,
-            reqwest::Method::PUT,
-            "/name-service/v2/players",
-            Some(serde_json::json!(puuids)),
-        )
-        .await
+        let (known, unknown) = take_cached_names(puuids);
+        if unknown.is_empty() {
+            return Ok(Value::Array(known));
+        }
+
+        let fresh = self
+            .request(
+                Target::Pd,
+                reqwest::Method::PUT,
+                "/name-service/v2/players",
+                Some(serde_json::json!(unknown)),
+            )
+            .await?;
+
+        remember_names(&fresh);
+        let Some(entries) = fresh.as_array() else {
+            // An unexpected body is still the caller's answer; it just teaches
+            // the cache nothing.
+            return if known.is_empty() {
+                Ok(fresh)
+            } else {
+                Ok(Value::Array(known))
+            };
+        };
+        let mut merged = known;
+        merged.extend(entries.iter().cloned());
+        Ok(Value::Array(merged))
     }
 
     /// The player's storefront: daily offers, featured bundle, Night Market and
@@ -582,5 +710,86 @@ mod tests {
     async fn active_party_muc_skips_without_tokens() {
         assert!(active_party_muc("", "ent", "player", "ap").await.is_none());
         assert!(active_party_muc("access", "ent", "", "ap").await.is_none());
+    }
+
+    // The name cache is process-wide, so each test below uses puuids of its own
+    // rather than depending on an empty one.
+
+    #[test]
+    fn a_known_name_is_served_without_asking_riot_again() {
+        remember_names(&serde_json::json!([
+            { "Subject": "cache-hit-a", "GameName": "Sova", "TagLine": "KR1" }
+        ]));
+
+        let (known, unknown) = take_cached_names(&["cache-hit-a".to_string()]);
+        assert!(unknown.is_empty());
+        assert_eq!(
+            known,
+            vec![serde_json::json!({
+                "Subject": "cache-hit-a",
+                "GameName": "Sova",
+                "TagLine": "KR1",
+            })]
+        );
+    }
+
+    #[test]
+    fn a_cached_entry_echoes_the_puuid_the_caller_passed_in() {
+        remember_names(&serde_json::json!([
+            { "Subject": "MixedCaseB", "GameName": "Jett", "TagLine": "EUW" }
+        ]));
+
+        // Match details spell the id their own way and callers key their lookup
+        // off that spelling, so the answer must come back spelled to match.
+        let (known, unknown) = take_cached_names(&["mIXEDcASEb".to_string()]);
+        assert!(unknown.is_empty());
+        assert_eq!(known[0]["Subject"], serde_json::json!("mIXEDcASEb"));
+        assert_eq!(known[0]["GameName"], serde_json::json!("Jett"));
+    }
+
+    #[test]
+    fn only_the_unknown_puuids_are_asked_for_and_only_once_each() {
+        remember_names(&serde_json::json!([
+            { "Subject": "known-c", "GameName": "Omen", "TagLine": "NA1" }
+        ]));
+
+        let (known, unknown) = take_cached_names(&[
+            "known-c".to_string(),
+            "missing-c".to_string(),
+            "missing-c".to_string(),
+        ]);
+
+        assert_eq!(known.len(), 1);
+        assert_eq!(unknown, vec!["missing-c".to_string()]);
+    }
+
+    #[test]
+    fn a_nameless_answer_is_not_cached_as_the_players_name() {
+        remember_names(&serde_json::json!([
+            { "Subject": "declined-d", "GameName": "", "TagLine": "" }
+        ]));
+
+        // Riot declining to name someone must not stop the next attempt, or the
+        // player renders as "Hidden Player" for the whole TTL.
+        let (known, unknown) = take_cached_names(&["declined-d".to_string()]);
+        assert!(known.is_empty());
+        assert_eq!(unknown, vec!["declined-d".to_string()]);
+    }
+
+    #[test]
+    fn a_lapsed_name_is_asked_for_again() {
+        remember_names(&serde_json::json!([
+            { "Subject": "stale-e", "GameName": "Raze", "TagLine": "BR1" }
+        ]));
+        name_cache()
+            .lock()
+            .unwrap()
+            .get_mut("stale-e")
+            .expect("just cached")
+            .cached_at -= NAME_CACHE_TTL + Duration::from_secs(1);
+
+        let (known, unknown) = take_cached_names(&["stale-e".to_string()]);
+        assert!(known.is_empty());
+        assert_eq!(unknown, vec!["stale-e".to_string()]);
     }
 }

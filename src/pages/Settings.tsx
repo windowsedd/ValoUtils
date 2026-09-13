@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Toast } from "@heroui/react";
 import { useTranslation } from "react-i18next";
-import { FaGlobe, FaRocket, FaCode, FaChartBar, FaLanguage, FaKey, FaArrowUpRightFromSquare, FaCopy, FaCheck, FaEye, FaEyeSlash, FaBook, FaComments } from "react-icons/fa6";
+import { FaGlobe, FaRocket, FaCode, FaChartBar, FaLanguage, FaKey, FaArrowUpRightFromSquare, FaCopy, FaCheck, FaEye, FaEyeSlash, FaBook, FaComments, FaGaugeHigh, FaListOl } from "react-icons/fa6";
 import { LuBot, LuScrollText, LuSettings } from "react-icons/lu";
 import { PageHeader, SectionCard, pageBodyClass } from "@/components/section-card";
 import { useConfiguredRoutes } from "@/components/router";
@@ -20,6 +20,9 @@ const LANGUAGES = [
 	{ code: "ko", label: "한국어", name: "Korean" },
 	{ code: "zh-TW", label: "繁中", name: "Traditional Chinese" },
 ];
+
+/** Keep in step with `pacing_for` in src-tauri/src/riot/rate_gate.rs. */
+type RiotRequestPacing = "fast" | "balanced" | "safe";
 
 const CERT_OPTIONS: { id: AppConfig["presenceCert"]; host: string }[] = [
 	{ id: "deceive", host: "deceive-localhost.molenzwiebel.xyz" },
@@ -40,6 +43,22 @@ type AppConfig = {
 	deeplApiKey: string;
 	hiddenTabs: string[];
 	showLogsTab: boolean;
+	riotRequestPacing: RiotRequestPacing;
+	recentMatchCount: number;
+};
+
+const PACING_OPTIONS: RiotRequestPacing[] = ["fast", "balanced", "safe"];
+
+/** Mirrors RECENT_MATCH_COUNT_MAX in src-tauri/src/commands/live.rs. */
+const RECENT_MATCH_MIN = 1;
+const RECENT_MATCH_MAX = 10;
+
+/** The backend clamps this too; doing it here keeps the box from showing a
+ *  number that was never saved. */
+const clampRecentMatchCount = (value: number | string): number => {
+	const parsed = Math.trunc(Number(value));
+	if (!Number.isFinite(parsed) || parsed < RECENT_MATCH_MIN) return RECENT_MATCH_MIN;
+	return Math.min(RECENT_MATCH_MAX, parsed);
 };
 
 const Toggle = ({
@@ -122,6 +141,8 @@ const Settings = () => {
 		deeplApiKey: "",
 		hiddenTabs: [],
 		showLogsTab: false,
+		riotRequestPacing: "balanced",
+		recentMatchCount: 5,
 	});
 	const [analytics, setAnalytics] = useState(() => localStorage.getItem("valoutils-analytics") !== "false");
 
@@ -143,6 +164,14 @@ const Settings = () => {
 					translatorSourceLanguage: translation.sourceLanguage,
 					translatorTargetLanguage: translation.targetLanguage,
 					hiddenTabs: normalizeHiddenTabs(config.hiddenTabs),
+					// The backend clamps what it uses; the box must not show a
+					// wider window than the one actually being fetched.
+					recentMatchCount: clampRecentMatchCount(config.recentMatchCount ?? 5),
+					riotRequestPacing: PACING_OPTIONS.includes(
+						config.riotRequestPacing as RiotRequestPacing,
+					)
+						? (config.riotRequestPacing as RiotRequestPacing)
+						: "balanced",
 				}));
 				for (const [key, value] of Object.entries({
 					translatorProvider: translation.provider,
@@ -182,7 +211,7 @@ const Settings = () => {
 		setCurrentLang(code);
 	};
 
-	const setConfig = (key: string, value: boolean | string | string[]) => {
+	const setConfig = (key: string, value: boolean | number | string | string[]) => {
 		window.Main.send("config:set", key, value);
 		setAppConfig((prev) => ({ ...prev, [key]: value }));
 		window.dispatchEvent(
@@ -417,6 +446,64 @@ const Settings = () => {
 						/>
 					}
 				/>
+					</div>
+				</SectionCard>
+
+				<SectionCard title={t("settings.sectionRiotApi")} accent="#38bdf8">
+					<div className="flex flex-col px-1">
+						<SettingRow
+							icon={<FaGaugeHigh />}
+							label={t("settings.requestPacing")}
+							description={t("settings.requestPacingDesc")}
+							right={
+								<select
+									aria-label={t("settings.requestPacing")}
+									value={appConfig.riotRequestPacing}
+									onChange={(event) =>
+										setConfig("riotRequestPacing", event.target.value)
+									}
+									className="w-40 h-7 px-2 rounded-[6px] border border-(--border) bg-(--control) text-[12px] text-(--text-primary) outline-none focus:border-(--accent) focus:shadow-[0_0_0_2px_var(--accent-soft)]"
+								>
+									{PACING_OPTIONS.map((option) => (
+										<option key={option} value={option}>
+											{t(`settings.requestPacing_${option}`)}
+										</option>
+									))}
+								</select>
+							}
+						/>
+
+						<SettingRow
+							icon={<FaListOl />}
+							label={t("settings.recentMatchCount")}
+							description={t("settings.recentMatchCountDesc", {
+								max: RECENT_MATCH_MAX,
+							})}
+							right={
+								<input
+									type="number"
+									min={RECENT_MATCH_MIN}
+									max={RECENT_MATCH_MAX}
+									value={appConfig.recentMatchCount}
+									// Typing "1" on the way to "10" must not save a 1, so the
+									// box tracks what is typed and only the settled value is
+									// clamped and stored.
+									onChange={(event) =>
+										setAppConfig((current) => ({
+											...current,
+											recentMatchCount: Number(event.target.value),
+										}))
+									}
+									onBlur={(event) =>
+										setConfig(
+											"recentMatchCount",
+											clampRecentMatchCount(event.target.value),
+										)
+									}
+									className="w-20 h-7 px-2 rounded-[6px] border border-(--border) bg-(--control) text-[12px] font-mono text-(--text-primary) outline-none focus:border-(--accent) focus:shadow-[0_0_0_2px_var(--accent-soft)]"
+								/>
+							}
+						/>
 					</div>
 				</SectionCard>
 

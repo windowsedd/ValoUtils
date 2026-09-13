@@ -3,13 +3,14 @@ use super::pregame_roster::{build_pregame_roster, redact_secrets};
 use super::rank_shields::remaining_rank_shields;
 use crate::riot::api::{self, RiotApiClient};
 use crate::riot::client::{self, RiotState};
+use crate::store::ConfigStore;
 use base64::Engine;
 use serde_json::{json, Map, Value};
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 use tokio::sync::{Mutex as AsyncMutex, Semaphore};
 
 // Weapon IDs we surface skins for (verified against valorant-api /v1/weapons).
@@ -1394,6 +1395,7 @@ async fn fetch_recent_stats(
     api: RiotApiClient,
     puuid: String,
     queue_id: String,
+    match_count: usize,
     cache: Arc<Mutex<HashMap<String, Value>>>,
     permits: Arc<Semaphore>,
     pd_cache: LivePartyHistoryCache,
@@ -1413,7 +1415,7 @@ async fn fetch_recent_stats(
             pd_cache.put_history_document(&puuid, history.clone());
             history
         };
-        let match_ids = select_match_ids_for_queue(&history, &queue_id, 5);
+        let match_ids = select_match_ids_for_queue(&history, &queue_id, match_count);
         if match_ids.is_empty() {
             return Err(format!(
                 "No recent {queue_id} matches were found for this player."
@@ -1474,6 +1476,7 @@ pub(crate) async fn template_recent_stats(
     pd_cache: &LivePartyHistoryCache,
     puuids: Vec<String>,
     queue_id: String,
+    match_count: usize,
     deadline: tokio::time::Instant,
 ) -> HashMap<String, Value> {
     let Ok(Ok(api)) = tokio::time::timeout_at(deadline, api::create_api(riot)).await else {
@@ -1485,6 +1488,7 @@ pub(crate) async fn template_recent_stats(
             api.clone(),
             puuid,
             queue_id.clone(),
+            match_count,
             cache.values.clone(),
             cache.permits.clone(),
             pd_cache.clone(),
@@ -1507,6 +1511,26 @@ pub(crate) async fn template_recent_stats(
 
 fn should_cache_recent_stats(expected: usize, fetched: usize, normalized: usize) -> bool {
     expected > 0 && expected == fetched && expected == normalized
+}
+
+/// How many recent matches a player's scout stats average over, by default.
+pub(crate) const RECENT_MATCH_COUNT_DEFAULT: u64 = 5;
+/// Match history is pulled 25 deep and then filtered to the queue being played,
+/// so asking for much more than this reliably comes up short on an account that
+/// mixes modes - and every extra match is another match-details request per
+/// player on the board.
+pub(crate) const RECENT_MATCH_COUNT_MAX: u64 = 10;
+
+/// The configured recent-match window, clamped to what the data can support.
+pub(crate) fn recent_match_count(config: &ConfigStore) -> usize {
+    clamp_recent_match_count(config.get("recentMatchCount"))
+}
+
+fn clamp_recent_match_count(value: Option<Value>) -> usize {
+    value
+        .and_then(|value| value.as_u64())
+        .unwrap_or(RECENT_MATCH_COUNT_DEFAULT)
+        .clamp(1, RECENT_MATCH_COUNT_MAX) as usize
 }
 
 #[tauri::command]
@@ -1560,6 +1584,7 @@ pub async fn live_game_stats(
         }
     };
     let requested = players.len();
+    let match_count = recent_match_count(app.state::<ConfigStore>().inner());
     let mut pending = players.into_iter();
     let mut workers = tokio::task::JoinSet::new();
     let shared_cache = cache.values.clone();
@@ -1572,6 +1597,7 @@ pub async fn live_game_stats(
             api.clone(),
             puuid,
             queue_id.clone(),
+            match_count,
             shared_cache.clone(),
             shared_permits.clone(),
             pd_cache.clone(),
@@ -1606,6 +1632,7 @@ pub async fn live_game_stats(
                 api.clone(),
                 puuid,
                 queue_id.clone(),
+                match_count,
                 shared_cache.clone(),
                 shared_permits.clone(),
                 pd_cache.clone(),
@@ -1981,6 +2008,21 @@ mod tests {
             summarize_teams(&players),
             vec![json!({"id":"Blue", "averageTier":16.0, "ratedPlayers":2})]
         );
+    }
+
+    #[test]
+    fn the_recent_match_window_defaults_to_five_and_stays_in_range() {
+        assert_eq!(clamp_recent_match_count(None), 5);
+        assert_eq!(clamp_recent_match_count(Some(json!(3))), 3);
+
+        // A hand-edited config file must not turn one board into hundreds of
+        // match-details requests, or into zero matches and no stats at all.
+        assert_eq!(
+            clamp_recent_match_count(Some(json!(500))),
+            RECENT_MATCH_COUNT_MAX as usize
+        );
+        assert_eq!(clamp_recent_match_count(Some(json!(0))), 1);
+        assert_eq!(clamp_recent_match_count(Some(json!("five"))), 5);
     }
 
     #[test]

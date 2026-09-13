@@ -2,6 +2,7 @@ use super::live;
 use super::live_party::LivePartyHistoryCache;
 use crate::riot::chat_template::{self, format_decimal, format_percent, TemplatePlan};
 use crate::riot::client::RiotState;
+use crate::store::ConfigStore;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::OnceLock;
@@ -798,6 +799,7 @@ pub(crate) async fn resolve_custom_messages(
             app.state::<LivePartyHistoryCache>().inner(),
             puuids,
             snapshot.queue_id.clone(),
+            live::recent_match_count(app.state::<ConfigStore>().inner()),
             deadline,
         )
         .await

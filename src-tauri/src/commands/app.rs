@@ -110,6 +110,11 @@ pub fn config_get_all(store: State<ConfigStore>) -> String {
         "translatorTargetLanguage": get_or("translatorTargetLanguage", json!("en")),
         "deeplApiKey": get_or("deeplApiKey", json!("")),
         "hiddenTabs": get_or("hiddenTabs", json!([])),
+        "riotRequestPacing": get_or("riotRequestPacing", json!("balanced")),
+        "recentMatchCount": get_or(
+            "recentMatchCount",
+            json!(crate::commands::live::RECENT_MATCH_COUNT_DEFAULT),
+        ),
         "botCustomCommands": get_or("botCustomCommands", json!([])),
     })
     .to_string()
@@ -121,6 +126,11 @@ pub fn config_set(args: Vec<Value>, store: State<ConfigStore>) -> String {
         return json!({ "success": false }).to_string();
     };
     let value = args.get(1).cloned().unwrap_or(Value::Null);
+    // The gate holds its pacing in a static, below the API client and out of
+    // reach of Tauri state, so a change has to be handed to it here.
+    if key == "riotRequestPacing" {
+        crate::riot::rate_gate::set_pacing(value.as_str().unwrap_or_default());
+    }
     store.set(&key, value);
     json!({ "success": true, "key": key }).to_string()
 }
