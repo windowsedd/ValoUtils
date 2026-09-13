@@ -102,6 +102,32 @@ cargo test --lib
 
 `bun run dev` starts Vite and the Tauri development app with hot reload. `bun run build` produces the release NSIS installer.
 
+### Updater signing key
+
+`tauri.conf.json` embeds the updater public key, so `tauri build` refuses to bundle unless it can also find the matching private key:
+
+```text
+A public key has been found, but no private key. Make sure to set `TAURI_SIGNING_PRIVATE_KEY` environment variable.
+```
+
+The key must be exported into the shell that runs the build. A `.env` file is not enough — it only reaches the Vite frontend build, not the Tauri CLI child process. The key is an encrypted rsign secret key, so its password has to be set as well or the CLI stops to prompt for it.
+
+```bash
+export TAURI_SIGNING_PRIVATE_KEY="$(cat src-tauri/valoutils.key)"
+export TAURI_SIGNING_PRIVATE_KEY_PASSWORD=""
+bun run build
+```
+
+```powershell
+$env:TAURI_SIGNING_PRIVATE_KEY = Get-Content src-tauri\valoutils.key -Raw
+$env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = ""
+bun run build
+```
+
+The build then writes the installer and its updater signature to `src-tauri/target/release/bundle/nsis/`.
+
+`src-tauri/valoutils.key` is gitignored and is not part of a clone. To build your own signed installer, generate a keypair with `bun run tauri signer generate -w src-tauri/valoutils.key` and replace `plugins.updater.pubkey` in `src-tauri/tauri.conf.json` with the public key it prints. Never commit the private key or any `.env` file holding it.
+
 ## Architecture
 
 ```text
@@ -122,6 +148,34 @@ Most frontend IPC goes through `src/util/tauri-bridge.ts`. The bridge maps chann
 For authentication, the Rust backend reads the Riot Client lockfile and communicates with the local client over `127.0.0.1`. Account and game data then comes from Riot's private Player Data (`pd`) and Game (`glz`) services. Chat uses a dedicated XMPP connection. Settings profiles remain encoded during local storage so restoring a profile does not discard unknown settings.
 
 ## Releases
+
+### Testing a production build
+
+A release build is not a `bun run dev` session with a different flag: logging is compiled out, the frontend is the minified bundle, and the updater is live. Test it as its own thing before tagging.
+
+Build the installer as described under [Updater signing key](#updater-signing-key). Two artifacts matter:
+
+```text
+src-tauri/target/release/valoutils.exe                              the app itself
+src-tauri/target/release/bundle/nsis/ValoUtils_<version>_x64-setup.exe   what users run
+```
+
+Running the bare `.exe` is the fast check. Install through the NSIS installer when the change touches anything installer-shaped: shortcuts, the uninstall entry, or updating in place over an existing version.
+
+Four things behave differently than in development:
+
+- **There are no logs.** `tauri_plugin_log` is registered only under `debug_assertions`, so a production build prints nothing anywhere. To see the frontend console, set `openDevTools` to `true` in `%APPDATA%\ValoUtils\config.json` and relaunch — the `devtools` Cargo feature is compiled into release builds, so the inspector opens on startup.
+- **State is shared with your normal install.** Profiles and settings live in `%APPDATA%\ValoUtils\*.json` regardless of how the app was built, so a test build reads and writes the same files your day-to-day install uses. Back that folder up before testing anything that writes to it.
+- **The updater is running.** It checks on launch and hourly, gated by the `autoUpdate` config flag (default `true`). Set it to `false` while testing so a build you are inspecting does not replace itself with the published release.
+- **A draft release is not `latest`.** The updater endpoint is `releases/latest/download/latest.json`, and GitHub does not count drafts as latest, so the workflow's draft release is safe to inspect. Publishing it is the step that ships the update to everyone.
+
+Before tagging, confirm the version is consistent across `package.json`, `Cargo.toml` and `Cargo.lock` — the tag workflow fails on a mismatch:
+
+```bash
+bun run version:check 1.0.9
+```
+
+### Publishing
 
 The GitHub Actions release workflow runs for `v*` tags. It verifies that the tag matches the project version, builds and signs the Tauri updater artifacts, and creates a draft GitHub Release containing the NSIS installer and update manifest. From a clean `master` branch, use the release helper to synchronize version metadata and create the release commit and annotated tag before pushing:
 

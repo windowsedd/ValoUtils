@@ -681,7 +681,7 @@
     "customLanguageLabel": "언어",
     "customMessageLabel": "메시지",
     "customCountLabel": "줄 수",
-    "customLifecycleNote": "자동으로 실행되어 Dummy Bot이 귀족말로 보냅니다. 트리거가 필요 없습니다.",
+    "customLifecycleNote": "자동으로 실행됩니다. 트리거가 필요 없으며, 보낼 곳만 고르면 됩니다.",
     "customLineCount": "최근 {{count}}줄",
     "customEdit": "명령 편집",
     "customEditing": "명령 편집",

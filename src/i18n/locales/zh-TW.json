@@ -681,7 +681,7 @@
     "customLanguageLabel": "語言",
     "customMessageLabel": "訊息",
     "customCountLabel": "行數",
-    "customLifecycleNote": "自動觸發，並由 Dummy Bot 私訊給你。不需要觸發字。",
+    "customLifecycleNote": "自動觸發。不需要觸發字，只要選要發到哪裡。",
     "customLineCount": "最近 {{count}} 行",
     "customEdit": "編輯指令",
     "customEditing": "編輯指令",

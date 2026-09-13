@@ -326,9 +326,18 @@ fn mode_label(queue_id: &str) -> String {
         "swiftplay" => "Swiftplay".into(),
         "spikerush" => "Spike Rush".into(),
         "deathmatch" => "Deathmatch".into(),
-        "ggteam" => "Team Deathmatch".into(),
-        "hurm" => "Escalation".into(),
-        "custom" => "Custom".into(),
+        // ggteam is Escalation and hurm is Team Deathmatch. These two were the
+        // wrong way round, so {{mode}} named the opposite game mode; the
+        // frontend table in src/util/valorant-queues.ts has always had them
+        // right and is the reference for the rest of this list.
+        "ggteam" => "Escalation".into(),
+        "hurm" => "Team Deathmatch".into(),
+        "onefa" => "Replication".into(),
+        "newmap" => "New Map".into(),
+        "snowball" => "Snowball Fight".into(),
+        "premier" => "Premier".into(),
+        // A custom game reports an empty queue id rather than "custom".
+        "custom" | "" => "Custom".into(),
         _ => queue_id.to_string(),
     }
 }
@@ -866,6 +875,12 @@ mod tests {
         assert_eq!(values["enemy_team_names"], "Enemy#NA");
         assert_eq!(values["map"], "Ascent");
         assert_eq!(values["mode"], "Competitive");
+        assert_eq!(mode_label("ggteam"), "Escalation");
+        assert_eq!(mode_label("hurm"), "Team Deathmatch");
+        assert_eq!(mode_label("deathmatch"), "Deathmatch");
+        assert_eq!(mode_label(""), "Custom");
+        // An id we have never seen prints as-is rather than as a wrong guess.
+        assert_eq!(mode_label("brandnewmode"), "brandnewmode");
         assert_eq!(values["phase"], "Agent Select");
         assert_eq!(values["roster_count"], "4");
     }

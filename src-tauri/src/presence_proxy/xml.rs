@@ -1,4 +1,5 @@
 use crate::presence_proxy::PresenceMode;
+use crate::riot::chat_lifecycle::PresenceMatchState;
 use crate::riot::models::ChatChannel;
 use base64::Engine;
 use serde_json::json;
@@ -286,6 +287,47 @@ pub fn extract_valorant_version(stanza: &str) -> Option<String> {
         .map(str::to_owned)
 }
 
+/// What the game just said about its own match, out of a presence stanza.
+///
+/// `sessionLoopState` and `queueId` are nested under `matchPresenceData` on
+/// current clients and sat at the top level on older ones; both shapes appear
+/// in the presence handling elsewhere in this crate, so both are read here.
+/// The scores are the same pair the Friends list shows as a live scoreline.
+pub fn extract_presence_match_state(stanza: &str) -> Option<PresenceMatchState> {
+    let root = Element::parse(stanza.as_bytes()).ok()?;
+    let encoded = root
+        .get_child("games")?
+        .get_child("valorant")?
+        .get_child("p")?
+        .get_text()?;
+    let decoded = base64::engine::general_purpose::STANDARD
+        .decode(encoded.trim().as_bytes())
+        .ok()?;
+    let payload: serde_json::Value = serde_json::from_slice(&decoded).ok()?;
+    let match_data = payload.get("matchPresenceData");
+    let nested_or_top = |key: &str| {
+        match_data
+            .and_then(|data| data.get(key))
+            .or_else(|| payload.get(key))
+            .and_then(|value| value.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned)
+    };
+    let score = |key: &str| {
+        payload
+            .get(key)
+            .and_then(|value| value.as_u64())
+            .and_then(|value| u32::try_from(value).ok())
+    };
+    Some(PresenceMatchState {
+        session_loop_state: nested_or_top("sessionLoopState"),
+        queue_id: nested_or_top("queueId"),
+        ally_score: score("partyOwnerMatchScoreAllyTeam"),
+        enemy_score: score("partyOwnerMatchScoreEnemyTeam"),
+    })
+}
+
 pub fn bot_presence(account_domain: &str, client_version: Option<&str>) -> String {
     let jid = escape_xml(&format!("{}@{account_domain}", crate::fake_player::PUUID));
     let timestamp = unix_millis();
@@ -301,6 +343,8 @@ pub fn bot_presence(account_domain: &str, client_version: Option<&str>) -> Strin
         "maxPartySize": 5,
         "partyOwnerMatchScoreAllyTeam": 0,
         "partyOwnerMatchScoreEnemyTeam": 0,
+        // showTag stays off: the roster tag lands as a cramped badge beside the
+        // name, which reads as clutter next to everything already on that line.
         "premierPresenceData": {
             "rosterId": "",
             "rosterName": "ValoUtils is active.",
@@ -347,8 +391,12 @@ pub fn bot_presence(account_domain: &str, client_version: Option<&str>) -> Strin
             "playerCardId": "893deca1-4123-9c1f-2985-aa9de74cb512",
             "playerTitleId": "e3ca05a4-4e44-9afe-3791-7d96ca8f71fa",
             "accountLevel": 999,
-            "competitiveTier": 0,
-            "leaderboardPosition": 0
+            // Tier 3 is Iron 1, the bottom of the ladder, paired with a
+            // leaderboard slot that rank could never earn. The client only
+            // paints the position badge for Radiant, so in game this reads as
+            // plain Iron 1 -- the number is for anything parsing the payload.
+            "competitiveTier": 3,
+            "leaderboardPosition": 9467
         }
     });
     let encoded = base64::engine::general_purpose::STANDARD.encode(valorant.to_string());
@@ -1006,6 +1054,76 @@ mod tests {
         );
     }
 
+    fn presence_with_payload(payload: serde_json::Value) -> String {
+        let encoded = base64::engine::general_purpose::STANDARD.encode(payload.to_string());
+        format!(r#"<presence><games><valorant><p>{encoded}</p></valorant></games></presence>"#)
+    }
+
+    fn state_of(payload: serde_json::Value) -> PresenceMatchState {
+        extract_presence_match_state(&presence_with_payload(payload)).unwrap()
+    }
+
+    #[test]
+    fn presence_state_is_read_from_either_payload_shape() {
+        // Current clients nest these; older payloads put them at the top level.
+        assert_eq!(
+            state_of(json!({
+                "matchPresenceData": { "sessionLoopState": "INGAME", "queueId": "competitive" },
+                "partyOwnerMatchScoreAllyTeam": 12,
+                "partyOwnerMatchScoreEnemyTeam": 7
+            })),
+            PresenceMatchState {
+                session_loop_state: Some("INGAME".into()),
+                queue_id: Some("competitive".into()),
+                ally_score: Some(12),
+                enemy_score: Some(7),
+            }
+        );
+        assert_eq!(
+            state_of(json!({ "sessionLoopState": "MENUS", "queueId": "swiftplay" })),
+            PresenceMatchState {
+                session_loop_state: Some("MENUS".into()),
+                queue_id: Some("swiftplay".into()),
+                ally_score: None,
+                enemy_score: None,
+            }
+        );
+        // The nested value wins when a payload somehow carries both.
+        assert_eq!(
+            state_of(json!({
+                "sessionLoopState": "MENUS",
+                "matchPresenceData": { "sessionLoopState": "PREGAME" }
+            }))
+            .session_loop_state
+            .as_deref(),
+            Some("PREGAME")
+        );
+    }
+
+    #[test]
+    fn a_presence_without_usable_fields_reports_none_of_them() {
+        for payload in [
+            json!({}),
+            json!({ "matchPresenceData": {} }),
+            json!({ "sessionLoopState": "   ", "queueId": "" }),
+            json!({ "sessionLoopState": 7, "partyOwnerMatchScoreAllyTeam": "12" }),
+        ] {
+            assert_eq!(
+                state_of(payload.clone()),
+                PresenceMatchState::default(),
+                "{payload}"
+            );
+        }
+        // Not a presence, and a presence whose payload is not base64 at all.
+        assert_eq!(extract_presence_match_state("<message/>"), None);
+        assert_eq!(
+            extract_presence_match_state(
+                r#"<presence><games><valorant><p>not base64</p></valorant></games></presence>"#
+            ),
+            None
+        );
+    }
+
     #[test]
     fn bot_presence_contains_a_versioned_valorant_payload() {
         let stanza = bot_presence("na1.pvp.net", Some("release-10.04-shipping-17"));
@@ -1026,6 +1144,8 @@ mod tests {
             "release-10.04-shipping-17"
         );
         assert_eq!(payload["playerPresenceData"]["accountLevel"], 999);
+        assert_eq!(payload["playerPresenceData"]["competitiveTier"], 3);
+        assert_eq!(payload["playerPresenceData"]["leaderboardPosition"], 9467);
         assert_eq!(payload["premierPresenceData"]["showTag"], false);
         assert_eq!(payload["premierPresenceData"]["rosterTag"], "");
         assert!(stanza.contains("<keystone>"));

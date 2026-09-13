@@ -352,6 +352,11 @@ async fn client_to_remote(
                         continue;
                     }
                     if is_global_presence(stanza) {
+                        if let Some(state) =
+                            crate::presence_proxy::xml::extract_presence_match_state(stanza)
+                        {
+                            crate::presence_proxy::record_presence_match_state(state);
+                        }
                         if let Some(version) = crate::presence_proxy::xml::extract_valorant_version(stanza) {
                             let mut current = bot_version.lock().await;
                             if current.as_deref() != Some(version.as_str()) {
@@ -683,6 +688,9 @@ pub async fn stop() {
     if let Some(active) = runtime().lock().unwrap().take() {
         active.handle.abort();
     }
+    // Nothing observes the game's presence once the relay is down, so the last
+    // state it reported must not keep answering for it.
+    crate::presence_proxy::clear_presence_match_state();
     crate::presence_proxy::controller().set_relay_port(None);
 }
 

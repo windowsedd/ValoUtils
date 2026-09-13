@@ -94,22 +94,45 @@ pub fn find_custom_command(input: &str, commands: &[CustomBotCommand]) -> Option
         .cloned()
 }
 
-pub fn find_lifecycle_command(
+/// Where a lifecycle message goes. An empty channel means the Dummy Bot
+/// whisper, which is what every row saved before group destinations existed
+/// carries, so a blank field must never turn into a public post.
+pub fn lifecycle_destination(command: &CustomBotCommand) -> LifecycleDestination {
+    match command.channel.trim() {
+        "" => LifecycleDestination::Direct,
+        channel if channel.eq_ignore_ascii_case("direct") => LifecycleDestination::Direct,
+        channel => LifecycleDestination::Group(channel.to_ascii_lowercase()),
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LifecycleDestination {
+    /// Whispered to you by the Dummy Bot.
+    Direct,
+    /// Posted into a group room: `team`, `all`, `party` or `pregame`.
+    Group(String),
+}
+
+/// Every command bound to one lifecycle event, in the order they were saved.
+///
+/// More than one row may share an event: two messages on match end are two
+/// rows, not a single row somebody has to cram both lines into.
+pub fn find_lifecycle_commands(
     commands: &[CustomBotCommand],
     when: CustomCommandWhen,
-) -> Option<CustomBotCommand> {
+) -> Vec<CustomBotCommand> {
     if when == CustomCommandWhen::Command {
-        return None;
+        return Vec::new();
     }
     commands
         .iter()
-        .find(|item| {
+        .filter(|item| {
             item.when == when
                 && item.action.trim().eq_ignore_ascii_case("send")
-                && item.channel.trim().eq_ignore_ascii_case("direct")
                 && !item.message.trim().is_empty()
         })
         .cloned()
+        .collect()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -425,6 +448,52 @@ fn split_first_token(value: &str) -> (&str, &str) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_lifecycle_command_keeps_its_own_destination() {
+        let command = CustomBotCommand {
+            when: CustomCommandWhen::OnMatchEnd,
+            trigger: String::new(),
+            action: "send".into(),
+            channel: "party".into(),
+            language: "none".into(),
+            message: "gg".into(),
+            count: 1,
+        };
+        assert_eq!(
+            find_lifecycle_commands(
+                std::slice::from_ref(&command),
+                CustomCommandWhen::OnMatchEnd
+            ),
+            vec![command.clone()]
+        );
+        assert_eq!(
+            lifecycle_destination(&command),
+            LifecycleDestination::Group("party".into())
+        );
+    }
+
+    #[test]
+    fn a_blank_or_direct_channel_still_whispers() {
+        // Every lifecycle row saved before group destinations existed has an
+        // empty channel. Treating that as a group would post it in public.
+        for channel in ["", "direct", "DIRECT", "  "] {
+            let command = CustomBotCommand {
+                when: CustomCommandWhen::OnPregame,
+                trigger: String::new(),
+                action: "send".into(),
+                channel: channel.into(),
+                language: "none".into(),
+                message: "hi".into(),
+                count: 1,
+            };
+            assert_eq!(
+                lifecycle_destination(&command),
+                LifecycleDestination::Direct,
+                "{channel:?}"
+            );
+        }
+    }
+
     use super::*;
 
     fn parse(input: &str) -> Result<TranslationCommand, RiotError> {
@@ -464,7 +533,7 @@ mod tests {
     }
 
     #[test]
-    fn lifecycle_lookup_uses_the_first_structurally_valid_entry() {
+    fn lifecycle_lookup_returns_every_valid_entry_in_saved_order() {
         let invalid = CustomBotCommand {
             when: CustomCommandWhen::OnMatchStart,
             trigger: String::new(),
@@ -483,22 +552,24 @@ mod tests {
             message: "first".into(),
             count: 1,
         };
-        let duplicate = CustomBotCommand {
-            message: "duplicate".into(),
+        let second = CustomBotCommand {
+            message: "second".into(),
             ..first.clone()
         };
 
+        // "tran" is not a lifecycle action, so the first entry drops out; the
+        // other two are both kept, in the order the list holds them.
         assert_eq!(
-            find_lifecycle_command(
-                &[invalid, first.clone(), duplicate],
+            find_lifecycle_commands(
+                &[invalid, first.clone(), second.clone()],
                 CustomCommandWhen::OnMatchStart,
             ),
-            Some(first)
+            vec![first, second]
         );
     }
 
     #[test]
-    fn lifecycle_lookup_ignores_empty_or_group_routed_entries() {
+    fn lifecycle_lookup_skips_empty_messages_and_accepts_group_rooms() {
         let empty = CustomBotCommand {
             when: CustomCommandWhen::OnPregame,
             trigger: String::new(),
@@ -513,9 +584,16 @@ mod tests {
             channel: "team".into(),
             ..empty.clone()
         };
+        // A blank message has nothing to post, whatever room it names. A group
+        // room used to be skipped here too, back when a lifecycle message could
+        // only ever be a Dummy Bot whisper.
         assert_eq!(
-            find_lifecycle_command(&[empty, group], CustomCommandWhen::OnPregame),
-            None
+            find_lifecycle_commands(std::slice::from_ref(&empty), CustomCommandWhen::OnPregame),
+            Vec::new()
+        );
+        assert_eq!(
+            find_lifecycle_commands(&[empty, group.clone()], CustomCommandWhen::OnPregame),
+            vec![group]
         );
     }
 

@@ -53,24 +53,27 @@ export const normalizeCustomBotCommand = (
     count,
   } satisfies CustomBotCommand;
 
+  // A lifecycle row has no trigger and can only send, but it does pick a
+  // destination: "direct" whispers you through Dummy Bot, the group channels
+  // post into the room. Rows saved before group destinations existed have no
+  // channel of their own, so an absent one still resolves to "direct".
   return isLifecycleWhen(when)
-    ? { ...normalized, trigger: "", action: "send", channel: "direct" }
+    ? {
+        ...normalized,
+        trigger: "",
+        action: "send",
+        channel: isChannel(value?.channel) ? value.channel : "direct",
+      }
     : normalized;
 };
 
-export const normalizeCustomBotCommands = (value: unknown): CustomBotCommand[] => {
-  if (!Array.isArray(value)) return [];
-  const lifecycle = new Set<CustomCommandWhen>();
-  const commands: CustomBotCommand[] = [];
-  for (const item of value) {
-    const command = normalizeCustomBotCommand(
-      item && typeof item === "object" ? (item as Partial<CustomBotCommand>) : undefined,
-    );
-    if (isLifecycleWhen(command.when)) {
-      if (lifecycle.has(command.when)) continue;
-      lifecycle.add(command.when);
-    }
-    commands.push(command);
-  }
-  return commands;
-};
+/** An event may carry several messages, so nothing is deduplicated here: two
+ *  rows on match end are two rows, and they fire in the order they are saved. */
+export const normalizeCustomBotCommands = (value: unknown): CustomBotCommand[] =>
+  Array.isArray(value)
+    ? value.map((item) =>
+        normalizeCustomBotCommand(
+          item && typeof item === "object" ? (item as Partial<CustomBotCommand>) : undefined,
+        ),
+      )
+    : [];

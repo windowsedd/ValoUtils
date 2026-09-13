@@ -27,7 +27,7 @@ describe("custom bot command normalization", () => {
     });
   });
 
-  test("lifecycle entries are always send/direct with no trigger", () => {
+  test("lifecycle entries always send with no trigger but keep their target", () => {
     expect(
       normalizeCustomBotCommand({
         when: "onMatchStart",
@@ -42,11 +42,19 @@ describe("custom bot command normalization", () => {
       when: "onMatchStart",
       trigger: "",
       action: "send",
-      channel: "direct",
+      channel: "all",
       language: "ja",
       message: "{{map}}",
       count: 3,
     });
+  });
+
+  test("a lifecycle entry saved before targets existed still whispers", () => {
+    // Rows written by earlier builds carry no channel at all. Defaulting them
+    // the way a manual command defaults would start posting them to party.
+    expect(
+      normalizeCustomBotCommand({ when: "onMatchEnd", message: "gg" }).channel,
+    ).toBe("direct");
   });
 
   test("invalid manual values use safe defaults and bounded counts", () => {
@@ -84,15 +92,15 @@ describe("custom bot command normalization", () => {
     expect(channelsForCustomCommand("tran")).toEqual(["party", "pregame", "team", "all"]);
   });
 
-  test("only the first entry for each lifecycle event is retained", () => {
+  test("one lifecycle event keeps every entry saved against it", () => {
     const commands = normalizeCustomBotCommands([
       { when: "onPregame", message: "first" },
       { when: "onPregame", message: "second" },
       { when: "command", trigger: ".one" },
       { when: "command", trigger: ".two" },
     ]);
-    expect(commands.map((command) => command.message)).toEqual(["first", "", ""]);
-    expect(commands.map((command) => command.trigger)).toEqual(["", ".one", ".two"]);
+    expect(commands.map((command) => command.message)).toEqual(["first", "second", "", ""]);
+    expect(commands.map((command) => command.trigger)).toEqual(["", "", ".one", ".two"]);
   });
 
   test("non-array persisted values normalize to an empty list", () => {

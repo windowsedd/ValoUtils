@@ -271,6 +271,36 @@ pub fn subscribe_outbound() -> broadcast::Receiver<String> {
 
 /// Inject a groupchat stanza through the game client's XMPP so it shows up
 /// in-game as a normal party/team/all line, not only in a ValoUtils session.
+/// The game's last reported `sessionLoopState`, read off its own presence.
+///
+/// Only meaningful while the relay is carrying that presence, so it is cleared
+/// whenever the relay stops: a stale `MENUS` left over from a dead relay would
+/// tell the lifecycle tracker a live match had ended.
+fn presence_match_state_slot() -> &'static Mutex<crate::riot::chat_lifecycle::PresenceMatchState> {
+    static STATE: OnceLock<Mutex<crate::riot::chat_lifecycle::PresenceMatchState>> =
+        OnceLock::new();
+    STATE.get_or_init(Mutex::default)
+}
+
+pub fn record_presence_match_state(state: crate::riot::chat_lifecycle::PresenceMatchState) {
+    if let Ok(mut slot) = presence_match_state_slot().lock() {
+        *slot = state;
+    }
+}
+
+pub fn clear_presence_match_state() {
+    if let Ok(mut slot) = presence_match_state_slot().lock() {
+        *slot = Default::default();
+    }
+}
+
+pub fn presence_match_state() -> crate::riot::chat_lifecycle::PresenceMatchState {
+    presence_match_state_slot()
+        .lock()
+        .map(|slot| slot.clone())
+        .unwrap_or_default()
+}
+
 const LIVE_CHAT_MAX: usize = 200;
 
 fn live_chat() -> &'static Mutex<VecDeque<xml::LiveChatLine>> {

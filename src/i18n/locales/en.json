@@ -689,7 +689,7 @@
     "customLanguageLabel": "Language",
     "customMessageLabel": "Message",
     "customCountLabel": "Lines",
-    "customLifecycleNote": "Fires automatically and whispers you through Dummy Bot. No trigger needed.",
+    "customLifecycleNote": "Fires automatically. No trigger needed — pick where the message goes.",
     "customLineCount": "last {{count}} lines",
     "customEdit": "Edit command",
     "customEditing": "Edit command",

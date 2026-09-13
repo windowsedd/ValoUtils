@@ -1272,7 +1272,7 @@ struct PollMemory {
     /// Lines this app posted itself, so they cannot be read back as commands.
     echoes: PendingEchoes,
     lifecycle: LifecycleTracker,
-    prepared_match_end: Option<PreparedMatchEnd>,
+    prepared_match_ends: Vec<PreparedMatchEnd>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1280,6 +1280,10 @@ struct PreparedMatchEnd {
     match_id: String,
     language: String,
     body: String,
+    /// Captured at match start with the rest of the message: the room a match
+    /// end should land in is a property of the saved command, not of whatever
+    /// the client happens to be doing three polls after the match ends.
+    destination: chat_command::LifecycleDestination,
 }
 
 /// Bodies the bot has just posted, kept only until they come back around.
@@ -1581,6 +1585,9 @@ fn phase_observation(pregame_id: Option<String>, match_id: Option<String>) -> Ph
         connected: true,
         pregame_id,
         match_id,
+        // Empty whenever the relay is not running, which puts the tracker back
+        // on its poll-only rule rather than guessing at the phase.
+        presence: crate::presence_proxy::presence_match_state(),
     }
 }
 
@@ -1588,6 +1595,35 @@ fn lifecycle_warning(app: &AppHandle, event: &str, error: impl std::fmt::Display
     let warning = format!("Dummy Bot {event} message skipped: {error}");
     log::warn!("{warning}");
     let _ = app.emit(EVENT_ERROR, warning);
+}
+
+/// Delivers one lifecycle message to wherever its command points.
+///
+/// A group post reuses the ordinary `.send` path, so room resolution, the
+/// in-game MUC preference and translation behave exactly as they do for a
+/// hand-typed line.
+async fn deliver_lifecycle_message(
+    app: &AppHandle,
+    event: &str,
+    destination: &chat_command::LifecycleDestination,
+    language: &str,
+    body: &str,
+) {
+    match destination {
+        chat_command::LifecycleDestination::Direct => {
+            deliver_lifecycle_direct(app, event, language, body).await;
+        }
+        chat_command::LifecycleDestination::Group(channel) => {
+            let language = match language.trim() {
+                "" => "none",
+                value => value,
+            };
+            let line = format!(".send {channel} {language} {body}");
+            if let Err(error) = execute_typed_translation(&line, Some(app)).await {
+                lifecycle_warning(app, event, error);
+            }
+        }
+    }
 }
 
 async fn deliver_lifecycle_direct(app: &AppHandle, event: &str, language: &str, body: &str) {
@@ -1601,16 +1637,14 @@ async fn deliver_lifecycle_direct(app: &AppHandle, event: &str, language: &str, 
     }
 }
 
-fn take_prepared_match_end(memory: &mut PollMemory, match_id: &str) -> Option<PreparedMatchEnd> {
-    if memory
-        .prepared_match_end
-        .as_ref()
-        .map(|prepared| prepared.match_id.as_str())
-        != Some(match_id)
-    {
-        return None;
-    }
-    memory.prepared_match_end.take()
+/// Takes every message prepared for this match, leaving anything staged for a
+/// different one where it is.
+fn take_prepared_match_ends(memory: &mut PollMemory, match_id: &str) -> Vec<PreparedMatchEnd> {
+    let (mine, others): (Vec<_>, Vec<_>) = std::mem::take(&mut memory.prepared_match_ends)
+        .into_iter()
+        .partition(|prepared| prepared.match_id == match_id);
+    memory.prepared_match_ends = others;
+    mine
 }
 
 async fn process_lifecycle_transitions(
@@ -1625,34 +1659,42 @@ async fn process_lifecycle_transitions(
     for transition in transitions {
         match transition {
             LifecycleTransition::PregameStarted { .. } => {
-                let Some(command) = chat_command::find_lifecycle_command(
+                let pregame = chat_command::find_lifecycle_commands(
                     &commands,
                     chat_command::CustomCommandWhen::OnPregame,
-                ) else {
+                );
+                if pregame.is_empty() {
                     continue;
-                };
-                match super::bot_template::resolve_custom_messages(
-                    app,
-                    std::slice::from_ref(&command.message),
-                )
-                .await
-                {
-                    Ok(messages) => {
-                        if let Some(body) = messages.first() {
-                            deliver_lifecycle_direct(app, "onPregame", &command.language, body)
-                                .await;
+                }
+                // Resolved as one batch: the templates share a roster snapshot,
+                // and asking per row would re-query Riot for each message.
+                let messages: Vec<String> = pregame
+                    .iter()
+                    .map(|command| command.message.clone())
+                    .collect();
+                match super::bot_template::resolve_custom_messages(app, &messages).await {
+                    Ok(resolved) => {
+                        for (command, body) in pregame.iter().zip(resolved) {
+                            deliver_lifecycle_message(
+                                app,
+                                "onPregame",
+                                &chat_command::lifecycle_destination(command),
+                                &command.language,
+                                &body,
+                            )
+                            .await;
                         }
                     }
                     Err(error) => lifecycle_warning(app, "onPregame", error),
                 }
             }
             LifecycleTransition::MatchStarted { match_id } => {
-                memory.prepared_match_end = None;
-                let start = chat_command::find_lifecycle_command(
+                memory.prepared_match_ends.clear();
+                let start = chat_command::find_lifecycle_commands(
                     &commands,
                     chat_command::CustomCommandWhen::OnMatchStart,
                 );
-                let end = chat_command::find_lifecycle_command(
+                let end = chat_command::find_lifecycle_commands(
                     &commands,
                     chat_command::CustomCommandWhen::OnMatchEnd,
                 );
@@ -1672,29 +1714,40 @@ async fn process_lifecycle_transitions(
                             continue;
                         }
                     };
+                // Both groups went into that one batch, starts first.
                 let mut resolved = resolved.into_iter();
-                if let Some(command) = start {
-                    if let Some(body) = resolved.next() {
-                        deliver_lifecycle_direct(app, "onMatchStart", &command.language, &body)
-                            .await;
-                    }
+                for command in &start {
+                    let Some(body) = resolved.next() else { break };
+                    deliver_lifecycle_message(
+                        app,
+                        "onMatchStart",
+                        &chat_command::lifecycle_destination(command),
+                        &command.language,
+                        &body,
+                    )
+                    .await;
                 }
-                if let Some(command) = end {
-                    if let Some(body) = resolved.next() {
-                        memory.prepared_match_end = Some(PreparedMatchEnd {
-                            match_id,
-                            language: command.language,
-                            body,
-                        });
-                    }
+                for command in end {
+                    let Some(body) = resolved.next() else { break };
+                    memory.prepared_match_ends.push(PreparedMatchEnd {
+                        match_id: match_id.clone(),
+                        destination: chat_command::lifecycle_destination(&command),
+                        language: command.language,
+                        body,
+                    });
                 }
             }
             LifecycleTransition::MatchEnded { match_id } => {
-                let Some(prepared) = take_prepared_match_end(memory, &match_id) else {
-                    continue;
-                };
-                deliver_lifecycle_direct(app, "onMatchEnd", &prepared.language, &prepared.body)
+                for prepared in take_prepared_match_ends(memory, &match_id) {
+                    deliver_lifecycle_message(
+                        app,
+                        "onMatchEnd",
+                        &prepared.destination,
+                        &prepared.language,
+                        &prepared.body,
+                    )
                     .await;
+                }
             }
         }
     }
@@ -2040,6 +2093,8 @@ mod tests {
                 connected: true,
                 pregame_id: Some("glz-pregame-a".into()),
                 match_id: Some("glz-match-a".into()),
+                // No relay runs under test, so presence contributes nothing.
+                presence: Default::default(),
             }
         );
     }
@@ -2054,28 +2109,54 @@ mod tests {
         assert_eq!(player_match_id(&json!({})), None);
     }
 
+    fn prepared(match_id: &str, body: &str) -> PreparedMatchEnd {
+        PreparedMatchEnd {
+            match_id: match_id.into(),
+            // The room is captured at match start and travels with the body:
+            // by the time this fires the match itself is already gone.
+            destination: chat_command::LifecycleDestination::Group("party".into()),
+            language: "none".into(),
+            body: body.into(),
+        }
+    }
+
     #[test]
     fn prepared_match_end_keeps_start_snapshot_and_is_consumed_once() {
         let mut memory = PollMemory {
-            prepared_match_end: Some(PreparedMatchEnd {
-                match_id: "match-a".into(),
-                language: "none".into(),
-                body: "Start map was Ascent with 10 players".into(),
-            }),
+            prepared_match_ends: vec![prepared("match-a", "Start map was Ascent")],
             ..PollMemory::default()
         };
 
-        assert_eq!(take_prepared_match_end(&mut memory, "match-b"), None);
-        assert!(memory.prepared_match_end.is_some());
+        assert_eq!(take_prepared_match_ends(&mut memory, "match-b"), Vec::new());
+        assert_eq!(memory.prepared_match_ends.len(), 1);
         assert_eq!(
-            take_prepared_match_end(&mut memory, "match-a"),
-            Some(PreparedMatchEnd {
-                match_id: "match-a".into(),
-                language: "none".into(),
-                body: "Start map was Ascent with 10 players".into(),
-            })
+            take_prepared_match_ends(&mut memory, "match-a"),
+            vec![prepared("match-a", "Start map was Ascent")]
         );
-        assert_eq!(take_prepared_match_end(&mut memory, "match-a"), None);
+        assert_eq!(take_prepared_match_ends(&mut memory, "match-a"), Vec::new());
+    }
+
+    #[test]
+    fn every_message_staged_for_one_match_fires_and_others_are_left_staged() {
+        let mut memory = PollMemory {
+            prepared_match_ends: vec![
+                prepared("match-a", "gg"),
+                prepared("match-b", "stale"),
+                prepared("match-a", "wp"),
+            ],
+            ..PollMemory::default()
+        };
+
+        // Both rows bound to this match come back, in saved order, and the row
+        // belonging to another match stays behind rather than being dropped.
+        assert_eq!(
+            take_prepared_match_ends(&mut memory, "match-a"),
+            vec![prepared("match-a", "gg"), prepared("match-a", "wp")]
+        );
+        assert_eq!(
+            memory.prepared_match_ends,
+            vec![prepared("match-b", "stale")]
+        );
     }
 
     fn custom_commands() -> Vec<chat_command::CustomBotCommand> {

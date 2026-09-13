@@ -352,7 +352,7 @@ const DummyBot = () => {
 
 				{customCommands.map((item, index) => {
 					const lifecycle = isLifecycleWhen(item.when);
-					const direct = lifecycle || item.channel === "direct";
+					const direct = item.channel === "direct";
 					return (
 						<SectionRow
 						key={`${item.when}:${item.trigger}:${index}`}
@@ -429,11 +429,7 @@ const DummyBot = () => {
 							className={fieldClass}
 						>
 							{CUSTOM_COMMAND_WHENS.map((when) => (
-								<option
-									key={when}
-									value={when}
-									disabled={isLifecycleWhen(when) && customCommands.some((item) => item.when === when)}
-								>
+								<option key={when} value={when}>
 									{t(`dummyBot.customWhen.${when}`)}
 								</option>
 							))}
@@ -441,13 +437,28 @@ const DummyBot = () => {
 					</Field>
 
 					{isLifecycleWhen(draft.when) ? (
-						/* Lifecycle events have no trigger and always whisper you — that is
-						   a fact to state, not two disabled boxes to render. */
-						<div className="col-span-2 flex items-end sm:col-span-3">
-							<p className="pb-1.5 text-[11px] leading-4 text-(--text-muted)">
-								{t("dummyBot.customLifecycleNote")}
-							</p>
-						</div>
+						/* Lifecycle events have no trigger and can only send, so the only
+						   choice left is where the message lands. */
+						<>
+							<div className="col-span-2 flex items-end">
+								<p className="pb-1.5 text-[11px] leading-4 text-(--text-muted)">
+									{t("dummyBot.customLifecycleNote")}
+								</p>
+							</div>
+							<Field label={t("dummyBot.customTargetLabel")}>
+								<select
+									value={draft.channel}
+									onChange={(event) => setDraft((current) => ({ ...current, channel: event.target.value as CustomBotCommand["channel"] }))}
+									className={fieldClass}
+								>
+									{channelsForCustomCommand("send").map((channel) => (
+										<option key={channel} value={channel}>
+											{channel === "direct" ? t("dummyBot.customTargetDirect") : channel}
+										</option>
+									))}
+								</select>
+							</Field>
+						</>
 					) : (
 						<>
 							<Field label={t("dummyBot.customTriggerLabel")}>
@@ -520,7 +531,7 @@ const DummyBot = () => {
 					<div className="mt-2 flex items-center justify-between gap-3 pb-2">
 						<div className="min-w-0">
 							{customError && <p className="text-[11px] text-(--signal-neg)">{customError}</p>}
-							{(isLifecycleWhen(draft.when) || draft.channel === "direct") && (
+							{draft.channel === "direct" && (
 								<p className="text-[11px] leading-4 text-(--text-muted)">
 									{t("dummyBot.customDirectRequiresRelay")}
 								</p>

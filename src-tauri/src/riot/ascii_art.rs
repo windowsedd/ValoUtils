@@ -16,10 +16,16 @@
 //! Letters are solid [`INK`] blocks on a [`BACKGROUND`] field, which VALORANT
 //! draws as a hatched panel with the word standing out of it.
 //!
-//! The payload contains no newline characters. Instead, every visual row is
-//! padded to VALORANT's 26-column chat width and separated by one ordinary
-//! space. Those spaces give the game legal wrap points without creating hard
-//! line breaks. The compact face lets `HK GAY` fit on one visual line.
+//! Every visual row is padded to VALORANT's 26-column chat width and joined by
+//! [`ROW_SEPARATOR`]. The compact face lets `HK GAY` fit on one visual line.
+//!
+//! That separator started as an ordinary space, on the theory that the game
+//! collapses newlines and a space at least hands it a legal wrap point. In
+//! practice the wrap landed in the wrong place - the pane does not break at 26
+//! columns - and the glyph rows stacked on top of each other, so the separator
+//! is a real newline now. If VALORANT does collapse it after all, put the space
+//! back: it is one constant, and every length here counts the separator as one
+//! character either way.
 //!
 //! [`MAX_COLUMNS`] is the one number here that is a judgement call rather than
 //! arithmetic. See its comment before changing anything else.
@@ -33,7 +39,10 @@ use crate::riot::models::ChatChannel;
 /// for runtime verification: 234 characters divide into exactly nine rows of
 /// 26. Changing it changes the wire format, not just the visual padding.
 pub const MAX_COLUMNS: usize = 26;
-/// Nine complete rows plus the eight spaces between them stay below the
+/// What sits between two visual rows. Exactly one character wide by
+/// construction: every payload length below assumes that.
+pub const ROW_SEPARATOR: char = '\n';
+/// Nine complete rows plus the eight separators between them stay below the
 /// game's message length limit while preserving the 26-column alignment.
 pub const MAX_PAYLOAD_CHARACTERS: usize = MAX_COLUMNS * 9 + 8;
 /// Background columns between adjacent glyphs.
@@ -313,7 +322,7 @@ fn render_lines(lines: &[&str], face: Face) -> String {
         rows.extend(render_line(line, face, inner));
     }
     rows.extend(std::iter::repeat_n(blank, BORDER));
-    rows.join(" ")
+    rows.join(&ROW_SEPARATOR.to_string())
 }
 
 fn background_row(width: usize) -> String {
@@ -481,7 +490,7 @@ mod tests {
     use super::*;
 
     fn rows(payload: &str) -> Vec<String> {
-        payload.split(' ').map(str::to_string).collect()
+        payload.split(ROW_SEPARATOR).map(str::to_string).collect()
     }
 
     fn face_of(input: &str) -> Face {
@@ -608,7 +617,7 @@ mod tests {
         let parsed = parse_ascii_command(".ascii hk gay").unwrap();
 
         assert_eq!(face_of("hk gay"), Face::Compact);
-        assert!(!parsed.payload.contains(['\r', '\n']));
+        assert!(!parsed.payload.contains('\r'));
         assert_eq!(parsed.payload.chars().count(), MAX_COLUMNS * 5 + 4);
         assert!(rows(&parsed.payload)
             .iter()
@@ -616,14 +625,17 @@ mod tests {
     }
 
     #[test]
-    fn visual_rows_are_separated_by_breakable_spaces() {
+    fn visual_rows_are_separated_by_one_line_break() {
         let payload = parse_ascii_command(".ascii hk gay").unwrap().payload;
-        let rows: Vec<&str> = payload.split(' ').collect();
+        let rows: Vec<&str> = payload.split(ROW_SEPARATOR).collect();
 
         assert_eq!(rows.len(), 5);
         assert!(rows.iter().all(|row| row.chars().count() == MAX_COLUMNS));
         assert_eq!(payload.chars().count(), MAX_COLUMNS * 5 + 4);
-        assert!(!payload.contains(['\r', '\n']));
+        // A bare newline and nothing else: a CR would draw as a stray
+        // glyph, and a leftover space would add a sixth row to the split.
+        assert!(!payload.contains('\r'));
+        assert!(!payload.contains(' '));
     }
 
     #[test]
@@ -735,7 +747,7 @@ mod tests {
                 "░░░░░░░░░▀▄█░▀▄█░░░░░░░░░░",
                 "░░░░░░░░░░░░░░░░░░░░░░░░░░",
             ]
-            .join(" ")
+            .join(&ROW_SEPARATOR.to_string())
         );
     }
 
@@ -744,7 +756,7 @@ mod tests {
         for input in [".ascii probe", ".ascii PROBE", ".ascii party probe"] {
             let parsed = parse_ascii_command(input).unwrap();
             assert_eq!(parsed.text, "PROBE", "{input}");
-            assert!(!parsed.payload.contains(['\r', '\n']), "{input}");
+            assert!(!parsed.payload.contains('\r'), "{input}");
             assert_eq!(
                 parsed.payload.chars().count(),
                 MAX_COLUMNS * 5 + 4,

@@ -1,3 +1,5 @@
+.env
+.env.local
 electron-builder.env
 
 # Claude Code memory and temp
