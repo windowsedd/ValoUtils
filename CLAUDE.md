@@ -233,6 +233,34 @@ The local chat relay's TLS identity is selectable (config key `presenceCert`, de
 - Follow the pattern in `src/pages/SettingsProfiles.tsx`
 - Use `CustomButton` with `onClickLoading` returning a `Promise<void>` — reject with a string to show an error toast
 
+### Agent-lock event logs
+
+Live Game pregame refreshes write an `INFO` entry (`Agent lock observed`) to the
+existing log file and Logs page when Riot reports `CharacterSelectionState: locked`.
+Each entry includes the match, player PUUID, and agent UUID. Repeated polls and
+partial rosters do not repeat the same lock; a new match starts fresh tracking.
+The log timestamp is when ValoUtils first observes the lock, including players
+already locked on the first refresh, rather than a server-provided lock time.
+Collection follows Live Game polling (normally every 5 seconds while the page is
+visible); it adds no network requests. Locks may be missed if agent select ends
+between polls or the page is inactive, unless another caller fetches a live snapshot.
+
+Snapshots also include `events` with stable IDs and `observedAt` Unix milliseconds.
+The collapsible Events panel in the bottom-right of Live Game shows these with
+localized agent names, respects hidden player names, and retains the original
+timestamps across refreshes and the transition into the same core game. Events
+are scoped to the current match and collected in memory while the app runs.
+
+### Open at Windows startup
+
+Settings → Application → Open at startup uses `startup:get` / `startup:set`,
+registered in `lib.rs` and implemented in `commands/startup.rs`. Windows' current-user
+`Software\Microsoft\Windows\CurrentVersion\Run` value named `ValoUtils` is the source
+of truth; no duplicate preference is saved in `config.json`. Enabling writes the
+quoted current executable path, and disabling removes only that value. Startup
+registration is opt-in and takes effect at the next Windows sign-in. The UI waits
+for a successful reply before changing the toggle and reports registration errors.
+
 ### Add a new settings tab in the viewer
 
 - Edit `src/components/parsed-settings-viewer.tsx`

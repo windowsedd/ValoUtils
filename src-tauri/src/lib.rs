@@ -178,6 +178,8 @@ pub fn run() {
             commands::app::update_check,
             commands::app::config_get_all,
             commands::app::config_set,
+            commands::startup::startup_get,
+            commands::startup::startup_set,
             commands::riot::client_info_get,
             commands::riot::tokens_get,
             commands::riot::tokens_refresh,

@@ -1,4 +1,5 @@
 import { LiveGameStatePanel } from "@/components/live-game/live-game-state-panel";
+import { LiveEventLog } from "@/components/live-game/live-event-log";
 import { isCurrentStatsAttempt, livePlayerStatsKey, liveStatsRequestKey, shouldPreserveReadyStats } from "@/components/live-game/live-game-events";
 import { LiveScoutTable } from "@/components/live-game/live-scout-table";
 import { useLiveGameAssets } from "@/components/live-game/use-live-game-assets";
@@ -183,7 +184,7 @@ const LiveGame = () => {
 	);
 
 	return (
-		<div className="h-full min-h-0 flex flex-col animate-fade-in motion-reduce:animate-none">
+		<div className="relative h-full min-h-0 flex flex-col animate-fade-in motion-reduce:animate-none">
 			<PageHeader icon={<LuCrosshair className="text-lg" />} title={t("liveGame.title")} />
 
 			{loading && !snapshot && <LiveGameStatePanel kind="loading" />}
@@ -205,6 +206,9 @@ const LiveGame = () => {
 					refreshError={error ?? undefined}
 					onRefresh={refreshSnapshot}
 				/>
+			)}
+			{!loginRequired && activeSnapshot && (activeSnapshot.state === "pregame" || activeSnapshot.state === "coregame") && (
+				<LiveEventLog events={activeSnapshot.events ?? []} players={players} agents={assets.agents} />
 			)}
 		</div>
 	);

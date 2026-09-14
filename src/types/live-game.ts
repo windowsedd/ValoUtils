@@ -1,5 +1,14 @@
 export type LiveState = "coregame" | "pregame" | "party" | "idle";
 
+export type LiveGameEvent = {
+  id: string;
+  kind: "agent-lock";
+  /** Unix milliseconds when the backend first observed the event. */
+  observedAt: number;
+  playerId: string;
+  agentId: string;
+};
+
 export type WeaponSkin = {
   skinId?: string;
   levelId?: string;
@@ -128,6 +137,7 @@ export type LiveGameResponse =
       match: LiveMatchContext | null;
       teams: LiveTeamSummary[];
       players: LivePlayer[];
+      events?: LiveGameEvent[];
       warning?: "rateLimited" | "unavailable" | null;
       /** Seconds until throttled requests are worth trying again. */
       retryInSeconds?: number | null;

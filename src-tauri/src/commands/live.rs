@@ -198,10 +198,87 @@ fn enrichment_refresh_timestamp(
     }
 }
 
+/// Keep locks across partial polls, but release the previous match's players
+/// when a new agent-select session starts.
+#[derive(Default)]
+struct AgentLockTracker {
+    match_id: String,
+    locks: HashSet<(String, String)>,
+    events: Vec<Value>,
+}
+
+impl AgentLockTracker {
+    fn observe(&mut self, match_id: &str, players: &[Value]) -> Vec<(String, String)> {
+        self.observe_at(match_id, players, chrono_millis())
+    }
+
+    fn observe_at(
+        &mut self,
+        match_id: &str,
+        players: &[Value],
+        observed_at: i64,
+    ) -> Vec<(String, String)> {
+        let match_id = match_id.trim().to_ascii_lowercase();
+        if match_id.is_empty() {
+            return Vec::new();
+        }
+        if self.match_id != match_id {
+            self.match_id = match_id;
+            self.locks.clear();
+            self.events.clear();
+        }
+
+        let mut observed = Vec::new();
+        for player in players {
+            if !player
+                .get("CharacterSelectionState")
+                .and_then(Value::as_str)
+                .is_some_and(|state| state.eq_ignore_ascii_case("locked"))
+            {
+                continue;
+            }
+            let puuid = raw_puuid(player).trim().to_ascii_lowercase();
+            let agent = player
+                .get("CharacterID")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .trim()
+                .to_ascii_lowercase();
+            if puuid.is_empty()
+                || agent.is_empty()
+                || agent == "00000000-0000-0000-0000-000000000000"
+            {
+                continue;
+            }
+            let lock = (puuid, agent);
+            if self.locks.insert(lock.clone()) {
+                self.events.push(json!({
+                    "id": format!("{}:{}:{}", self.match_id, lock.0, lock.1),
+                    "kind": "agent-lock",
+                    "observedAt": observed_at,
+                    "playerId": lock.0,
+                    "agentId": lock.1,
+                }));
+                observed.push(lock);
+            }
+        }
+        observed
+    }
+
+    fn events_for(&self, match_id: Option<&str>) -> Vec<Value> {
+        if match_id.is_some_and(|id| id.trim().eq_ignore_ascii_case(&self.match_id)) {
+            self.events.clone()
+        } else {
+            Vec::new()
+        }
+    }
+}
+
 /// The renderer polls every ~5s. Current match fields are rebuilt each time,
 /// while PD-backed enrichment and same-roster party continuity are retained here.
 pub struct LiveCache {
     refresh: AsyncMutex<()>,
+    agent_locks: Mutex<AgentLockTracker>,
     enrichment: Mutex<HashMap<String, CachedEnrichment>>,
     continuity_roster: Mutex<Option<String>>,
     continuity_labels: Mutex<HashMap<String, String>>,
@@ -220,6 +297,7 @@ impl Default for LiveCache {
     fn default() -> Self {
         Self {
             refresh: AsyncMutex::default(),
+            agent_locks: Mutex::default(),
             enrichment: Mutex::default(),
             continuity_roster: Mutex::default(),
             continuity_labels: Mutex::default(),
@@ -1202,6 +1280,18 @@ async fn detect_state(
     if let Some(pre_p) = safe_get_player(|| api.pregame_get_player(puuid)).await? {
         if let Some(match_id) = pre_p.get("MatchID").and_then(|v| v.as_str()) {
             let match_data = api.pregame_get_match(match_id).await?;
+            // Log immediately on receipt, before loadouts or enrichment can
+            // delay the timestamp. Riot exposes the selection state, not the
+            // actual lock time; the logger timestamps this first observation.
+            let roster = build_pregame_roster(&match_data, None, None, puuid);
+            let locks = cache
+                .agent_locks
+                .lock()
+                .unwrap()
+                .observe(match_id, &roster.players);
+            for (player, agent) in locks {
+                log::info!("Agent lock observed: match={match_id} player={player} agent={agent}");
+            }
             let loadouts = cached_loadouts(
                 &cache.match_documents,
                 &format!("pregame-loadouts:{match_id}"),
@@ -1268,6 +1358,7 @@ pub async fn live_game_fetch(
                 "rosterKey": "idle",
                 "match": Value::Null,
                 "teams": [],
+                "events": [],
                 "players": []
             })
             .to_string();
@@ -1359,6 +1450,11 @@ pub async fn live_game_fetch(
         let match_context =
             extract_match_context(detected.state, &match_data, detected.match_id.as_deref());
         let teams = summarize_teams(&players);
+        let events = cache
+            .agent_locks
+            .lock()
+            .unwrap()
+            .events_for(detected.match_id.as_deref());
         log::debug!(
             "live: {} snapshot, {} players{}",
             detected.state.as_str(),
@@ -1372,6 +1468,7 @@ pub async fn live_game_fetch(
             "match": match_context,
             "teams": teams,
             "players": players,
+            "events": events,
             "warning": warning,
             "retryInSeconds": retry_in_seconds
         })
@@ -1753,6 +1850,106 @@ pub async fn live_game_dump(app: AppHandle, riot: State<'_, RiotState>) -> Resul
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn agent_lock_events_keep_first_timestamp_and_stay_with_their_match() {
+        let mut tracker = AgentLockTracker::default();
+        let players = vec![json!({
+            "Subject": "player", "CharacterID": "agent", "CharacterSelectionState": "locked"
+        })];
+        tracker.observe_at("match-1", &players, 1_000);
+        tracker.observe_at("match-1", &players, 5_000);
+        let events = tracker.events_for(Some("MATCH-1"));
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0]["observedAt"], 1_000);
+        assert_eq!(events[0]["playerId"], "player");
+        assert_eq!(events[0]["agentId"], "agent");
+        assert_eq!(events[0]["kind"], "agent-lock");
+        assert!(tracker.events_for(None).is_empty());
+        assert!(tracker.events_for(Some("match-2")).is_empty());
+
+        tracker.observe_at("match-2", &players, 9_000);
+        let next = tracker.events_for(Some("match-2"));
+        assert_eq!(next.len(), 1);
+        assert_eq!(next[0]["observedAt"], 9_000);
+        assert_ne!(events[0]["id"], next[0]["id"]);
+        assert!(tracker.events_for(Some("match-1")).is_empty());
+    }
+
+    #[test]
+    fn agent_locks_are_recorded_once_when_selection_becomes_locked() {
+        let mut tracker = AgentLockTracker::default();
+        let mut player = json!({
+            "Subject": "player-1",
+            "CharacterID": "agent-1",
+            "CharacterSelectionState": "selected"
+        });
+        assert!(tracker
+            .observe("match-1", std::slice::from_ref(&player))
+            .is_empty());
+
+        player["CharacterSelectionState"] = json!("locked");
+        assert_eq!(
+            tracker.observe("match-1", std::slice::from_ref(&player)),
+            vec![("player-1".to_string(), "agent-1".to_string())]
+        );
+        assert!(tracker
+            .observe("match-1", std::slice::from_ref(&player))
+            .is_empty());
+        // Missing players in a partial response must not make a later poll
+        // report the same lock again.
+        assert!(tracker.observe("match-1", &[]).is_empty());
+        assert!(tracker.observe("match-1", &[player]).is_empty());
+    }
+
+    #[test]
+    fn agent_locks_include_first_observation_and_reset_for_a_new_match() {
+        let mut tracker = AgentLockTracker::default();
+        let players = vec![
+            json!({ "Subject": "one", "CharacterID": "agent", "CharacterSelectionState": "locked" }),
+            json!({ "Subject": "two", "CharacterID": "agent", "CharacterSelectionState": "locked" }),
+        ];
+        assert_eq!(tracker.observe("match-1", &players).len(), 2);
+        assert!(tracker.observe("match-1", &players).is_empty());
+        assert_eq!(tracker.observe("match-2", &players).len(), 2);
+    }
+
+    #[test]
+    fn agent_locks_ignore_incomplete_or_unselected_players() {
+        let mut tracker = AgentLockTracker::default();
+        let players = vec![
+            json!({ "Subject": "stub" }),
+            json!({ "Subject": "hover", "CharacterID": "agent", "CharacterSelectionState": "selected" }),
+            json!({ "Subject": "unknown-state", "CharacterID": "agent" }),
+            json!({ "CharacterID": "agent", "CharacterSelectionState": "locked" }),
+            json!({ "Subject": "", "CharacterID": "agent", "CharacterSelectionState": "locked" }),
+            json!({ "Subject": "missing-agent", "CharacterSelectionState": "locked" }),
+            json!({ "Subject": "empty-agent", "CharacterID": "", "CharacterSelectionState": "locked" }),
+            json!({ "Subject": "no-agent", "CharacterID": "00000000-0000-0000-0000-000000000000", "CharacterSelectionState": "locked" }),
+        ];
+        assert!(tracker.observe("match-1", &players).is_empty());
+        let valid = json!({ "Subject": "stub", "CharacterID": "agent", "CharacterSelectionState": "locked" });
+        assert_eq!(tracker.observe("match-1", &[valid]).len(), 1);
+    }
+
+    #[test]
+    fn agent_locks_deduplicate_case_and_detect_a_different_agent() {
+        let mut tracker = AgentLockTracker::default();
+        let mut player = json!({ "Subject": "PLAYER", "CharacterID": "AGENT", "CharacterSelectionState": "LOCKED" });
+        assert_eq!(
+            tracker
+                .observe("MATCH", std::slice::from_ref(&player))
+                .len(),
+            1
+        );
+        player["Subject"] = json!("player");
+        player["CharacterID"] = json!("agent");
+        assert!(tracker
+            .observe("match", std::slice::from_ref(&player))
+            .is_empty());
+        player["CharacterID"] = json!("another-agent");
+        assert_eq!(tracker.observe("match", &[player]).len(), 1);
+    }
 
     #[test]
     fn match_documents_are_served_until_the_ttl_runs_out() {

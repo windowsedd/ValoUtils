@@ -18,5 +18,6 @@ pub(crate) mod rank_shields;
 pub mod riot;
 pub mod riot_chat;
 pub mod riot_launch;
+pub mod startup;
 pub mod store;
 pub mod tools;

@@ -45,6 +45,7 @@ windowsedd-valorant-api = "0.1"
 
 [target.'cfg(windows)'.dependencies]
 schannel = "0.1"
+winreg = "0.55"
 windows-sys = { version = "0.61", features = ["Win32_Storage_FileSystem"] }
 
 [dev-dependencies]

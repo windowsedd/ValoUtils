@@ -64,15 +64,22 @@ const clampRecentMatchCount = (value: number | string): number => {
 const Toggle = ({
 	checked,
 	onChange,
+	disabled = false,
+	label,
 }: {
 	checked: boolean;
 	onChange: (v: boolean) => void;
+	disabled?: boolean;
+	label?: string;
 }) => (
 	<button
+		type="button"
 		role="switch"
 		aria-checked={checked}
+		aria-label={label}
+		disabled={disabled}
 		onClick={() => onChange(!checked)}
-		className={`relative inline-flex h-[18px] w-8 shrink-0 cursor-pointer rounded-full border border-transparent transition-[background-color,box-shadow] duration-150 focus:outline-none focus-visible:shadow-[0_0_0_2px_var(--accent-soft)] ${
+		className={`relative inline-flex h-[18px] w-8 shrink-0 cursor-pointer disabled:cursor-wait disabled:opacity-50 rounded-full border border-transparent transition-[background-color,box-shadow] duration-150 focus:outline-none focus-visible:shadow-[0_0_0_2px_var(--accent-soft)] ${
 			checked ? "bg-(--accent)" : "bg-(--control)"
 		}`}
 	>
@@ -126,6 +133,8 @@ const Settings = () => {
 	const [copied, setCopied] = useState<string | null>(null);
 	const [revealPassword, setRevealPassword] = useState(false);
 	const [certImporting, setCertImporting] = useState(false);
+	const [startupEnabled, setStartupEnabled] = useState<boolean | null>(null);
+	const [startupSaving, setStartupSaving] = useState(false);
 	const [view, setView] = useState<"settings" | "api-reference">("settings");
 	const [appConfig, setAppConfig] = useState<AppConfig>({
 		autoUpdate: true,
@@ -145,6 +154,29 @@ const Settings = () => {
 		recentMatchCount: 5,
 	});
 	const [analytics, setAnalytics] = useState(() => localStorage.getItem("valoutils-analytics") !== "false");
+
+	useEffect(() => {
+		if (!window.Main) return;
+		const onStartup = (message: string) => {
+			setStartupSaving(false);
+			try {
+				const response = JSON.parse(message) as { success: boolean; enabled?: boolean };
+				if (!response.success || typeof response.enabled !== "boolean") {
+					throw new Error("Startup request failed");
+				}
+				setStartupEnabled(response.enabled);
+			} catch {
+				Toast.toast.danger(t("settings.openAtStartupError"));
+			}
+		};
+		window.Main.on("startup:get", onStartup);
+		window.Main.on("startup:set", onStartup);
+		window.Main.send("startup:get");
+		return () => {
+			window.Main.removeListener("startup:get", onStartup);
+			window.Main.removeListener("startup:set", onStartup);
+		};
+	}, [t]);
 
 	useEffect(() => {
 		if (!window.Main) return;
@@ -422,6 +454,23 @@ const Settings = () => {
 
 				<SectionCard title={t("settings.sectionApp")} accent="#a78bfa">
 					<div className="flex flex-col px-1">
+				<SettingRow
+					icon={<FaRocket />}
+					label={t("settings.openAtStartup")}
+					description={t("settings.openAtStartupDesc")}
+					right={
+						<Toggle
+							label={t("settings.openAtStartup")}
+							checked={startupEnabled === true}
+							disabled={startupEnabled === null || startupSaving}
+							onChange={(enabled) => {
+								setStartupSaving(true);
+								window.Main.send("startup:set", enabled);
+							}}
+						/>
+					}
+				/>
+
 				<SettingRow
 					icon={<FaRocket />}
 					label={t("settings.autoUpdate")}
