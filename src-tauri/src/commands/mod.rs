@@ -3,6 +3,7 @@ pub mod battlepass;
 pub(crate) mod bot_template;
 pub mod career;
 pub mod chat;
+pub mod display;
 pub mod fake_player;
 pub mod friend_profile;
 pub mod friends;

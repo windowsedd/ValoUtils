@@ -198,7 +198,7 @@ fn enrichment_refresh_timestamp(
     }
 }
 
-/// Keep locks across partial polls, but release the previous match's players
+/// Keep allied locks across partial polls, but release the previous match's players
 /// when a new agent-select session starts.
 #[derive(Default)]
 struct AgentLockTracker {
@@ -230,6 +230,11 @@ impl AgentLockTracker {
 
         let mut observed = Vec::new();
         for player in players {
+            // Pregame roster assembly normalizes our team to "Ally".
+            // Filter before recording so log entries and the UI count agree.
+            if player.get("TeamID").and_then(Value::as_str) != Some("Ally") {
+                continue;
+            }
             if !player
                 .get("CharacterSelectionState")
                 .and_then(Value::as_str)
@@ -1852,10 +1857,38 @@ mod tests {
     use super::*;
 
     #[test]
+    fn agent_locks_only_log_and_count_allies_from_a_mixed_roster() {
+        let locked = |subject: &str| json!({
+            "Subject": subject,
+            "CharacterID": "agent",
+            "CharacterSelectionState": "locked",
+        });
+        let source = json!({
+            "AllyTeam": { "TeamID": "Red", "Players": [locked("self"), locked("teammate")] },
+            "EnemyTeam": { "TeamID": "Blue", "Players": [locked("enemy")] },
+        });
+        let mut roster = build_pregame_roster(&source, None, None, "self");
+        // A player without a confirmed team must not add an event either.
+        roster.players.push(locked("unknown"));
+        let mut tracker = AgentLockTracker::default();
+        let logged = tracker.observe_at("match", &roster.players, 1_000);
+        assert_eq!(
+            logged,
+            vec![("self".into(), "agent".into()), ("teammate".into(), "agent".into())]
+        );
+        let events = tracker.events_for(Some("match"));
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0]["playerId"], "self");
+        assert_eq!(events[1]["playerId"], "teammate");
+        assert!(tracker.observe_at("match", &roster.players, 5_000).is_empty());
+        assert_eq!(tracker.events_for(Some("match")), events);
+    }
+
+    #[test]
     fn agent_lock_events_keep_first_timestamp_and_stay_with_their_match() {
         let mut tracker = AgentLockTracker::default();
         let players = vec![json!({
-            "Subject": "player", "CharacterID": "agent", "CharacterSelectionState": "locked"
+            "Subject": "player", "CharacterID": "agent", "CharacterSelectionState": "locked", "TeamID": "Ally"
         })];
         tracker.observe_at("match-1", &players, 1_000);
         tracker.observe_at("match-1", &players, 5_000);
@@ -1882,7 +1915,8 @@ mod tests {
         let mut player = json!({
             "Subject": "player-1",
             "CharacterID": "agent-1",
-            "CharacterSelectionState": "selected"
+            "CharacterSelectionState": "selected",
+            "TeamID": "Ally"
         });
         assert!(tracker
             .observe("match-1", std::slice::from_ref(&player))
@@ -1906,8 +1940,8 @@ mod tests {
     fn agent_locks_include_first_observation_and_reset_for_a_new_match() {
         let mut tracker = AgentLockTracker::default();
         let players = vec![
-            json!({ "Subject": "one", "CharacterID": "agent", "CharacterSelectionState": "locked" }),
-            json!({ "Subject": "two", "CharacterID": "agent", "CharacterSelectionState": "locked" }),
+            json!({ "Subject": "one", "CharacterID": "agent", "CharacterSelectionState": "locked", "TeamID": "Ally" }),
+            json!({ "Subject": "two", "CharacterID": "agent", "CharacterSelectionState": "locked", "TeamID": "Ally" }),
         ];
         assert_eq!(tracker.observe("match-1", &players).len(), 2);
         assert!(tracker.observe("match-1", &players).is_empty());
@@ -1918,24 +1952,24 @@ mod tests {
     fn agent_locks_ignore_incomplete_or_unselected_players() {
         let mut tracker = AgentLockTracker::default();
         let players = vec![
-            json!({ "Subject": "stub" }),
-            json!({ "Subject": "hover", "CharacterID": "agent", "CharacterSelectionState": "selected" }),
-            json!({ "Subject": "unknown-state", "CharacterID": "agent" }),
-            json!({ "CharacterID": "agent", "CharacterSelectionState": "locked" }),
-            json!({ "Subject": "", "CharacterID": "agent", "CharacterSelectionState": "locked" }),
-            json!({ "Subject": "missing-agent", "CharacterSelectionState": "locked" }),
-            json!({ "Subject": "empty-agent", "CharacterID": "", "CharacterSelectionState": "locked" }),
-            json!({ "Subject": "no-agent", "CharacterID": "00000000-0000-0000-0000-000000000000", "CharacterSelectionState": "locked" }),
+            json!({ "Subject": "stub", "TeamID": "Ally" }),
+            json!({ "Subject": "hover", "CharacterID": "agent", "CharacterSelectionState": "selected", "TeamID": "Ally" }),
+            json!({ "Subject": "unknown-state", "CharacterID": "agent", "TeamID": "Ally" }),
+            json!({ "CharacterID": "agent", "CharacterSelectionState": "locked", "TeamID": "Ally" }),
+            json!({ "Subject": "", "CharacterID": "agent", "CharacterSelectionState": "locked", "TeamID": "Ally" }),
+            json!({ "Subject": "missing-agent", "CharacterSelectionState": "locked", "TeamID": "Ally" }),
+            json!({ "Subject": "empty-agent", "CharacterID": "", "CharacterSelectionState": "locked", "TeamID": "Ally" }),
+            json!({ "Subject": "no-agent", "CharacterID": "00000000-0000-0000-0000-000000000000", "CharacterSelectionState": "locked", "TeamID": "Ally" }),
         ];
         assert!(tracker.observe("match-1", &players).is_empty());
-        let valid = json!({ "Subject": "stub", "CharacterID": "agent", "CharacterSelectionState": "locked" });
+        let valid = json!({ "Subject": "stub", "CharacterID": "agent", "CharacterSelectionState": "locked", "TeamID": "Ally" });
         assert_eq!(tracker.observe("match-1", &[valid]).len(), 1);
     }
 
     #[test]
     fn agent_locks_deduplicate_case_and_detect_a_different_agent() {
         let mut tracker = AgentLockTracker::default();
-        let mut player = json!({ "Subject": "PLAYER", "CharacterID": "AGENT", "CharacterSelectionState": "LOCKED" });
+        let mut player = json!({ "Subject": "PLAYER", "CharacterID": "AGENT", "CharacterSelectionState": "LOCKED", "TeamID": "Ally" });
         assert_eq!(
             tracker
                 .observe("MATCH", std::slice::from_ref(&player))

@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { Toast } from "@heroui/react";
 import { useTranslation } from "react-i18next";
 import { FaGlobe, FaRocket, FaCode, FaChartBar, FaLanguage, FaKey, FaArrowUpRightFromSquare, FaCopy, FaCheck, FaEye, FaEyeSlash, FaBook, FaComments, FaGaugeHigh, FaListOl } from "react-icons/fa6";
-import { LuBot, LuScrollText, LuSettings } from "react-icons/lu";
+import { LuBot, LuMonitor, LuScrollText, LuSettings } from "react-icons/lu";
+import { DisplaySetting } from "@/components/display-setting";
 import { PageHeader, SectionCard, pageBodyClass } from "@/components/section-card";
 import { useConfiguredRoutes } from "@/components/router";
 import SwaggerPage from "@/pages/SwaggerPage";
@@ -454,6 +455,13 @@ const Settings = () => {
 
 				<SectionCard title={t("settings.sectionApp")} accent="#a78bfa">
 					<div className="flex flex-col px-1">
+				<SettingRow
+					icon={<LuMonitor />}
+					label={t("settings.openOnDisplay")}
+					description={t("settings.openOnDisplayDesc")}
+					right={<DisplaySetting />}
+				/>
+
 				<SettingRow
 					icon={<FaRocket />}
 					label={t("settings.openAtStartup")}

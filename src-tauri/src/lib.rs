@@ -63,6 +63,7 @@ pub fn run() {
 
             let mut config_defaults = serde_json::Map::new();
             config_defaults.insert("openDevTools".into(), json!(false));
+            config_defaults.insert("startupMonitor".into(), json!(""));
             config_defaults.insert("presenceEnabled".into(), json!(true));
             config_defaults.insert("presenceMode".into(), json!("offline"));
             config_defaults.insert("presenceStartup".into(), json!("last"));
@@ -77,6 +78,13 @@ pub fn run() {
             config_defaults.insert("showLogsTab".into(), json!(false));
             config_defaults.insert("botCustomCommands".into(), json!([]));
             let config_store = Store::new("config", config_defaults);
+            if let Some(window) = app.get_webview_window("main") {
+                if let Err(error) = commands::display::position_on_startup(&window, &config_store) {
+                    log::warn!("Could not apply the startup display: {error}");
+                }
+                // Always show the window, even if display discovery failed.
+                window.show()?;
+            }
             let saved_presence_mode = config_store
                 .get("presenceMode")
                 .and_then(|value| value.as_str().and_then(presence_proxy::PresenceMode::parse))
@@ -180,6 +188,8 @@ pub fn run() {
             commands::app::config_set,
             commands::startup::startup_get,
             commands::startup::startup_set,
+            commands::display::display_get,
+            commands::display::display_set,
             commands::riot::client_info_get,
             commands::riot::tokens_get,
             commands::riot::tokens_refresh,

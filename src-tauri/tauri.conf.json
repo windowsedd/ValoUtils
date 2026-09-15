@@ -13,6 +13,7 @@
 		"windows": [
 			{
 				"title": "ValoUtils",
+				"visible": false,
 				"width": 1000,
 				"height": 720,
 				"minWidth": 760,

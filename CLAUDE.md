@@ -105,6 +105,7 @@ Rust command conventions (see any file in `src-tauri/src/commands/`):
 | `clipboard:get/set` | `clipboard_get/set` | Clipboard access |
 | `analytics:track` | `analytics_track` | Fire an Aptabase event |
 | `update:check` | `update_check` | Trigger update check |
+| `display:get` / `display:set` | `display_get/set` | List connected displays and save the display used on the next launch |
 | `open_url` | `open_url` | Open URL in system browser |
 | `alert:info` | *(event only)* | Push: show toast in frontend |
 
@@ -236,7 +237,9 @@ The local chat relay's TLS identity is selectable (config key `presenceCert`, de
 ### Agent-lock event logs
 
 Live Game pregame refreshes write an `INFO` entry (`Agent lock observed`) to the
-existing log file and Logs page when Riot reports `CharacterSelectionState: locked`.
+existing log file and Logs page when Riot reports `CharacterSelectionState: locked`
+for your team (including you). Only normalized `Ally` players are recorded; enemy
+and unknown-team locks are excluded from both the logs and the Events panel count.
 Each entry includes the match, player PUUID, and agent UUID. Repeated polls and
 partial rosters do not repeat the same lock; a new match starts fresh tracking.
 The log timestamp is when ValoUtils first observes the lock, including players
@@ -260,6 +263,15 @@ of truth; no duplicate preference is saved in `config.json`. Enabling writes the
 quoted current executable path, and disabling removes only that value. Startup
 registration is opt-in and takes effect at the next Windows sign-in. The UI waits
 for a successful reply before changing the toggle and reports registration errors.
+
+Settings → Application → Open on display saves `startupMonitor` in `config.json`.
+An empty selection follows the primary display; a named selection uses the Windows
+monitor name, with a primary-display fallback when disconnected. The display list
+includes resolutions and a refresh control. `commands/display.rs` positions the
+main window within the selected monitor's work area before `lib.rs` shows it;
+`tauri.conf.json` starts the window hidden to avoid flashing on the wrong display.
+Placement errors are logged and the window is still shown. The choice applies to
+both manual launches and Windows sign-in launches, and does not move other apps.
 
 ### Add a new settings tab in the viewer
 
