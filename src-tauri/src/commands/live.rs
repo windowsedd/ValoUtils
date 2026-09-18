@@ -23,8 +23,9 @@ const SOCKET_SKIN: &str = "bcef87d6-209b-46c6-8b19-fbe40bd95abc";
 const SOCKET_SKIN_LEVEL: &str = "e7c63390-eda7-46e0-bb7a-a6abdacd2433";
 const SOCKET_SKIN_CHROMA: &str = "3ad1b2b2-acdb-4524-852f-954a76ddae0a";
 const ENRICHMENT_TTL: Duration = Duration::from_secs(10 * 60);
-/// Documents that answer identically for the whole of a match id.
-const MATCH_DOCUMENT_TTL: Duration = Duration::from_secs(60);
+/// Coregame roster and loadouts cannot change under the same match id.
+/// Keep them for a whole match so later polls do not refetch the ally team.
+const MATCH_DOCUMENT_TTL: Duration = Duration::from_secs(45 * 60);
 /// The party you queued with cannot change while that match runs.
 const PARTY_DOCUMENT_TTL: Duration = Duration::from_secs(30);
 const LIVE_PD_TIMEOUT: Duration = Duration::from_secs(2);
@@ -198,8 +199,8 @@ fn enrichment_refresh_timestamp(
     }
 }
 
-/// Keep allied locks across partial polls, but release the previous match's players
-/// when a new agent-select session starts.
+/// Keep ally and enemy locks across partial polls, but release the previous match's
+/// players when a new agent-select session starts.
 #[derive(Default)]
 struct AgentLockTracker {
     match_id: String,
@@ -230,9 +231,10 @@ impl AgentLockTracker {
 
         let mut observed = Vec::new();
         for player in players {
-            // Pregame roster assembly normalizes our team to "Ally".
-            // Filter before recording so log entries and the UI count agree.
-            if player.get("TeamID").and_then(Value::as_str) != Some("Ally") {
+            // Pregame roster assembly normalizes sides to "Ally" / "Enemy".
+            // Skip unknown-team stubs so log entries and the UI count agree.
+            let team = player.get("TeamID").and_then(Value::as_str);
+            if team != Some("Ally") && team != Some("Enemy") {
                 continue;
             }
             if !player
@@ -1025,6 +1027,9 @@ async fn enrich_players(
     }
 
     for puuid in refresh_puuids {
+        if rate_limited {
+            break;
+        }
         let normalized = puuid.to_ascii_lowercase();
         let previous = enrichments.get(&normalized).cloned();
         let refreshed_name = refreshed_names.get(&normalized).cloned();
@@ -1706,8 +1711,12 @@ pub async fn live_game_stats(
         ));
     }
 
+    let mut stop_for_throttle = false;
     while let Some(joined) = workers.join_next().await {
         if let Ok((puuid, result)) = joined {
+            if result.as_ref().is_err_and(|error| error == RATE_LIMITED_ERROR) {
+                stop_for_throttle = true;
+            }
             let payload = match result {
                 Ok(stats) => json!({
                     "rosterKey": roster_key,
@@ -1729,6 +1738,9 @@ pub async fn live_game_stats(
             let _ = app.emit("live-game:player-stats", payload.to_string());
         }
 
+        if stop_for_throttle {
+            continue;
+        }
         if let Some(puuid) = pending.next() {
             workers.spawn(fetch_recent_stats(
                 api.clone(),
@@ -1857,7 +1869,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn agent_locks_only_log_and_count_allies_from_a_mixed_roster() {
+    fn agent_locks_log_and_count_allies_and_enemies_from_a_mixed_roster() {
         let locked = |subject: &str| json!({
             "Subject": subject,
             "CharacterID": "agent",
@@ -1874,12 +1886,19 @@ mod tests {
         let logged = tracker.observe_at("match", &roster.players, 1_000);
         assert_eq!(
             logged,
-            vec![("self".into(), "agent".into()), ("teammate".into(), "agent".into())]
+            vec![
+                ("self".into(), "agent".into()),
+                ("teammate".into(), "agent".into()),
+                ("enemy".into(), "agent".into()),
+            ]
         );
         let events = tracker.events_for(Some("match"));
-        assert_eq!(events.len(), 2);
+        assert_eq!(events.len(), 3);
         assert_eq!(events[0]["playerId"], "self");
         assert_eq!(events[1]["playerId"], "teammate");
+        assert_eq!(events[2]["playerId"], "enemy");
+        assert!(!logged.iter().any(|(id, _)| id == "unknown"));
+        assert!(events.iter().all(|event| event["playerId"] != "unknown"));
         assert!(tracker.observe_at("match", &roster.players, 5_000).is_empty());
         assert_eq!(tracker.events_for(Some("match")), events);
     }
@@ -1994,6 +2013,17 @@ mod tests {
         assert!(cache.get_at("coregame:m1", now + Duration::from_secs(59)).is_some());
         assert!(cache.get_at("coregame:m1", now + Duration::from_secs(61)).is_none());
         assert!(cache.get_at("coregame:m2", now).is_none());
+    }
+
+    #[test]
+    fn coregame_roster_cache_covers_a_full_match() {
+        // The ally team cannot change after agent select; 60s was refetching
+        // the same ten players for the rest of the game.
+        assert!(MATCH_DOCUMENT_TTL >= Duration::from_secs(30 * 60));
+        let cache = DocumentCache::new(MATCH_DOCUMENT_TTL);
+        let now = Instant::now();
+        cache.put_at("coregame:m1", json!({ "Players": ["ally"] }), now);
+        assert!(cache.get_at("coregame:m1", now + Duration::from_secs(40 * 60)).is_some());
     }
 
     #[tokio::test]

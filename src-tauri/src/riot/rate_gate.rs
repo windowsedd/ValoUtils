@@ -190,6 +190,20 @@ struct RateGate {
 impl RateGate {
     /// Records a throttle and returns how long nothing may be sent for.
     fn mark_rate_limited(&mut self, now: Instant, hint: Option<Duration>) -> Duration {
+        // Live Game still polls GLZ every ~5s during a pause. Counting those
+        // as fresh strikes restarts a doubled cooldown and turns a brief
+        // throttle into a ten-minute lockout.
+        if self.is_cooling_down_at(now) {
+            if let Some(hint) = hint {
+                let proposed = now + hint;
+                if self.cooldown_until.is_some_and(|until| proposed > until) {
+                    self.cooldown_until = Some(proposed);
+                    self.cooldown_len = hint;
+                }
+            }
+            return self.cooldown_remaining_at(now).unwrap_or(self.cooldown_len);
+        }
+
         let consecutive = self
             .last_strike
             .is_some_and(|last| now.duration_since(last) < PD_RATE_LIMIT_RESET);
@@ -435,14 +449,15 @@ mod tests {
         let mut now = Instant::now();
         for _ in 0..12 {
             gate.mark_rate_limited(now, None);
-            now += Duration::from_secs(1);
+            now += gate.cooldown_len + Duration::from_secs(1);
         }
+        gate.mark_rate_limited(now, None);
 
         // Twelve doublings of 60s is over 40 hours; the ceiling holds it to ten
-        // minutes, measured from the last strike a second ago.
+        // minutes, measured from this last strike.
         assert_eq!(
             gate.cooldown_remaining_at(now).map(|left| left.as_secs()),
-            Some(PD_RATE_LIMIT_MAX_COOLDOWN.as_secs() - 1)
+            Some(PD_RATE_LIMIT_MAX_COOLDOWN.as_secs())
         );
     }
 
@@ -505,6 +520,34 @@ mod tests {
 
         assert!(gate.is_cooling_down_at(now + Duration::from_secs(59)));
         assert!(!gate.is_cooling_down_at(now + Duration::from_secs(60)));
+    }
+
+    #[test]
+    fn a_strike_during_an_active_cooldown_does_not_lengthen_it() {
+        let now = Instant::now();
+        let mut gate = RateGate::default();
+        gate.mark_rate_limited(now, None);
+        assert_eq!(gate.strikes, 1);
+
+        // Live Game still polls GLZ every ~5s while PD is paused. Those 429s
+        // must not restart a doubled cooldown or a brief throttle becomes
+        // a ten-minute lockout.
+        gate.mark_rate_limited(now + Duration::from_secs(5), None);
+        gate.mark_rate_limited(now + Duration::from_secs(10), None);
+        assert_eq!(gate.strikes, 1);
+        assert!(gate.is_cooling_down_at(now + Duration::from_secs(59)));
+        assert!(!gate.is_cooling_down_at(now + Duration::from_secs(60)));
+    }
+
+    #[test]
+    fn a_longer_retry_after_during_cooldown_can_extend_it() {
+        let now = Instant::now();
+        let mut gate = RateGate::default();
+        gate.mark_rate_limited(now, Some(Duration::from_secs(30)));
+        gate.mark_rate_limited(now + Duration::from_secs(5), Some(Duration::from_secs(90)));
+        assert_eq!(gate.strikes, 1);
+        assert!(gate.is_cooling_down_at(now + Duration::from_secs(94)));
+        assert!(!gate.is_cooling_down_at(now + Duration::from_secs(96)));
     }
 
     #[tokio::test]

@@ -10,13 +10,25 @@ type Props = {
   agents: Map<string, AgentAsset>;
 };
 
+const TEAM_LOCK_COLOR: Record<string, string> = {
+  Ally: "#4ade80",
+  Enemy: "#f87171",
+  Blue: "#60a5fa",
+  Red: "#f87171",
+};
+
 export const LiveEventLog = ({ events, players, agents }: Props) => {
   const { t, i18n } = useTranslation();
   const [expanded, setExpanded] = useState(true);
   const logId = useId();
+  // Pregame Ally/Enemy and coregame Red/Blue are both shown; unknown-team players stay hidden.
+  const roster = new Map(players
+    .filter((player) => player.isSelf || (player.teamId != null && player.teamId in TEAM_LOCK_COLOR))
+    .map((player) => [player.puuid.toLowerCase(), player]));
+  const visibleEvents = events.filter((event) => roster.has(event.playerId.toLowerCase()));
 
   return (
-    <aside className="absolute bottom-5 right-6 z-20 w-80 max-w-[calc(100%_-_3rem)] overflow-hidden rounded-xl border border-(--line) bg-(--surface) shadow-lg" aria-label={t("liveGame.eventLog")}>
+    <aside className="mx-6 mb-5 w-80 max-w-[calc(100%_-_3rem)] shrink-0 self-end overflow-hidden rounded-xl border border-(--line) bg-(--surface) shadow-lg" aria-label={t("liveGame.eventLog")}>
       <button
         type="button"
         className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs hover:bg-(--surface-hover) focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-(--accent)"
@@ -27,25 +39,26 @@ export const LiveEventLog = ({ events, players, agents }: Props) => {
       >
         <LuScrollText aria-hidden="true" className="text-(--text-muted)" />
         <span className="font-medium text-(--text-primary)">{t("liveGame.eventLog")}</span>
-        <span className="ml-auto font-mono text-[10px] tabular-nums text-(--text-muted)">{events.length}</span>
+        <span className="ml-auto font-mono text-[10px] tabular-nums text-(--text-muted)">{visibleEvents.length}</span>
         <LuChevronDown aria-hidden="true" className={`text-(--text-muted) transition-transform motion-reduce:transition-none ${expanded ? "" : "rotate-180"}`} />
       </button>
       <div id={logId} hidden={!expanded} className="border-t border-(--line)">
-        {events.length === 0 ? (
+        {visibleEvents.length === 0 ? (
           <p className="px-3 py-4 text-xs text-(--text-muted)">{t("liveGame.eventLogEmpty")}</p>
         ) : (
           <ol role="log" aria-label={t("liveGame.eventLog")} aria-live="polite" aria-relevant="additions" className="max-h-44 overflow-y-auto overscroll-contain divide-y divide-(--line)">
-            {[...events].reverse().map((event) => {
-              const player = players.find((candidate) => candidate.puuid.toLowerCase() === event.playerId.toLowerCase());
+            {[...visibleEvents].reverse().map((event) => {
+              const player = roster.get(event.playerId.toLowerCase());
               const nameVisible = player && (!player.incognito || player.inMyParty || player.isSelf);
               const name = nameVisible && player.gameName
                 ? `${player.gameName}${player.tagLine ? `#${player.tagLine}` : ""}`
                 : t("liveGame.hidden");
               const agent = localize(agents.get(event.agentId.toLowerCase())?.name) || t("liveGame.hiddenAgent");
               const observed = new Date(event.observedAt);
+              const lockColor = player?.teamId ? TEAM_LOCK_COLOR[player.teamId] : undefined;
               return (
                 <li key={event.id} className="flex items-start gap-2 px-3 py-2.5">
-                  <LuLockKeyhole aria-hidden="true" className="mt-0.5 shrink-0 text-xs text-(--accent-selected)" />
+                  <LuLockKeyhole aria-hidden="true" className="mt-0.5 shrink-0 text-xs text-(--accent-selected)" style={lockColor ? { color: lockColor } : undefined} />
                   <p className="min-w-0 flex-1 break-words text-xs leading-relaxed text-(--text-secondary)">{t("liveGame.agentLocked", { player: name, agent })}</p>
                   <time dateTime={observed.toISOString()} title={observed.toLocaleString(i18n.language)} className="shrink-0 pt-0.5 font-mono text-[10px] tabular-nums text-(--text-muted)">
                     {observed.toLocaleTimeString(i18n.language, { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false })}

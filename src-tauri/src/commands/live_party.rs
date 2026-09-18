@@ -642,6 +642,9 @@ pub(super) async fn resolve_live_parties(
     if unresolved.len() < 2 {
         return resolve_sources(roster, presence, premade, own_party_id, &continuity, &[]);
     }
+    if cache.cooldown_seconds().await.is_some() {
+        return resolve_sources(roster, presence, premade, own_party_id, &continuity, &[]);
+    }
 
     let historical = tokio::time::timeout(
         HISTORY_FALLBACK_BUDGET,

@@ -1,6 +1,6 @@
 import { LiveGameStatePanel } from "@/components/live-game/live-game-state-panel";
 import { LiveEventLog } from "@/components/live-game/live-event-log";
-import { isCurrentStatsAttempt, livePlayerStatsKey, liveStatsRequestKey, shouldPreserveReadyStats } from "@/components/live-game/live-game-events";
+import { isCurrentStatsAttempt, livePlayerStatsKey, liveStatsRequestKey, playersNeedingLiveStats, shouldRequestLiveStats } from "@/components/live-game/live-game-events";
 import { LiveScoutTable } from "@/components/live-game/live-scout-table";
 import { useLiveGameAssets } from "@/components/live-game/use-live-game-assets";
 import { PageHeader } from "@/components/section-card";
@@ -29,10 +29,11 @@ const LiveGame = () => {
 	const [refreshing, setRefreshing] = useState(false);
 	const rosterKeyRef = useRef<string | null>(null);
 	const requestedStatsKeyRef = useRef<string | null>(null);
-	const lastRequestedStatsKeyRef = useRef<string | null>(null);
 	const statsAttemptRef = useRef(0);
 	const pollDelayRef = useRef(POLL_MS);
 	const statsThrottledRef = useRef(false);
+	const recentRef = useRef(recent);
+	recentRef.current = recent;
 
 	const requestSnapshot = useCallback(() => {
 		if (!window.Main) return;
@@ -84,7 +85,6 @@ const LiveGame = () => {
 
 			if (response.state === "idle") {
 				requestedStatsKeyRef.current = null;
-				lastRequestedStatsKeyRef.current = null;
 				setRecent({});
 				return;
 			}
@@ -98,18 +98,23 @@ const LiveGame = () => {
 				statsThrottledRef.current = false;
 				requestedStatsKeyRef.current = null;
 			}
-			if (requestedStatsKeyRef.current !== statsKey) {
-				const preserveReady = shouldPreserveReadyStats(requestedStatsKeyRef.current, lastRequestedStatsKeyRef.current, statsKey);
+			if (!shouldRequestLiveStats(response.warning)) {
+				statsThrottledRef.current = true;
+			} else if (requestedStatsKeyRef.current !== statsKey) {
+				const puuids = response.players.map((player) => player.puuid);
+				const needed = playersNeedingLiveStats(puuids, recentRef.current);
 				requestedStatsKeyRef.current = statsKey;
-				lastRequestedStatsKeyRef.current = statsKey;
+				setRecent((current) => Object.fromEntries(response.players.map((player) => {
+					const playerKey = livePlayerStatsKey(player.puuid);
+					const existing = current[playerKey];
+					return [
+						playerKey,
+						existing?.status === "ready" ? existing : { status: "loading" },
+					];
+				})));
+				if (needed.length === 0) return;
 				const attemptId = ++statsAttemptRef.current;
-				setRecent((current) => Object.fromEntries(response.players.map((player) => [
-					livePlayerStatsKey(player.puuid),
-					preserveReady && current[livePlayerStatsKey(player.puuid)]?.status === "ready"
-						? current[livePlayerStatsKey(player.puuid)]
-						: { status: "loading" },
-				])));
-				window.Main.send("live-game:stats", statsKey, response.players.map((player) => player.puuid), attemptId, queueId);
+				window.Main.send("live-game:stats", statsKey, needed, attemptId, queueId);
 			}
 		};
 

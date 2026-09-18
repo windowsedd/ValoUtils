@@ -35,10 +35,67 @@ const player = {
   gameName: "Oneki",
   tagLine: "TW",
   incognito: false,
+  teamId: "Ally",
 } as LivePlayer;
 const agents = new Map([["agent", { name: "Jett", icon: "" }]]);
 
 describe("LiveEventLog", () => {
+  const lockFor = (playerId: string): LiveGameEvent => ({ ...event, id: playerId, playerId });
+  const eventCount = (markup: string) => markup.match(/tabular-nums[^>]*>(\d+)<\/span>/)?.[1];
+
+  test("includes enemy locks but still excludes unknown and missing", () => {
+    const players = [
+      player,
+      { ...player, puuid: "self", gameName: "Me", isSelf: true },
+      { ...player, puuid: "enemy", gameName: "Opponent", teamId: "Enemy" },
+      { ...player, puuid: "unknown", gameName: "Unknown", teamId: null },
+    ];
+    const markup = renderToStaticMarkup(<LiveEventLog events={[event, ...["self", "enemy", "unknown", "missing"].map(lockFor)]} players={players} agents={agents} />);
+    expect(markup).toContain("Oneki#TW locked Jett");
+    expect(markup).toContain("Me#TW locked Jett");
+    expect(markup).toContain("Opponent");
+    expect(markup).not.toContain("Unknown#TW");
+    expect(markup).not.toContain("Hidden Player locked Jett");
+    expect(eventCount(markup)).toBe("3");
+    expect(markup).toContain("#4ade80");
+    expect(markup).toContain("#f87171");
+  });
+
+  for (const teamId of ["Red", "Blue"]) {
+    test(`keeps allied locks after entering coregame on ${teamId}`, () => {
+      const players = [
+        { ...player, teamId },
+        { ...player, puuid: "self", gameName: "Me", teamId, isSelf: true },
+        { ...player, puuid: "enemy", gameName: "Opponent", teamId: teamId === "Red" ? "Blue" : "Red" },
+      ];
+      const markup = renderToStaticMarkup(<LiveEventLog events={[event, lockFor("self"), lockFor("enemy")]} players={players} agents={agents} />);
+      expect(markup).toContain("Oneki#TW locked Jett");
+      expect(markup).toContain("Me#TW locked Jett");
+      expect(markup).toContain("Opponent");
+      expect(eventCount(markup)).toBe("3");
+    });
+  }
+
+  test("shows enemy-only events instead of the empty state", () => {
+    const markup = renderToStaticMarkup(<LiveEventLog events={[event]} players={[{ ...player, teamId: "Enemy" }]} agents={agents} />);
+    expect(markup).toContain("Oneki#TW locked Jett");
+    expect(markup).not.toContain("Agent locks will appear here.");
+    expect(eventCount(markup)).toBe("1");
+  });
+
+  test("shows a coregame player with a known team even when the local player is missing", () => {
+    const markup = renderToStaticMarkup(<LiveEventLog events={[event]} players={[{ ...player, teamId: "Blue" }]} agents={agents} />);
+    expect(markup).toContain("Oneki#TW locked Jett");
+    expect(eventCount(markup)).toBe("1");
+  });
+
+  test("still hides unknown-team locks when the local player is missing", () => {
+    const markup = renderToStaticMarkup(<LiveEventLog events={[event]} players={[{ ...player, teamId: null }]} agents={agents} />);
+    expect(markup).toContain("Agent locks will appear here.");
+    expect(markup).not.toContain("Oneki#TW locked Jett");
+    expect(eventCount(markup)).toBe("0");
+  });
+
   test("shows an agent lock with its original timestamp and player name", () => {
     const markup = renderToStaticMarkup(<LiveEventLog events={[event]} players={[player]} agents={agents} />);
     expect(markup).toContain("Oneki#TW locked Jett");

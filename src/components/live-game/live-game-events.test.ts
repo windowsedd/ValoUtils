@@ -2,7 +2,9 @@ import { expect, test } from "bun:test";
 import {
   livePlayerStatsKey,
   liveStatsRequestKey,
+  playersNeedingLiveStats,
   shouldPreserveReadyStats,
+  shouldRequestLiveStats,
 } from "./live-game-events";
 
 test("changes the recent-stat request identity when the queue changes", () => {
@@ -28,4 +30,20 @@ test("preserves ready stats only when explicitly retrying the same identity", ()
   expect(shouldPreserveReadyStats(null, "p1:competitive", "p1:competitive")).toBe(true);
   expect(shouldPreserveReadyStats("p1:competitive", "p1:competitive", "p1:unrated")).toBe(false);
   expect(shouldPreserveReadyStats(null, "p1:competitive", "p1:unrated")).toBe(false);
+});
+
+test("does not pile recent-stat PD calls onto a live snapshot that is already throttled", () => {
+  expect(shouldRequestLiveStats(undefined)).toBe(true);
+  expect(shouldRequestLiveStats(null)).toBe(true);
+  expect(shouldRequestLiveStats("unavailable")).toBe(true);
+  expect(shouldRequestLiveStats("rateLimited")).toBe(false);
+});
+
+test("keeps ready ally stats when the coregame roster grows", () => {
+  const recent = {
+    ally: { status: "ready" },
+    pending: { status: "loading" },
+  };
+  expect(playersNeedingLiveStats(["ALLY", "enemy", "pending"], recent)).toEqual(["enemy", "pending"]);
+  expect(playersNeedingLiveStats(["ally"], recent)).toEqual([]);
 });

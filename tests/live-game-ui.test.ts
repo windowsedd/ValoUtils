@@ -98,6 +98,12 @@ describe("Live Match signed-in player marker", () => {
     expect(table).toContain('error === "unavailable" ? t("liveGame.failedToLoad") : error');
   });
 
+  test("live match reuses ready ally stats in coregame and skips stats while throttled", () => {
+    expect(liveGamePage).toContain("shouldRequestLiveStats(response.warning)");
+    expect(liveGamePage).toContain("playersNeedingLiveStats(puuids, recentRef.current)");
+    expect(liveGamePage).toContain("existing?.status === \"ready\" ? existing");
+  });
+
   for (const locale of locales) {
     test(`${locale} provides pregame roster copy`, () => {
       const messages = JSON.parse(
