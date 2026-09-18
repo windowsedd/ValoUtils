@@ -199,8 +199,8 @@ fn enrichment_refresh_timestamp(
     }
 }
 
-/// Keep ally and enemy locks across partial polls, but release the previous match's
-/// players when a new agent-select session starts.
+/// Keep allied locks across partial polls, but release the previous match's players
+/// when a new agent-select session starts.
 #[derive(Default)]
 struct AgentLockTracker {
     match_id: String,
@@ -231,10 +231,9 @@ impl AgentLockTracker {
 
         let mut observed = Vec::new();
         for player in players {
-            // Pregame roster assembly normalizes sides to "Ally" / "Enemy".
-            // Skip unknown-team stubs so log entries and the UI count agree.
-            let team = player.get("TeamID").and_then(Value::as_str);
-            if team != Some("Ally") && team != Some("Enemy") {
+            // Pregame roster assembly normalizes our team to "Ally".
+            // Filter before recording so log entries and the UI count agree.
+            if player.get("TeamID").and_then(Value::as_str) != Some("Ally") {
                 continue;
             }
             if !player
@@ -1869,7 +1868,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn agent_locks_log_and_count_allies_and_enemies_from_a_mixed_roster() {
+    fn agent_locks_only_log_and_count_allies_from_a_mixed_roster() {
         let locked = |subject: &str| json!({
             "Subject": subject,
             "CharacterID": "agent",
@@ -1886,17 +1885,12 @@ mod tests {
         let logged = tracker.observe_at("match", &roster.players, 1_000);
         assert_eq!(
             logged,
-            vec![
-                ("self".into(), "agent".into()),
-                ("teammate".into(), "agent".into()),
-                ("enemy".into(), "agent".into()),
-            ]
+            vec![("self".into(), "agent".into()), ("teammate".into(), "agent".into())]
         );
         let events = tracker.events_for(Some("match"));
-        assert_eq!(events.len(), 3);
+        assert_eq!(events.len(), 2);
         assert_eq!(events[0]["playerId"], "self");
         assert_eq!(events[1]["playerId"], "teammate");
-        assert_eq!(events[2]["playerId"], "enemy");
         assert!(!logged.iter().any(|(id, _)| id == "unknown"));
         assert!(events.iter().all(|event| event["playerId"] != "unknown"));
         assert!(tracker.observe_at("match", &roster.players, 5_000).is_empty());

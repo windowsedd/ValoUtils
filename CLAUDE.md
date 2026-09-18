@@ -238,10 +238,8 @@ The local chat relay's TLS identity is selectable (config key `presenceCert`, de
 
 Live Game pregame refreshes write an `INFO` entry (`Agent lock observed`) to the
 existing log file and Logs page when Riot reports `CharacterSelectionState: locked`
-for a player on either normalized side (`Ally` or `Enemy`, including you).
-Unknown-team / missing TeamID stubs are still excluded from logs and the Events
-panel count. Competitive often omits `EnemyTeam` during agent select, so enemy
-locks only appear when Riot actually sends them.
+for your team (including you). Only normalized `Ally` players are recorded; enemy
+and unknown-team locks are excluded from both the logs and the Events panel count.
 Each entry includes the match, player PUUID, and agent UUID. Repeated polls and
 partial rosters do not repeat the same lock; a new match starts fresh tracking.
 The log timestamp is when ValoUtils first observes the lock, including players
@@ -252,16 +250,15 @@ between polls or the page is inactive, unless another caller fetches a live snap
 
 Snapshots also include `events` with stable IDs and `observedAt` Unix milliseconds.
 The collapsible Events panel in the bottom-right of Live Game shows these with
-localized agent names, scout-table team colors (Ally green, Enemy/Red red, Blue
-blue), respects hidden player names, and retains the original timestamps across
-refreshes and the transition into the same core game. Events are scoped to the
-current match and collected in memory while the app runs.
+localized agent names, respects hidden player names, and retains the original
+timestamps across refreshes and the transition into the same core game. Events
+are scoped to the current match and collected in memory while the app runs.
 The panel reserves space below the scrollable roster, both expanded and collapsed,
 so it never covers player details toggles.
-The Events UI shows both allied and enemy locks. It still hides entries whose
-player is not on the current roster or has no confirmed team, including unknown
-players even in older snapshots. In core game both Red and Blue sides are shown.
-Hidden-name / incognito rules are unchanged.
+The Events UI also filters incoming entries and their count against the current
+allied roster (including yourself), excluding enemies and unknown players even
+in older snapshots. In core game it uses your Red/Blue team rather than assuming
+a fixed side; entries without a confirmed allied player stay hidden.
 
 ### Open at Windows startup
 
