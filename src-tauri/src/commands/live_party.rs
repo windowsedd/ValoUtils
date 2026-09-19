@@ -631,6 +631,7 @@ pub(super) async fn resolve_live_parties(
     own_party_id: Option<&str>,
     continuity_labels: &HashMap<String, String>,
     cache: &LivePartyHistoryCache,
+    allow_history: bool,
 ) -> PartyResolution {
     let continuity = continuity_groups(continuity_labels);
     let live_memberships = live_membership_by_puuid(roster, presence, premade, own_party_id);
@@ -639,7 +640,7 @@ pub(super) async fn resolve_live_parties(
         .into_iter()
         .filter(|puuid| !continuity_members.contains(puuid))
         .collect();
-    if unresolved.len() < 2 {
+    if unresolved.len() < 2 || !allow_history {
         return resolve_sources(roster, presence, premade, own_party_id, &continuity, &[]);
     }
     if cache.cooldown_seconds().await.is_some() {
@@ -1147,7 +1148,9 @@ mod tests {
         let error = r#"{"status":404,"message":"no such match"}"#;
 
         assert_eq!(
-            cache.run_pd(async { Err::<(), _>(error.to_string()) }).await,
+            cache
+                .run_pd(async { Err::<(), _>(error.to_string()) })
+                .await,
             Err(error.to_string())
         );
     }

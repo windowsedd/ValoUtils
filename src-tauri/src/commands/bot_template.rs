@@ -102,7 +102,10 @@ fn server_display_name(pod: &str) -> String {
     };
     let mut city = &parts[start..];
     // Drop the trailing pod index (`...-hongkong-1`), but only when it is one.
-    if city.last().is_some_and(|last| last.chars().all(|c| c.is_ascii_digit())) {
+    if city
+        .last()
+        .is_some_and(|last| last.chars().all(|c| c.is_ascii_digit()))
+    {
         city = &city[..city.len() - 1];
     }
     if city.is_empty() {
@@ -717,6 +720,7 @@ async fn load_snapshot(
         let fetched = tokio::time::timeout_at(
             deadline,
             live::live_game_fetch(
+                app.clone(),
                 app.state::<RiotState>(),
                 app.state::<live::LiveCache>(),
                 app.state::<LivePartyHistoryCache>(),

@@ -31,6 +31,7 @@ import DummyBotPage from "@/pages/DummyBot.tsx";
 import Tools from "@/pages/Tools.tsx";
 import BattlePass from "@/pages/BattlePass.tsx";
 import LiveGame from "@/pages/LiveGame.tsx";
+import { LiveGameProvider } from "@/components/live-game/live-game-session";
 import { SWRConfig } from "swr";
 import { DynamicModalProvider } from "./components/dynamic-modal";
 import "./index.css";
@@ -146,11 +147,13 @@ const AppShell = () => {
 							},
 						]}
 					>
-						<RiotClientWatcher>
-							<div className="flex flex-col h-screen bg-(--background) overflow-hidden">
-								<Router />
-							</div>
-						</RiotClientWatcher>
+						<LiveGameProvider>
+							<RiotClientWatcher>
+								<div className="flex flex-col h-screen bg-(--background) overflow-hidden">
+									<Router />
+								</div>
+							</RiotClientWatcher>
+						</LiveGameProvider>
 					</RouterProvider>
 				</AlertContainer>
 				</DynamicModalProvider>

@@ -5,6 +5,11 @@ import { join } from "node:path";
 const root = join(import.meta.dir, "..");
 const table = readFileSync(join(root, "src/components/live-game/live-scout-table.tsx"), "utf8");
 const liveGamePage = readFileSync(join(root, "src/pages/LiveGame.tsx"), "utf8");
+const main = readFileSync(join(root, "src/main.tsx"), "utf8");
+const liveGameSession = readFileSync(
+  join(root, "src/components/live-game/live-game-session.tsx"),
+  "utf8",
+);
 const locales = ["en", "ko", "zh-TW"] as const;
 
 describe("Live Match signed-in player marker", () => {
@@ -98,10 +103,40 @@ describe("Live Match signed-in player marker", () => {
     expect(table).toContain('error === "unavailable" ? t("liveGame.failedToLoad") : error');
   });
 
+  test("shows the loading panel while a live match fetch replaces an idle snapshot", () => {
+    expect(liveGamePage).toContain('loading && (!snapshot || snapshot.state === "idle")');
+  });
+
+  test("live match publishes the roster before pd ranks finish", () => {
+    const liveBackend = readFileSync(join(root, "src-tauri/src/commands/live.rs"), "utf8");
+    expect(liveBackend).toContain('app.emit("live-game:fetch"');
+    expect(liveBackend).toContain("fetch_mmr: false");
+    expect(liveBackend.indexOf("fetch_mmr: false")).toBeLessThan(
+      liveBackend.indexOf("fetch_mmr: true"),
+    );
+  });
+
   test("live match reuses ready ally stats in coregame and skips stats while throttled", () => {
-    expect(liveGamePage).toContain("shouldRequestLiveStats(response.warning)");
-    expect(liveGamePage).toContain("playersNeedingLiveStats(puuids, recentRef.current)");
-    expect(liveGamePage).toContain("existing?.status === \"ready\" ? existing");
+    expect(liveGameSession).toContain("shouldRequestLiveStats(response.warning)");
+    expect(liveGameSession).toContain("playersNeedingLiveStats(puuids, recentRef.current)");
+    expect(liveGameSession).toContain("existing?.status === \"ready\" ? existing");
+  });
+
+  test("keeps live match requests running on other pages", () => {
+    expect(main).toContain("<LiveGameProvider>");
+    expect(main).toContain("</LiveGameProvider>");
+    expect(liveGameSession).toContain("timer = window.setTimeout(poll, pollDelayRef.current)");
+    expect(liveGameSession).toContain('if (!document.hidden) window.Main.send("live-game:fetch")');
+    expect(liveGamePage).not.toContain("setTimeout(poll");
+    expect(liveGamePage).not.toContain("visibilitychange");
+  });
+
+  test("background live session only sends live-game channels", () => {
+    const sends = [...liveGameSession.matchAll(/window\.Main\.send\("([^"]+)"/g)].map(
+      (match) => match[1],
+    );
+    expect(sends.length).toBeGreaterThan(0);
+    expect(sends.every((channel) => channel.startsWith("live-game:"))).toBe(true);
   });
 
   for (const locale of locales) {

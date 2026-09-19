@@ -10,7 +10,7 @@ use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::{Mutex as AsyncMutex, Semaphore};
 
 // Weapon IDs we surface skins for (verified against valorant-api /v1/weapons).
@@ -187,6 +187,10 @@ fn enrichment_is_fresh(inserted_at: Instant, complete: bool, now: Instant) -> bo
     complete && now.duration_since(inserted_at) < ENRICHMENT_TTL
 }
 
+fn enrichment_is_complete(game_name: &str, mmr: Option<&Value>) -> bool {
+    !game_name.is_empty() && mmr.is_some()
+}
+
 fn enrichment_refresh_timestamp(
     previous: Option<Instant>,
     refreshed_name: bool,
@@ -284,6 +288,9 @@ impl AgentLockTracker {
 /// while PD-backed enrichment and same-roster party continuity are retained here.
 pub struct LiveCache {
     refresh: AsyncMutex<()>,
+    /// Bumped at the start of every fetch so a slower rank-fill task cannot
+    /// publish over a newer match.
+    refresh_generation: Mutex<u64>,
     agent_locks: Mutex<AgentLockTracker>,
     enrichment: Mutex<HashMap<String, CachedEnrichment>>,
     continuity_roster: Mutex<Option<String>>,
@@ -303,6 +310,7 @@ impl Default for LiveCache {
     fn default() -> Self {
         Self {
             refresh: AsyncMutex::default(),
+            refresh_generation: Mutex::new(0),
             agent_locks: Mutex::default(),
             enrichment: Mutex::default(),
             continuity_roster: Mutex::default(),
@@ -318,6 +326,16 @@ impl Default for LiveCache {
 pub(crate) const SNAPSHOT_FALLBACK_TTL: Duration = Duration::from_secs(90);
 
 impl LiveCache {
+    fn bump_refresh_generation(&self) -> u64 {
+        let mut generation = self.refresh_generation.lock().unwrap();
+        *generation += 1;
+        *generation
+    }
+
+    fn current_refresh_generation(&self) -> u64 {
+        *self.refresh_generation.lock().unwrap()
+    }
+
     fn store_snapshot(&self, payload: &str, now: Instant) {
         *self.last_snapshot.lock().unwrap() = Some((now, payload.to_string()));
     }
@@ -365,6 +383,61 @@ impl LiveState {
             LiveState::Idle => "idle",
         }
     }
+}
+
+fn assemble_live_payload(
+    state: LiveState,
+    public_roster_key: &str,
+    match_context: Value,
+    players: &[Value],
+    events: Vec<Value>,
+    warning: Option<&str>,
+    retry_in_seconds: Option<u64>,
+) -> String {
+    json!({
+        "success": true,
+        "state": state.as_str(),
+        "rosterKey": public_roster_key,
+        "match": match_context,
+        "teams": summarize_teams(players),
+        "players": players,
+        "events": events,
+        "warning": warning,
+        "retryInSeconds": retry_in_seconds
+    })
+    .to_string()
+}
+
+fn finish_live_snapshot(
+    cache: &LiveCache,
+    state: LiveState,
+    match_id: Option<&str>,
+    party_id: Option<&str>,
+    roster_key: &str,
+    party_membership: &str,
+    match_context: &Value,
+    mut players: Vec<Value>,
+    party_labels: &HashMap<String, String>,
+    premade: &HashSet<String>,
+    warning: Option<&str>,
+    retry_in_seconds: Option<u64>,
+) -> String {
+    apply_party_labels(&mut players, party_labels);
+    apply_party_membership(&mut players, premade);
+    let (_, public_roster_key) =
+        live_roster_keys(state, match_id, party_id, roster_key, party_membership);
+    let events = cache.agent_locks.lock().unwrap().events_for(match_id);
+    let payload = assemble_live_payload(
+        state,
+        &public_roster_key,
+        match_context.clone(),
+        &players,
+        events,
+        warning,
+        retry_in_seconds,
+    );
+    cache.store_snapshot(&payload, Instant::now());
+    payload
 }
 
 fn live_roster_keys(
@@ -944,12 +1017,97 @@ async fn build_presence_party_map(riot: &RiotState) -> HashMap<String, String> {
     map
 }
 
+fn names_to_refresh(
+    refresh_puuids: &[String],
+    enrichments: &HashMap<String, CachedEnrichment>,
+) -> Vec<String> {
+    refresh_puuids
+        .iter()
+        .filter(|puuid| {
+            enrichments
+                .get(&puuid.to_ascii_lowercase())
+                .map(|entry| entry.game_name.is_empty())
+                .unwrap_or(true)
+        })
+        .cloned()
+        .collect()
+}
+
+fn players_from_raw(
+    raw_players: &[Value],
+    enrichments: &HashMap<String, CachedEnrichment>,
+    loadout_map: Option<&LoadoutMap>,
+    self_puuid: &str,
+) -> Vec<Value> {
+    raw_players
+        .iter()
+        .enumerate()
+        .map(|(index, raw)| {
+            let puuid = raw_puuid(raw);
+            let enrichment = enrichments.get(&puuid.to_ascii_lowercase());
+            let mmr = enrichment.and_then(|entry| entry.mmr.as_ref());
+            let (current_tier, current_rr, peak_tier, peak_season_id) = extract_rank(mmr);
+            let (current_season_id, competitive_seasons) = extract_competitive_seasons(mmr);
+            let (game_name, tag_line) = enrichment
+                .map(|entry| (entry.game_name.clone(), entry.tag_line.clone()))
+                .unwrap_or_default();
+            let identity = raw.get("PlayerIdentity").cloned().unwrap_or(json!({}));
+
+            let loadout = loadout_map.and_then(|lm| {
+                lm.by_subject.get(&puuid).cloned().or_else(|| {
+                    // Positional fallback is only safe when this subject is absent
+                    // from the map; never assign another player's loadout to a
+                    // Pregame stub that already has a PUUID.
+                    if lm.by_subject.is_empty() {
+                        lm.by_index.get(index).cloned()
+                    } else {
+                        None
+                    }
+                })
+            });
+
+            let hide_level = identity
+                .get("HideAccountLevel")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let character_id = raw
+                .get("CharacterID")
+                .and_then(Value::as_str)
+                .filter(|id| !id.is_empty())
+                .map(Value::from)
+                .unwrap_or(Value::Null);
+
+            json!({
+                "puuid": puuid,
+                "gameName": game_name,
+                "tagLine": tag_line,
+                "teamId": raw.get("TeamID"),
+                "characterId": character_id,
+                "cardId": identity.get("PlayerCardID"),
+                "level": if hide_level { Value::Null } else { identity.get("AccountLevel").cloned().unwrap_or(Value::Null) },
+                "currentTier": current_tier,
+                "currentRR": current_rr,
+                "peakTier": peak_tier,
+                "peakSeasonId": peak_season_id,
+                "currentSeasonId": current_season_id,
+                "competitiveSeasons": competitive_seasons,
+                "party": Value::Null,
+                "isSelf": puuid.eq_ignore_ascii_case(self_puuid),
+                "incognito": identity.get("Incognito").and_then(|v| v.as_bool()).unwrap_or(false),
+                "inMyParty": puuid.eq_ignore_ascii_case(self_puuid),
+                "loadout": loadout,
+            })
+        })
+        .collect()
+}
+
 async fn enrich_players(
     api: &RiotApiClient,
     raw_players: &[Value],
     loadout_map: Option<&LoadoutMap>,
     cache: &LiveCache,
     pd_cache: &LivePartyHistoryCache,
+    fetch_mmr: bool,
 ) -> (Vec<Value>, bool) {
     let puuids: Vec<String> = raw_players
         .iter()
@@ -984,10 +1142,11 @@ async fn enrich_players(
         );
     }
     let mut rate_limited = false;
-    let names_result = if refresh_puuids.is_empty() {
+    let name_puuids = names_to_refresh(&refresh_puuids, &enrichments);
+    let names_result = if name_puuids.is_empty() {
         Ok(Value::Array(vec![]))
     } else {
-        run_live_pd(pd_cache, api.get_names(&refresh_puuids)).await
+        run_live_pd(pd_cache, api.get_names(&name_puuids)).await
     };
     if names_result
         .as_ref()
@@ -1026,7 +1185,7 @@ async fn enrich_players(
     }
 
     for puuid in refresh_puuids {
-        if rate_limited {
+        if fetch_mmr && rate_limited {
             break;
         }
         let normalized = puuid.to_ascii_lowercase();
@@ -1040,15 +1199,19 @@ async fn enrich_players(
                     .map(|entry| (entry.game_name.clone(), entry.tag_line.clone()))
             })
             .unwrap_or_default();
-        let mmr_result = run_live_pd(pd_cache, api.get_mmr(&puuid)).await;
-        if mmr_result
-            .as_ref()
-            .err()
-            .is_some_and(|error| error == RATE_LIMITED_ERROR)
-        {
-            rate_limited = true;
-        }
-        let refreshed_mmr = mmr_result.ok();
+        let refreshed_mmr = if fetch_mmr {
+            let mmr_result = run_live_pd(pd_cache, api.get_mmr(&puuid)).await;
+            if mmr_result
+                .as_ref()
+                .err()
+                .is_some_and(|error| error == RATE_LIMITED_ERROR)
+            {
+                rate_limited = true;
+            }
+            mmr_result.ok()
+        } else {
+            None
+        };
         let mmr = refreshed_mmr
             .clone()
             .or_else(|| previous.as_ref().and_then(|entry| entry.mmr.clone()));
@@ -1059,12 +1222,13 @@ async fn enrich_players(
                 refreshed_mmr.is_some(),
                 now,
             );
+            let complete = enrichment_is_complete(&name.0, mmr.as_ref());
             let entry = CachedEnrichment {
                 game_name: name.0,
                 tag_line: name.1,
                 mmr,
                 inserted_at,
-                complete: refreshed_name.is_some() && refreshed_mmr.is_some(),
+                complete,
             };
             cache
                 .enrichment
@@ -1075,64 +1239,10 @@ async fn enrich_players(
         }
     }
 
-    let players = raw_players
-        .iter()
-        .enumerate()
-        .map(|(index, raw)| {
-            let puuid = raw_puuid(raw);
-            let enrichment = enrichments.get(&puuid.to_ascii_lowercase());
-            let mmr = enrichment.and_then(|entry| entry.mmr.as_ref());
-            let (current_tier, current_rr, peak_tier, peak_season_id) = extract_rank(mmr);
-            let (current_season_id, competitive_seasons) = extract_competitive_seasons(mmr);
-            let (game_name, tag_line) = enrichment
-                .map(|entry| (entry.game_name.clone(), entry.tag_line.clone()))
-                .unwrap_or_default();
-            let identity = raw.get("PlayerIdentity").cloned().unwrap_or(json!({}));
-
-            let loadout = loadout_map.and_then(|lm| {
-                lm.by_subject.get(&puuid).cloned().or_else(|| {
-                    // Positional fallback is only safe when this subject is absent
-                    // from the map; never assign another player's loadout to a
-                    // Pregame stub that already has a PUUID.
-                    if lm.by_subject.is_empty() {
-                        lm.by_index.get(index).cloned()
-                    } else {
-                        None
-                    }
-                })
-            });
-
-            let hide_level = identity.get("HideAccountLevel").and_then(|v| v.as_bool()).unwrap_or(false);
-            let character_id = raw
-                .get("CharacterID")
-                .and_then(Value::as_str)
-                .filter(|id| !id.is_empty())
-                .map(Value::from)
-                .unwrap_or(Value::Null);
-
-            json!({
-                "puuid": puuid,
-                "gameName": game_name,
-                "tagLine": tag_line,
-                "teamId": raw.get("TeamID"),
-                "characterId": character_id,
-                "cardId": identity.get("PlayerCardID"),
-                "level": if hide_level { Value::Null } else { identity.get("AccountLevel").cloned().unwrap_or(Value::Null) },
-                "currentTier": current_tier,
-                "currentRR": current_rr,
-                "peakTier": peak_tier,
-                "peakSeasonId": peak_season_id,
-                "currentSeasonId": current_season_id,
-                "competitiveSeasons": competitive_seasons,
-                "party": Value::Null,
-                "isSelf": puuid.eq_ignore_ascii_case(&api.puuid),
-                "incognito": identity.get("Incognito").and_then(|v| v.as_bool()).unwrap_or(false),
-                "inMyParty": puuid.eq_ignore_ascii_case(&api.puuid),
-                "loadout": loadout,
-            })
-        })
-        .collect();
-    (players, rate_limited)
+    (
+        players_from_raw(raw_players, &enrichments, loadout_map, &api.puuid),
+        rate_limited,
+    )
 }
 
 /// Flag the players you are actually queued with.
@@ -1345,13 +1455,16 @@ async fn detect_state(
 
 #[tauri::command]
 pub async fn live_game_fetch(
+    app: AppHandle,
     riot: State<'_, RiotState>,
     cache: State<'_, LiveCache>,
     party_history_cache: State<'_, LivePartyHistoryCache>,
 ) -> Result<String, ()> {
-    // Polls and manual refreshes can overlap. Serializing the complete refresh
+    // Polls and manual refreshes can overlap. Serializing detect + names
     // prevents an older, slower request from replacing a newer snapshot/cache.
+    // Rank fill continues after this lock is released so the roster can paint.
     let _refresh_guard = cache.refresh.lock().await;
+    let refresh_generation = cache.bump_refresh_generation();
     let api = match api::create_api(&riot).await {
         Ok(api) => api,
         Err(_) => return Ok(json!({ "success": false, "code": "loginRequired" }).to_string()),
@@ -1417,7 +1530,7 @@ pub async fn live_game_fetch(
             } else {
                 HashMap::new()
             };
-        let party_resolution = live_party::resolve_live_parties(
+        let live_party_resolution = live_party::resolve_live_parties(
             &api,
             &roster,
             &presence_map,
@@ -1425,24 +1538,17 @@ pub async fn live_game_fetch(
             detected.party_id.as_deref(),
             &continuity_labels,
             &party_history_cache,
+            false,
         )
         .await;
-        let party_membership = party_resolution.partition_key(&roster);
-        let party_labels = party_resolution.anonymous_labels(&roster);
-        let (_, public_roster_key) = live_roster_keys(
-            detected.state,
-            detected.match_id.as_deref(),
-            detected.party_id.as_deref(),
-            &roster_key,
-            &party_membership,
-        );
-
-        let (mut players, enrichment_rate_limited) = enrich_players(
+        // fetch_mmr: false — names and cached ranks only, so the table can paint.
+        let (players, enrichment_rate_limited) = enrich_players(
             &api,
             &raw_players,
             loadout_map.as_ref(),
             &cache,
             &party_history_cache,
+            false,
         )
         .await;
         let retry_in_seconds = party_history_cache.cooldown_seconds().await;
@@ -1451,39 +1557,109 @@ pub async fn live_game_fetch(
         } else {
             None
         };
-        apply_party_labels(&mut players, &party_labels);
-        apply_party_membership(&mut players, &premade_set);
-        *cache.continuity_roster.lock().unwrap() = Some(roster_key.clone());
-        *cache.continuity_labels.lock().unwrap() = party_labels;
-
         let match_context =
             extract_match_context(detected.state, &match_data, detected.match_id.as_deref());
-        let teams = summarize_teams(&players);
-        let events = cache
-            .agent_locks
-            .lock()
-            .unwrap()
-            .events_for(detected.match_id.as_deref());
-        log::debug!(
-            "live: {} snapshot, {} players{}",
-            detected.state.as_str(),
-            players.len(),
-            warning.map_or(String::new(), |warning| format!(" ({warning})"))
+        let player_count = players.len();
+        let early = finish_live_snapshot(
+            &cache,
+            detected.state,
+            detected.match_id.as_deref(),
+            detected.party_id.as_deref(),
+            &roster_key,
+            &live_party_resolution.partition_key(&roster),
+            &match_context,
+            players,
+            &live_party_resolution.anonymous_labels(&roster),
+            &premade_set,
+            warning,
+            retry_in_seconds,
         );
-        let payload = json!({
-            "success": true,
-            "state": detected.state.as_str(),
-            "rosterKey": public_roster_key,
-            "match": match_context,
-            "teams": teams,
-            "players": players,
-            "events": events,
-            "warning": warning,
-            "retryInSeconds": retry_in_seconds
-        })
-        .to_string();
-        cache.store_snapshot(&payload, Instant::now());
-        Ok::<String, String>(payload)
+        log::debug!(
+            "live: {} partial snapshot, {player_count} players",
+            detected.state.as_str()
+        );
+
+        let app = app.clone();
+        let api = api.clone();
+        let raw_players = raw_players.clone();
+        let loadouts = detected.loadouts.clone();
+        let roster = roster.clone();
+        let presence_map = presence_map;
+        let premade_set = premade_set.clone();
+        let continuity_labels = continuity_labels;
+        let roster_key = roster_key.clone();
+        let match_context = match_context.clone();
+        let state = detected.state;
+        let match_id = detected.match_id.clone();
+        let party_id = detected.party_id.clone();
+        tokio::spawn(async move {
+            let cache = app.state::<LiveCache>();
+            if cache.current_refresh_generation() != refresh_generation {
+                return;
+            }
+            let party_history_cache = app.state::<LivePartyHistoryCache>();
+            let loadout_map = loadouts.as_ref().map(build_loadout_map);
+            // fetch_mmr: true — ranks after the roster is already on screen.
+            let (players, enrichment_rate_limited) = enrich_players(
+                &api,
+                &raw_players,
+                loadout_map.as_ref(),
+                cache.inner(),
+                party_history_cache.inner(),
+                true,
+            )
+            .await;
+            if cache.current_refresh_generation() != refresh_generation {
+                return;
+            }
+            let party_resolution = live_party::resolve_live_parties(
+                &api,
+                &roster,
+                &presence_map,
+                &premade_set,
+                party_id.as_deref(),
+                &continuity_labels,
+                party_history_cache.inner(),
+                true,
+            )
+            .await;
+            if cache.current_refresh_generation() != refresh_generation {
+                return;
+            }
+            let party_membership = party_resolution.partition_key(&roster);
+            let party_labels = party_resolution.anonymous_labels(&roster);
+            *cache.continuity_roster.lock().unwrap() = Some(roster_key.clone());
+            *cache.continuity_labels.lock().unwrap() = party_labels.clone();
+            let retry_in_seconds = party_history_cache.cooldown_seconds().await;
+            let warning = if enrichment_rate_limited || retry_in_seconds.is_some() {
+                Some(RATE_LIMITED_ERROR)
+            } else {
+                None
+            };
+            log::debug!(
+                "live: {} snapshot, {} players{}",
+                state.as_str(),
+                players.len(),
+                warning.map_or(String::new(), |warning| format!(" ({warning})"))
+            );
+            let payload = finish_live_snapshot(
+                cache.inner(),
+                state,
+                match_id.as_deref(),
+                party_id.as_deref(),
+                &roster_key,
+                &party_membership,
+                &match_context,
+                players,
+                &party_labels,
+                &premade_set,
+                warning,
+                retry_in_seconds,
+            );
+            let _ = app.emit("live-game:fetch", payload);
+        });
+
+        Ok::<String, String>(early)
     }
     .await;
 
@@ -1713,7 +1889,10 @@ pub async fn live_game_stats(
     let mut stop_for_throttle = false;
     while let Some(joined) = workers.join_next().await {
         if let Ok((puuid, result)) = joined {
-            if result.as_ref().is_err_and(|error| error == RATE_LIMITED_ERROR) {
+            if result
+                .as_ref()
+                .is_err_and(|error| error == RATE_LIMITED_ERROR)
+            {
                 stop_for_throttle = true;
             }
             let payload = match result {
@@ -1869,11 +2048,13 @@ mod tests {
 
     #[test]
     fn agent_locks_only_log_and_count_allies_from_a_mixed_roster() {
-        let locked = |subject: &str| json!({
-            "Subject": subject,
-            "CharacterID": "agent",
-            "CharacterSelectionState": "locked",
-        });
+        let locked = |subject: &str| {
+            json!({
+                "Subject": subject,
+                "CharacterID": "agent",
+                "CharacterSelectionState": "locked",
+            })
+        };
         let source = json!({
             "AllyTeam": { "TeamID": "Red", "Players": [locked("self"), locked("teammate")] },
             "EnemyTeam": { "TeamID": "Blue", "Players": [locked("enemy")] },
@@ -1885,7 +2066,10 @@ mod tests {
         let logged = tracker.observe_at("match", &roster.players, 1_000);
         assert_eq!(
             logged,
-            vec![("self".into(), "agent".into()), ("teammate".into(), "agent".into())]
+            vec![
+                ("self".into(), "agent".into()),
+                ("teammate".into(), "agent".into())
+            ]
         );
         let events = tracker.events_for(Some("match"));
         assert_eq!(events.len(), 2);
@@ -1893,7 +2077,9 @@ mod tests {
         assert_eq!(events[1]["playerId"], "teammate");
         assert!(!logged.iter().any(|(id, _)| id == "unknown"));
         assert!(events.iter().all(|event| event["playerId"] != "unknown"));
-        assert!(tracker.observe_at("match", &roster.players, 5_000).is_empty());
+        assert!(tracker
+            .observe_at("match", &roster.players, 5_000)
+            .is_empty());
         assert_eq!(tracker.events_for(Some("match")), events);
     }
 
@@ -2004,8 +2190,12 @@ mod tests {
         let now = Instant::now();
         cache.put_at("coregame:m1", json!({ "Players": [] }), now);
 
-        assert!(cache.get_at("coregame:m1", now + Duration::from_secs(59)).is_some());
-        assert!(cache.get_at("coregame:m1", now + Duration::from_secs(61)).is_none());
+        assert!(cache
+            .get_at("coregame:m1", now + Duration::from_secs(59))
+            .is_some());
+        assert!(cache
+            .get_at("coregame:m1", now + Duration::from_secs(61))
+            .is_none());
         assert!(cache.get_at("coregame:m2", now).is_none());
     }
 
@@ -2017,7 +2207,9 @@ mod tests {
         let cache = DocumentCache::new(MATCH_DOCUMENT_TTL);
         let now = Instant::now();
         cache.put_at("coregame:m1", json!({ "Players": ["ally"] }), now);
-        assert!(cache.get_at("coregame:m1", now + Duration::from_secs(40 * 60)).is_some());
+        assert!(cache
+            .get_at("coregame:m1", now + Duration::from_secs(40 * 60))
+            .is_some());
     }
 
     #[tokio::test]
@@ -2025,10 +2217,18 @@ mod tests {
         let cache = DocumentCache::new(Duration::from_secs(60));
         let fetch = |tag: &'static str| move || async move { Ok(json!({ "tag": tag })) };
 
-        let first = cached_document(&cache, "party:p1", true, fetch("first")).await.unwrap();
-        let reused = cached_document(&cache, "party:p1", true, fetch("second")).await.unwrap();
-        let refreshed = cached_document(&cache, "party:p1", false, fetch("third")).await.unwrap();
-        let after_refresh = cached_document(&cache, "party:p1", true, fetch("fourth")).await.unwrap();
+        let first = cached_document(&cache, "party:p1", true, fetch("first"))
+            .await
+            .unwrap();
+        let reused = cached_document(&cache, "party:p1", true, fetch("second"))
+            .await
+            .unwrap();
+        let refreshed = cached_document(&cache, "party:p1", false, fetch("third"))
+            .await
+            .unwrap();
+        let after_refresh = cached_document(&cache, "party:p1", true, fetch("fourth"))
+            .await
+            .unwrap();
 
         assert_eq!(first["tag"], "first");
         assert_eq!(reused["tag"], "first");
@@ -2058,12 +2258,16 @@ mod tests {
         .await;
 
         assert_eq!(loadout_entry_count(&served.unwrap()), 10);
-        assert_eq!(loadout_entry_count(&cache.get("pregame-loadouts:m1").unwrap()), 10);
+        assert_eq!(
+            loadout_entry_count(&cache.get("pregame-loadouts:m1").unwrap()),
+            10
+        );
     }
 
     #[test]
     fn a_hidden_enemy_team_still_expects_a_full_pregame_loadout_set() {
-        let hidden = json!({ "AllyTeam": { "Players": vec![json!({}); 5] }, "EnemyTeam": Value::Null });
+        let hidden =
+            json!({ "AllyTeam": { "Players": vec![json!({}); 5] }, "EnemyTeam": Value::Null });
         assert_eq!(pregame_expected_loadouts(&hidden), 10);
 
         let visible = json!({
@@ -2091,6 +2295,92 @@ mod tests {
             cache.recent_snapshot_at(now + SNAPSHOT_FALLBACK_TTL + Duration::from_secs(1)),
             None
         );
+    }
+
+    #[test]
+    fn a_name_only_enrichment_is_enough_to_show_the_roster() {
+        let raw = vec![json!({
+            "Subject": "player-1",
+            "TeamID": "Ally",
+            "CharacterID": "agent",
+            "PlayerIdentity": {
+                "Incognito": false,
+                "AccountLevel": 50,
+                "HideAccountLevel": false
+            }
+        })];
+        let enrichments = HashMap::from([(
+            "player-1".to_string(),
+            CachedEnrichment {
+                game_name: "Name".into(),
+                tag_line: "TAG".into(),
+                mmr: None,
+                inserted_at: Instant::now(),
+                complete: false,
+            },
+        )]);
+
+        let players = players_from_raw(&raw, &enrichments, None, "self");
+
+        assert_eq!(players[0]["gameName"], "Name");
+        assert_eq!(players[0]["tagLine"], "TAG");
+        assert_eq!(players[0]["currentTier"], 0);
+        assert_eq!(players[0]["characterId"], "agent");
+    }
+
+    #[test]
+    fn enrichment_is_complete_once_a_name_and_mmr_are_both_on_file() {
+        // Names and ranks are fetched in separate passes. Completeness is
+        // about having both, not about fetching both in the same call.
+        assert!(!enrichment_is_complete("Name", None));
+        assert!(!enrichment_is_complete("", Some(&json!({}))));
+        assert!(enrichment_is_complete("Name", Some(&json!({}))));
+    }
+
+    #[test]
+    fn names_already_on_file_are_not_asked_for_again() {
+        let mut enrichments = HashMap::new();
+        enrichments.insert(
+            "known".to_string(),
+            CachedEnrichment {
+                game_name: "Known".into(),
+                tag_line: "TAG".into(),
+                mmr: None,
+                inserted_at: Instant::now(),
+                complete: false,
+            },
+        );
+        let refresh = vec!["known".to_string(), "missing".to_string()];
+
+        assert_eq!(names_to_refresh(&refresh, &enrichments), vec!["missing"]);
+    }
+
+    #[test]
+    fn a_newer_fetch_invalidates_an_in_flight_rank_fill() {
+        let cache = LiveCache::default();
+        let first = cache.bump_refresh_generation();
+        let second = cache.bump_refresh_generation();
+        assert_ne!(first, second);
+        assert_eq!(cache.current_refresh_generation(), second);
+    }
+
+    #[test]
+    fn a_partial_live_payload_is_a_successful_snapshot() {
+        let payload = assemble_live_payload(
+            LiveState::PreGame,
+            "pregame:match:p1",
+            json!({ "id": "match", "phase": "pregame" }),
+            &[json!({ "puuid": "p1", "gameName": "Name" })],
+            vec![],
+            None,
+            None,
+        );
+        let value: Value = serde_json::from_str(&payload).unwrap();
+
+        assert_eq!(value["success"], true);
+        assert_eq!(value["state"], "pregame");
+        assert_eq!(value["players"][0]["gameName"], "Name");
+        assert_eq!(value["rosterKey"], "pregame:match:p1");
     }
 
     #[test]

@@ -244,9 +244,10 @@ Each entry includes the match, player PUUID, and agent UUID. Repeated polls and
 partial rosters do not repeat the same lock; a new match starts fresh tracking.
 The log timestamp is when ValoUtils first observes the lock, including players
 already locked on the first refresh, rather than a server-provided lock time.
-Collection follows Live Game polling (normally every 5 seconds while the page is
-visible); it adds no network requests. Locks may be missed if agent select ends
-between polls or the page is inactive, unless another caller fetches a live snapshot.
+Collection follows Live Game polling (normally every 5 seconds while the app is
+open, including other pages; idle polls every 15 seconds). It adds no extra
+network requests beyond those polls. A minimized or unfocused window skips ticks
+until it is visible again. Locks may be missed if agent select ends between polls.
 
 Snapshots also include `events` with stable IDs and `observedAt` Unix milliseconds.
 The collapsible Events panel in the bottom-right of Live Game shows these with
