@@ -107,10 +107,14 @@ describe("Live Match signed-in player marker", () => {
     expect(liveGamePage).toContain('loading && (!snapshot || snapshot.state === "idle")');
   });
 
-  test("live match publishes the roster before pd ranks finish", () => {
+  test("live match publishes loadouts before names and ranks", () => {
     const liveBackend = readFileSync(join(root, "src-tauri/src/commands/live.rs"), "utf8");
     expect(liveBackend).toContain('app.emit("live-game:fetch"');
-    expect(liveBackend).toContain("fetch_mmr: false");
+    expect(liveBackend).toContain("begin_loadouts");
+    expect(liveBackend).toContain("fetch_names: false");
+    expect(liveBackend.indexOf("fetch_names: false")).toBeLessThan(
+      liveBackend.indexOf("fetch_names: true"),
+    );
     expect(liveBackend.indexOf("fetch_mmr: false")).toBeLessThan(
       liveBackend.indexOf("fetch_mmr: true"),
     );

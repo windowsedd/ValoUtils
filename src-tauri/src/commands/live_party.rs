@@ -20,11 +20,11 @@ const HISTORY_FALLBACK_BUDGET: Duration = Duration::from_secs(4);
 ///
 /// Party inference for strangers has no live source — Riot only exposes party
 /// ids through friend presence — so it falls back to "these two shared a
-/// partyId in a match they both played". Match history is pulled 25 deep with
-/// no time bound, and 25 matches can span weeks, so a duo from a fortnight ago
-/// kept labelling two solo-queued strangers as a party. Evidence older than
-/// this window is dropped; a match whose start time can't be read is kept,
-/// since an unreadable timestamp is not evidence of staleness.
+/// partyId in a match they both played". Match history is pulled 5 deep with
+/// no time bound, so a duo from a fortnight ago kept labelling two solo-queued
+/// strangers as a party. Evidence older than this window is dropped; a match
+/// whose start time can't be read is kept, since an unreadable timestamp is
+/// not evidence of staleness.
 const HISTORICAL_PARTY_WINDOW_MS: i64 = 14 * 24 * 60 * 60 * 1000;
 
 pub(super) const RATE_LIMITED_ERROR: &str = "rateLimited";
@@ -676,7 +676,7 @@ async fn fetch_historical_groups(
             continue;
         }
         if let Some(history) = cache.get_history_document(puuid) {
-            let matches = recent_match_ids(&history, 25);
+            let matches = recent_match_ids(&history, 5);
             cache.put_history(puuid, matches.clone());
             histories.insert(puuid.clone(), matches);
             continue;
@@ -688,11 +688,11 @@ async fn fetch_historical_groups(
             let _permit = cache.permits.acquire().await.ok()?;
             let history = riot_request_with_timeout(
                 RIOT_REQUEST_TIMEOUT,
-                cache.run_pd(api.get_match_history(&puuid, 0, 25)),
+                cache.run_pd(api.get_match_history(&puuid, 0, 5)),
             )
             .await?;
             cache.put_history_document(&puuid, history.clone());
-            let matches = recent_match_ids(&history, 25);
+            let matches = recent_match_ids(&history, 5);
             cache.put_history(&puuid, matches.clone());
             Some((puuid, matches))
         });

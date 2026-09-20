@@ -128,6 +128,58 @@ fn loadout_entry_count(loadouts: &Value) -> usize {
         .map_or(0, Vec::len)
 }
 
+/// A loadout request started as soon as the match id is known. The match
+/// document is not required to ask, and waiting for it delays skins (and the
+/// pregame enemy five).
+struct LoadoutInFlight {
+    key: String,
+    cached: Option<Value>,
+    task: Option<tokio::task::JoinHandle<Option<Value>>>,
+}
+
+fn begin_loadouts(
+    cache: &DocumentCache,
+    key: String,
+    fetch: impl Future<Output = Result<Value, String>> + Send + 'static,
+) -> LoadoutInFlight {
+    if let Some(loadouts) = cache.get(&key) {
+        return LoadoutInFlight {
+            key,
+            cached: Some(loadouts),
+            task: None,
+        };
+    }
+    log::debug!("live: fetching {key}");
+    LoadoutInFlight {
+        key,
+        cached: None,
+        task: Some(tokio::spawn(async move { fetch.await.ok() })),
+    }
+}
+
+impl LoadoutInFlight {
+    async fn finish(self, cache: &DocumentCache, expected: usize) -> Option<Value> {
+        let loadouts = if let Some(loadouts) = self.cached {
+            Some(loadouts)
+        } else if let Some(task) = self.task {
+            task.await.ok().flatten()
+        } else {
+            None
+        };
+        let loadouts = loadouts?;
+        let entries = loadout_entry_count(&loadouts);
+        if entries >= expected.max(1) {
+            cache.put(&self.key, loadouts.clone());
+        } else {
+            log::debug!(
+                "live: {} still filling in ({entries}/{expected}), not cached",
+                self.key
+            );
+        }
+        Some(loadouts)
+    }
+}
+
 /// Pregame publishes the enemy side's loadouts after the ally side's, and those
 /// entries are the only place the enemy five come from. Caching a half-filled
 /// answer would hide those players for the rest of agent select, so a loadout
@@ -140,20 +192,11 @@ async fn cached_loadouts<F, Fut>(
 ) -> Option<Value>
 where
     F: FnOnce() -> Fut,
-    Fut: Future<Output = Result<Value, String>>,
+    Fut: Future<Output = Result<Value, String>> + Send + 'static,
 {
-    if let Some(loadouts) = cache.get(key) {
-        return Some(loadouts);
-    }
-    log::debug!("live: fetching {key}");
-    let loadouts = fetch().await.ok()?;
-    let entries = loadout_entry_count(&loadouts);
-    if entries >= expected.max(1) {
-        cache.put(key, loadouts.clone());
-    } else {
-        log::debug!("live: {key} still filling in ({entries}/{expected}), not cached");
-    }
-    Some(loadouts)
+    begin_loadouts(cache, key.to_string(), fetch())
+        .finish(cache, expected)
+        .await
 }
 
 /// How many loadout entries a complete pregame answer holds. Competitive hides
@@ -1107,6 +1150,7 @@ async fn enrich_players(
     loadout_map: Option<&LoadoutMap>,
     cache: &LiveCache,
     pd_cache: &LivePartyHistoryCache,
+    fetch_names: bool,
     fetch_mmr: bool,
 ) -> (Vec<Value>, bool) {
     let puuids: Vec<String> = raw_players
@@ -1133,6 +1177,13 @@ async fn enrich_players(
         }
     }
 
+    if !fetch_names && !fetch_mmr {
+        return (
+            players_from_raw(raw_players, &enrichments, loadout_map, &api.puuid),
+            false,
+        );
+    }
+
     if !refresh_puuids.is_empty() {
         log::debug!(
             "live: enriching {} of {} players ({} served from cache)",
@@ -1142,7 +1193,11 @@ async fn enrich_players(
         );
     }
     let mut rate_limited = false;
-    let name_puuids = names_to_refresh(&refresh_puuids, &enrichments);
+    let name_puuids = if fetch_names {
+        names_to_refresh(&refresh_puuids, &enrichments)
+    } else {
+        Vec::new()
+    };
     let names_result = if name_puuids.is_empty() {
         Ok(Value::Array(vec![]))
     } else {
@@ -1368,21 +1423,30 @@ async fn detect_state(
     //    the same match id, so only "am I still in it" is asked every poll.
     if let Some(core_p) = safe_get_player(|| api.coregame_get_player(puuid)).await? {
         if let Some(match_id) = core_p.get("MatchID").and_then(|v| v.as_str()) {
+            let loadouts = begin_loadouts(
+                &cache.match_documents,
+                format!("coregame-loadouts:{match_id}"),
+                {
+                    let api = api.clone();
+                    let match_id = match_id.to_string();
+                    async move { api.coregame_get_loadouts(&match_id).await }
+                },
+            );
+            let match_key = format!("coregame:{match_id}");
             let match_data = cached_document(
                 &cache.match_documents,
-                &format!("coregame:{match_id}"),
+                &match_key,
                 true,
                 || api.coregame_get_match(match_id),
-            )
-            .await?;
-            let loadouts = cached_loadouts(
-                &cache.match_documents,
-                &format!("coregame-loadouts:{match_id}"),
-                1,
-                || api.coregame_get_loadouts(match_id),
-            )
-            .await;
-            let party = fetch_party(api, puuid, cache, true).await?;
+            );
+            let party = fetch_party(api, puuid, cache, true);
+            let (match_data, party, loadouts) = tokio::join!(
+                match_data,
+                party,
+                loadouts.finish(&cache.match_documents, 1),
+            );
+            let match_data = match_data?;
+            let party = party?;
             return Ok(DetectedState {
                 state: LiveState::CoreGame,
                 match_id: Some(match_id.to_string()),
@@ -1398,6 +1462,15 @@ async fn detect_state(
     //    while the loadouts settle once every player in them has appeared.
     if let Some(pre_p) = safe_get_player(|| api.pregame_get_player(puuid)).await? {
         if let Some(match_id) = pre_p.get("MatchID").and_then(|v| v.as_str()) {
+            let loadouts = begin_loadouts(
+                &cache.match_documents,
+                format!("pregame-loadouts:{match_id}"),
+                {
+                    let api = api.clone();
+                    let match_id = match_id.to_string();
+                    async move { api.pregame_get_loadouts(&match_id).await }
+                },
+            );
             let match_data = api.pregame_get_match(match_id).await?;
             // Log immediately on receipt, before loadouts or enrichment can
             // delay the timestamp. Riot exposes the selection state, not the
@@ -1411,14 +1484,15 @@ async fn detect_state(
             for (player, agent) in locks {
                 log::info!("Agent lock observed: match={match_id} player={player} agent={agent}");
             }
-            let loadouts = cached_loadouts(
-                &cache.match_documents,
-                &format!("pregame-loadouts:{match_id}"),
-                pregame_expected_loadouts(&match_data),
-                || api.pregame_get_loadouts(match_id),
-            )
-            .await;
-            let party = fetch_party(api, puuid, cache, true).await?;
+            let party = fetch_party(api, puuid, cache, true);
+            let (loadouts, party) = tokio::join!(
+                loadouts.finish(
+                    &cache.match_documents,
+                    pregame_expected_loadouts(&match_data),
+                ),
+                party,
+            );
+            let party = party?;
             return Ok(DetectedState {
                 state: LiveState::PreGame,
                 match_id: Some(match_id.to_string()),
@@ -1460,9 +1534,9 @@ pub async fn live_game_fetch(
     cache: State<'_, LiveCache>,
     party_history_cache: State<'_, LivePartyHistoryCache>,
 ) -> Result<String, ()> {
-    // Polls and manual refreshes can overlap. Serializing detect + names
-    // prevents an older, slower request from replacing a newer snapshot/cache.
-    // Rank fill continues after this lock is released so the roster can paint.
+    // Polls and manual refreshes can overlap. Serializing detect prevents an
+    // older, slower request from replacing a newer snapshot/cache. Names and
+    // ranks continue after this lock is released so loadouts can paint.
     let _refresh_guard = cache.refresh.lock().await;
     let refresh_generation = cache.bump_refresh_generation();
     let api = match api::create_api(&riot).await {
@@ -1488,24 +1562,11 @@ pub async fn live_game_fetch(
         }
 
         let match_data = detected.match_data.clone().unwrap_or(Value::Null);
-        let chat = if detected.state == LiveState::PreGame {
-            match tokio::time::timeout(
-                std::time::Duration::from_millis(800),
-                client::get_pre_game_chat_info(&riot),
-            )
-            .await
-            {
-                Ok(Ok(value)) => Some(value),
-                _ => None,
-            }
-        } else {
-            None
-        };
         let raw_players = if detected.state == LiveState::PreGame {
             build_pregame_roster(
                 &match_data,
                 detected.loadouts.as_ref(),
-                chat.as_ref(),
+                None,
                 &api.puuid,
             )
             .players
@@ -1514,7 +1575,6 @@ pub async fn live_game_fetch(
         };
 
         let loadout_map = detected.loadouts.as_ref().map(build_loadout_map);
-        let presence_map = build_presence_party_map(&riot).await;
         let premade_set: HashSet<String> = detected.premade.into_iter().collect();
         let roster: Vec<String> = raw_players
             .iter()
@@ -1533,7 +1593,7 @@ pub async fn live_game_fetch(
         let live_party_resolution = live_party::resolve_live_parties(
             &api,
             &roster,
-            &presence_map,
+            &HashMap::new(),
             &premade_set,
             detected.party_id.as_deref(),
             &continuity_labels,
@@ -1541,22 +1601,20 @@ pub async fn live_game_fetch(
             false,
         )
         .await;
-        // fetch_mmr: false — names and cached ranks only, so the table can paint.
-        let (players, enrichment_rate_limited) = enrich_players(
+        // fetch_names: false, fetch_mmr: false — loadouts and cached names so
+        // the table can paint without waiting on pd.
+        let (players, _) = enrich_players(
             &api,
             &raw_players,
             loadout_map.as_ref(),
             &cache,
             &party_history_cache,
             false,
+            false,
         )
         .await;
         let retry_in_seconds = party_history_cache.cooldown_seconds().await;
-        let warning = if enrichment_rate_limited || retry_in_seconds.is_some() {
-            Some(RATE_LIMITED_ERROR)
-        } else {
-            None
-        };
+        let warning = retry_in_seconds.is_some().then_some(RATE_LIMITED_ERROR);
         let match_context =
             extract_match_context(detected.state, &match_data, detected.match_id.as_deref());
         let player_count = players.len();
@@ -1575,19 +1633,16 @@ pub async fn live_game_fetch(
             retry_in_seconds,
         );
         log::debug!(
-            "live: {} partial snapshot, {player_count} players",
+            "live: {} loadout snapshot, {player_count} players",
             detected.state.as_str()
         );
 
         let app = app.clone();
         let api = api.clone();
         let raw_players = raw_players.clone();
+        let match_data = match_data.clone();
         let loadouts = detected.loadouts.clone();
-        let roster = roster.clone();
-        let presence_map = presence_map;
         let premade_set = premade_set.clone();
-        let continuity_labels = continuity_labels;
-        let roster_key = roster_key.clone();
         let match_context = match_context.clone();
         let state = detected.state;
         let match_id = detected.match_id.clone();
@@ -1597,15 +1652,114 @@ pub async fn live_game_fetch(
             if cache.current_refresh_generation() != refresh_generation {
                 return;
             }
+            let riot = app.state::<RiotState>();
             let party_history_cache = app.state::<LivePartyHistoryCache>();
+            let chat = if state == LiveState::PreGame {
+                match tokio::time::timeout(
+                    std::time::Duration::from_millis(800),
+                    client::get_pre_game_chat_info(riot.inner()),
+                )
+                .await
+                {
+                    Ok(Ok(value)) => Some(value),
+                    _ => None,
+                }
+            } else {
+                None
+            };
+            let raw_players = if state == LiveState::PreGame {
+                build_pregame_roster(
+                    &match_data,
+                    loadouts.as_ref(),
+                    chat.as_ref(),
+                    &api.puuid,
+                )
+                .players
+            } else {
+                raw_players
+            };
             let loadout_map = loadouts.as_ref().map(build_loadout_map);
-            // fetch_mmr: true — ranks after the roster is already on screen.
+            let presence_map = build_presence_party_map(riot.inner()).await;
+            let roster: Vec<String> = raw_players
+                .iter()
+                .map(raw_puuid)
+                .filter(|s| !s.is_empty())
+                .collect();
+            let mut sorted_roster = roster.clone();
+            sorted_roster.sort_by_key(|puuid| puuid.to_ascii_lowercase());
+            let roster_key = sorted_roster.join(",").to_ascii_lowercase();
+            let continuity_labels =
+                if cache.continuity_roster.lock().unwrap().as_deref() == Some(roster_key.as_str()) {
+                    cache.continuity_labels.lock().unwrap().clone()
+                } else {
+                    continuity_labels
+                };
+            if cache.current_refresh_generation() != refresh_generation {
+                return;
+            }
+            // fetch_names: true — names after loadouts are on screen.
             let (players, enrichment_rate_limited) = enrich_players(
                 &api,
                 &raw_players,
                 loadout_map.as_ref(),
                 cache.inner(),
                 party_history_cache.inner(),
+                true,
+                false,
+            )
+            .await;
+            if cache.current_refresh_generation() != refresh_generation {
+                return;
+            }
+            let party_resolution = live_party::resolve_live_parties(
+                &api,
+                &roster,
+                &presence_map,
+                &premade_set,
+                party_id.as_deref(),
+                &continuity_labels,
+                party_history_cache.inner(),
+                false,
+            )
+            .await;
+            let retry_in_seconds = party_history_cache.cooldown_seconds().await;
+            let warning = if enrichment_rate_limited || retry_in_seconds.is_some() {
+                Some(RATE_LIMITED_ERROR)
+            } else {
+                None
+            };
+            log::debug!(
+                "live: {} name snapshot, {} players",
+                state.as_str(),
+                players.len()
+            );
+            let payload = finish_live_snapshot(
+                cache.inner(),
+                state,
+                match_id.as_deref(),
+                party_id.as_deref(),
+                &roster_key,
+                &party_resolution.partition_key(&roster),
+                &match_context,
+                players,
+                &party_resolution.anonymous_labels(&roster),
+                &premade_set,
+                warning,
+                retry_in_seconds,
+            );
+            let _ = app.emit("live-game:fetch", payload);
+
+            if cache.current_refresh_generation() != refresh_generation {
+                return;
+            }
+            // fetch_mmr: true — ranks after names.
+            let (players, enrichment_rate_limited) = enrich_players(
+                &api,
+                &raw_players,
+                loadout_map.as_ref(),
+                cache.inner(),
+                party_history_cache.inner(),
+                true,
                 true,
             )
             .await;
@@ -1693,7 +1847,7 @@ async fn fetch_recent_stats(
         let history = if let Some(history) = pd_cache.get_history_document(&puuid) {
             history
         } else {
-            let history = run_live_pd(&pd_cache, api.get_match_history(&puuid, 0, 25)).await?;
+            let history = run_live_pd(&pd_cache, api.get_match_history(&puuid, 0, 5)).await?;
             pd_cache.put_history_document(&puuid, history.clone());
             history
         };
@@ -1715,7 +1869,7 @@ async fn fetch_recent_stats(
         }
 
         let competitive_updates =
-            match run_live_pd(&pd_cache, api.get_competitive_history(&puuid, 0, 20)).await {
+            match run_live_pd(&pd_cache, api.get_competitive_history(&puuid, 0, 5)).await {
                 Ok(value) => Some(value),
                 Err(error) if error == RATE_LIMITED_ERROR => return Err(error),
                 Err(_) => None,
@@ -1797,10 +1951,8 @@ fn should_cache_recent_stats(expected: usize, fetched: usize, normalized: usize)
 
 /// How many recent matches a player's scout stats average over, by default.
 pub(crate) const RECENT_MATCH_COUNT_DEFAULT: u64 = 5;
-/// Match history is pulled 25 deep and then filtered to the queue being played,
-/// so asking for much more than this reliably comes up short on an account that
-/// mixes modes - and every extra match is another match-details request per
-/// player on the board.
+/// Match history is pulled 5 deep and then filtered to the queue being played.
+/// A deeper window costs another match-details request per extra row, per player.
 pub(crate) const RECENT_MATCH_COUNT_MAX: u64 = 10;
 
 /// The configured recent-match window, clamped to what the data can support.
@@ -2295,6 +2447,53 @@ mod tests {
             cache.recent_snapshot_at(now + SNAPSHOT_FALLBACK_TTL + Duration::from_secs(1)),
             None
         );
+    }
+
+    #[test]
+    fn loadouts_paint_without_names() {
+        let raw = vec![json!({
+            "Subject": "player-1",
+            "TeamID": "Ally",
+            "PlayerIdentity": {}
+        })];
+        let loadouts = json!({
+            "Loadouts": [{
+                "Subject": "player-1",
+                "Items": {
+                    "9c82e19d-4575-0200-1a81-3eacf00cf872": {
+                        "Sockets": {
+                            "bcef87d6-209b-46c6-8b19-fbe40bd95abc": {
+                                "Item": { "ID": "skin-1" }
+                            }
+                        }
+                    }
+                }
+            }]
+        });
+        let loadout_map = build_loadout_map(&loadouts);
+        let players = players_from_raw(&raw, &HashMap::new(), Some(&loadout_map), "self");
+
+        assert_eq!(players[0]["gameName"], "");
+        assert_eq!(players[0]["loadout"]["vandal"]["skinId"], "skin-1");
+    }
+
+    #[tokio::test]
+    async fn begin_loadouts_serves_cache_without_fetching() {
+        let cache = DocumentCache::new(Duration::from_secs(60));
+        cache.put(
+            "pregame-loadouts:m1",
+            json!({ "Loadouts": vec![json!({}); 10] }),
+        );
+
+        let served = begin_loadouts(&cache, "pregame-loadouts:m1".into(), async {
+            panic!("cached loadouts must not refetch");
+            #[allow(unreachable_code)]
+            Ok(json!({}))
+        })
+        .finish(&cache, 10)
+        .await;
+
+        assert_eq!(loadout_entry_count(&served.unwrap()), 10);
     }
 
     #[test]
