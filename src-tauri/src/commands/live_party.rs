@@ -8,7 +8,10 @@ use std::time::{Duration, Instant};
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 
-const HISTORY_TTL: Duration = Duration::from_secs(30);
+/// Match history used to infer parties does not change during a live match.
+/// Holding it for three minutes keeps a 10-player roster from re-asking the
+/// same history documents every half minute.
+const HISTORY_TTL: Duration = Duration::from_secs(3 * 60);
 const MATCH_TTL: Duration = Duration::from_secs(6 * 60 * 60);
 const MAX_HISTORY_CACHE_ENTRIES: usize = 512;
 const MAX_MATCH_CACHE_ENTRIES: usize = 512;
@@ -1031,19 +1034,26 @@ mod tests {
     }
 
     #[test]
-    fn cache_history_entries_expire_after_30_seconds() {
+    fn cache_history_entries_expire_after_three_minutes() {
         let cache = LivePartyHistoryCache::default();
         let now = Instant::now();
         cache.put_history_at("p1", vec!["match-a".into()], now);
+        cache.put_history_document_at("p1", json!({ "History": [] }), now);
 
         assert_eq!(
-            cache.get_history_at("P1", now + Duration::from_secs(29)),
+            cache.get_history_at("P1", now + Duration::from_secs(179)),
             Some(vec!["match-a".to_string()])
         );
+        assert!(cache
+            .get_history_document_at("p1", now + Duration::from_secs(179))
+            .is_some());
         assert_eq!(
-            cache.get_history_at("p1", now + Duration::from_secs(31)),
+            cache.get_history_at("p1", now + Duration::from_secs(181)),
             None
         );
+        assert!(cache
+            .get_history_document_at("p1", now + Duration::from_secs(181))
+            .is_none());
     }
 
     #[test]
@@ -1162,11 +1172,11 @@ mod tests {
         cache.put_history_document_at("P1", json!({ "History": [{ "MatchID": "m1" }] }), now);
 
         assert_eq!(
-            cache.get_history_document_at("p1", now + Duration::from_secs(29)),
+            cache.get_history_document_at("p1", now + Duration::from_secs(179)),
             Some(json!({ "History": [{ "MatchID": "m1" }] }))
         );
         assert!(cache
-            .get_history_document_at("p1", now + Duration::from_secs(31))
+            .get_history_document_at("p1", now + HISTORY_TTL + Duration::from_secs(1))
             .is_none());
     }
 

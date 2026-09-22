@@ -354,6 +354,104 @@ pub async fn cooldown_seconds() -> Option<u64> {
         .map(|remaining| remaining.as_secs().max(1))
 }
 
+/// How long a GLZ refusal holds GLZ reads when Riot sent no `Retry-After`.
+///
+/// Pregame is polled every few seconds. A short hold skips those ticks. It does
+/// not enter the PD doubling ladder: a pregame 429 must not freeze names, ranks,
+/// and the other screens that spend the PD budget.
+const GLZ_RATE_LIMIT_COOLDOWN: Duration = Duration::from_secs(15);
+
+/// What a GLZ caller gets while that host is cooling down. No request is sent.
+///
+/// Shaped like a Riot refusal so existing 429 arms recognise it. It never
+/// reaches [`note_failure`]: nothing went out, and a GLZ pause is not a PD strike.
+pub const GLZ_LOCAL_COOLDOWN_ERROR: &str =
+    r#"{"status":429,"path":"<local-glz>","message":"held by the local glz rate gate","retryAfter":null}"#;
+
+#[derive(Default)]
+struct GlzGate {
+    cooldown_until: Option<Instant>,
+}
+
+impl GlzGate {
+    fn mark_rate_limited(&mut self, now: Instant, hint: Option<Duration>) -> Duration {
+        let cooldown = hint.unwrap_or(GLZ_RATE_LIMIT_COOLDOWN);
+        if let Some(until) = self.cooldown_until.filter(|until| now < *until) {
+            if let Some(hint) = hint {
+                let proposed = now + hint;
+                if proposed > until {
+                    self.cooldown_until = Some(proposed);
+                    return hint;
+                }
+            }
+            return until.duration_since(now);
+        }
+        self.cooldown_until = Some(now + cooldown);
+        cooldown
+    }
+
+    fn is_cooling_down_at(&self, now: Instant) -> bool {
+        self.cooldown_until.is_some_and(|until| now < until)
+    }
+
+    fn cooldown_remaining_at(&self, now: Instant) -> Option<Duration> {
+        self.cooldown_until
+            .filter(|until| now < *until)
+            .map(|until| until.duration_since(now))
+    }
+}
+
+fn glz_gate() -> &'static AsyncMutex<GlzGate> {
+    static GLZ: OnceLock<AsyncMutex<GlzGate>> = OnceLock::new();
+    GLZ.get_or_init(|| AsyncMutex::new(GlzGate::default()))
+}
+
+/// Refuses immediately while GLZ is cooling down. GLZ is not paced: the live
+/// poll wants a fast session read, and the hold only starts after a refusal.
+pub async fn acquire_glz() -> Result<(), String> {
+    acquire_glz_on(glz_gate()).await
+}
+
+async fn acquire_glz_on(gate: &AsyncMutex<GlzGate>) -> Result<(), String> {
+    if gate.lock().await.is_cooling_down_at(Instant::now()) {
+        return Err(GLZ_LOCAL_COOLDOWN_ERROR.to_string());
+    }
+    Ok(())
+}
+
+/// Records a GLZ refusal on the GLZ gate only. A PD caller is not struck.
+pub async fn note_glz_failure(error: &str) {
+    note_glz_failure_on(glz_gate(), error).await;
+}
+
+async fn note_glz_failure_on(gate: &AsyncMutex<GlzGate>, error: &str) {
+    if !is_rate_limited_error(error) || error.contains("<local") {
+        return;
+    }
+    let hint = retry_after_hint(error);
+    let mut locked = gate.lock().await;
+    let cooldown = locked.mark_rate_limited(Instant::now(), hint);
+    log::warn!(
+        "Riot throttled GLZ {} ; holding GLZ requests for {}s{}",
+        error_path(error).unwrap_or_else(|| "a GLZ endpoint".to_string()),
+        cooldown.as_secs(),
+        if hint.is_some() {
+            ", as asked by Retry-After"
+        } else {
+            ""
+        }
+    );
+}
+
+/// Seconds until a GLZ read is worth trying again.
+pub async fn glz_cooldown_seconds() -> Option<u64> {
+    glz_gate()
+        .lock()
+        .await
+        .cooldown_remaining_at(Instant::now())
+        .map(|remaining| remaining.as_secs().max(1))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -617,5 +715,55 @@ mod tests {
         note_failure_on(&gate, r#"{"status":404,"message":"no such match"}"#).await;
 
         assert!(acquire_on(&gate).await.is_ok());
+    }
+
+    #[test]
+    fn a_glz_throttle_cools_down_for_fifteen_seconds_without_doubling() {
+        let now = Instant::now();
+        let mut gate = GlzGate::default();
+
+        gate.mark_rate_limited(now, None);
+        assert!(gate.is_cooling_down_at(now + Duration::from_secs(14)));
+        assert!(!gate.is_cooling_down_at(now + Duration::from_secs(15)));
+
+        let second = now + Duration::from_secs(16);
+        gate.mark_rate_limited(second, None);
+        assert!(gate.is_cooling_down_at(second + Duration::from_secs(14)));
+        assert!(!gate.is_cooling_down_at(second + Duration::from_secs(15)));
+    }
+
+    #[test]
+    fn a_glz_retry_after_overrides_the_default_cooldown() {
+        let now = Instant::now();
+        let mut gate = GlzGate::default();
+        gate.mark_rate_limited(now, Some(Duration::from_secs(8)));
+        assert!(gate.is_cooling_down_at(now + Duration::from_secs(7)));
+        assert!(!gate.is_cooling_down_at(now + Duration::from_secs(9)));
+    }
+
+    #[tokio::test]
+    async fn a_glz_429_does_not_strike_the_pd_gate() {
+        let pd = AsyncMutex::new(RateGate::default());
+        let glz = AsyncMutex::new(GlzGate::default());
+        note_glz_failure_on(&glz, r#"{"status":429,"path":"/pregame/v1/players/<id>"}"#).await;
+
+        assert!(acquire_on(&pd).await.is_ok());
+        assert_eq!(
+            acquire_glz_on(&glz).await,
+            Err(GLZ_LOCAL_COOLDOWN_ERROR.to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn a_pd_429_still_strikes_the_pd_gate() {
+        let pd = AsyncMutex::new(RateGate::default());
+        let glz = AsyncMutex::new(GlzGate::default());
+        note_failure_on(&pd, r#"{"status":429,"path":"/mmr/v1/players/<id>"}"#).await;
+
+        assert_eq!(
+            acquire_on(&pd).await,
+            Err(LOCAL_COOLDOWN_ERROR.to_string())
+        );
+        assert!(acquire_glz_on(&glz).await.is_ok());
     }
 }

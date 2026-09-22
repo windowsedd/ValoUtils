@@ -3,6 +3,7 @@ use super::pregame_roster::{build_pregame_roster, redact_secrets};
 use super::rank_shields::remaining_rank_shields;
 use crate::riot::api::{self, RiotApiClient};
 use crate::riot::client::{self, RiotState};
+use crate::riot::rate_gate;
 use crate::store::ConfigStore;
 use base64::Engine;
 use serde_json::{json, Map, Value};
@@ -27,7 +28,14 @@ const ENRICHMENT_TTL: Duration = Duration::from_secs(10 * 60);
 /// Keep them for a whole match so later polls do not refetch the ally team.
 const MATCH_DOCUMENT_TTL: Duration = Duration::from_secs(45 * 60);
 /// The party you queued with cannot change while that match runs.
-const PARTY_DOCUMENT_TTL: Duration = Duration::from_secs(30);
+const PARTY_DOCUMENT_TTL: Duration = Duration::from_secs(3 * 60);
+/// "Am I still in this pregame?" The match id does not change during agent
+/// select, so the player document is reused until this heartbeat. A dodge or a
+/// match start is noticed on the next one, or sooner if coregame answers first.
+const PREGAME_PLAYER_HEARTBEAT: Duration = Duration::from_secs(3 * 60);
+/// Agent locks change during select, so the match document stays live, but not
+/// on every 5s tick. A fresh copy covers the next poll window.
+const PREGAME_MATCH_TTL: Duration = Duration::from_secs(10);
 const LIVE_PD_TIMEOUT: Duration = Duration::from_secs(2);
 const PUBLIC_UNAVAILABLE_ERROR: &str = "unavailable";
 
@@ -347,6 +355,11 @@ pub struct LiveCache {
     match_documents: DocumentCache,
     /// Party lookups, reused only while a match is running.
     party_documents: DocumentCache,
+    /// Last pregame player document, reused until the heartbeat asks again.
+    pregame_player: Mutex<Option<(Instant, Value)>>,
+    /// Last pregame match document. Shorter than the player heartbeat because
+    /// agents lock while the match id stays the same.
+    pregame_match: Mutex<Option<(Instant, String, Value)>>,
 }
 
 impl Default for LiveCache {
@@ -361,8 +374,21 @@ impl Default for LiveCache {
             last_snapshot: Mutex::default(),
             match_documents: DocumentCache::new(MATCH_DOCUMENT_TTL),
             party_documents: DocumentCache::new(PARTY_DOCUMENT_TTL),
+            pregame_player: Mutex::default(),
+            pregame_match: Mutex::default(),
         }
     }
+}
+
+/// Whether a stored pregame player document is still the one to trust.
+fn pregame_player_is_fresh(stored_at: Instant, now: Instant) -> bool {
+    now.duration_since(stored_at) < PREGAME_PLAYER_HEARTBEAT
+}
+
+/// Whether a stored pregame match document still covers this match id.
+fn pregame_match_is_fresh(stored_at: Instant, stored_match_id: &str, match_id: &str, now: Instant) -> bool {
+    stored_match_id.eq_ignore_ascii_case(match_id)
+        && now.duration_since(stored_at) < PREGAME_MATCH_TTL
 }
 
 /// How long a stored roster still describes the match you are in.
@@ -811,6 +837,78 @@ fn is_not_found(error: &str) -> bool {
     error.contains("404")
 }
 
+/// The pregame player document, from cache when the heartbeat has not elapsed.
+///
+/// A 404 clears the cache: you left agent select. A throttle keeps the last
+/// document so the roster can stay up, and reports the refusal so the caller
+/// can say when the next read is worth trying.
+async fn fresh_pregame_player(
+    api: &RiotApiClient,
+    puuid: &str,
+    cache: &LiveCache,
+) -> Result<Option<Value>, String> {
+    let now = Instant::now();
+    if let Some((stored_at, document)) = cache.pregame_player.lock().unwrap().clone() {
+        if pregame_player_is_fresh(stored_at, now) {
+            return Ok(Some(document));
+        }
+    }
+
+    match safe_get_player(|| api.pregame_get_player(puuid)).await {
+        Ok(Some(document)) => {
+            if document.get("MatchID").and_then(Value::as_str).is_some() {
+                *cache.pregame_player.lock().unwrap() = Some((now, document.clone()));
+            }
+            Ok(Some(document))
+        }
+        Ok(None) => {
+            *cache.pregame_player.lock().unwrap() = None;
+            *cache.pregame_match.lock().unwrap() = None;
+            Ok(None)
+        }
+        Err(error) if rate_gate::is_rate_limited_error(&error) => {
+            if let Some((_, document)) = cache.pregame_player.lock().unwrap().clone() {
+                return Ok(Some(document));
+            }
+            Err(RATE_LIMITED_ERROR.to_string())
+        }
+        Err(error) => Err(error),
+    }
+}
+
+/// The pregame match document, reused inside its TTL for this match id.
+///
+/// A throttle serves the last copy of this match. A failed fetch is not stored.
+async fn fresh_pregame_match(
+    api: &RiotApiClient,
+    cache: &LiveCache,
+    match_id: &str,
+) -> Result<Value, String> {
+    let now = Instant::now();
+    if let Some((stored_at, stored_id, document)) = cache.pregame_match.lock().unwrap().clone() {
+        if pregame_match_is_fresh(stored_at, &stored_id, match_id, now) {
+            return Ok(document);
+        }
+    }
+
+    match api.pregame_get_match(match_id).await {
+        Ok(document) => {
+            *cache.pregame_match.lock().unwrap() =
+                Some((now, match_id.to_string(), document.clone()));
+            Ok(document)
+        }
+        Err(error) if rate_gate::is_rate_limited_error(&error) => {
+            if let Some((_, stored_id, document)) = cache.pregame_match.lock().unwrap().clone() {
+                if stored_id.eq_ignore_ascii_case(match_id) {
+                    return Ok(document);
+                }
+            }
+            Err(RATE_LIMITED_ERROR.to_string())
+        }
+        Err(error) => Err(error),
+    }
+}
+
 async fn safe_get_player<F, Fut>(f: F) -> Result<Option<Value>, String>
 where
     F: FnOnce() -> Fut,
@@ -1060,6 +1158,28 @@ async fn build_presence_party_map(riot: &RiotState) -> HashMap<String, String> {
     map
 }
 
+/// Party members first, then everyone else, keeping the original order inside
+/// each group. Self is already in the party roster. A cold name or rank fetch
+/// then spends the PD budget on the people you queued with before the rest of
+/// the match.
+fn party_members_first(puuids: &[String], premade: &HashSet<String>) -> Vec<String> {
+    let premade: HashSet<String> = premade
+        .iter()
+        .map(|puuid| puuid.to_ascii_lowercase())
+        .collect();
+    let mut members = Vec::new();
+    let mut others = Vec::new();
+    for puuid in puuids {
+        if premade.contains(&puuid.to_ascii_lowercase()) {
+            members.push(puuid.clone());
+        } else {
+            others.push(puuid.clone());
+        }
+    }
+    members.extend(others);
+    members
+}
+
 fn names_to_refresh(
     refresh_puuids: &[String],
     enrichments: &HashMap<String, CachedEnrichment>,
@@ -1152,12 +1272,16 @@ async fn enrich_players(
     pd_cache: &LivePartyHistoryCache,
     fetch_names: bool,
     fetch_mmr: bool,
+    premade: &HashSet<String>,
 ) -> (Vec<Value>, bool) {
-    let puuids: Vec<String> = raw_players
-        .iter()
-        .map(raw_puuid)
-        .filter(|s| !s.is_empty())
-        .collect();
+    let puuids: Vec<String> = party_members_first(
+        &raw_players
+            .iter()
+            .map(raw_puuid)
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>(),
+        premade,
+    );
 
     let now = Instant::now();
     let mut enrichments = HashMap::new();
@@ -1194,7 +1318,7 @@ async fn enrich_players(
     }
     let mut rate_limited = false;
     let name_puuids = if fetch_names {
-        names_to_refresh(&refresh_puuids, &enrichments)
+        party_members_first(&names_to_refresh(&refresh_puuids, &enrichments), premade)
     } else {
         Vec::new()
     };
@@ -1458,9 +1582,11 @@ async fn detect_state(
         }
     }
 
-    // 2. Agent select. The match document stays live — agents lock during it —
-    //    while the loadouts settle once every player in them has appeared.
-    if let Some(pre_p) = safe_get_player(|| api.pregame_get_player(puuid)).await? {
+    // 2. Agent select. The player document only says which match you are in, so
+    //    it is reused until a heartbeat. The match document changes as agents
+    //    lock, so it is refreshed on a short TTL. Loadouts settle once.
+    let pre_p = fresh_pregame_player(api, puuid, cache).await?;
+    if let Some(pre_p) = pre_p {
         if let Some(match_id) = pre_p.get("MatchID").and_then(|v| v.as_str()) {
             let loadouts = begin_loadouts(
                 &cache.match_documents,
@@ -1471,7 +1597,7 @@ async fn detect_state(
                     async move { api.pregame_get_loadouts(&match_id).await }
                 },
             );
-            let match_data = api.pregame_get_match(match_id).await?;
+            let match_data = fresh_pregame_match(api, cache, match_id).await?;
             // Log immediately on receipt, before loadouts or enrichment can
             // delay the timestamp. Riot exposes the selection state, not the
             // actual lock time; the logger timestamps this first observation.
@@ -1611,6 +1737,7 @@ pub async fn live_game_fetch(
             &party_history_cache,
             false,
             false,
+            &premade_set,
         )
         .await;
         let retry_in_seconds = party_history_cache.cooldown_seconds().await;
@@ -1706,6 +1833,7 @@ pub async fn live_game_fetch(
                 party_history_cache.inner(),
                 true,
                 false,
+                &premade_set,
             )
             .await;
             if cache.current_refresh_generation() != refresh_generation {
@@ -1761,6 +1889,7 @@ pub async fn live_game_fetch(
                 party_history_cache.inner(),
                 true,
                 true,
+                &premade_set,
             )
             .await;
             if cache.current_refresh_generation() != refresh_generation {
@@ -1818,13 +1947,33 @@ pub async fn live_game_fetch(
     .await;
 
     Ok(result.unwrap_or_else(|error| {
-        let error = if error == RATE_LIMITED_ERROR {
-            RATE_LIMITED_ERROR
-        } else {
-            PUBLIC_UNAVAILABLE_ERROR
-        };
-        json!({ "success": false, "error": error }).to_string()
+        if error == RATE_LIMITED_ERROR {
+            if let Some(payload) = rate_limited_snapshot(&cache) {
+                return payload;
+            }
+            return json!({ "success": false, "error": RATE_LIMITED_ERROR }).to_string();
+        }
+        json!({ "success": false, "error": PUBLIC_UNAVAILABLE_ERROR }).to_string()
     }))
+}
+
+/// Last good roster, marked throttled, when a fresh pregame read was refused.
+///
+/// The renderer already keeps a snapshot on a hard error, but this reply is
+/// what a cold open and the bot template both read. A missing snapshot still
+/// falls through to the hard `rateLimited` error.
+fn rate_limited_snapshot(cache: &LiveCache) -> Option<String> {
+    let payload = cache.recent_snapshot()?;
+    let mut value: Value = serde_json::from_str(&payload).ok()?;
+    if value.get("success").and_then(Value::as_bool) != Some(true) {
+        return None;
+    }
+    if value.get("state").and_then(Value::as_str) == Some("idle") {
+        return None;
+    }
+    value["warning"] = json!(RATE_LIMITED_ERROR);
+    value["retryInSeconds"] = json!(PREGAME_MATCH_TTL.as_secs());
+    Some(value.to_string())
 }
 
 async fn fetch_recent_stats(
@@ -2352,6 +2501,20 @@ mod tests {
     }
 
     #[test]
+    fn party_documents_are_held_for_three_minutes_during_a_match() {
+        assert_eq!(PARTY_DOCUMENT_TTL, Duration::from_secs(3 * 60));
+        let cache = DocumentCache::new(PARTY_DOCUMENT_TTL);
+        let now = Instant::now();
+        cache.put_at("party:p1", json!({ "CurrentPartyID": "party" }), now);
+        assert!(cache
+            .get_at("party:p1", now + Duration::from_secs(179))
+            .is_some());
+        assert!(cache
+            .get_at("party:p1", now + PARTY_DOCUMENT_TTL + Duration::from_secs(1))
+            .is_none());
+    }
+
+    #[test]
     fn coregame_roster_cache_covers_a_full_match() {
         // The ally team cannot change after agent select; 60s was refetching
         // the same ten players for the rest of the game.
@@ -2537,6 +2700,33 @@ mod tests {
     }
 
     #[test]
+    fn party_members_are_enriched_before_the_rest_of_the_roster() {
+        let premade = HashSet::from(["duo".to_string(), "self".to_string()]);
+        let ordered = party_members_first(
+            &["enemy".into(), "Duo".into(), "other".into(), "self".into()],
+            &premade,
+        );
+        assert_eq!(
+            ordered,
+            vec![
+                "Duo".to_string(),
+                "self".to_string(),
+                "enemy".to_string(),
+                "other".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn a_solo_queue_keeps_the_roster_order() {
+        let ordered = party_members_first(
+            &["a".into(), "b".into()],
+            &HashSet::from(["self".to_string()]),
+        );
+        assert_eq!(ordered, vec!["a".to_string(), "b".to_string()]);
+    }
+
+    #[test]
     fn names_already_on_file_are_not_asked_for_again() {
         let mut enrichments = HashMap::new();
         enrichments.insert(
@@ -2552,6 +2742,58 @@ mod tests {
         let refresh = vec!["known".to_string(), "missing".to_string()];
 
         assert_eq!(names_to_refresh(&refresh, &enrichments), vec!["missing"]);
+    }
+
+    #[test]
+    fn a_known_pregame_player_is_reused_until_the_heartbeat() {
+        let now = Instant::now();
+        assert!(pregame_player_is_fresh(now, now + Duration::from_secs(179)));
+        assert!(!pregame_player_is_fresh(
+            now,
+            now + PREGAME_PLAYER_HEARTBEAT
+        ));
+    }
+
+    #[test]
+    fn a_pregame_match_document_is_reused_inside_its_ttl_for_the_same_match() {
+        let now = Instant::now();
+        assert!(pregame_match_is_fresh(now, "match-1", "match-1", now + Duration::from_secs(9)));
+        assert!(!pregame_match_is_fresh(
+            now,
+            "match-1",
+            "match-1",
+            now + PREGAME_MATCH_TTL
+        ));
+        assert!(!pregame_match_is_fresh(now, "match-1", "match-2", now));
+    }
+
+    #[test]
+    fn a_throttled_pregame_fetch_serves_the_last_snapshot_with_retry() {
+        let cache = LiveCache::default();
+        let payload = assemble_live_payload(
+            LiveState::PreGame,
+            "pregame:match:p1",
+            json!({ "id": "match" }),
+            &[json!({ "puuid": "p1" })],
+            vec![],
+            None,
+            None,
+        );
+        cache.store_snapshot(&payload, Instant::now());
+
+        let served = rate_limited_snapshot(&cache).expect("cached roster");
+        let value: Value = serde_json::from_str(&served).unwrap();
+        assert_eq!(value["success"], true);
+        assert_eq!(value["state"], "pregame");
+        assert_eq!(value["warning"], RATE_LIMITED_ERROR);
+        assert_eq!(value["retryInSeconds"], PREGAME_MATCH_TTL.as_secs());
+        assert_eq!(value["players"][0]["puuid"], "p1");
+    }
+
+    #[test]
+    fn a_throttled_fetch_without_a_roster_has_nothing_to_serve() {
+        let cache = LiveCache::default();
+        assert!(rate_limited_snapshot(&cache).is_none());
     }
 
     #[test]

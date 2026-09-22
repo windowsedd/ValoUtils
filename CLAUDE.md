@@ -246,8 +246,14 @@ The log timestamp is when ValoUtils first observes the lock, including players
 already locked on the first refresh, rather than a server-provided lock time.
 Collection follows Live Game polling (normally every 5 seconds while the app is
 open, including other pages; idle polls every 15 seconds). It adds no extra
-network requests beyond those polls. A minimized or unfocused window skips ticks
-until it is visible again. Locks may be missed if agent select ends between polls.
+network requests beyond those polls. The pregame player document is reused for
+3 minutes, and the pregame match document for 10 seconds, so a lock that lands
+between those refreshes is observed on the next match-document fetch rather than
+on every tick. A minimized or unfocused window skips ticks until it is visible
+again. Locks may be missed if agent select ends between polls. A GLZ 429 holds
+GLZ reads only and serves the last snapshot with `warning: rateLimited`; it does
+not strike the PD budget. Name and rank enrichment spends the PD budget on the
+current party members before the rest of the roster. Solo queue keeps roster order.
 
 Snapshots also include `events` with stable IDs and `observedAt` Unix milliseconds.
 The collapsible Events panel in the bottom-right of Live Game shows these with

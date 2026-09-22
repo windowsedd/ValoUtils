@@ -283,10 +283,12 @@ impl RiotApiClient {
         body: Option<Value>,
     ) -> Result<Value, String> {
         // Every pd call is spent from one process-wide budget, whichever screen
-        // asked for it. glz is a separate host carrying only the small,
-        // latency-sensitive session/party/match-state reads, so it is not paced.
+        // asked for it. glz is a separate host: it is not paced, but a refusal
+        // there holds GLZ only. It must not strike the PD budget.
         if matches!(target, Target::Pd) {
             rate_gate::acquire().await?;
+        } else {
+            rate_gate::acquire_glz().await?;
         }
 
         let url = format!("{}{}", self.base_url(&target), path);
@@ -320,9 +322,13 @@ impl RiotApiClient {
                 text,
                 retry_after.map_or("null".to_string(), |seconds| seconds.to_string())
             );
-            // A refusal on either host means this client is over its allowance,
-            // so it strikes the pd budget even when glz was the one to say so.
-            rate_gate::note_failure(&error).await;
+            // Each host answers for itself. A pregame 429 holds GLZ reads; it does
+            // not freeze the PD budget that names, ranks, and other screens spend.
+            if matches!(target, Target::Pd) {
+                rate_gate::note_failure(&error).await;
+            } else {
+                rate_gate::note_glz_failure(&error).await;
+            }
             return Err(error);
         }
         serde_json::from_str(&text).or(Ok(Value::String(text)))
