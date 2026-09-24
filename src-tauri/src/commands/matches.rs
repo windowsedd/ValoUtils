@@ -345,14 +345,17 @@ pub async fn match_list(args: Vec<Value>, riot: State<'_, RiotState>) -> Result<
 
     Ok(match result {
         Ok(value) => value.to_string(),
-        Err(e) => {
-            let code = if crate::riot::client::is_login_required_error(&e) {
-                json!("loginRequired")
-            } else {
-                Value::Null
-            };
-            json!({ "success": false, "code": code, "error": e }).to_string()
-        }
+        Err(e) => match super::rate_limited_reply(&e).await {
+            Some(reply) => reply.to_string(),
+            None => {
+                let code = if crate::riot::client::is_login_required_error(&e) {
+                    json!("loginRequired")
+                } else {
+                    Value::Null
+                };
+                json!({ "success": false, "code": code, "error": e }).to_string()
+            }
+        },
     })
 }
 
@@ -497,7 +500,13 @@ pub async fn match_details(
                 .insert(cache_key(&own_puuid, &match_id), reduced.clone());
             json!({ "success": true, "match": reduced, "cached": false }).to_string()
         }
-        Err(e) => json!({ "success": false, "matchId": match_id, "error": e }).to_string(),
+        Err(e) => match super::rate_limited_reply(&e).await {
+            Some(mut reply) => {
+                reply["matchId"] = json!(match_id);
+                reply.to_string()
+            }
+            None => json!({ "success": false, "matchId": match_id, "error": e }).to_string(),
+        },
     })
 }
 

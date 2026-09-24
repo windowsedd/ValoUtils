@@ -402,7 +402,10 @@ pub async fn store_get(riot: State<'_, RiotState>) -> Result<String, ()> {
         Err(e) if e.contains("lockfile") => {
             json!({ "success": false, "code": "loginRequired" }).to_string()
         }
-        Err(e) => json!({ "success": false, "error": e }).to_string(),
+        Err(e) => match super::rate_limited_reply(&e).await {
+            Some(reply) => reply.to_string(),
+            None => json!({ "success": false, "error": e }).to_string(),
+        },
     })
 }
 

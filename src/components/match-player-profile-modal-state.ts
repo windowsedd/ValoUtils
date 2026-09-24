@@ -7,11 +7,20 @@ export type MatchPlayerProfileBridge = {
   removeListener: (channel: string, callback: (message: string) => void) => void;
 };
 
+export type MatchPlayerProfileErrorCode =
+  | "invalidPlayer"
+  | "loginRequired"
+  | "unavailable"
+  | "malformed"
+  // Riot's request budget is spent; `retryInSeconds` says for how long.
+  | "rateLimited";
+
 type MatchPlayerProfileCallbacks = {
   onProfile: (profile: FriendProfileData) => void;
   onError: (
-    code: "invalidPlayer" | "loginRequired" | "unavailable" | "malformed",
+    code: MatchPlayerProfileErrorCode,
     detail?: string,
+    retryInSeconds?: number | null,
   ) => void;
 };
 
@@ -45,7 +54,11 @@ export const subscribeMatchPlayerProfile = (
     }
     if (!response.success) {
       cleanup();
-      callbacks.onError(response.code, response.error);
+      callbacks.onError(
+        response.code,
+        response.error,
+        response.code === "rateLimited" ? response.retryInSeconds : undefined,
+      );
     }
   };
 

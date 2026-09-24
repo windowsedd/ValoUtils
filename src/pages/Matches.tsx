@@ -9,6 +9,7 @@ import {
 import { useMatchPlayerProfileModal } from "@/components/match-player-profile-modal";
 import { LoginRequiredPanel } from "@/components/login-required-panel";
 import { PageHeader, SectionCard, pageBodyClass } from "@/components/section-card";
+import { rateLimitedSeconds } from "@/util/rate-limit";
 import { localize } from "@/util/valorant-assets";
 import type { MatchDetails, MatchListEntry, MatchListResponse } from "@/types/matches";
 import { mapIcon, mapName } from "@/util/valorant-maps";
@@ -206,7 +207,12 @@ const Matches = () => {
 			setLoading(false);
 			if (!res.success) {
 				setLoginRequired(res.code === "loginRequired");
-				setError(res.error ?? t("matches.failedToLoad"));
+				const throttled = rateLimitedSeconds(res);
+				setError(
+					throttled === null
+						? res.error ?? t("matches.failedToLoad")
+						: t("common.rateLimited", { seconds: throttled }),
+				);
 				return;
 			}
 			setLoginRequired(false);

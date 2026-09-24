@@ -13,6 +13,7 @@ import {
 	type InventoryItem,
 	type InventoryKind,
 } from "@/pages/inventory/inventory-state";
+import { rateLimitedSeconds } from "@/util/rate-limit";
 import { getInventoryIndex, localize, type InventoryIndex, type SkinAsset } from "@/util/valorant-assets";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -61,7 +62,12 @@ const Inventory = ({ embedded = false }: { embedded?: boolean }) => {
 					setLoading(false);
 					return;
 				}
-				setError(response.error ?? t("inventory.failedToLoad"));
+				const throttled = rateLimitedSeconds(response);
+				setError(
+					throttled === null
+						? response.error ?? t("inventory.failedToLoad")
+						: t("common.rateLimited", { seconds: throttled }),
+				);
 				setLoading(false);
 				return;
 			}

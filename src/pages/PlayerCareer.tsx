@@ -5,6 +5,7 @@ import { LoginRequiredPanel } from "@/components/login-required-panel";
 import { RankShieldBadge } from "@/components/rank-shield-badge";
 import { PageHeader, SectionCard, pageBodyClass } from "@/components/section-card";
 import type { CompetitiveSeason } from "@/types/live-game";
+import { rateLimitedSeconds } from "@/util/rate-limit";
 import { getSeasonAssets, getTiers, type SeasonAsset, type TierAsset } from "@/util/valorant-assets";
 import { tierColor, tierName } from "@/util/valorant-ranks";
 import { useEffect, useMemo, useState } from "react";
@@ -80,7 +81,12 @@ const PlayerCareer = () => {
 					setLoading(false);
 					return;
 				}
-				setError(response.error ?? t("career.failedToLoad"));
+				const throttled = rateLimitedSeconds(response);
+				setError(
+					throttled === null
+						? response.error ?? t("career.failedToLoad")
+						: t("common.rateLimited", { seconds: throttled }),
+				);
 				setLoading(false);
 				return;
 			}

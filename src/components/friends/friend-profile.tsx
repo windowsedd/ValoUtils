@@ -5,6 +5,7 @@ import { RankShieldBadge } from "@/components/rank-shield-badge";
 import { PageHeader } from "@/components/section-card";
 import type { FriendProfileData, FriendProfileResponse } from "@/types/friend-profile";
 import type { Friend } from "@/types/friends";
+import { rateLimitedSeconds } from "@/util/rate-limit";
 import { getSeasonAssets, type CardAsset, type SeasonAsset, type TierAsset } from "@/util/valorant-assets";
 import { tierColor, tierName } from "@/util/valorant-ranks";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -64,7 +65,14 @@ export const FriendProfile = ({ friend, card, tiers, presenceLabel, cachedProfil
 				return;
 			}
 			if (!response.success) {
-				setError(response.code === "loginRequired" ? t("friends.profileLoginRequired") : response.error ?? t("friends.profileFailed"));
+				const throttled = rateLimitedSeconds(response);
+				setError(
+					throttled !== null
+						? t("common.rateLimited", { seconds: throttled })
+						: response.code === "loginRequired"
+							? t("friends.profileLoginRequired")
+							: response.error ?? t("friends.profileFailed"),
+				);
 				setLoading(false);
 			}
 		};

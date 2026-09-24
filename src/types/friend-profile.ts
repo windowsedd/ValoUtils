@@ -27,4 +27,12 @@ export type FriendProfileResponse =
       success: false;
       code: "invalidPlayer" | "loginRequired" | "unavailable";
       error?: string;
+    }
+  // The request never left the machine: Riot's budget is spent, and
+  // `retryInSeconds` says how long the local gate is holding it for.
+  | {
+      success: false;
+      code: "rateLimited";
+      retryInSeconds: number | null;
+      error?: string;
     };

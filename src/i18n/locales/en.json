@@ -36,7 +36,8 @@
     "launching": "Launching…",
     "launchFailed": "Launch failed.",
     "riotClientRunningHint": "Riot Client is already open. Close it completely, including the tray icon, then launch again.",
-    "launchNormal": "Normal startup"
+    "launchNormal": "Normal startup",
+    "rateLimited": "Riot is rate-limiting requests. Try again in about {{seconds}}s."
   },
   "riotStatus": {
     "connecting": "Connecting...",

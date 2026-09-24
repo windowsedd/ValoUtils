@@ -36,7 +36,8 @@
     "launching": "실행 중…",
     "launchFailed": "실행하지 못했습니다.",
     "riotClientRunningHint": "Riot 클라이언트가 이미 실행 중입니다. 트레이 아이콘까지 완전히 종료한 뒤 다시 실행하세요.",
-    "launchNormal": "일반 실행"
+    "launchNormal": "일반 실행",
+    "rateLimited": "Riot 요청 제한이 적용되었습니다. 약 {{seconds}}초 후 다시 시도하세요."
   },
   "riotStatus": {
     "connecting": "연결 중...",

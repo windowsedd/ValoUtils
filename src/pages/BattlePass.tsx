@@ -20,6 +20,7 @@ import {
 	type BattlepassRewardView,
 	type SeasonWindow,
 } from "@/pages/battlepass/battlepass-state";
+import { rateLimitedSeconds } from "@/util/rate-limit";
 import {
 	getBattlepassContracts,
 	getBattlepassReward,
@@ -170,7 +171,12 @@ const BattlePass = () => {
 					setLoading(false);
 					return;
 				}
-				setError(response.error ?? t("battlepass.failedToLoad"));
+				const throttled = rateLimitedSeconds(response);
+				setError(
+					throttled === null
+						? response.error ?? t("battlepass.failedToLoad")
+						: t("common.rateLimited", { seconds: throttled }),
+				);
 				setLoading(false);
 				return;
 			}

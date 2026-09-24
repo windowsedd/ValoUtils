@@ -64,11 +64,21 @@ export type MatchDetails = {
   players: MatchPlayer[];
 };
 
+/** `retryInSeconds` is what the local request budget knows of its own hold. */
+export type RateLimitedFailure = {
+  success: false;
+  code: "rateLimited";
+  retryInSeconds: number | null;
+  error?: string;
+};
+
 export type MatchListResponse =
   | { success: true; matches: MatchListEntry[]; total: number; puuid: string }
   | { success: false; code: "loginRequired"; error?: string }
-  | { success: false; code: null; error: string };
+  | { success: false; code: null; error: string }
+  | RateLimitedFailure;
 
 export type MatchDetailsResponse =
   | { success: true; match: MatchDetails; cached: boolean }
-  | { success: false; matchId?: string; error: string };
+  | { success: false; matchId?: string; error: string }
+  | (RateLimitedFailure & { matchId?: string });

@@ -36,7 +36,8 @@
     "launching": "啟動中…",
     "launchFailed": "啟動失敗。",
     "riotClientRunningHint": "Riot Client 已在執行中。請完全關閉（包含系統列圖示）後再重新啟動。",
-    "launchNormal": "正常啟動"
+    "launchNormal": "正常啟動",
+    "rateLimited": "Riot 暫時限制請求。請約 {{seconds}} 秒後再試。"
   },
   "riotStatus": {
     "connecting": "連線中...",

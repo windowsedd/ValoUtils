@@ -226,7 +226,10 @@ pub async fn inventory_get(riot: State<'_, RiotState>) -> Result<String, ()> {
         Err(error) if error.contains("lockfile") => {
             json!({ "success": false, "code": "loginRequired" }).to_string()
         }
-        Err(error) => json!({ "success": false, "error": error }).to_string(),
+        Err(error) => match super::rate_limited_reply(&error).await {
+            Some(reply) => reply.to_string(),
+            None => json!({ "success": false, "error": error }).to_string(),
+        },
     })
 }
 

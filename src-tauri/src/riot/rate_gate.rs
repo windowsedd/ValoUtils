@@ -32,6 +32,15 @@ const PD_RATE_LIMIT_RESET: Duration = Duration::from_secs(15 * 60);
 /// How often the gate reports what it has been sending, so a throttle can be
 /// read back against the volume that earned it rather than guessed at.
 const PD_LOG_WINDOW: Duration = Duration::from_secs(60);
+/// How long after a cooldown lifts the gate withholds the burst allowance.
+///
+/// A cooldown that ends straight into a full burst puts the ten roster MMR
+/// reads that earned the 429 back on the wire within a couple of seconds, and
+/// the logs show exactly that: resume, fresh strike ten to twenty seconds
+/// later, sixteen times over. For this long after a resume every request is
+/// paced at the sustained rate instead, so the first thing Riot sees once a
+/// pause ends is a trickle rather than the burst it just refused.
+const PD_RECOVERY_WINDOW: Duration = Duration::from_secs(30);
 
 /// How hard the gate paces requests.
 ///
@@ -111,6 +120,20 @@ pub fn set_pacing(id: &str) {
     }
 }
 
+/// The preference, stripped of its burst, for the window after a cooldown.
+///
+/// Burst credit is what makes a cold roster fill promptly; it is also what
+/// spends a freshly restored allowance in two seconds. During recovery the
+/// spacing floor is raised to the sustained interval and the burst is one, so
+/// requests leave at a flat rate with nothing banked.
+fn recovery_pacing(pacing: Pacing) -> Pacing {
+    Pacing {
+        spacing: pacing.sustained,
+        sustained: pacing.sustained,
+        burst: 1,
+    }
+}
+
 fn current_pacing() -> Pacing {
     pacing_slot()
         .read()
@@ -178,6 +201,8 @@ struct RateGate {
     last_strike: Option<Instant>,
     /// How long the current cooldown was set for, to report on resuming.
     cooldown_len: Duration,
+    /// While set and in the future, requests are paced without burst credit.
+    recovery_until: Option<Instant>,
     /// Virtual arrival time of the next request under the sustained ceiling.
     /// Anything scheduled before it, less the burst tolerance, is free.
     theoretical_arrival: Option<Instant>,
@@ -210,23 +235,40 @@ impl RateGate {
         self.strikes = if consecutive { self.strikes + 1 } else { 1 };
         self.last_strike = Some(now);
 
-        // Riot's own number wins where it sent one; otherwise double per strike.
-        let cooldown = hint.unwrap_or_else(|| {
-            PD_RATE_LIMIT_COOLDOWN
-                .saturating_mul(1u32 << (self.strikes - 1).min(8))
-                .min(PD_RATE_LIMIT_MAX_COOLDOWN)
-        });
+        // Riot's own number sets the base where it sent one, and the ladder
+        // doubles from there. Taking the hint verbatim let a client that kept
+        // earning 429s sit at the same wait forever: Riot repeated
+        // `Retry-After: 60` through sixteen consecutive strikes, so the backoff
+        // only began to climb once the header stopped coming.
+        let base = hint.unwrap_or(PD_RATE_LIMIT_COOLDOWN);
+        let cooldown = base
+            .saturating_mul(1u32 << (self.strikes - 1).min(8))
+            .min(PD_RATE_LIMIT_MAX_COOLDOWN);
         self.cooldown_until = Some(now + cooldown);
         self.cooldown_len = cooldown;
         // Anything queued behind the spacing floor is void: the whole point of
         // a cooldown is that nothing goes out during it.
         self.next_allowed = None;
         self.theoretical_arrival = None;
+        self.recovery_until = None;
         cooldown
     }
 
     fn is_cooling_down_at(&self, now: Instant) -> bool {
         self.cooldown_until.is_some_and(|until| now < until)
+    }
+
+    /// Whether the window after a resume is still running. Expiry is cleared
+    /// here rather than left behind, so a later strike reads a clean slate.
+    fn is_recovering_at(&mut self, now: Instant) -> bool {
+        match self.recovery_until {
+            Some(until) if now < until => true,
+            Some(_) => {
+                self.recovery_until = None;
+                false
+            }
+            None => false,
+        }
     }
 
     fn cooldown_remaining_at(&self, now: Instant) -> Option<Duration> {
@@ -240,12 +282,19 @@ impl RateGate {
     fn reserve_at(&mut self, now: Instant, pacing: Pacing) -> Instant {
         if self.cooldown_until.is_some_and(|until| now >= until) {
             self.cooldown_until = None;
+            self.recovery_until = Some(now + PD_RECOVERY_WINDOW);
             log::info!(
-                "PD requests resuming after a {}s pause (strike {})",
+                "PD requests resuming after a {}s pause (strike {}); no burst for {}s",
                 self.cooldown_len.as_secs(),
-                self.strikes
+                self.strikes,
+                PD_RECOVERY_WINDOW.as_secs()
             );
         }
+        let pacing = if self.is_recovering_at(now) {
+            recovery_pacing(pacing)
+        } else {
+            pacing
+        };
         let spaced = self.next_allowed.unwrap_or(now).max(now);
         let arrival = self.theoretical_arrival.unwrap_or(now).max(now);
         let burst = pacing.sustained * pacing.burst.saturating_sub(1);
@@ -336,10 +385,11 @@ async fn note_failure_on(gate: &AsyncMutex<RateGate>, error: &str) {
         error_path(error).unwrap_or_else(|| "a PD endpoint".to_string()),
         locked.strikes,
         cooldown.as_secs(),
-        if hint.is_some() {
-            ", as asked by Retry-After"
-        } else {
-            ""
+        match hint {
+            // The hint is the base the ladder doubles from, so past the first
+            // strike the wait is longer than the number Riot sent.
+            Some(hint) => format!(", from a {}s Retry-After", hint.as_secs()),
+            None => String::new(),
         }
     );
 }
@@ -560,7 +610,7 @@ mod tests {
     }
 
     #[test]
-    fn riot_own_retry_after_overrides_the_computed_cooldown() {
+    fn riot_own_retry_after_sets_the_first_cooldown() {
         assert_eq!(
             retry_after_hint(r#"{"status":429,"message":"limited","retryAfter":45}"#),
             Some(Duration::from_secs(45))
@@ -578,6 +628,67 @@ mod tests {
         gate.mark_rate_limited(now, Some(Duration::from_secs(5)));
         assert!(gate.is_cooling_down_at(now + Duration::from_secs(4)));
         assert!(!gate.is_cooling_down_at(now + Duration::from_secs(6)));
+    }
+
+    #[test]
+    fn a_repeated_retry_after_still_escalates() {
+        // Riot answered sixteen consecutive strikes with the same
+        // `Retry-After: 60`. Honouring it verbatim pinned every one of them to
+        // a minute, so the client came back on the same schedule sixteen times
+        // and the ladder never left the bottom rung. The hint is the base now.
+        let mut gate = RateGate::default();
+        let mut now = Instant::now();
+        let minute = Some(Duration::from_secs(60));
+
+        for expected in [60u64, 120, 240, 480] {
+            gate.mark_rate_limited(now, minute);
+            assert_eq!(
+                gate.cooldown_remaining_at(now).map(|left| left.as_secs()),
+                Some(expected)
+            );
+            now += gate.cooldown_len + Duration::from_secs(1);
+        }
+
+        // A short hint escalates from its own number rather than from a minute,
+        // so a mild throttle stays mild.
+        let mut brief = RateGate::default();
+        let start = Instant::now();
+        brief.mark_rate_limited(start, Some(Duration::from_secs(5)));
+        let second = start + Duration::from_secs(6);
+        brief.mark_rate_limited(second, Some(Duration::from_secs(5)));
+        assert_eq!(
+            brief.cooldown_remaining_at(second).map(|left| left.as_secs()),
+            Some(10)
+        );
+    }
+
+    #[test]
+    fn the_window_after_a_resume_spends_no_burst() {
+        let now = Instant::now();
+        let mut gate = RateGate::default();
+        gate.mark_rate_limited(now, None);
+
+        // The first request after the pause goes out at once; the rest trickle
+        // at the sustained rate instead of emptying the burst into the endpoint
+        // that just refused them.
+        let resumed = now + Duration::from_secs(61);
+        let scheduled: Vec<Duration> = (0..5)
+            .map(|_| gate.reserve_at(resumed, PACING_BALANCED).duration_since(resumed))
+            .collect();
+        assert_eq!(scheduled[0], Duration::ZERO);
+        assert_eq!(scheduled[1], PACING_BALANCED.sustained);
+        assert_eq!(scheduled[4], PACING_BALANCED.sustained * 4);
+
+        // Once the window closes the burst is available again, so an ordinary
+        // page does not pay for a throttle that has long since passed.
+        let recovered = resumed + PD_RECOVERY_WINDOW;
+        assert_eq!(gate.reserve_at(recovered, PACING_BALANCED), recovered);
+        assert_eq!(
+            gate.reserve_at(recovered, PACING_BALANCED)
+                .duration_since(recovered),
+            PACING_BALANCED.spacing
+        );
+        assert_eq!(gate.recovery_until, None);
     }
 
     #[test]

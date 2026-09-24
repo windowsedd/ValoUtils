@@ -259,9 +259,10 @@ pub async fn friend_profile_get(
         Err(error) if error.contains("lockfile") => {
             json!({ "success": false, "code": "loginRequired" }).to_string()
         }
-        Err(error) => {
-            json!({ "success": false, "code": "unavailable", "error": error }).to_string()
-        }
+        Err(error) => match super::rate_limited_reply(&error).await {
+            Some(reply) => reply.to_string(),
+            None => json!({ "success": false, "code": "unavailable", "error": error }).to_string(),
+        },
     })
 }
 

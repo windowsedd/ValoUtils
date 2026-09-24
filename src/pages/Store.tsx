@@ -8,6 +8,7 @@ import {
 	type BundleAsset,
 	type SkinAsset,
 } from "@/util/valorant-assets";
+import { rateLimitedSeconds } from "@/util/rate-limit";
 import { formatCountdown, remainingSeconds } from "@/util/store-countdown";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -167,7 +168,12 @@ const Store = () => {
 					setLoading(false);
 					return;
 				}
-				setError(response.error ?? t("store.failedToLoad"));
+				const throttled = rateLimitedSeconds(response);
+				setError(
+					throttled === null
+						? response.error ?? t("store.failedToLoad")
+						: t("common.rateLimited", { seconds: throttled }),
+				);
 				setLoading(false);
 				return;
 			}

@@ -7,6 +7,7 @@ import { RankShieldBadge } from "@/components/rank-shield-badge";
 import { SectionCard } from "@/components/section-card";
 import type { FriendProfileData } from "@/types/friend-profile";
 import type { MatchPlayer } from "@/types/matches";
+import { rateLimitedSeconds } from "@/util/rate-limit";
 import { getSeasonAssets, localize, type SeasonAsset } from "@/util/valorant-assets";
 import { tierColor, tierName } from "@/util/valorant-ranks";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -39,11 +40,14 @@ const MatchPlayerProfileBody = ({ player, assets }: { player: MatchPlayer; asset
 				setProfile(value);
 				setLoading(false);
 			},
-			onError: (code, detail) => {
+			onError: (code, detail, retryInSeconds) => {
+				const throttled = rateLimitedSeconds({ code, retryInSeconds });
 				setError(
-					code === "loginRequired"
-						? t("friends.profileLoginRequired")
-						: detail ?? t("friends.profileFailed"),
+					throttled !== null
+						? t("common.rateLimited", { seconds: throttled })
+						: code === "loginRequired"
+							? t("friends.profileLoginRequired")
+							: detail ?? t("friends.profileFailed"),
 				);
 				setLoading(false);
 			},

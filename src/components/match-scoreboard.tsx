@@ -1,4 +1,5 @@
 import type { MatchDetails, MatchDetailsResponse, MatchPlayer } from "@/types/matches";
+import { rateLimitedSeconds } from "@/util/rate-limit";
 import {
 	getAgents,
 	getMaps,
@@ -51,6 +52,7 @@ export const useMatchAssets = (): MatchAssets => {
  * caches by match id, and results are kept here too (matches never change).
  */
 export const useMatchDetails = () => {
+	const { t } = useTranslation();
 	const [details, setDetails] = useState<Record<string, MatchDetails>>({});
 	const [errors, setErrors] = useState<Record<string, string>>({});
 	const [pending, setPending] = useState<Set<string>>(new Set());
@@ -65,7 +67,17 @@ export const useMatchDetails = () => {
 			const id = res.success ? res.match.matchId : res.matchId;
 			if (!id) return;
 			if (res.success) setDetails((prev) => (prev[id] ? prev : { ...prev, [id]: res.match }));
-			else setErrors((prev) => ({ ...prev, [id]: res.error }));
+			else {
+				// A spent request budget is a pause, not a broken match: say when
+				// it is worth opening the card again rather than showing the
+				// gate's refusal.
+				const throttled = rateLimitedSeconds(res);
+				const message =
+					throttled === null
+						? res.error ?? t("matches.failedToLoad")
+						: t("common.rateLimited", { seconds: throttled });
+				setErrors((prev) => ({ ...prev, [id]: message }));
+			}
 			setPending((prev) => {
 				if (!prev.has(id)) return prev;
 				const next = new Set(prev);
@@ -75,7 +87,7 @@ export const useMatchDetails = () => {
 		};
 		window.Main.on("match:details", onMatchDetails);
 		return () => window.Main.removeListener("match:details", onMatchDetails);
-	}, []);
+	}, [t]);
 
 	/** Fetch one match; already-loaded or in-flight ids are no-ops. */
 	const ensure = useCallback(
