@@ -1538,6 +1538,68 @@ async fn fetch_party(
     })
 }
 
+/// There is no match to ask for loadouts in the lobby, so each member's
+/// equipped guns come from personalization instead. A failed lookup (Riot may
+/// refuse another player's loadout) is stored as null so it is not retried on
+/// every poll.
+async fn lobby_loadouts(api: &RiotApiClient, cache: &LiveCache, members: &[String]) -> Value {
+    let mut entries = Vec::new();
+    let mut lookups = tokio::task::JoinSet::new();
+    for member in members {
+        let key = format!("lobby-loadout:{}", member.to_ascii_lowercase());
+        if let Some(document) = cache.party_documents.get(&key) {
+            entries.push(document);
+            continue;
+        }
+        let api = api.clone();
+        let member = member.clone();
+        lookups.spawn(async move {
+            let document = match api.get_player_loadout(&member).await {
+                Ok(document) => personalization_to_loadout(&member, &document),
+                Err(error) => {
+                    log::debug!("live: lobby loadout for {member} failed: {error}");
+                    Value::Null
+                }
+            };
+            (key, document)
+        });
+    }
+    while let Some(Ok((key, document))) = lookups.join_next().await {
+        cache.party_documents.put(&key, document.clone());
+        entries.push(document);
+    }
+    entries.retain(|entry| !entry.is_null());
+    json!({ "Loadouts": entries })
+}
+
+/// Reshape a personalization `Guns` list into the socketed `Items` form that
+/// match loadouts use, so `build_loadout_map` reads both.
+fn personalization_to_loadout(subject: &str, document: &Value) -> Value {
+    let mut items = Map::new();
+    for gun in document
+        .get("Guns")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        let Some(weapon_id) = gun.get("ID").and_then(Value::as_str) else {
+            continue;
+        };
+        let socket = |field: &str| json!({ "Item": { "ID": gun.get(field).cloned().unwrap_or(Value::Null) } });
+        items.insert(
+            weapon_id.to_ascii_lowercase(),
+            json!({
+                "Sockets": {
+                    SOCKET_SKIN: socket("SkinID"),
+                    SOCKET_SKIN_LEVEL: socket("SkinLevelID"),
+                    SOCKET_SKIN_CHROMA: socket("ChromaID"),
+                }
+            }),
+        );
+    }
+    json!({ "Subject": subject, "Items": items })
+}
+
 async fn detect_state(
     api: &RiotApiClient,
     puuid: &str,
@@ -1633,12 +1695,13 @@ async fn detect_state(
     // 3. Party lobby, or nothing at all.
     let party = fetch_party(api, puuid, cache, false).await?;
     if let (Some(party_id), Some(document)) = (party.party_id, party.party) {
+        let loadouts = lobby_loadouts(api, cache, &party.premade).await;
         return Ok(DetectedState {
             state: LiveState::Party,
             match_id: None,
             party_id: Some(party_id),
             match_data: Some(document),
-            loadouts: None,
+            loadouts: Some(loadouts),
             premade: party.premade,
         });
     }
@@ -2610,6 +2673,23 @@ mod tests {
             cache.recent_snapshot_at(now + SNAPSHOT_FALLBACK_TTL + Duration::from_secs(1)),
             None
         );
+    }
+
+    #[test]
+    fn lobby_personalization_guns_map_to_weapon_skins() {
+        let document = json!({
+            "Guns": [
+                { "ID": WEAPON_VANDAL.to_ascii_uppercase(), "SkinID": "skin-v", "SkinLevelID": "level-v", "ChromaID": "chroma-v" },
+                { "ID": WEAPON_KNIFE, "SkinID": "skin-k", "SkinLevelID": "level-k", "ChromaID": "chroma-k" }
+            ]
+        });
+        let loadouts = json!({ "Loadouts": [personalization_to_loadout("p1", &document)] });
+        let loadout = &build_loadout_map(&loadouts).by_subject["p1"];
+
+        assert_eq!(loadout["vandal"]["skinId"], "skin-v");
+        assert_eq!(loadout["vandal"]["chromaId"], "chroma-v");
+        assert_eq!(loadout["knife"]["levelId"], "level-k");
+        assert!(loadout["phantom"].is_null());
     }
 
     #[test]
