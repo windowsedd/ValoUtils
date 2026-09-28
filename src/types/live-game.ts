@@ -62,6 +62,8 @@ export type LiveMatchContext = {
   modeId: string | null;
   queueId: string;
   phase: Exclude<LiveState, "idle">;
+  /** Party is searching for a match (or one was just found). */
+  inQueue?: boolean;
 };
 
 export type LiveTeamSummary = {

@@ -546,6 +546,13 @@ fn extract_match_context(state: LiveState, source: &Value, match_id: Option<&str
         "queueId": string(&["/QueueID", "/QueueId", "/MatchmakingData/QueueID"]).unwrap_or_default(),
         "server": string(&["/GamePodID", "/GamePodId", "/gamePodId"]).unwrap_or_default(),
         "phase": state.as_str(),
+        // The party is searching (or a match was just found). Changes here are
+        // what tell the renderer to stop backing off its lobby polls.
+        "inQueue": state == LiveState::Party
+            && string(&["/State"]).is_some_and(|party_state| {
+                party_state.eq_ignore_ascii_case("MATCHMAKING")
+                    || party_state.eq_ignore_ascii_case("MATCHMADE_GAME_STARTING")
+            }),
     })
 }
 
@@ -1264,6 +1271,32 @@ fn players_from_raw(
         .collect()
 }
 
+/// Whether any player on this roster still lacks a name or rank. A PD cooldown
+/// only matters to Live Game while that is true: once everything has loaded,
+/// the hold belongs to other screens and must not flag this one.
+fn roster_missing_enrichment(cache: &LiveCache, raw_players: &[Value]) -> bool {
+    let stored = cache.enrichment.lock().unwrap();
+    raw_players
+        .iter()
+        .map(raw_puuid)
+        .filter(|puuid| !puuid.is_empty())
+        .any(|puuid| {
+            !stored
+                .get(&puuid.to_ascii_lowercase())
+                .is_some_and(|entry| entry.complete)
+        })
+}
+
+/// The `rateLimited` warning for a snapshot: a refusal during this refresh, or
+/// a cooldown that is still keeping names or ranks off the screen.
+fn live_rate_warning(
+    enrichment_rate_limited: bool,
+    cooldown_active: bool,
+    missing_enrichment: bool,
+) -> Option<&'static str> {
+    (enrichment_rate_limited || (cooldown_active && missing_enrichment)).then_some(RATE_LIMITED_ERROR)
+}
+
 async fn enrich_players(
     api: &RiotApiClient,
     raw_players: &[Value],
@@ -1804,7 +1837,11 @@ pub async fn live_game_fetch(
         )
         .await;
         let retry_in_seconds = party_history_cache.cooldown_seconds().await;
-        let warning = retry_in_seconds.is_some().then_some(RATE_LIMITED_ERROR);
+        let warning = live_rate_warning(
+            false,
+            retry_in_seconds.is_some(),
+            roster_missing_enrichment(&cache, &raw_players),
+        );
         let match_context =
             extract_match_context(detected.state, &match_data, detected.match_id.as_deref());
         let player_count = players.len();
@@ -1914,11 +1951,11 @@ pub async fn live_game_fetch(
             )
             .await;
             let retry_in_seconds = party_history_cache.cooldown_seconds().await;
-            let warning = if enrichment_rate_limited || retry_in_seconds.is_some() {
-                Some(RATE_LIMITED_ERROR)
-            } else {
-                None
-            };
+            let warning = live_rate_warning(
+                enrichment_rate_limited,
+                retry_in_seconds.is_some(),
+                roster_missing_enrichment(cache.inner(), &raw_players),
+            );
             log::debug!(
                 "live: {} name snapshot, {} players",
                 state.as_str(),
@@ -1977,11 +2014,11 @@ pub async fn live_game_fetch(
             *cache.continuity_roster.lock().unwrap() = Some(roster_key.clone());
             *cache.continuity_labels.lock().unwrap() = party_labels.clone();
             let retry_in_seconds = party_history_cache.cooldown_seconds().await;
-            let warning = if enrichment_rate_limited || retry_in_seconds.is_some() {
-                Some(RATE_LIMITED_ERROR)
-            } else {
-                None
-            };
+            let warning = live_rate_warning(
+                enrichment_rate_limited,
+                retry_in_seconds.is_some(),
+                roster_missing_enrichment(cache.inner(), &raw_players),
+            );
             log::debug!(
                 "live: {} snapshot, {} players{}",
                 state.as_str(),
@@ -2676,6 +2713,14 @@ mod tests {
     }
 
     #[test]
+    fn a_cooldown_flags_live_game_only_while_something_is_missing() {
+        assert_eq!(live_rate_warning(false, true, false), None);
+        assert_eq!(live_rate_warning(false, true, true), Some(RATE_LIMITED_ERROR));
+        assert_eq!(live_rate_warning(true, false, false), Some(RATE_LIMITED_ERROR));
+        assert_eq!(live_rate_warning(false, false, true), None);
+    }
+
+    #[test]
     fn lobby_personalization_guns_map_to_weapon_skins() {
         let document = json!({
             "Guns": [
@@ -3019,7 +3064,8 @@ mod tests {
                 "modeId": "/Game/GameModes/Bomb/BombGameMode.BombGameMode_C",
                 "queueId": "competitive",
                 "server": "aresriot.aws-ape1-prod.ap-gp-hongkong-1",
-                "phase": "coregame"
+                "phase": "coregame",
+                "inQueue": false
             })
         );
     }
@@ -3042,9 +3088,19 @@ mod tests {
                 "modeId": "/Game/GameModes/Bomb/BombGameMode.BombGameMode_C",
                 "queueId": "competitive",
                 "server": "",
-                "phase": "party"
+                "phase": "party",
+                "inQueue": false
             })
         );
+    }
+
+    #[test]
+    fn a_searching_party_is_in_queue() {
+        let searching = json!({ "State": "MATCHMAKING", "MatchmakingData": { "QueueID": "unrated" } });
+        let idle = json!({ "State": "DEFAULT" });
+
+        assert_eq!(extract_match_context(LiveState::Party, &searching, None)["inQueue"], true);
+        assert_eq!(extract_match_context(LiveState::Party, &idle, None)["inQueue"], false);
     }
 
     #[test]

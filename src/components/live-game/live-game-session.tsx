@@ -1,12 +1,8 @@
-import { isCurrentStatsAttempt, livePlayerStatsKey, liveStatsRequestKey, playersNeedingLiveStats, shouldPauseLiveRequests, shouldRequestLiveStats } from "@/components/live-game/live-game-events";
+import { isCurrentStatsAttempt, LIVE_PAUSED_HEARTBEAT_MS, LIVE_POLL_MS, livePlayerStatsKey, liveStatsRequestKey, nextLivePollDelay, playersNeedingLiveStats, shouldPauseForSnapshot, shouldRequestLiveStats } from "@/components/live-game/live-game-events";
 import type { LiveGameResponse, RecentStatsEvent, RecentStatsState } from "@/types/live-game";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
-const POLL_MS = 5000;
-// Idle means VALORANT is not running — the client puts you in a party of one the
-// moment it is. Nothing can change until it launches, so stop asking so often.
-const IDLE_POLL_MS = 15000;
 type Snapshot = Extract<LiveGameResponse, { success: true }>;
 type StatsCommandResponse =
 	| { success: true; rosterKey: string; attemptId: number; count: number }
@@ -36,8 +32,14 @@ const useLiveGameSessionState = (): LiveGameSession => {
 	const rosterKeyRef = useRef<string | null>(null);
 	const requestedStatsKeyRef = useRef<string | null>(null);
 	const statsAttemptRef = useRef(0);
-	const pollDelayRef = useRef(POLL_MS);
+	const pollDelayRef = useRef(LIVE_POLL_MS);
+	// Last successful reply, verbatim. A repeat means nothing on screen changed.
+	const lastMessageRef = useRef<string | null>(null);
 	const pausedForMatchRef = useRef(false);
+	// Match the chat poller reported as over. Core-game can keep serving it for a
+	// while afterwards, and that stale answer must not pause polling again.
+	const endedMatchIdRef = useRef<string | null>(null);
+	const lastFetchAtRef = useRef(0);
 	const snapshotRef = useRef<Snapshot | null>(null);
 	const statsThrottledRef = useRef(false);
 	const recentRef = useRef(recent);
@@ -52,17 +54,35 @@ const useLiveGameSessionState = (): LiveGameSession => {
 	}, []);
 	const refreshSnapshot = useCallback(() => {
 		requestedStatsKeyRef.current = null;
+		lastMessageRef.current = null;
 		requestSnapshot();
 	}, [requestSnapshot]);
 
 	useEffect(() => {
 		if (!window.Main) return;
 
+		// Watch pregame even on other pages, then pause once the match starts.
+		// A hidden window has nobody reading the roster, so skip those ticks.
+		let timer = 0;
+		const poll = () => {
+			const heartbeatDue = Date.now() - lastFetchAtRef.current >= LIVE_PAUSED_HEARTBEAT_MS;
+			if (!document.hidden && (!pausedForMatchRef.current || heartbeatDue)) {
+				lastFetchAtRef.current = Date.now();
+				window.Main.send("live-game:fetch");
+			}
+			timer = window.setTimeout(poll, pollDelayRef.current);
+		};
+		const schedule = () => {
+			window.clearTimeout(timer);
+			timer = window.setTimeout(poll, pollDelayRef.current);
+		};
+
 		const onSnapshot = (message: string) => {
 			let response: LiveGameResponse;
 			try {
 				response = JSON.parse(message) as LiveGameResponse;
 			} catch {
+				lastMessageRef.current = null;
 				setLoading(false);
 				setRefreshing(false);
 				setError(t("liveGame.failedToLoad"));
@@ -72,6 +92,7 @@ const useLiveGameSessionState = (): LiveGameSession => {
 			setLoading(false);
 			setRefreshing(false);
 			if (!response.success) {
+				lastMessageRef.current = null;
 				if ("code" in response && response.code === "loginRequired") {
 					setLoginRequired(true);
 					setError(null);
@@ -84,19 +105,36 @@ const useLiveGameSessionState = (): LiveGameSession => {
 				return;
 			}
 
+			// Same answer as last time: skip the redraw and wait longer before
+			// asking again. Any change snaps the next poll back to 5s.
+			const unchanged = message === lastMessageRef.current;
+			lastMessageRef.current = message;
+			pollDelayRef.current = nextLivePollDelay(response.state, unchanged, pollDelayRef.current, response.match?.inQueue);
+			schedule();
+			if (unchanged) return;
+
 			setLoginRequired(false);
-			setError(response.warning === "rateLimited"
+			// A cooldown only concerns this page while it keeps something off screen:
+			// a name or rank (the backend's warning) or a player's recent stats.
+			const statsHeld = Boolean(response.retryInSeconds)
+				&& response.state !== "idle"
+				&& playersNeedingLiveStats(response.players.map((player) => player.puuid), recentRef.current).length > 0;
+			setError(response.warning === "rateLimited" || statsHeld
 				? t("liveGame.rateLimited", { seconds: response.retryInSeconds ?? 60 })
 				: response.warning === "unavailable" ? t("liveGame.failedToLoad") : null);
 			setSnapshot(response);
 			snapshotRef.current = response;
 			rosterKeyRef.current = response.state === "idle" ? null : response.rosterKey;
-			pollDelayRef.current = response.state === "idle" ? IDLE_POLL_MS : POLL_MS;
-			if (response.state === "coregame") {
+			// A running match is fetched once, then polling pauses. Its roster still
+			// falls through so the other team's recent stats are requested.
+			if (shouldPauseForSnapshot(response.state, response.match?.id, endedMatchIdRef.current)) {
 				pausedForMatchRef.current = true;
+			} else if (response.state === "party" || response.state === "idle") {
+				// Back in a lobby or menus: whatever match paused polling is over.
+				pausedForMatchRef.current = false;
+			} else if (pausedForMatchRef.current) {
 				return;
 			}
-			if (pausedForMatchRef.current) return;
 
 			if (response.state === "idle") {
 				requestedStatsKeyRef.current = null;
@@ -109,11 +147,12 @@ const useLiveGameSessionState = (): LiveGameSession => {
 			// A throttled attempt would otherwise leave the column dead for the whole
 			// match: stats are only re-requested when the roster key changes, and it
 			// does not. Once Riot stops refusing, ask for the missing ones again.
-			if (statsThrottledRef.current && response.warning !== "rateLimited") {
+			const canRequestStats = shouldRequestLiveStats(response.warning, response.retryInSeconds);
+			if (statsThrottledRef.current && canRequestStats) {
 				statsThrottledRef.current = false;
 				requestedStatsKeyRef.current = null;
 			}
-			if (!shouldRequestLiveStats(response.warning)) {
+			if (!canRequestStats) {
 				statsThrottledRef.current = true;
 			} else if (requestedStatsKeyRef.current !== statsKey) {
 				const puuids = response.players.map((player) => player.puuid);
@@ -169,21 +208,17 @@ const useLiveGameSessionState = (): LiveGameSession => {
 			}
 		};
 
-		// Watch pregame even on other pages, then pause once the match starts.
-		// A hidden window has nobody reading the roster, so skip those ticks.
-		let timer = 0;
-		const poll = () => {
-			if (!document.hidden && !pausedForMatchRef.current) window.Main.send("live-game:fetch");
-			timer = window.setTimeout(poll, pollDelayRef.current);
-		};
 		const onPhase = (phase: string) => {
 			if (phase === "coregame") {
-				const current = snapshotRef.current;
-				if (current && shouldPauseLiveRequests(current.state, current.players.length, current.match?.queueId)) {
-					pausedForMatchRef.current = true;
-				}
+				// A new match: fetch its roster now (competitive pregame hides the
+				// enemy team). The coregame reply pauses polling once it lands.
+				pausedForMatchRef.current = false;
+				window.clearTimeout(timer);
+				poll();
 			} else if (phase === "ended" || phase === "pregame") {
-				if (!pausedForMatchRef.current) return;
+				const current = snapshotRef.current;
+				if (phase === "ended" && current?.state === "coregame") endedMatchIdRef.current = current.match?.id ?? null;
+				// Ask now either way: from the lobby the next tick may be 30s out.
 				pausedForMatchRef.current = false;
 				window.clearTimeout(timer);
 				poll();
