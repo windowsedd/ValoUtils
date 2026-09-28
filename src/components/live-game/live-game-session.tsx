@@ -1,4 +1,4 @@
-import { isCurrentStatsAttempt, livePlayerStatsKey, liveStatsRequestKey, playersNeedingLiveStats, shouldRequestLiveStats } from "@/components/live-game/live-game-events";
+import { isCurrentStatsAttempt, livePlayerStatsKey, liveStatsRequestKey, playersNeedingLiveStats, shouldPauseLiveRequests, shouldRequestLiveStats } from "@/components/live-game/live-game-events";
 import type { LiveGameResponse, RecentStatsEvent, RecentStatsState } from "@/types/live-game";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -37,12 +37,15 @@ const useLiveGameSessionState = (): LiveGameSession => {
 	const requestedStatsKeyRef = useRef<string | null>(null);
 	const statsAttemptRef = useRef(0);
 	const pollDelayRef = useRef(POLL_MS);
+	const pausedForMatchRef = useRef(false);
+	const snapshotRef = useRef<Snapshot | null>(null);
 	const statsThrottledRef = useRef(false);
 	const recentRef = useRef(recent);
 	recentRef.current = recent;
 
 	const requestSnapshot = useCallback(() => {
 		if (!window.Main) return;
+		pausedForMatchRef.current = false;
 		if (rosterKeyRef.current) setRefreshing(true);
 		else setLoading(true);
 		window.Main.send("live-game:fetch");
@@ -86,8 +89,14 @@ const useLiveGameSessionState = (): LiveGameSession => {
 				? t("liveGame.rateLimited", { seconds: response.retryInSeconds ?? 60 })
 				: response.warning === "unavailable" ? t("liveGame.failedToLoad") : null);
 			setSnapshot(response);
+			snapshotRef.current = response;
 			rosterKeyRef.current = response.state === "idle" ? null : response.rosterKey;
 			pollDelayRef.current = response.state === "idle" ? IDLE_POLL_MS : POLL_MS;
+			if (response.state === "coregame") {
+				pausedForMatchRef.current = true;
+				return;
+			}
+			if (pausedForMatchRef.current) return;
 
 			if (response.state === "idle") {
 				requestedStatsKeyRef.current = null;
@@ -160,12 +169,25 @@ const useLiveGameSessionState = (): LiveGameSession => {
 			}
 		};
 
-		// Keep polling while the app is open, including other pages. A hidden window
-		// still has nobody reading the roster, so skip those ticks.
+		// Watch pregame even on other pages, then pause once the match starts.
+		// A hidden window has nobody reading the roster, so skip those ticks.
 		let timer = 0;
 		const poll = () => {
-			if (!document.hidden) window.Main.send("live-game:fetch");
+			if (!document.hidden && !pausedForMatchRef.current) window.Main.send("live-game:fetch");
 			timer = window.setTimeout(poll, pollDelayRef.current);
+		};
+		const onPhase = (phase: string) => {
+			if (phase === "coregame") {
+				const current = snapshotRef.current;
+				if (current && shouldPauseLiveRequests(current.state, current.players.length, current.match?.queueId)) {
+					pausedForMatchRef.current = true;
+				}
+			} else if (phase === "ended" || phase === "pregame") {
+				if (!pausedForMatchRef.current) return;
+				pausedForMatchRef.current = false;
+				window.clearTimeout(timer);
+				poll();
+			}
 		};
 		const onVisibility = () => {
 			if (document.hidden) return;
@@ -176,6 +198,7 @@ const useLiveGameSessionState = (): LiveGameSession => {
 		window.Main.on("live-game:fetch", onSnapshot);
 		window.Main.on("live-game:stats", onStatsCommand);
 		window.Main.on("live-game:player-stats", onPlayerStats);
+		window.Main.on("live-game:phase", onPhase);
 		document.addEventListener("visibilitychange", onVisibility);
 		poll();
 		return () => {
@@ -184,6 +207,7 @@ const useLiveGameSessionState = (): LiveGameSession => {
 			window.Main.removeListener("live-game:fetch", onSnapshot);
 			window.Main.removeListener("live-game:stats", onStatsCommand);
 			window.Main.removeListener("live-game:player-stats", onPlayerStats);
+			window.Main.removeListener("live-game:phase", onPhase);
 		};
 	}, [t]);
 

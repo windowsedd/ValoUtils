@@ -9,6 +9,9 @@ export const liveStatsRequestKey = (puuids: readonly string[], queueId: string) 
 
 export const livePlayerStatsKey = (puuid: string) => puuid.toLowerCase();
 
+export const shouldPauseLiveRequests = (state: string, playerCount: number, queueId = "") =>
+  state === "coregame" || (state === "pregame" && playerCount >= (queueId.toLowerCase() === "deathmatch" ? 12 : 10));
+
 export const shouldPreserveReadyStats = (
   requestedKey: string | null,
   lastRequestedKey: string | null,

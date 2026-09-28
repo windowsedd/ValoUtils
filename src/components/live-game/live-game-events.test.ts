@@ -5,6 +5,7 @@ import {
   playersNeedingLiveStats,
   shouldPreserveReadyStats,
   shouldRequestLiveStats,
+  shouldPauseLiveRequests,
 } from "./live-game-events";
 
 test("changes the recent-stat request identity when the queue changes", () => {
@@ -12,6 +13,16 @@ test("changes the recent-stat request identity when the queue changes", () => {
     liveStatsRequestKey(["p1", "p2"], "unrated"),
   );
   expect(liveStatsRequestKey(["P2", "p1"], "SWIFTPLAY")).toBe("p1,p2:swiftplay");
+});
+
+test("pauses live requests after a complete pregame or coregame snapshot", () => {
+  expect(shouldPauseLiveRequests("pregame", 10)).toBe(true);
+  expect(shouldPauseLiveRequests("pregame", 5)).toBe(false);
+  expect(shouldPauseLiveRequests("coregame", 10)).toBe(true);
+  expect(shouldPauseLiveRequests("party", 10)).toBe(false);
+  expect(shouldPauseLiveRequests("pregame", 10, "deathmatch")).toBe(false);
+  expect(shouldPauseLiveRequests("pregame", 12, "DEATHMATCH")).toBe(true);
+  expect(shouldPauseLiveRequests("pregame", 10, "hurm")).toBe(true);
 });
 
 test("keeps recent-stat identity stable across phase-specific snapshot keys", () => {
