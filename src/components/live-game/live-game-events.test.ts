@@ -1,11 +1,15 @@
 import { expect, test } from "bun:test";
 import {
+  LIVE_IDLE_POLL_MS,
+  LIVE_MAX_POLL_MS,
+  LIVE_POLL_MS,
   livePlayerStatsKey,
+  nextLivePollDelay,
+  shouldPauseForSnapshot,
   liveStatsRequestKey,
   playersNeedingLiveStats,
   shouldPreserveReadyStats,
   shouldRequestLiveStats,
-  shouldPauseLiveRequests,
 } from "./live-game-events";
 
 test("changes the recent-stat request identity when the queue changes", () => {
@@ -15,14 +19,23 @@ test("changes the recent-stat request identity when the queue changes", () => {
   expect(liveStatsRequestKey(["P2", "p1"], "SWIFTPLAY")).toBe("p1,p2:swiftplay");
 });
 
-test("pauses live requests after a complete pregame or coregame snapshot", () => {
-  expect(shouldPauseLiveRequests("pregame", 10)).toBe(true);
-  expect(shouldPauseLiveRequests("pregame", 5)).toBe(false);
-  expect(shouldPauseLiveRequests("coregame", 10)).toBe(true);
-  expect(shouldPauseLiveRequests("party", 10)).toBe(false);
-  expect(shouldPauseLiveRequests("pregame", 10, "deathmatch")).toBe(false);
-  expect(shouldPauseLiveRequests("pregame", 12, "DEATHMATCH")).toBe(true);
-  expect(shouldPauseLiveRequests("pregame", 10, "hurm")).toBe(true);
+test("backs off unchanged live polls and snaps back on a change", () => {
+  expect(nextLivePollDelay("party", true, LIVE_POLL_MS)).toBe(10000);
+  expect(nextLivePollDelay("party", true, 10000)).toBe(20000);
+  expect(nextLivePollDelay("party", true, 20000)).toBe(LIVE_MAX_POLL_MS);
+  expect(nextLivePollDelay("party", true, LIVE_MAX_POLL_MS)).toBe(LIVE_MAX_POLL_MS);
+  expect(nextLivePollDelay("party", false, LIVE_MAX_POLL_MS)).toBe(LIVE_POLL_MS);
+  expect(nextLivePollDelay("pregame", true, 20000)).toBe(LIVE_POLL_MS);
+  expect(nextLivePollDelay("party", true, 20000, true)).toBe(LIVE_POLL_MS);
+  expect(nextLivePollDelay("idle", true, LIVE_POLL_MS)).toBe(LIVE_IDLE_POLL_MS);
+  expect(nextLivePollDelay("party", true, LIVE_IDLE_POLL_MS)).toBe(LIVE_MAX_POLL_MS);
+});
+
+test("does not pause again for a match that already ended", () => {
+  expect(shouldPauseForSnapshot("coregame", "m1", null)).toBe(true);
+  expect(shouldPauseForSnapshot("coregame", "M1", "m1")).toBe(false);
+  expect(shouldPauseForSnapshot("coregame", "m2", "m1")).toBe(true);
+  expect(shouldPauseForSnapshot("party", null, null)).toBe(false);
 });
 
 test("keeps recent-stat identity stable across phase-specific snapshot keys", () => {
@@ -48,6 +61,8 @@ test("does not pile recent-stat PD calls onto a live snapshot that is already th
   expect(shouldRequestLiveStats(null)).toBe(true);
   expect(shouldRequestLiveStats("unavailable")).toBe(true);
   expect(shouldRequestLiveStats("rateLimited")).toBe(false);
+  expect(shouldRequestLiveStats(null, 40)).toBe(false);
+  expect(shouldRequestLiveStats(null, null)).toBe(true);
 });
 
 test("keeps ready ally stats when the coregame roster grows", () => {

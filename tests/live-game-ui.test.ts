@@ -121,7 +121,7 @@ describe("Live Match signed-in player marker", () => {
   });
 
   test("live match reuses ready ally stats in coregame and skips stats while throttled", () => {
-    expect(liveGameSession).toContain("shouldRequestLiveStats(response.warning)");
+    expect(liveGameSession).toContain("shouldRequestLiveStats(response.warning, response.retryInSeconds)");
     expect(liveGameSession).toContain("playersNeedingLiveStats(puuids, recentRef.current)");
     expect(liveGameSession).toContain("existing?.status === \"ready\" ? existing");
   });
@@ -130,7 +130,7 @@ describe("Live Match signed-in player marker", () => {
     expect(main).toContain("<LiveGameProvider>");
     expect(main).toContain("</LiveGameProvider>");
     expect(liveGameSession).toContain("timer = window.setTimeout(poll, pollDelayRef.current)");
-    expect(liveGameSession).toContain('!document.hidden && !pausedForMatchRef.current');
+    expect(liveGameSession).toContain("if (!document.hidden && (!pausedForMatchRef.current || heartbeatDue))");
     expect(liveGamePage).not.toContain("setTimeout(poll");
     expect(liveGamePage).not.toContain("visibilitychange");
   });
