@@ -21,7 +21,7 @@ const requiredStoreKeys = [
 
 describe("Store page and kingdom accessory shelf", () => {
   test("loads the storefront over IPC and joins valorant-api.com assets", () => {
-    expect(page).toContain('send("store:get"');
+    expect(page).toContain('"store_get"');
     expect(page).toContain("getSkinLevel");
     expect(page).toContain("getBundle");
     expect(page).toContain("getStoreItem");

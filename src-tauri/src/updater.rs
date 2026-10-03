@@ -31,7 +31,7 @@ pub async fn check_for_updates(app: &AppHandle, silent: bool) {
         Ok(Some(update)) => {
             let _ = app.emit(
                 "update:available",
-                json!({ "version": update.version }).to_string(),
+                json!({ "version": update.version }),
             );
             let _ = app.emit("alert:info", "Update available, downloading...");
             crate::aptabase::track_event(

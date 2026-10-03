@@ -34,11 +34,11 @@ describe("Tools navigation and player lookup shell", () => {
 
   test("keeps the search bar visible and reuses the friend profile pipeline", () => {
     expect(page).toContain('data-tools-search=""');
-    expect(page).toContain('send("tools:player:resolve"');
-    expect(page).toContain('send("friend:profile:get"');
+    expect(page).toContain('"tools_player_resolve"');
+    expect(page).toContain('"friend_profile_get"');
     expect(page).toContain("<FriendProfile");
     expect(page).toContain("embedded");
-    expect(page).toContain('send("analytics:track", "tools:player:lookup"');
+    expect(page).toContain('"tools:player:lookup"');
     expect(page).toContain("<Inventory embedded");
   });
 

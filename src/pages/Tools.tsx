@@ -1,3 +1,5 @@
+import { reportIpcError } from "@/util/ipc";
+import { invoke } from "@tauri-apps/api/core";
 import { FriendProfile } from "@/components/friends/friend-profile";
 import { PageHeader } from "@/components/section-card";
 import Inventory from "@/pages/Inventory.tsx";
@@ -5,7 +7,7 @@ import type { Friend } from "@/types/friends";
 import type { FriendProfileResponse } from "@/types/friend-profile";
 import { acceptedFriendProfile } from "@/components/friends/friend-profile-state";
 import { getTiers, type TierAsset } from "@/util/valorant-assets";
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useCallback,  useEffect, useState, type FormEvent, type ReactNode  } from "react";
 import { useTranslation } from "react-i18next";
 import { LuArrowLeft, LuBoxes, LuChevronRight, LuSearch, LuUserSearch, LuWrench } from "react-icons/lu";
 import {
@@ -70,9 +72,29 @@ const Tools = () => {
 		};
 	}, []);
 
-	useEffect(() => {
-		if (!window.Main) return;
-		const onResolved = (message: string) => {
+	const onProfile = useCallback((message: any) => {
+			setState((current) => {
+				const target = current.pendingPlayer;
+				if (!target) return current;
+				let response: FriendProfileResponse;
+				try {
+					response = message as FriendProfileResponse;
+				} catch {
+					return applyToolsProfileError(current, "unavailable");
+				}
+				const accepted = acceptedFriendProfile(target.puuid, response);
+				if (accepted) return applyToolsProfileSuccess(current, accepted);
+				if (!response.success) {
+					return applyToolsProfileError(
+						current,
+						response.code === "loginRequired" ? "loginRequired" : "unavailable",
+					);
+				}
+				return current;
+			});
+		}, []);
+
+const onResolved = useCallback((message: any) => {
 			let response: {
 				success: boolean;
 				code?: string;
@@ -81,7 +103,7 @@ const Tools = () => {
 				tagLine?: string;
 			};
 			try {
-				response = JSON.parse(message);
+				response = message;
 			} catch {
 				setState((current) => applyToolsResolveError(current, "unavailable"));
 				return;
@@ -97,43 +119,18 @@ const Tools = () => {
 					tagLine: response.tagLine!,
 				}),
 			);
-			window.Main.send("friend:profile:get", response.puuid);
-		};
-		const onProfile = (message: string) => {
-			setState((current) => {
-				const target = current.pendingPlayer;
-				if (!target) return current;
-				let response: FriendProfileResponse;
-				try {
-					response = JSON.parse(message) as FriendProfileResponse;
-				} catch {
-					return applyToolsProfileError(current, "unavailable");
-				}
-				const accepted = acceptedFriendProfile(target.puuid, response);
-				if (accepted) return applyToolsProfileSuccess(current, accepted);
-				if (!response.success) {
-					return applyToolsProfileError(
-						current,
-						response.code === "loginRequired" ? "loginRequired" : "unavailable",
-					);
-				}
-				return current;
-			});
-		};
-		window.Main.on("tools:player:resolve", onResolved);
-		window.Main.on("friend:profile:get", onProfile);
-		return () => {
-			window.Main.removeListener("tools:player:resolve", onResolved);
-			window.Main.removeListener("friend:profile:get", onProfile);
-		};
+			invoke<any>("friend_profile_get", { args: [response.puuid] }).then(onProfile).catch(error => onProfile({ success: false, error: String(error) }));
+		}, [onProfile]);
+
+	useEffect(() => {
 	}, []);
 
 	const onSearch = (event: FormEvent) => {
 		event.preventDefault();
 		const value = query.trim();
 		setState((current) => beginToolsLookup(current));
-		window.Main.send("analytics:track", "tools:player:lookup", JSON.stringify({}));
-		window.Main.send("tools:player:resolve", value);
+		invoke("analytics_track", { args: ["tools:player:lookup", JSON.stringify({})] }).catch(reportIpcError);
+		invoke<any>("tools_player_resolve", { args: [value] }).then(onResolved).catch(error => onResolved({ success: false, error: String(error) }));
 	};
 
 	const errorMessage = state.error ? t(`tools.${state.error}`) : null;

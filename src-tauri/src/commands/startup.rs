@@ -85,17 +85,16 @@ fn set_startup(args: &[Value], apply: impl FnOnce(bool) -> Result<(), String>) -
 }
 
 #[tauri::command]
-pub fn startup_get() -> String {
+pub fn startup_get() -> Value {
     match platform::is_enabled() {
         Ok(enabled) => json!({ "success": true, "enabled": enabled }),
         Err(error) => json!({ "success": false, "error": error }),
     }
-    .to_string()
 }
 
 #[tauri::command]
-pub fn startup_set(args: Vec<Value>) -> String {
-    set_startup(&args, platform::set_enabled).to_string()
+pub fn startup_set(args: Vec<Value>) -> Value {
+    set_startup(&args, platform::set_enabled)
 }
 
 #[cfg(test)]

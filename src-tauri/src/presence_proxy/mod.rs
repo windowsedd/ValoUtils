@@ -564,7 +564,7 @@ pub fn notify_status_changed() {
 }
 
 fn emit_status(app: &AppHandle) {
-    let payload = json!({ "success": true, "presence": controller().snapshot() }).to_string();
+    let payload = json!({ "success": true, "presence": controller().snapshot() });
     let _ = app.emit("presence:status-changed", payload);
 }
 

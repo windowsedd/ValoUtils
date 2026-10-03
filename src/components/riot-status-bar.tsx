@@ -1,8 +1,10 @@
+import { listenEvent, reportIpcError } from "@/util/ipc";
+import { invoke } from "@tauri-apps/api/core";
 import CustomButton from "@/components/button";
 import { useDynamicModal } from "@/components/dynamic-modal";
 import { navbarLayout } from "@/components/navbar-layout";
 import { ParsedSettingsViewer } from "@/components/parsed-settings-viewer";
-import { useEffect, useRef, useState } from "react";
+import { useCallback,  useEffect, useRef, useState  } from "react";
 import { LuCheck, LuChevronDown, LuEye, LuSmartphone, LuUser, LuUserX } from "react-icons/lu";
 import { useTranslation } from "react-i18next";
 
@@ -61,11 +63,10 @@ const RiotStatusBar = ({ compact = false }: RiotStatusBarProps) => {
 	};
 
 	const fetchStatus = () => {
-		if (!window.Main) return;
-		window.Main.removeAllListeners("userinfo:get");
-		window.Main.on("userinfo:get", (message: string) => {
-			window.Main.removeAllListeners("userinfo:get");
-			const data = JSON.parse(message);
+
+		const applyUserInfo = (message: any) => {
+
+			const data = message;
 			if (data.error || !data.acct) {
 				setInfo({ status: "offline" });
 				return;
@@ -74,8 +75,8 @@ const RiotStatusBar = ({ compact = false }: RiotStatusBarProps) => {
 				status: "online",
 				username: `${data.acct.game_name}#${data.acct.tag_line}`,
 			});
-		});
-		window.Main.send("userinfo:get");
+		};
+		invoke<any>("userinfo_get").then(applyUserInfo).catch(error => applyUserInfo({ success: false, error: String(error) }));
 	};
 
 	useEffect(() => {
@@ -83,32 +84,32 @@ const RiotStatusBar = ({ compact = false }: RiotStatusBarProps) => {
 		const interval = setInterval(fetchStatus, 10000);
 		return () => {
 			clearInterval(interval);
-			window.Main.removeAllListeners("userinfo:get");
+
 		};
 	}, []);
 
-	useEffect(() => {
-		if (!window.Main) return;
-		const applyPresence = (message: string) => {
+	const applyPresence = useCallback((message: any) => {
 			try {
-				const data = JSON.parse(message);
+				const data = message;
 				if (data?.success && data.presence) setPresence(data.presence);
 			} catch {
 				/* Keep the last known relay state. */
 			}
-		};
-		window.Main.on("presence:status-get", applyPresence);
-		window.Main.on("presence:status-set", applyPresence);
-		window.Main.on("presence:status-changed", applyPresence);
-		window.Main.send("presence:status-get");
-		const interval = setInterval(() => window.Main.send("presence:status-get"), 4000);
-		return () => {
+		}, []);
+
+	useEffect(() => {
+		let active = true;
+
+		const unlistenapplyPresence = listenEvent("presence:status-changed", applyPresence);
+		invoke<any>("presence_status_get").then(reply => { if (active) applyPresence(reply); }).catch(error => { if (active) applyPresence({ success: false, error: String(error) }); });
+		const interval = setInterval(() => invoke<any>("presence_status_get").then(reply => { if (active) applyPresence(reply); }).catch(error => { if (active) applyPresence({ success: false, error: String(error) }); }), 4000);
+		return () => {active = false;
+
 			clearInterval(interval);
-			window.Main.removeAllListeners("presence:status-get");
-			window.Main.removeAllListeners("presence:status-set");
-			window.Main.removeAllListeners("presence:status-changed");
+
+			unlistenapplyPresence();
 		};
-	}, []);
+	}, [applyPresence]);
 
 	useEffect(() => {
 		if (!menuOpen) return;
@@ -121,18 +122,18 @@ const RiotStatusBar = ({ compact = false }: RiotStatusBarProps) => {
 
 	const setMode = (mode: PresenceMode) => {
 		if (!presence || presence.activeConnections < 1) return;
-		window.Main.send("presence:status-set", mode);
-		window.Main.send("analytics:track", "presence_mode", JSON.stringify({ mode }));
+		invoke<any>("presence_status_set", { args: [mode] }).then(applyPresence).catch(error => applyPresence({ success: false, error: String(error) }));
+		invoke("analytics_track", { args: ["presence_mode", JSON.stringify({ mode })] }).catch(reportIpcError);
 		setMenuOpen(false);
 	};
 
 	const viewSettings = () => {
 		setMenuOpen(false);
 		return new Promise<void>((resolve, reject) => {
-			window.Main.removeAllListeners("settings:current:view");
-			window.Main.on("settings:current:view", (message: string) => {
-				window.Main.removeAllListeners("settings:current:view");
-				const data = JSON.parse(message);
+
+			const showCurrentSettings = (message: any) => {
+
+				const data = message;
 				if (data.error) {
 					reject(data.error);
 					return;
@@ -160,8 +161,8 @@ const RiotStatusBar = ({ compact = false }: RiotStatusBarProps) => {
 					),
 					onClose: resolve,
 				});
-			});
-			window.Main.send("settings:current:view");
+			};
+			invoke<any>("settings_current_view").then(showCurrentSettings).catch(reject);
 		});
 	};
 

@@ -31,21 +31,21 @@ pub fn version(app: AppHandle) -> String {
 }
 
 #[tauri::command]
-pub fn clipboard_get(app: AppHandle) -> String {
+pub fn clipboard_get(app: AppHandle) -> Value {
     let text = app.clipboard().read_text().unwrap_or_default();
-    json!({ "text": text }).to_string()
+    json!({ "text": text })
 }
 
 #[tauri::command]
-pub fn clipboard_set(args: Vec<Value>, app: AppHandle) -> String {
+pub fn clipboard_set(args: Vec<Value>, app: AppHandle) -> Value {
     let text = arg(&args, 0).unwrap_or_default();
     let _ = app.clipboard().write_text(text);
     let text = app.clipboard().read_text().unwrap_or_default();
-    json!({ "text": text }).to_string()
+    json!({ "text": text })
 }
 
 #[tauri::command]
-pub async fn debug_save_json(args: Vec<Value>, app: AppHandle) -> String {
+pub async fn debug_save_json(args: Vec<Value>, app: AppHandle) -> Value {
     use tauri_plugin_dialog::DialogExt;
 
     let filename = arg(&args, 0).unwrap_or_else(|| "debug.json".into());
@@ -60,15 +60,15 @@ pub async fn debug_save_json(args: Vec<Value>, app: AppHandle) -> String {
         .blocking_save_file();
 
     let Some(file_path) = file_path else {
-        return json!({ "success": false }).to_string();
+        return json!({ "success": false });
     };
     let Some(path) = file_path.as_path() else {
-        return json!({ "success": false }).to_string();
+        return json!({ "success": false });
     };
 
     match std::fs::write(path, json_str) {
-        Ok(_) => json!({ "success": true, "filePath": path.to_string_lossy() }).to_string(),
-        Err(_) => json!({ "success": false }).to_string(),
+        Ok(_) => json!({ "success": true, "filePath": path.to_string_lossy() }),
+        Err(_) => json!({ "success": false }),
     }
 }
 
@@ -93,7 +93,7 @@ pub async fn update_check(app: AppHandle) -> String {
 }
 
 #[tauri::command]
-pub fn config_get_all(store: State<ConfigStore>) -> String {
+pub fn config_get_all(store: State<ConfigStore>) -> Value {
     let get_or = |key: &str, default: Value| store.get(key).unwrap_or(default);
     json!({
         "autoUpdate": get_or("autoUpdate", json!(true)),
@@ -117,13 +117,12 @@ pub fn config_get_all(store: State<ConfigStore>) -> String {
         ),
         "botCustomCommands": get_or("botCustomCommands", json!([])),
     })
-    .to_string()
 }
 
 #[tauri::command]
-pub fn config_set(args: Vec<Value>, store: State<ConfigStore>) -> String {
+pub fn config_set(args: Vec<Value>, store: State<ConfigStore>) -> Value {
     let Some(key) = arg(&args, 0) else {
-        return json!({ "success": false }).to_string();
+        return json!({ "success": false });
     };
     let value = args.get(1).cloned().unwrap_or(Value::Null);
     // The gate holds its pacing in a static, below the API client and out of
@@ -132,5 +131,5 @@ pub fn config_set(args: Vec<Value>, store: State<ConfigStore>) -> String {
         crate::riot::rate_gate::set_pacing(value.as_str().unwrap_or_default());
     }
     store.set(&key, value);
-    json!({ "success": true, "key": key }).to_string()
+    json!({ "success": true, "key": key })
 }

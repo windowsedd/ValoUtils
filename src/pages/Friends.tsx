@@ -1,3 +1,4 @@
+import { invoke } from "@tauri-apps/api/core";
 import { LoginRequiredPanel } from "@/components/login-required-panel";
 import type { Friend, FriendRequest, FriendsResponse } from "@/types/friends";
 import type { FriendProfileData } from "@/types/friend-profile";
@@ -123,9 +124,8 @@ const Friends = () => {
 	}, []);
 
 	useEffect(() => {
-		if (!window.Main) return;
-		window.Main.on("friends:get", (message: string) => {
-			const res = JSON.parse(message) as FriendsResponse;
+const applyFriends = (message: any) => {
+			const res = message as FriendsResponse;
 			setLoading(false);
 			if (!res.success) {
 				setLive(false);
@@ -138,13 +138,17 @@ const Friends = () => {
 			setError(null);
 			setFriends(res.friends);
 			setRequests(res.requests);
-		});
-		const refresh = () => window.Main.send("friends:get");
+		};
+
+		let active = true;
+
+		const refresh = () => invoke<any>("friends_get").then(reply => { if (active) applyFriends(reply); }).catch(error => { if (active) applyFriends({ success: false, error: String(error) }); });
 		refresh();
 		const interval = setInterval(refresh, POLL_MS);
-		return () => {
+		return () => {active = false;
+
 			clearInterval(interval);
-			window.Main.removeAllListeners("friends:get");
+
 		};
 	}, [t]);
 

@@ -1,3 +1,5 @@
+import { listenEvent, reportIpcError } from "@/util/ipc";
+import { invoke, isTauri } from "@tauri-apps/api/core";
 import CustomButton from "@/components/button.tsx";
 import { useDynamicModal } from "@/components/dynamic-modal.tsx";
 import { ParsedSettingsViewer } from "@/components/parsed-settings-viewer.tsx";
@@ -26,17 +28,17 @@ const SettingsProfiles = () => {
 	const { t } = useTranslation();
 
 	const refreshProfiles = () => {
-		window.Main.send("settings:profile:list");
+		invoke<{ profiles: Profile[] }>("settings_profile_list").then(reply => setProfiles(reply.profiles)).catch(reportIpcError);
 	};
 
 	const compareProfileWithCurrent = (profileName: string, resolve: () => void, reject: (e: string) => void) => {
-		window.Main.on("settings:profile:view", (msgA: string) => {
-			window.Main.removeAllListeners("settings:profile:view");
-			const dataA = JSON.parse(msgA);
+		const onSavedSettings = (msgA: any) => {
+
+			const dataA = msgA;
 			if (dataA.error) { reject(dataA.error); return; }
-			window.Main.on("settings:current:view", (msgB: string) => {
-				window.Main.removeAllListeners("settings:current:view");
-				const dataB = JSON.parse(msgB);
+			const onCurrentSettings = (msgB: any) => {
+
+				const dataB = msgB;
 				if (dataB.error) { reject(dataB.error); return; }
 				showModal({
 					title: t("profiles.settingsDiff"),
@@ -48,20 +50,20 @@ const SettingsProfiles = () => {
 					),
 					onClose: resolve,
 				});
-			});
-			window.Main.send("settings:current:view");
-		});
-		window.Main.send("settings:profile:view", profileName);
+			};
+			invoke<any>("settings_current_view").then(onCurrentSettings).catch(error => onCurrentSettings({ success: false, error: String(error) }));
+		};
+		invoke<any>("settings_profile_view", { args: [profileName] }).then(onSavedSettings).catch(error => onSavedSettings({ success: false, error: String(error) }));
 	};
 
 	const compareTwoProfiles = (nameA: string, nameB: string, resolve: () => void, reject: (e: string) => void) => {
-		window.Main.on("settings:profile:view", (msgA: string) => {
-			window.Main.removeAllListeners("settings:profile:view");
-			const dataA = JSON.parse(msgA);
+		const onFirstProfile = (msgA: any) => {
+
+			const dataA = msgA;
 			if (dataA.error) { reject(dataA.error); return; }
-			window.Main.on("settings:profile:view", (msgB: string) => {
-				window.Main.removeAllListeners("settings:profile:view");
-				const dataB = JSON.parse(msgB);
+			const onSecondProfile = (msgB: any) => {
+
+				const dataB = msgB;
 				if (dataB.error) { reject(dataB.error); return; }
 				showModal({
 					title: t("profiles.settingsDiff"),
@@ -73,30 +75,34 @@ const SettingsProfiles = () => {
 					),
 					onClose: resolve,
 				});
-			});
-			window.Main.send("settings:profile:view", nameB);
-		});
-		window.Main.send("settings:profile:view", nameA);
+			};
+			invoke<any>("settings_profile_view", { args: [nameB] }).then(onSecondProfile).catch(error => onSecondProfile({ success: false, error: String(error) }));
+		};
+		invoke<any>("settings_profile_view", { args: [nameA] }).then(onFirstProfile).catch(error => onFirstProfile({ success: false, error: String(error) }));
 	};
 
 	useEffect(() => {
-		if (window.Main) {
-			window.Main.on("settings:profile:list", (message: string) => {
-				setProfiles(JSON.parse(message).profiles);
-			});
-			window.Main.send("settings:profile:list");
+		let active = true;
+
+		if (isTauri()) {
+			const applyProfiles = (message: any) => {
+				if (message.profiles) setProfiles(message.profiles);
+			}; const unlistenapplyProfiles = listenEvent("settings:profile:list", applyProfiles);
+			invoke<{ profiles: Profile[] }>("settings_profile_list").then(reply => { if (active) return (reply => setProfiles(reply.profiles))(reply); }).catch(error => { if (active) return (reportIpcError)(error); });
 			return () => {
-				window.Main.removeAllListeners("settings:profile:list");
+				unlistenapplyProfiles();
 			};
 		}
-	}, []);
+
+		return () => { active = false; };
+}, []);
 
 	// --- Actions ------------------------------------------------------------
 	// Each returns the promise CustomButton drives its pending state from.
 
 	const addProfile = () =>
 		new Promise<void>((resolve_1, reject_1) => {
-			window.Main.send("analytics:track", "profile:add", "{}");
+			invoke("analytics_track", { args: ["profile:add", "{}"] }).catch(reportIpcError);
 			showModal({
 				title: t("profiles.addProfile"),
 				body: (
@@ -104,11 +110,11 @@ const SettingsProfiles = () => {
 						<CustomButton
 							onClickLoading={() => {
 								return new Promise<void>((resolve, reject) => {
-									if (window.Main) {
-										window.Main.send("analytics:track", "profile:add:load_account", "{}");
-										window.Main.on("settings:profile:add", (message: string) => {
-											window.Main.removeAllListeners("settings:profile:add");
-											const rawData = JSON.parse(message);
+									if (isTauri()) {
+										invoke("analytics_track", { args: ["profile:add:load_account", "{}"] }).catch(reportIpcError);
+										const onAccountProfileAdded = (message: any) => {
+
+											const rawData = message;
 											if (rawData.error) {
 												reject(rawData.error);
 												reject_1();
@@ -118,10 +124,10 @@ const SettingsProfiles = () => {
 											resolve();
 											closeModal();
 											resolve_1();
-										});
-										window.Main.send("settings:profile:add", "current");
+										};
+										invoke<any>("settings_profile_add", { args: ["current"] }).then(onAccountProfileAdded).catch(reject);
 									} else {
-										reject("No window.Main");
+										reject("Tauri is unavailable");
 									}
 								});
 							}}
@@ -141,9 +147,8 @@ const SettingsProfiles = () => {
 							<CustomButton
 								className={"shrink-0"}
 								onClickLoading={async () => {
-									if (!window.Main) throw "No window.Main";
 
-									window.Main.send("analytics:track", "profile:add:load_share", "{}");
+									invoke("analytics_track", { args: ["profile:add:load_share", "{}"] }).catch(reportIpcError);
 									const input = window.document.getElementById("share-code") as HTMLInputElement;
 									const inputData = input.value;
 									if (!inputData) throw t("profiles.noInputData");
@@ -154,9 +159,9 @@ const SettingsProfiles = () => {
 
 									return new Promise<void>((resolve, reject) => {
 										const save = () => {
-											window.Main.on("settings:profile:add", (message: string) => {
-												window.Main.removeAllListeners("settings:profile:add");
-												const rawData = JSON.parse(message);
+											const onSharedProfileAdded = (message: any) => {
+
+												const rawData = message;
 												if (rawData.error) {
 													reject(rawData.error);
 													reject_1();
@@ -166,17 +171,13 @@ const SettingsProfiles = () => {
 												resolve();
 												closeModal();
 												resolve_1();
-											});
-											window.Main.send("settings:profile:add", "clipboard");
+											};
+											invoke<any>("settings_profile_add", { args: [data] }).then(onSharedProfileAdded).catch(reject);
 										};
 
 										const match = !data.match(/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/);
 										if (data.length < 2500 || match) {
-											window.Main.send(
-												"analytics:track",
-												"profile:add:load_clipboard:error",
-												JSON.stringify({ length: data.length, match }),
-											);
+											invoke("analytics_track", { args: ["profile:add:load_clipboard:error", JSON.stringify({ length: data.length, match })] }).catch(reportIpcError);
 											showModal({
 												title: t("profiles.doesntLookLikeProfile"),
 												body: t("profiles.doesntLookLikeProfileBody"),
@@ -234,11 +235,11 @@ const SettingsProfiles = () => {
 
 	const loadProfile = (profile: Profile) =>
 		new Promise<void>((resolve, reject) => {
-			if (window.Main) {
-				window.Main.send("analytics:track", "profile:load", "{}");
-				window.Main.on("settings:profile:load", (message: string) => {
-					window.Main.removeAllListeners("settings:profile:load");
-					const rawData = JSON.parse(message);
+			if (isTauri()) {
+				invoke("analytics_track", { args: ["profile:load", "{}"] }).catch(reportIpcError);
+				const onProfileLoaded = (message: any) => {
+
+					const rawData = message;
 					if (rawData.error) {
 						reject(rawData.error);
 						return;
@@ -260,10 +261,10 @@ const SettingsProfiles = () => {
 						),
 					});
 					resolve();
-				});
-				window.Main.send("settings:profile:load", profile.name);
+				};
+				invoke<any>("settings_profile_load", { args: [profile.name] }).then(onProfileLoaded).catch(reject);
 			} else {
-				reject("No window.Main");
+				reject("Tauri is unavailable");
 			}
 		});
 
@@ -293,11 +294,11 @@ const SettingsProfiles = () => {
 						</CustomButton>
 						<CustomButton
 							onPress={() => {
-								if (window.Main) {
-									window.Main.send("analytics:track", "profile:edit", "{}");
-									window.Main.on("settings:profile:rename", (message: string) => {
-										window.Main.removeAllListeners("settings:profile:rename");
-										const rawData = JSON.parse(message);
+								if (isTauri()) {
+									invoke("analytics_track", { args: ["profile:edit", "{}"] }).catch(reportIpcError);
+									const onProfileRenamed = (message: any) => {
+
+										const rawData = message;
 										if (!rawData.success) {
 											reject(rawData.error);
 											return;
@@ -305,7 +306,7 @@ const SettingsProfiles = () => {
 										refreshProfiles();
 										resolve();
 										closeModal();
-									});
+									};
 									const document = window.document.getElementById("edit-profile-div");
 									if (!document) {
 										reject("No document");
@@ -316,9 +317,9 @@ const SettingsProfiles = () => {
 										reject("No input found");
 										return;
 									}
-									window.Main.send("settings:profile:rename", profile.name, input.value);
+									invoke<any>("settings_profile_rename", { args: [profile.name, input.value] }).then(onProfileRenamed).catch(reject);
 								} else {
-									reject("No window.Main");
+									reject("Tauri is unavailable");
 								}
 							}}
 						>
@@ -334,33 +335,33 @@ const SettingsProfiles = () => {
 
 	const duplicateProfile = (profile: Profile) =>
 		new Promise<void>((resolve, reject) => {
-			if (window.Main) {
-				window.Main.send("analytics:track", "profile:duplicate", "{}");
-				window.Main.on("settings:profile:duplicate", (message: string) => {
-					window.Main.removeAllListeners("settings:profile:duplicate");
-					const rawData = JSON.parse(message);
+			if (isTauri()) {
+				invoke("analytics_track", { args: ["profile:duplicate", "{}"] }).catch(reportIpcError);
+				const onProfileDuplicated = (message: any) => {
+
+					const rawData = message;
 					if (rawData.error) {
 						reject(rawData.error);
 						return;
 					}
 					refreshProfiles();
 					resolve();
-				});
-				window.Main.send("settings:profile:duplicate", profile.name);
+				};
+				invoke<any>("settings_profile_duplicate", { args: [profile.name] }).then(onProfileDuplicated).catch(reject);
 			} else {
-				reject("No window.Main");
+				reject("Tauri is unavailable");
 			}
 		});
 
 	const viewProfile = (profile: Profile) =>
 		new Promise<void>((resolve, reject) => {
-			if (window.Main) {
-				window.Main.send("analytics:track", "profile:view", "{}");
-				window.Main.on("settings:profile:view", (message: string) => {
-					const rawData = JSON.parse(message);
+			if (isTauri()) {
+				invoke("analytics_track", { args: ["profile:view", "{}"] }).catch(reportIpcError);
+				const onProfileViewed = (message: any) => {
+					const rawData = message;
 					if (rawData.error) {
 						reject(rawData.error);
-						window.Main.removeAllListeners("settings:profile:view");
+
 						return;
 					}
 					showModal({
@@ -382,11 +383,11 @@ const SettingsProfiles = () => {
 							resolve();
 						},
 					});
-					window.Main.removeAllListeners("settings:profile:view");
-				});
-				window.Main.send("settings:profile:view", profile.name);
+
+				};
+				invoke<any>("settings_profile_view", { args: [profile.name] }).then(onProfileViewed).catch(reject);
 			} else {
-				reject("No window.Main");
+				reject("Tauri is unavailable");
 			}
 		});
 
@@ -432,11 +433,11 @@ const SettingsProfiles = () => {
 
 	const shareProfile = (profile: Profile) =>
 		new Promise<void>((resolve, reject) => {
-			if (window.Main) {
-				window.Main.send("analytics:track", "profile:share", "{}");
-				window.Main.on("settings:profile:share", (message: string) => {
-					window.Main.removeAllListeners("settings:profile:share");
-					const rawData = JSON.parse(message);
+			if (isTauri()) {
+				invoke("analytics_track", { args: ["profile:share", "{}"] }).catch(reportIpcError);
+				const onProfileShared = (message: any) => {
+
+					const rawData = message;
 					if (rawData.error) {
 						reject(rawData.error);
 						return;
@@ -458,12 +459,11 @@ const SettingsProfiles = () => {
 									className={"w-full"}
 									onClickLoading={() => {
 										return new Promise<void>((resolve, reject) => {
-											if (window.Main) {
-												window.Main.send("analytics:track", "profile:share:copy", "{}");
-												window.Main.send("clipboard:set", rawData.code);
-												resolve();
+											if (isTauri()) {
+												invoke("analytics_track", { args: ["profile:share:copy", "{}"] }).catch(reportIpcError);
+												invoke<void>("clipboard_set", { args: [rawData.code] }).then(resolve).catch(reject);
 											} else {
-												reject("No window.Main");
+												reject("Tauri is unavailable");
 											}
 										});
 									}}
@@ -484,30 +484,30 @@ const SettingsProfiles = () => {
 						),
 					});
 					resolve();
-				});
-				window.Main.send("settings:profile:share", profile.name);
+				};
+				invoke<any>("settings_profile_share", { args: [profile.name] }).then(onProfileShared).catch(reject);
 			} else {
-				reject("No window.Main");
+				reject("Tauri is unavailable");
 			}
 		});
 
 	const removeProfile = (profile: Profile) =>
 		new Promise<void>((resolve, reject) => {
-			if (window.Main) {
-				window.Main.send("analytics:track", "profile:remove", "{}");
-				window.Main.on("settings:profile:remove", (message: string) => {
-					window.Main.removeAllListeners("settings:profile:remove");
-					const rawData = JSON.parse(message);
+			if (isTauri()) {
+				invoke("analytics_track", { args: ["profile:remove", "{}"] }).catch(reportIpcError);
+				const onProfileRemoved = (message: any) => {
+
+					const rawData = message;
 					if (rawData.error || !rawData.success) {
 						reject(rawData.error ?? "Failed to remove profile");
 						return;
 					}
 					refreshProfiles();
 					resolve();
-				});
-				window.Main.send("settings:profile:remove", profile.name);
+				};
+				invoke<any>("settings_profile_remove", { args: [profile.name] }).then(onProfileRemoved).catch(reject);
 			} else {
-				reject("No window.Main");
+				reject("Tauri is unavailable");
 			}
 		});
 

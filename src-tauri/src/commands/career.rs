@@ -22,7 +22,7 @@ fn career_rank_shields(mmr: &Value, competitive_updates: &Value) -> Option<u8> {
 }
 
 #[tauri::command]
-pub async fn career_get(riot: State<'_, RiotState>) -> Result<String, ()> {
+pub async fn career_get(riot: State<'_, RiotState>) -> Result<Value, ()> {
     // `with_api` retries once with fresh tokens if the cached one has been
     // invalidated (expired, or the player switched accounts).
     let result = api::with_api(&riot, |api| async move {
@@ -51,14 +51,13 @@ pub async fn career_get(riot: State<'_, RiotState>) -> Result<String, ()> {
                 "competitiveSeasons": competitive_seasons,
                 "rankShields": rank_shields,
             })
-            .to_string()
         }
-        Err(e) if e.contains("lockfile") => {
-            json!({ "success": false, "code": "loginRequired" }).to_string()
+        Err(e) if e.is_login_required() => {
+            json!({ "success": false, "code": "loginRequired" })
         }
-        Err(e) => match super::rate_limited_reply(&e).await {
-            Some(reply) => reply.to_string(),
-            None => json!({ "success": false, "error": e }).to_string(),
+        Err(e) => match super::rate_limited_reply(&e.to_string()).await {
+            Some(reply) => reply,
+            None => json!({ "success": false, "code": e.code(), "error": e }),
         },
     })
 }

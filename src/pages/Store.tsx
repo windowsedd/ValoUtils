@@ -1,3 +1,4 @@
+import { invoke } from "@tauri-apps/api/core";
 import { LoginRequiredPanel } from "@/components/login-required-panel";
 import { PageHeader, SectionCard, pageBodyClass } from "@/components/section-card";
 import {
@@ -158,10 +159,9 @@ const Store = () => {
 	const { t } = useTranslation();
 
 	useEffect(() => {
-		if (!window.Main) return;
-		const onResponse = (message: string) => {
-			window.Main.removeAllListeners("store:get");
-			const response = JSON.parse(message);
+const onResponse = (message: any) => {
+
+			const response = message;
 			if (!response.success) {
 				if (response.code === "loginRequired") {
 					setLoginRequired(true);
@@ -191,10 +191,13 @@ const Store = () => {
 			setFetchedAt(Date.now());
 			setLoading(false);
 		};
-		window.Main.on("store:get", onResponse);
-		window.Main.send("store:get");
-		return () => window.Main.removeAllListeners("store:get");
-	}, [t, reloadKey]);
+
+		let active = true;
+
+		invoke<any>("store_get").then(reply => { if (active) onResponse(reply); }).catch(error => { if (active) onResponse({ success: false, error: String(error) }); });
+
+		return () => { active = false; };
+}, [t, reloadKey]);
 
 	// Daily + Night Market rows are always weapon skin levels.
 	const skinLevelIds = useMemo(() => {

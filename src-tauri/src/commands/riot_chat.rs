@@ -483,14 +483,14 @@ pub fn classify_composer_command(
 /// The raw line is never posted to the room - the frontend routes here instead
 /// of `chat:send` precisely so a mistyped command does not leak into chat.
 #[tauri::command]
-pub async fn chat_command(args: Vec<Value>, app: AppHandle) -> Result<String, ()> {
+pub async fn chat_command(args: Vec<Value>, app: AppHandle) -> Result<Value, ()> {
     let input = args
         .first()
         .and_then(Value::as_str)
         .unwrap_or_default()
         .to_string();
     if input.trim().is_empty() {
-        return Ok(json!({ "success": false, "error": "Command is empty." }).to_string());
+        return Ok(json!({ "success": false, "error": "Command is empty." }));
     }
     // The conversation the composer had selected. Only the channel it names is
     // used; see [`AsciiSource`].
@@ -532,14 +532,13 @@ pub async fn chat_command(args: Vec<Value>, app: AppHandle) -> Result<String, ()
             return Ok(json!({
                 "success": false,
                 "error": format!("Unknown command '{}'.", input.trim()),
-            })
-            .to_string())
+            }))
         }
     };
 
     Ok(match outcome {
-        Ok(reply) => json!({ "success": true, "reply": reply }).to_string(),
-        Err(error) => json!({ "success": false, "error": error.to_string() }).to_string(),
+        Ok(reply) => json!({ "success": true, "reply": reply }),
+        Err(error) => json!({ "success": false, "error": error.to_string() }),
     })
 }
 
@@ -606,13 +605,12 @@ enum DodgeResult {
     NotInPregame,
 }
 
-fn dodge_api_error(error: String) -> RiotError {
-    if crate::riot::client::is_login_required_error(&error) {
-        RiotError::RiotClientNotRunning
-    } else if is_not_in_game_error(&error) {
-        RiotError::InvalidCommand("Not in agent select.".into())
-    } else {
-        RiotError::InvalidCommand("Could not leave agent select.".into())
+fn dodge_api_error(error: RiotError) -> RiotError {
+    match error {
+        RiotError::Other(message) if is_not_in_game_error(&message) =>
+            RiotError::InvalidCommand("Not in agent select.".into()),
+        RiotError::Other(_) => RiotError::InvalidCommand("Could not leave agent select.".into()),
+        error => error,
     }
 }
 
@@ -1272,6 +1270,7 @@ struct PollMemory {
     /// Lines this app posted itself, so they cannot be read back as commands.
     echoes: PendingEchoes,
     lifecycle: LifecycleTracker,
+    live_phase: LifecycleTracker,
     prepared_match_ends: Vec<PreparedMatchEnd>,
 }
 
@@ -1524,6 +1523,18 @@ async fn poll_once(
         }
     }
 
+    // The chat poller already resolves these local rooms. Reuse that state to
+    // wake Live Game after a match without polling the remote game API in play.
+    let presence = crate::presence_proxy::presence_match_state();
+    for transition in memory.live_phase.observe(local_phase_observation(&memory.cids, presence)) {
+        let phase = match transition {
+            LifecycleTransition::PregameStarted { .. } => "pregame",
+            LifecycleTransition::MatchStarted { .. } => "coregame",
+            LifecycleTransition::MatchEnded { .. } => "ended",
+        };
+        let _ = app.emit("live-game:phase", phase);
+    }
+
     let commands = load_custom_commands(Some(app));
     if commands
         .iter()
@@ -1588,6 +1599,35 @@ fn phase_observation(pregame_id: Option<String>, match_id: Option<String>) -> Ph
         // Empty whenever the relay is not running, which puts the tracker back
         // on its poll-only rule rather than guessing at the phase.
         presence: crate::presence_proxy::presence_match_state(),
+    }
+}
+
+fn local_phase_observation(
+    cids: &HashMap<ChatChannel, String>,
+    presence: crate::riot::chat_lifecycle::PresenceMatchState,
+) -> PhaseObservation {
+    let cid_for = |channel: ChatChannel, marker: &str| {
+        cids.get(&channel).filter(|cid| cid.contains(marker)).cloned()
+    };
+    let in_menus = presence
+        .session_loop_state
+        .as_deref()
+        .is_some_and(|state| state.eq_ignore_ascii_case("MENUS"));
+    PhaseObservation {
+        connected: true,
+        pregame_id: cid_for(ChatChannel::Pregame, "@ares-pregame"),
+        match_id: if in_menus {
+            None
+        } else {
+            cid_for(ChatChannel::Team, "@ares-coregame")
+                .or_else(|| cid_for(ChatChannel::All, "@ares-coregame"))
+        },
+        // A decided score can precede the menu transition. Live Game must
+        // resume after the room closes, not while the final round is playing.
+        presence: crate::riot::chat_lifecycle::PresenceMatchState {
+            session_loop_state: presence.session_loop_state,
+            ..Default::default()
+        },
     }
 }
 
@@ -1911,9 +1951,7 @@ fn frontend_chat_message_json(
 }
 
 fn emit_ui_chat_message(app: &AppHandle, payload: &Value) {
-    if let Ok(text) = serde_json::to_string(payload) {
-        let _ = app.emit("chat:message", text);
-    }
+    let _ = app.emit("chat:message", payload);
 }
 
 fn emit_polled_chat_message(app: &AppHandle, message: &ChatMessage, is_self: bool) {
@@ -2097,6 +2135,64 @@ mod tests {
                 presence: Default::default(),
             }
         );
+    }
+
+    #[test]
+    fn local_chat_rooms_signal_match_end_without_game_api_reads() {
+        let mut tracker = LifecycleTracker::default();
+        let mut rooms = HashMap::new();
+        rooms.insert(
+            ChatChannel::Pregame,
+            "match-a-blue@ares-pregame.ap1.pvp.net".to_string(),
+        );
+        assert_eq!(
+            tracker.observe(local_phase_observation(&rooms, Default::default())),
+            vec![LifecycleTransition::PregameStarted { pregame_id: "match-a".into() }]
+        );
+        rooms.remove(&ChatChannel::Pregame);
+        rooms.insert(
+            ChatChannel::Team,
+            "match-a-blue@ares-coregame.ap1.pvp.net".to_string(),
+        );
+        assert_eq!(
+            tracker.observe(local_phase_observation(&rooms, Default::default())),
+            vec![LifecycleTransition::MatchStarted { match_id: "match-a".into() }]
+        );
+        rooms.clear();
+        assert!(tracker.observe(local_phase_observation(&rooms, Default::default())).is_empty());
+        assert!(tracker.observe(local_phase_observation(&rooms, Default::default())).is_empty());
+        assert_eq!(
+            tracker.observe(local_phase_observation(&rooms, Default::default())),
+            vec![LifecycleTransition::MatchEnded { match_id: "match-a".into() }]
+        );
+    }
+
+    #[test]
+    fn live_phase_waits_for_menus_instead_of_a_decided_score() {
+        let rooms = HashMap::from([(
+            ChatChannel::Team,
+            "match-a-blue@ares-coregame.ap1.pvp.net".to_string(),
+        )]);
+        let scored = local_phase_observation(
+            &rooms,
+            crate::riot::chat_lifecycle::PresenceMatchState {
+                session_loop_state: Some("INGAME".into()),
+                queue_id: Some("competitive".into()),
+                ally_score: Some(13),
+                enemy_score: Some(11),
+            },
+        );
+        assert_eq!(scored.match_id.as_deref(), Some("match-a-blue@ares-coregame.ap1.pvp.net"));
+        assert_eq!(scored.presence.ally_score, None);
+
+        let menus = local_phase_observation(
+            &rooms,
+            crate::riot::chat_lifecycle::PresenceMatchState {
+                session_loop_state: Some("MENUS".into()),
+                ..Default::default()
+            },
+        );
+        assert_eq!(menus.match_id, None);
     }
 
     #[test]
@@ -2566,11 +2662,11 @@ mod tests {
             r#"{"status":403,"path":"/pregame/v1/matches/abc/quit","message":"FORBIDDEN"}"#
         ));
         assert_eq!(
-            dodge_api_error("Riot Client is not running.".into()).to_string(),
+            dodge_api_error(RiotError::RiotClientNotRunning).to_string(),
             "Riot Client is not running."
         );
         assert_eq!(
-            dodge_api_error(r#"{"status":500,"path":"/pregame/v1/matches/abc/quit"}"#.into())
+            dodge_api_error(RiotError::Other(r#"{"status":500,"path":"/pregame/v1/matches/abc/quit"}"#.into()))
                 .to_string(),
             "Could not leave agent select."
         );

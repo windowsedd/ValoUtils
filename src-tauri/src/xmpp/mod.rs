@@ -198,7 +198,10 @@ struct ChatXmppState {
     inner: Mutex<Inner>,
 }
 
-async fn login_xmpp(riot: &RiotState, inner: &mut Inner) -> Result<Arc<XmppHandle>, String> {
+async fn login_xmpp(
+    riot: &RiotState,
+    inner: &mut Inner,
+) -> Result<Arc<XmppHandle>, crate::riot::error::RiotError> {
     if let Some(handle) = &inner.handle {
         if handle.is_alive() {
             return Ok(handle.clone());
@@ -234,7 +237,7 @@ async fn login_xmpp(riot: &RiotState, inner: &mut Inner) -> Result<Arc<XmppHandl
         Ok(result) => result,
         Err(error) => {
             let _ = presence_signal_publisher().send(PresenceSignal::Disconnected { generation });
-            return Err(error);
+            return Err(error.into());
         }
     };
     if let Some((name, tagline)) = &result.display_name {
@@ -248,7 +251,7 @@ async fn login_xmpp(riot: &RiotState, inner: &mut Inner) -> Result<Arc<XmppHandl
     Ok(result.handle)
 }
 
-pub async fn ensure_connected(riot: &RiotState) -> Result<(), String> {
+pub async fn ensure_connected(riot: &RiotState) -> Result<(), crate::riot::error::RiotError> {
     let mut inner = STATE.get_or_init(Default::default).inner.lock().await;
     login_xmpp(riot, &mut inner).await.map(|_| ())
 }

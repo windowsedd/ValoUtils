@@ -165,7 +165,7 @@ pub fn build_inventory(
 }
 
 #[tauri::command]
-pub async fn inventory_get(riot: State<'_, RiotState>) -> Result<String, ()> {
+pub async fn inventory_get(riot: State<'_, RiotState>) -> Result<Value, ()> {
     let result = api::with_api(&riot, |api| async move {
         let puuid = api.puuid.clone();
         let (skins, sprays, spray_levels, buddies, cards, titles, flex, _wallet, loadout) =
@@ -220,15 +220,15 @@ pub async fn inventory_get(riot: State<'_, RiotState>) -> Result<String, ()> {
 
     Ok(match result {
         Ok(items) => match serde_json::to_value(&items) {
-            Ok(items) => json!({ "success": true, "items": items }).to_string(),
-            Err(error) => json!({ "success": false, "error": error.to_string() }).to_string(),
+            Ok(items) => json!({ "success": true, "items": items }),
+            Err(error) => json!({ "success": false, "error": error.to_string() }),
         },
-        Err(error) if error.contains("lockfile") => {
-            json!({ "success": false, "code": "loginRequired" }).to_string()
+        Err(error) if error.is_login_required() => {
+            json!({ "success": false, "code": "loginRequired" })
         }
-        Err(error) => match super::rate_limited_reply(&error).await {
-            Some(reply) => reply.to_string(),
-            None => json!({ "success": false, "error": error }).to_string(),
+        Err(error) => match super::rate_limited_reply(&error.to_string()).await {
+            Some(reply) => reply,
+            None => json!({ "success": false, "code": error.code(), "error": error }),
         },
     })
 }

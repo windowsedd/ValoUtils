@@ -71,8 +71,8 @@ export const DisplaySetting = () => {
     setBusy(true);
     setFailed(false);
     try {
-      const message = await invoke<string>(command, command === "display_set" ? { args: [selected] } : undefined);
-      const response = JSON.parse(message) as DisplayResponse;
+      const response = await invoke<DisplayResponse>(command, command === "display_set" ? { args: [selected] } : undefined);
+
       if (!response.success || !Array.isArray(response.monitors) || typeof response.selected !== "string") {
         throw new Error("Display request failed");
       }

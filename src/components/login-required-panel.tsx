@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { reportIpcError } from "@/util/ipc";
+import { invoke } from "@tauri-apps/api/core";
+import { useCallback,  useEffect, useRef, useState, type ReactNode  } from "react";
 import { LuPlay } from "react-icons/lu";
 import { useTranslation } from "react-i18next";
 
@@ -9,8 +11,8 @@ import { useTranslation } from "react-i18next";
 type LaunchMode = "relay" | "normal";
 
 const LAUNCH_CHANNEL: Record<LaunchMode, string> = {
-	relay: "riot:launch-with-config",
-	normal: "riot:launch-normal",
+	relay: "riot_launch_with_config",
+	normal: "riot_launch_normal",
 };
 
 type LoginRequiredPanelProps = {
@@ -58,12 +60,20 @@ export const LoginRequiredPanel = ({
 	const retry = useRef(onRetry);
 	retry.current = onRetry;
 
-	useEffect(() => {
-		if (!window.Main) return;
-
-		const applyStatus = (message: string) => {
+	const applyLaunch = useCallback((message: any) => {
+			setLaunching(null);
 			try {
-				const data = JSON.parse(message);
+				const data = message;
+				setError(data?.success ? null : data?.error || t("common.launchFailed"));
+			} catch {
+				setError(t("common.launchFailed"));
+			}
+		}, [t]);
+
+	useEffect(() => {
+const applyStatus = (message: any) => {
+			try {
+				const data = message;
 				if (!data?.success) return;
 				const running = Boolean(data.riotClientRunning);
 				setClientRunning((previous) => {
@@ -75,29 +85,18 @@ export const LoginRequiredPanel = ({
 				/* Keep the last known state rather than flickering the button. */
 			}
 		};
-		const applyLaunch = (message: string) => {
-			setLaunching(null);
-			try {
-				const data = JSON.parse(message);
-				setError(data?.success ? null : data?.error || t("common.launchFailed"));
-			} catch {
-				setError(t("common.launchFailed"));
-			}
-		};
 
-		window.Main.on("client:config-status", applyStatus);
-		window.Main.on("riot:launch-with-config", applyLaunch);
-		window.Main.on("riot:launch-normal", applyLaunch);
-		const poll = () => window.Main.send("client:config-status");
+		let active = true;
+
+		const poll = () => invoke<any>("client_config_status").then(reply => { if (active) applyStatus(reply); }).catch(error => { if (active) applyStatus({ success: false, error: String(error) }); });
 		poll();
 		// Once the client is up the page's own poll picks the session up, so this
 		// only has to notice the window opening.
 		const timer = setInterval(poll, 3000);
-		return () => {
+		return () => {active = false;
+
 			clearInterval(timer);
-			window.Main.removeAllListeners("client:config-status");
-			window.Main.removeAllListeners("riot:launch-with-config");
-			window.Main.removeAllListeners("riot:launch-normal");
+
 		};
 	}, [t]);
 
@@ -113,8 +112,8 @@ export const LoginRequiredPanel = ({
 	const launch = (mode: LaunchMode) => {
 		setLaunching(mode);
 		setError(null);
-		window.Main.send(LAUNCH_CHANNEL[mode], "valorant", "live");
-		window.Main.send("analytics:track", "riot_launch", JSON.stringify({ from: "loginRequired", mode }));
+		invoke<any>(LAUNCH_CHANNEL[mode], { args: ["valorant", "live"] }).then(applyLaunch).catch(error => applyLaunch({ success: false, error: String(error) }));
+		invoke("analytics_track", { args: ["riot_launch", JSON.stringify({ from: "loginRequired", mode })] }).catch(reportIpcError);
 	};
 
 	const alreadyRunning = clientRunning === true;

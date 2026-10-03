@@ -1,3 +1,4 @@
+import { invoke } from "@tauri-apps/api/core";
 import { FriendMatchHistory } from "@/components/friends/friend-competitive-history";
 import { initialSeasonId } from "@/components/live-game/act-rank";
 import { ActRankPanel } from "@/components/live-game/act-rank-panel";
@@ -71,10 +72,9 @@ const PlayerCareer = () => {
 	}, []);
 
 	useEffect(() => {
-		if (!window.Main) return;
-		const onResponse = (message: string) => {
-			window.Main.removeAllListeners("career:get");
-			const response = JSON.parse(message);
+const onResponse = (message: any) => {
+
+			const response = message;
 			if (!response.success) {
 				if (response.code === "loginRequired") {
 					setLoginRequired(true);
@@ -105,10 +105,13 @@ const PlayerCareer = () => {
 			});
 			setLoading(false);
 		};
-		window.Main.on("career:get", onResponse);
-		window.Main.send("career:get");
-		return () => window.Main.removeAllListeners("career:get");
-	}, [t, reloadKey]);
+
+		let active = true;
+
+		invoke<any>("career_get").then(reply => { if (active) onResponse(reply); }).catch(error => { if (active) onResponse({ success: false, error: String(error) }); });
+
+		return () => { active = false; };
+}, [t, reloadKey]);
 
 	const competitiveMatches: any[] = data?.competitiveUpdates?.Matches ?? [];
 	const matches = useMemo(

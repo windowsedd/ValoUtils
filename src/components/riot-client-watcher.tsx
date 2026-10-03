@@ -1,3 +1,5 @@
+import { listenEvent } from "@/util/ipc";
+import { isTauri } from "@tauri-apps/api/core";
 import React, { useEffect } from "react";
 import { useDynamicModal } from "@/components/dynamic-modal.tsx";
 import { Button as NextUIButton } from "@heroui/react";
@@ -8,8 +10,8 @@ interface RiotClientWatcherProps {
 const RiotClientWatcher = ({ children }: RiotClientWatcherProps) => {
     const { showModal, closeModal } = useDynamicModal();
     useEffect(() => {
-        if (window.Main) {
-            window.Main.on("riot_client:disconnect", (message: string) => {
+        if (isTauri()) {
+            const applyResponse = (message: any) => {
                 console.log(message);
                 showModal({
                     title: "Riot Client Disconnected!",
@@ -27,9 +29,9 @@ const RiotClientWatcher = ({ children }: RiotClientWatcherProps) => {
                         </NextUIButton>
                     )
                 });
-            });
+            }; const stopIpcReply1 = listenEvent("riot_client:disconnect", applyResponse);
             return () => {
-                window.Main.removeAllListeners("riot_client:disconnect");
+                stopIpcReply1();
             }
         }
     }, [showModal, closeModal]);

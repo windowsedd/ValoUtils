@@ -46,41 +46,53 @@ src-tauri/         Rust backend (Tauri)
   valoutils.key    Updater signing private key (gitignored — NEVER commit)
 
 src/               Frontend (WebView context)
-  main.tsx         React entry (imports util/tauri-bridge first)
+  main.tsx         React entry
   pages/           SettingsProfiles, PlayerCareer, LiveGame, Chat, Store, BattlePass, Settings, About
   components/      parsed-settings-viewer, settings-diff-viewer, crosshair-svg-generator,
                    dynamic-modal, button (CustomButton), alert-container, router
   util/
-    tauri-bridge.ts  window.Main compatibility shim over invoke()/listen() — see IPC below
-    riot-client.ts   Frontend helpers (via window.Main)
+    ipc.ts          Event subscription cleanup and transport-error reporting
+    riot-client.ts   Typed frontend helpers (via Tauri invoke)
     share.ts         getData(code) → share_get_data command
   types/           Shared TypeScript types
 ```
 
 ## IPC Architecture
 
-The frontend still uses the Electron-era `window.Main.send/on/removeAllListeners` API everywhere. It's provided by the shim in [src/util/tauri-bridge.ts](src/util/tauri-bridge.ts), which maps:
-
-- `send("settings:profile:load", name)` → `invoke("settings_profile_load", { args: [name] })` — channel names have `:` and `-` replaced with `_` to form the Rust command name
-- The command's returned JSON string is delivered to callbacks registered with `on(channel, cb)`
-- `on` also subscribes to a same-named **Tauri event**, so Rust-side pushes (`app.emit("alert:info", ...)`, `update:*`) reach the same callbacks
+The frontend calls Tauri commands directly with `invoke<T>()`. Each request gets
+its own Promise reply; replies are never broadcast to other callers.
 
 ```ts
-// frontend sends
-window.Main.send("settings:profile:load", profileName);
-// frontend listens for reply
-window.Main.on("settings:profile:load", (message: string) => {
-  const data = JSON.parse(message);
-  // handle data.error or data.success
-  window.Main.removeAllListeners("settings:profile:load");
-});
+import { invoke } from "@tauri-apps/api/core";
+
+const data = await invoke<{ success: boolean; error?: string }>(
+  "settings_profile_load",
+  { args: [profileName] },
+);
+// Handle data.error / data.success; no JSON.parse or reply listener needed.
 ```
 
-Rust command conventions (see any file in `src-tauri/src/commands/`):
+Rust command conventions:
 
-- Signature: `pub async fn foo(args: Vec<Value>, ...) -> Result<String, ()>` — positional string args, returns a JSON **string**
-- Reply shape: `{ success: true, ... }` or `{ error: string, success: false }` — never reject the invoke for expected failures
-- Push-style channels use `app.emit(channel, payload)`: `alert:info`, `update:checking/available/not-available/error/download-progress/downloaded`, and `settings:profile:list` (re-emitted after every profile mutation)
+- JSON replies return `serde_json::Value` (usually `Result<Value, ()>`) or a
+  serializable type, with positional `args: Vec<Value>` retained where needed.
+- Expected failures remain `{ success: false, error: string }` or a feature's
+  existing error shape. Transport failures reject the Promise; every call must
+  handle rejection so pending UI state can finish.
+- Local Riot Client errors stay typed as `RiotError` through login classification.
+  Commands retain text in `error` and expose `code` (`loginRequired`,
+  `malformedLockfile`, `lockfileReadFailed`, `timeout`, or `unavailable`).
+  Only client-unavailable/auth failures request login; never classify display
+  text or treat malformed lockfiles, timeouts, or generic HTTP 503s as login.
+- Plain-text results such as `version` and `share_get_data` remain strings.
+- Backend pushes use `app.emit(channel, payload)` with structured payloads.
+  `listenEvent<T>(channel, callback)` in `src/util/ipc.ts` unwraps the event and
+  returns cleanup immediately, including when registration finishes after
+  cleanup. Return/call that cleanup from the owning React effect.
+- Push channels include `alert:info`, `update:*`, `settings:profile:list`,
+  `presence:status-changed`, `chat:message`, `chat:presence`, `match:details`,
+  `live-game:fetch`, `live-game:player-stats`, and `live-game:phase`. Some names
+  also describe a command reply, but replies and subscriptions are independent.
 
 ### IPC Channels
 
@@ -220,10 +232,10 @@ Riot chat is XMPP over raw TLS to `<affinity>.chat.si.riotgames.com:5223`, with 
 
 ### Add a new IPC channel
 
-1. Add a `#[tauri::command]` in the matching `src-tauri/src/commands/*.rs` module (signature: `args: Vec<Value>` in, JSON `String` out)
+1. Add a `#[tauri::command]` in the matching `src-tauri/src/commands/*.rs` module (`args: Vec<Value>` in where needed, structured `Value` or a serializable type out)
 2. Register it in the `generate_handler![]` list in `src-tauri/src/lib.rs`
-3. Call it from the frontend via `window.Main.send("my:channel", ...)` — the bridge converts the name to `my_channel` automatically. Reply with `{ success: true, ... }` or `{ error: string }`
-4. For backend-initiated pushes, use `app.emit("my:event", payload)` and `window.Main.on("my:event", ...)` — no command needed
+3. Call it with `await invoke<Response>("my_channel", { args: [...] })`; use the actual registered Rust command name. Reply with `{ success: true, ... }` or the feature's error shape and handle rejected Promises.
+4. For backend pushes, use `app.emit("my:event", payload)` and `listenEvent<Response>("my:event", callback)`; clean up the subscription in the owning effect.
 
 ### Chat certificate identities
 
@@ -296,7 +308,7 @@ both manual launches and Windows sign-in launches, and does not move other apps.
 - The Riot Client lockfile may not exist if Riot Client is not running — `get_riot_client_info()` returns `Err` in that case; commands surface it as `{ error }` JSON.
 - Riot's localhost HTTPS uses a self-signed cert. `riot/client.rs` uses a reqwest client with `danger_accept_invalid_certs(true)` — this is intentional and must stay scoped to the local client only.
 - Tauri command names can't contain `:` or `-` — the bridge maps channel `settings:profile:list` → command `settings_profile_list`. Keep them in sync.
-- Rust commands should return expected failures as `Ok(json with error field)`, not `Err` — the bridge logs `Err` to console and drops it.
+- Rust commands return expected failures as structured `Ok(json with error field)`. Handle `invoke()` rejections explicitly; background actions can use `reportIpcError` to log and show an error toast.
 - Profile names are unique keys; duplicate-name detection happens in `settings_profile_rename`.
 - Share codes are 10 characters and expire after 90 days.
 - Settings blobs must be at least ~2500 chars of valid base64 to be accepted as a profile (validation in `SettingsProfiles.tsx`).

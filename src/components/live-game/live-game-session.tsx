@@ -1,4 +1,6 @@
-import { isCurrentStatsAttempt, livePlayerStatsKey, liveStatsRequestKey, playersNeedingLiveStats, shouldRequestLiveStats } from "@/components/live-game/live-game-events";
+import { listenEvent } from "@/util/ipc";
+import { invoke } from "@tauri-apps/api/core";
+import { isCurrentStatsAttempt, livePlayerStatsKey, liveStatsRequestKey, playersNeedingLiveStats, shouldPauseLiveRequests, shouldRequestLiveStats } from "@/components/live-game/live-game-events";
 import type { LiveGameResponse, RecentStatsEvent, RecentStatsState } from "@/types/live-game";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -33,32 +35,39 @@ const useLiveGameSessionState = (): LiveGameSession => {
 	const [loginRequired, setLoginRequired] = useState(false);
 	const [loading, setLoading] = useState(true);
 	const [refreshing, setRefreshing] = useState(false);
+	const mounted = useRef(false);
 	const rosterKeyRef = useRef<string | null>(null);
 	const requestedStatsKeyRef = useRef<string | null>(null);
 	const statsAttemptRef = useRef(0);
 	const pollDelayRef = useRef(POLL_MS);
+	const pausedForMatchRef = useRef(false);
+	const snapshotRef = useRef<Snapshot | null>(null);
 	const statsThrottledRef = useRef(false);
 	const recentRef = useRef(recent);
 	recentRef.current = recent;
 
-	const requestSnapshot = useCallback(() => {
-		if (!window.Main) return;
-		if (rosterKeyRef.current) setRefreshing(true);
-		else setLoading(true);
-		window.Main.send("live-game:fetch");
-	}, []);
-	const refreshSnapshot = useCallback(() => {
-		requestedStatsKeyRef.current = null;
-		requestSnapshot();
-	}, [requestSnapshot]);
+	const onStatsCommand = useCallback((message: StatsCommandResponse) => {
+		if (!mounted.current) return;
+			try {
+				const response = message as StatsCommandResponse;
+				if (response.success || response.rosterKey !== requestedStatsKeyRef.current || !isCurrentStatsAttempt(response.attemptId, statsAttemptRef.current)) return;
+				if (response.error === "rateLimited") statsThrottledRef.current = true;
+				setRecent((current) => Object.fromEntries(
+					Object.entries(current).map(([puuid, state]) => [
+						puuid,
+						state.status === "loading" ? { status: "error", error: response.error } : state,
+					]),
+				));
+			} catch {
+				// The per-player event listener remains authoritative for valid responses.
+			}
+		}, []);
 
-	useEffect(() => {
-		if (!window.Main) return;
-
-		const onSnapshot = (message: string) => {
+const onSnapshot = useCallback((message: LiveGameResponse) => {
+		if (!mounted.current) return;
 			let response: LiveGameResponse;
 			try {
-				response = JSON.parse(message) as LiveGameResponse;
+				response = message as LiveGameResponse;
 			} catch {
 				setLoading(false);
 				setRefreshing(false);
@@ -86,8 +95,14 @@ const useLiveGameSessionState = (): LiveGameSession => {
 				? t("liveGame.rateLimited", { seconds: response.retryInSeconds ?? 60 })
 				: response.warning === "unavailable" ? t("liveGame.failedToLoad") : null);
 			setSnapshot(response);
+			snapshotRef.current = response;
 			rosterKeyRef.current = response.state === "idle" ? null : response.rosterKey;
 			pollDelayRef.current = response.state === "idle" ? IDLE_POLL_MS : POLL_MS;
+			if (response.state === "coregame") {
+				pausedForMatchRef.current = true;
+				return;
+			}
+			if (pausedForMatchRef.current) return;
 
 			if (response.state === "idle") {
 				requestedStatsKeyRef.current = null;
@@ -120,13 +135,47 @@ const useLiveGameSessionState = (): LiveGameSession => {
 				})));
 				if (needed.length === 0) return;
 				const attemptId = ++statsAttemptRef.current;
-				window.Main.send("live-game:stats", statsKey, needed, attemptId, queueId);
+				invoke<StatsCommandResponse>("live_game_stats", { args: [statsKey, needed, attemptId, queueId] }).then(onStatsCommand).catch(error => onStatsCommand({ success: false, rosterKey: statsKey, attemptId, error: String(error) }));
+			}
+		}, [t, onStatsCommand]);
+
+const requestSnapshot = useCallback(() => {
+
+		pausedForMatchRef.current = false;
+		if (rosterKeyRef.current) setRefreshing(true);
+		else setLoading(true);
+		invoke<LiveGameResponse>("live_game_fetch").then(onSnapshot).catch(error => onSnapshot({ success: false, error: String(error) }));
+	}, [onSnapshot]);
+
+	const refreshSnapshot = useCallback(() => {
+		requestedStatsKeyRef.current = null;
+		requestSnapshot();
+	}, [requestSnapshot]);
+
+	useEffect(() => {
+const onVisibility = () => {
+			if (document.hidden) return;
+			window.clearTimeout(timer);
+			poll();
+		};
+
+const onPhase = (phase: string) => {
+			if (phase === "coregame") {
+				const current = snapshotRef.current;
+				if (current && shouldPauseLiveRequests(current.state, current.players.length, current.match?.queueId)) {
+					pausedForMatchRef.current = true;
+				}
+			} else if (phase === "ended" || phase === "pregame") {
+				if (!pausedForMatchRef.current) return;
+				pausedForMatchRef.current = false;
+				window.clearTimeout(timer);
+				poll();
 			}
 		};
 
-		const onPlayerStats = (message: string) => {
+const onPlayerStats = (message: RecentStatsEvent) => {
 			try {
-				const event = JSON.parse(message) as RecentStatsEvent;
+				const event = message as RecentStatsEvent;
 				if (event.rosterKey !== requestedStatsKeyRef.current || !isCurrentStatsAttempt(event.attemptId, statsAttemptRef.current)) return;
 				if (!event.success && event.error === "rateLimited") statsThrottledRef.current = true;
 				setRecent((current) => {
@@ -144,48 +193,36 @@ const useLiveGameSessionState = (): LiveGameSession => {
 			}
 		};
 
-		const onStatsCommand = (message: string) => {
-			try {
-				const response = JSON.parse(message) as StatsCommandResponse;
-				if (response.success || response.rosterKey !== requestedStatsKeyRef.current || !isCurrentStatsAttempt(response.attemptId, statsAttemptRef.current)) return;
-				if (response.error === "rateLimited") statsThrottledRef.current = true;
-				setRecent((current) => Object.fromEntries(
-					Object.entries(current).map(([puuid, state]) => [
-						puuid,
-						state.status === "loading" ? { status: "error", error: response.error } : state,
-					]),
-				));
-			} catch {
-				// The per-player event listener remains authoritative for valid responses.
-			}
-		};
+		mounted.current = true;
 
-		// Keep polling while the app is open, including other pages. A hidden window
-		// still has nobody reading the roster, so skip those ticks.
+		let active = true;
+
+		// Watch pregame even on other pages, then pause once the match starts.
+		// A hidden window has nobody reading the roster, so skip those ticks.
 		let timer = 0;
 		const poll = () => {
-			if (!document.hidden) window.Main.send("live-game:fetch");
+			if (!document.hidden && !pausedForMatchRef.current) invoke<LiveGameResponse>("live_game_fetch").then(reply => { if (active) onSnapshot(reply); }).catch(error => { if (active) onSnapshot({ success: false, error: String(error) }); });
 			timer = window.setTimeout(poll, pollDelayRef.current);
 		};
-		const onVisibility = () => {
-			if (document.hidden) return;
-			window.clearTimeout(timer);
-			poll();
-		};
 
-		window.Main.on("live-game:fetch", onSnapshot);
-		window.Main.on("live-game:stats", onStatsCommand);
-		window.Main.on("live-game:player-stats", onPlayerStats);
+		const stopSnapshot = listenEvent("live-game:fetch", onSnapshot);
+
+		const stopPlayerStats = listenEvent("live-game:player-stats", onPlayerStats);
+		const stopPhase = listenEvent("live-game:phase", onPhase);
 		document.addEventListener("visibilitychange", onVisibility);
 		poll();
 		return () => {
+		mounted.current = false;
+active = false;
+
 			window.clearTimeout(timer);
 			document.removeEventListener("visibilitychange", onVisibility);
-			window.Main.removeListener("live-game:fetch", onSnapshot);
-			window.Main.removeListener("live-game:stats", onStatsCommand);
-			window.Main.removeListener("live-game:player-stats", onPlayerStats);
+			stopSnapshot();
+
+			stopPlayerStats();
+			stopPhase();
 		};
-	}, [t]);
+	}, [t, onSnapshot]);
 
 	return useMemo(
 		() => ({ snapshot, recent, error, loginRequired, loading, refreshing, requestSnapshot, refreshSnapshot }),

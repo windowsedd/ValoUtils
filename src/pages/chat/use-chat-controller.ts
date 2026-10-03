@@ -1,3 +1,5 @@
+import { listenEvent } from "@/util/ipc";
+import { invoke } from "@tauri-apps/api/core";
 import type {
   ChatChannel,
   ChatConversation,
@@ -56,14 +58,6 @@ let requestSequence = 0;
 const nextRequestId = (kind: "history" | "send" | "translate" | "command") =>
   `${kind}-${Date.now()}-${++requestSequence}`;
 
-const parsePayload = <T>(payload: string): T | null => {
-  try {
-    return JSON.parse(payload) as T;
-  } catch {
-    return null;
-  }
-};
-
 export const useChatController = () => {
   const [state, dispatch] = useReducer(chatControllerReducer, initialChatControllerState);
   const [summary, setSummary] = useState<ChatSummary>(emptySummary);
@@ -83,25 +77,12 @@ export const useChatController = () => {
   const [markedUnreadByCid, setMarkedUnreadByCid] = useState<Record<string, number>>(() => ({
     ...sessionMarkedUnread,
   }));
+	const mounted = useRef(false);
   const translationMessageRef = useRef<string | null>(null);
-  const commandRef = useRef<{ cid: string; command: string } | null>(null);
 
-  const refreshSummary = useCallback(() => {
-    window.Main?.send("chat:get");
-  }, []);
-
-  const requestHistory = useCallback((cid: string, supportsHistory: boolean) => {
-    if (!cid || !supportsHistory || channelForCid(cid) !== "friends") return;
-    const requestId = nextRequestId("history");
-    dispatch({ type: "historyStarted", cid, requestId });
-    window.Main.send("chat:history", requestId, cid);
-  }, []);
-
-  useEffect(() => {
-    if (!window.Main) return;
-
-    const onSummary = (payload: string) => {
-      const response = parsePayload<ChatResponse>(payload);
+  const onSummary = useCallback((payload: ChatResponse) => {
+		if (!mounted.current) return;
+      const response = payload;
       setLoading(false);
       if (!response) {
         setSummaryError("Invalid chat summary response.");
@@ -120,10 +101,15 @@ export const useChatController = () => {
         forgetMarkedUnreadIfCleared(response.conversations, current),
       );
       dispatch({ type: "summaryMessages", messages: response.messages });
-    };
+    }, []);
 
-    const onHistory = (payload: string) => {
-      const response = parsePayload<ChatHistoryResponse>(payload);
+const refreshSummary = useCallback(() => {
+    invoke<ChatResponse>("chat_get").then(onSummary).catch(error => onSummary({ success: false, error: String(error) }));
+  }, [onSummary]);
+
+const onHistory = useCallback((payload: ChatHistoryResponse) => {
+		if (!mounted.current) return;
+      const response = payload;
       if (!response) return;
       if (response.success) {
         dispatch({
@@ -149,52 +135,66 @@ export const useChatController = () => {
         requestId: response.requestId,
         error: response.error,
       });
-    };
+    }, []);
 
-    const onRealtimeMessage = (payload: string) => {
-      const message = parsePayload<ChatMessage>(payload);
-      if (!message?.conversationId || !message.id) return;
-      dispatch({ type: "realtimeMessage", message });
-    };
+const requestHistory = useCallback((cid: string, supportsHistory: boolean) => {
+    if (!cid || !supportsHistory || channelForCid(cid) !== "friends") return;
+    const requestId = nextRequestId("history");
+    dispatch({ type: "historyStarted", cid, requestId });
+    invoke<ChatHistoryResponse>("chat_history", { args: [requestId, cid] }).then(onHistory).catch(error => onHistory({ success: false, requestId, cid, code: "unavailable", error: String(error) }));
+  }, [onHistory]);
 
-    const onPresence = (payload: string) => {
-      const snapshot = parsePayload<ChatPresenceSnapshot>(payload);
-      if (
-        !snapshot ||
-        !(["syncing", "ready", "reconnecting"] as const).includes(snapshot.state) ||
-        !Number.isFinite(snapshot.generation) ||
-        !snapshot.friends ||
-        typeof snapshot.friends !== "object"
-      ) {
-        return;
-      }
-      setSummary((current) => ({
-        ...current,
-        friends: applyPresenceSnapshot(current.friends, snapshot),
-      }));
-    };
-
-    const onSend = (payload: string) => {
-      const response = parsePayload<ChatSendResponse>(payload);
-      if (!response) return;
-      if (response.success) {
-        dispatch({
-          type: "sendSucceeded",
-          requestId: response.requestId,
-          sentAt: new Date().toISOString(),
-        });
-        requestHistory(response.cid, response.type === "chat");
-        return;
-      }
+const onCommand = useCallback((payload: CommandResponse, pending: { cid: string; command: string }) => {
+		if (!mounted.current) return;
+      const response = payload;
       dispatch({
-        type: "sendFailed",
-        requestId: response.requestId,
-        error: response.error,
+        type: "commandResult",
+        cid: pending.cid,
+        id: nextRequestId("command"),
+        command: pending.command,
+        body: response
+          ? response.success
+            ? response.reply
+            : response.error
+          : "Invalid command response.",
+        failed: !response?.success,
       });
-    };
+    }, []);
 
-    const onTranslate = (payload: string) => {
-      const response = parsePayload<TranslateResponse>(payload);
+const onMarkRead = useCallback((payload: { success: boolean; cid?: string; error?: string }) => {
+		if (!mounted.current) return;
+      const response = payload;
+      // A failed mark-read used to vanish: nothing listened on this channel,
+      // so the badge stayed hidden while the game still showed the messages
+      // as unread. Put the count back and say why.
+      if (response && !response.success) {
+        const cid = response.cid ?? "";
+        if (cid) setMarkedUnreadByCid((current) => forgetMarkedUnread(cid, current));
+        setMarkReadError(response.error || "Could not mark the conversation as read.");
+        return;
+      }
+      setMarkReadError(null);
+    }, []);
+
+const onFriendAction = useCallback((payload: FriendActionResponse) => {
+		if (!mounted.current) return;
+      const response = payload;
+      setPendingFriendAction(null);
+      if (!response) {
+        setFriendActionError("Invalid friend action response.");
+        return;
+      }
+      if (!response.success) {
+        setFriendActionError(response.error);
+        return;
+      }
+      setFriendActionError(null);
+      refreshSummary();
+    }, [refreshSummary]);
+
+const onTranslate = useCallback((payload: TranslateResponse) => {
+		if (!mounted.current) return;
+      const response = payload;
       const messageId = translationMessageRef.current;
       translationMessageRef.current = null;
       setTranslatingMessageId(null);
@@ -215,81 +215,128 @@ export const useChatController = () => {
         ...current,
         [messageId]: response.translatedText,
       }));
-    };
+    }, []);
 
-    const onFriendAction = (payload: string) => {
-      const response = parsePayload<FriendActionResponse>(payload);
-      setPendingFriendAction(null);
-      if (!response) {
-        setFriendActionError("Invalid friend action response.");
+const onSend = useCallback((payload: ChatSendResponse) => {
+		if (!mounted.current) return;
+      const response = payload;
+      if (!response) return;
+      if (response.success) {
+        dispatch({
+          type: "sendSucceeded",
+          requestId: response.requestId,
+          sentAt: new Date().toISOString(),
+        });
+        requestHistory(response.cid, response.type === "chat");
         return;
       }
-      if (!response.success) {
-        setFriendActionError(response.error);
-        return;
-      }
-      setFriendActionError(null);
-      refreshSummary();
-    };
-
-    const onMarkRead = (payload: string) => {
-      const response = parsePayload<{ success: boolean; cid?: string; error?: string }>(payload);
-      // A failed mark-read used to vanish: nothing listened on this channel,
-      // so the badge stayed hidden while the game still showed the messages
-      // as unread. Put the count back and say why.
-      if (response && !response.success) {
-        const cid = response.cid ?? "";
-        if (cid) setMarkedUnreadByCid((current) => forgetMarkedUnread(cid, current));
-        setMarkReadError(response.error || "Could not mark the conversation as read.");
-        return;
-      }
-      setMarkReadError(null);
-    };
-
-    const onCommand = (payload: string) => {
-      // The command that produced this reply — the reply itself carries no
-      // room, and the player may have switched channels while it ran.
-      const pending = commandRef.current;
-      commandRef.current = null;
-      if (!pending) return;
-      const response = parsePayload<CommandResponse>(payload);
       dispatch({
-        type: "commandResult",
-        cid: pending.cid,
-        id: nextRequestId("command"),
-        command: pending.command,
-        body: response
-          ? response.success
-            ? response.reply
-            : response.error
-          : "Invalid command response.",
-        failed: !response?.success,
+        type: "sendFailed",
+        requestId: response.requestId,
+        error: response.error,
       });
+    }, [requestHistory]);
+
+const markConversationRead = useCallback((cid: string) => {
+      if (!cid) return;
+      const conversation = summary.conversations.find((item) => item.cid === cid);
+      const riotUnread = conversation?.unreadCount ?? 0;
+      const markedAt = rememberMarkedUnread(cid, riotUnread);
+      setMarkedUnreadByCid((current) =>
+        current[cid] === markedAt ? current : { ...current, [cid]: markedAt },
+      );
+      if (riotUnread <= 0) return;
+      const mid = lastConversationMessageId(
+        [...summary.messages, ...(state.historyByCid[cid] ?? [])],
+        cid,
+        conversation?.mid ?? "",
+      );
+      invoke<any>("chat_mark_read", { args: [cid, mid, conversation?.type ?? "chat"] }).then(onMarkRead).catch(error => onMarkRead({ success: false, cid, error: String(error) }));
+    }, [state.historyByCid, summary.conversations, summary.messages, onMarkRead]);
+
+const sendMessage = useCallback(() => {
+    if (state.pendingSendId) return;
+    const selectedCid = state.selectedCid;
+    const text = selectedCid ? (state.draftByCid[selectedCid] ?? "").trim() : "";
+    if (!text || !selectedCid) return;
+    // A command is routed to its executor instead of being posted. Sending
+    // it as a message would leak the raw line to the room and then have the
+    // poller run it a second time when it read our own message back.
+    if (isComposerCommand(text)) {
+      const pending = { cid: selectedCid, command: text };
+      dispatch({ type: "setDraft", cid: selectedCid, draft: "" });
+      // The selected conversation goes along so a command with no destination
+      // of its own (.ascii) knows which room the player is looking at. The
+      // backend reads only the channel out of it.
+      invoke<CommandResponse>("chat_command", { args: [text, selectedCid] }).then(response => onCommand(response, pending)).catch(error => onCommand({ success: false, error: String(error) }, pending));
+      return;
+    }
+    const requestId = nextRequestId("send");
+    dispatch({ type: "sendStarted", requestId, cid: selectedCid, body: text });
+    invoke<ChatSendResponse>("chat_send", { args: [requestId, selectedCid, text] }).then(onSend).catch(error => onSend({ success: false, requestId, cid: selectedCid, error: String(error) }));
+  }, [state.draftByCid, state.pendingSendId, state.selectedCid, onCommand, onSend]);
+
+const translateMessage = useCallback((message: ChatMessage) => {
+      if (translatingMessageId) return;
+      const messageKey = chatMessageKey(message);
+      translationMessageRef.current = messageKey;
+      setTranslatingMessageId(messageKey);
+      setTranslationErrorByMessageId((current) => {
+        const next = { ...current };
+        delete next[messageKey];
+        return next;
+      });
+      nextRequestId("translate");
+      invoke<TranslateResponse>("chat_translate", { args: [message.body] }).then(onTranslate).catch(error => onTranslate({ success: false, error: String(error) }));
+    }, [translatingMessageId, onTranslate]);
+
+const runFriendAction = useCallback((action: FriendAction, friend: ChatFriend) => {
+      if (pendingFriendAction) return;
+      setPendingFriendAction(friend.puuid);
+      setFriendActionError(null);
+      invoke<FriendActionResponse>("chat_friend_action", { args: [action, friend] }).then(onFriendAction).catch(error => onFriendAction({ success: false, error: String(error) }));
+    }, [pendingFriendAction, onFriendAction]);
+
+	useEffect(() => {
+const onPresence = (payload: ChatPresenceSnapshot) => {
+      const snapshot = payload;
+      if (
+        !snapshot ||
+        !(["syncing", "ready", "reconnecting"] as const).includes(snapshot.state) ||
+        !Number.isFinite(snapshot.generation) ||
+        !snapshot.friends ||
+        typeof snapshot.friends !== "object"
+      ) {
+        return;
+      }
+      setSummary((current) => ({
+        ...current,
+        friends: applyPresenceSnapshot(current.friends, snapshot),
+      }));
     };
 
-    window.Main.on("chat:get", onSummary);
-    window.Main.on("chat:history", onHistory);
-    window.Main.on("chat:message", onRealtimeMessage);
-    window.Main.on("chat:presence", onPresence);
-    window.Main.on("chat:send", onSend);
-    window.Main.on("chat:command", onCommand);
-    window.Main.on("chat:translate", onTranslate);
-    window.Main.on("chat:friend-action", onFriendAction);
-    window.Main.on("chat:mark-read", onMarkRead);
+const onRealtimeMessage = (payload: ChatMessage) => {
+      const message = payload;
+      if (!message?.conversationId || !message.id) return;
+      dispatch({ type: "realtimeMessage", message });
+    };
+
+		mounted.current = true;
+
+    const stopRealtimeMessage = listenEvent("chat:message", onRealtimeMessage);
+    const stopPresence = listenEvent("chat:presence", onPresence);
+
     refreshSummary();
     const interval = window.setInterval(refreshSummary, POLL_MS);
 
     return () => {
+		mounted.current = false;
+
       window.clearInterval(interval);
-      window.Main.removeListener("chat:get", onSummary);
-      window.Main.removeListener("chat:history", onHistory);
-      window.Main.removeListener("chat:message", onRealtimeMessage);
-      window.Main.removeListener("chat:presence", onPresence);
-      window.Main.removeListener("chat:send", onSend);
-      window.Main.removeListener("chat:command", onCommand);
-      window.Main.removeListener("chat:translate", onTranslate);
-      window.Main.removeListener("chat:friend-action", onFriendAction);
-      window.Main.removeListener("chat:mark-read", onMarkRead);
+
+      stopRealtimeMessage();
+      stopPresence();
+
     };
   }, [refreshSummary, requestHistory]);
 
@@ -340,26 +387,6 @@ export const useChatController = () => {
     ],
   );
 
-  const markConversationRead = useCallback(
-    (cid: string) => {
-      if (!cid) return;
-      const conversation = summary.conversations.find((item) => item.cid === cid);
-      const riotUnread = conversation?.unreadCount ?? 0;
-      const markedAt = rememberMarkedUnread(cid, riotUnread);
-      setMarkedUnreadByCid((current) =>
-        current[cid] === markedAt ? current : { ...current, [cid]: markedAt },
-      );
-      if (riotUnread <= 0) return;
-      const mid = lastConversationMessageId(
-        [...summary.messages, ...(state.historyByCid[cid] ?? [])],
-        cid,
-        conversation?.mid ?? "",
-      );
-      window.Main?.send("chat:mark-read", cid, mid, conversation?.type ?? "chat");
-    },
-    [state.historyByCid, summary.conversations, summary.messages],
-  );
-
   const selectConversation = useCallback(
     (cid: string) => {
       dispatch({ type: "selectConversation", cid });
@@ -402,55 +429,6 @@ export const useChatController = () => {
       if (state.selectedCid) dispatch({ type: "setDraft", cid: state.selectedCid, draft });
     },
     [state.selectedCid],
-  );
-
-  const sendMessage = useCallback(() => {
-    if (state.pendingSendId) return;
-    const selectedCid = state.selectedCid;
-    const text = selectedCid ? (state.draftByCid[selectedCid] ?? "").trim() : "";
-    if (!text || !selectedCid) return;
-    // A command is routed to its executor instead of being posted. Sending
-    // it as a message would leak the raw line to the room and then have the
-    // poller run it a second time when it read our own message back.
-    if (isComposerCommand(text)) {
-      commandRef.current = { cid: selectedCid, command: text };
-      dispatch({ type: "setDraft", cid: selectedCid, draft: "" });
-      // The selected conversation goes along so a command with no destination
-      // of its own (.ascii) knows which room the player is looking at. The
-      // backend reads only the channel out of it.
-      window.Main.send("chat:command", text, selectedCid);
-      return;
-    }
-    const requestId = nextRequestId("send");
-    dispatch({ type: "sendStarted", requestId, cid: selectedCid, body: text });
-    window.Main.send("chat:send", requestId, selectedCid, text);
-  }, [state.draftByCid, state.pendingSendId, state.selectedCid]);
-
-  const translateMessage = useCallback(
-    (message: ChatMessage) => {
-      if (translatingMessageId) return;
-      const messageKey = chatMessageKey(message);
-      translationMessageRef.current = messageKey;
-      setTranslatingMessageId(messageKey);
-      setTranslationErrorByMessageId((current) => {
-        const next = { ...current };
-        delete next[messageKey];
-        return next;
-      });
-      nextRequestId("translate");
-      window.Main.send("chat:translate", message.body);
-    },
-    [translatingMessageId],
-  );
-
-  const runFriendAction = useCallback(
-    (action: FriendAction, friend: ChatFriend) => {
-      if (pendingFriendAction) return;
-      setPendingFriendAction(friend.puuid);
-      setFriendActionError(null);
-      window.Main.send("chat:friend-action", action, friend);
-    },
-    [pendingFriendAction],
   );
 
   const allCachedMessages = useMemo(

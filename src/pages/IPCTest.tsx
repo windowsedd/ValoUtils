@@ -1,49 +1,17 @@
-import React, { useEffect } from "react";
-import CustomButton from "@/components/button.tsx";
-import { useDynamicModal } from "@/components/dynamic-modal.tsx";
-import { Button as NextUIButton } from "@heroui/react";
+import { invoke } from "@tauri-apps/api/core";
+
+import CustomButton from "@/components/button";
+import { useDynamicModal } from "@/components/dynamic-modal";
+import { Button } from "@heroui/react";
 
 function IPCTest() {
   const { showModal, closeModal } = useDynamicModal();
-  const [sent, setSent] = React.useState<boolean>(false);
-  useEffect(() => {
-    console.log("IPCTest mounted");
-    if (window.Main) {
-      window.Main.on("client_info:get", (message: string) => {
-        console.log(message);
-        showModal({
-          title: "Message",
-          body: message,
-          footer: (
-            <NextUIButton
-              variant={"danger"}
-              onPress={closeModal}
-            >
-              Close
-            </NextUIButton>
-          )
-        });
-        setSent(false);
-      });
-      return () => {
-        console.log("IPCTest unmounted");
-        window.Main.removeAllListeners("client_info:get");
-      }
-    }
-  }, [showModal, closeModal]);
-  return (
-    <>
-      <h1 className={"text-4xl font-bold text-center mt-4"}>Hello World</h1>
-      <CustomButton onPress={() => {
-        if (window.Main) {
-          window.Main.send("client_info:get", "dummy");
-          setSent(true);
-        }
-      }} isLoading={sent}>
-        Send
-      </CustomButton>
-    </>
-  );
+  return <>
+    <h1 className="text-4xl font-bold text-center mt-4">Hello World</h1>
+    <CustomButton onClickLoading={async () => {
+      const message = await invoke("client_info_get");
+      showModal({ title: "Message", body: JSON.stringify(message, null, 2), footer: <Button variant="danger" onPress={closeModal}>Close</Button> });
+    }}>Send</CustomButton>
+  </>;
 }
-
 export default IPCTest;

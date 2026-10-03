@@ -1,3 +1,4 @@
+use crate::riot::error::RiotError;
 use crate::riot::api::{self, RiotApiClient};
 use crate::riot::client::RiotState;
 use serde_json::{json, Value};
@@ -307,11 +308,11 @@ fn reduce_match(
 }
 
 #[tauri::command]
-pub async fn match_list(args: Vec<Value>, riot: State<'_, RiotState>) -> Result<String, ()> {
+pub async fn match_list(args: Vec<Value>, riot: State<'_, RiotState>) -> Result<Value, ()> {
     let start = arg_u32(&args, 0).unwrap_or(0);
     let count = arg_u32(&args, 1).unwrap_or(20).clamp(1, 25);
 
-    let result: Result<Value, String> = async {
+    let result: Result<Value, RiotError> = async {
         let history = api::with_api(&riot, |api| async move {
             let history = api
                 .get_match_history(&api.puuid, start, start + count)
@@ -344,16 +345,16 @@ pub async fn match_list(args: Vec<Value>, riot: State<'_, RiotState>) -> Result<
     .await;
 
     Ok(match result {
-        Ok(value) => value.to_string(),
-        Err(e) => match super::rate_limited_reply(&e).await {
-            Some(reply) => reply.to_string(),
+        Ok(value) => value,
+        Err(e) => match super::rate_limited_reply(&e.to_string()).await {
+            Some(reply) => reply,
             None => {
                 let code = if crate::riot::client::is_login_required_error(&e) {
                     json!("loginRequired")
                 } else {
-                    Value::Null
+                    json!(e.code())
                 };
-                json!({ "success": false, "code": code, "error": e }).to_string()
+                json!({ "success": false, "code": code, "error": e })
             }
         },
     })
@@ -371,7 +372,7 @@ pub async fn match_summaries(
     app: tauri::AppHandle,
     riot: State<'_, RiotState>,
     cache: State<'_, MatchCache>,
-) -> Result<String, ()> {
+) -> Result<Value, ()> {
     use tauri::Emitter;
 
     let ids: Vec<String> = args
@@ -384,15 +385,15 @@ pub async fn match_summaries(
         })
         .unwrap_or_default();
     if ids.is_empty() {
-        return Ok(json!({ "success": true, "count": 0 }).to_string());
+        return Ok(json!({ "success": true, "count": 0 }));
     }
 
     let mut api = match api::create_api(&riot).await {
         Ok(api) => api,
-        Err(e) => return Ok(json!({ "success": false, "error": e }).to_string()),
+        Err(e) => return Ok(json!({ "success": false, "error": e })),
     };
 
-    let mut sent = 0usize;
+    let mut delivered = Vec::new();
     for match_id in ids {
         let key = cache_key(&api.puuid, &match_id);
         let cached = cache.0.lock().unwrap().get(&key).cloned();
@@ -431,14 +432,15 @@ pub async fn match_summaries(
                 reduced
             }
         };
-        let _ = app.emit(
+        if app.emit(
             "match:details",
-            json!({ "success": true, "match": reduced, "cached": true }).to_string(),
-        );
-        sent += 1;
+            json!({ "success": true, "match": reduced, "cached": true }),
+        ).is_ok() {
+            delivered.push(match_id);
+        }
     }
 
-    Ok(json!({ "success": true, "count": sent }).to_string())
+    Ok(json!({ "success": true, "count": delivered.len(), "delivered": delivered }))
 }
 
 #[tauri::command]
@@ -446,9 +448,9 @@ pub async fn match_details(
     args: Vec<Value>,
     riot: State<'_, RiotState>,
     cache: State<'_, MatchCache>,
-) -> Result<String, ()> {
+) -> Result<Value, ()> {
     let Some(match_id) = arg(&args, 0).filter(|s| !s.trim().is_empty()) else {
-        return Ok(json!({ "success": false, "error": "No match id" }).to_string());
+        return Ok(json!({ "success": false, "error": "No match id" }));
     };
 
     // Cheap: tokens are cached, so this doesn't hit the network in the common case.
@@ -469,10 +471,10 @@ pub async fn match_details(
         .get(&cache_key(&own_puuid, &match_id))
         .cloned()
     {
-        return Ok(json!({ "success": true, "match": hit, "cached": true }).to_string());
+        return Ok(json!({ "success": true, "match": hit, "cached": true }));
     }
 
-    let result: Result<Value, String> = async {
+    let result: Result<Value, RiotError> = async {
         let match_id = match_id.clone();
         api::with_api(&riot, move |api| {
             let match_id = match_id.clone();
@@ -498,14 +500,14 @@ pub async fn match_details(
                 .lock()
                 .unwrap()
                 .insert(cache_key(&own_puuid, &match_id), reduced.clone());
-            json!({ "success": true, "match": reduced, "cached": false }).to_string()
+            json!({ "success": true, "match": reduced, "cached": false })
         }
-        Err(e) => match super::rate_limited_reply(&e).await {
+        Err(e) => match super::rate_limited_reply(&e.to_string()).await {
             Some(mut reply) => {
                 reply["matchId"] = json!(match_id);
-                reply.to_string()
+                reply
             }
-            None => json!({ "success": false, "matchId": match_id, "error": e }).to_string(),
+            None => json!({ "success": false, "matchId": match_id, "error": e }),
         },
     })
 }

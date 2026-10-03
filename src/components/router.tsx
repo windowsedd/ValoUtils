@@ -1,3 +1,5 @@
+import { reportIpcError } from "@/util/ipc";
+import { invoke } from "@tauri-apps/api/core";
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { Route } from "@/types/router";
 import RiotStatusBar from "@/components/riot-status-bar";
@@ -76,10 +78,10 @@ const RouterProvider: React.FC<
 	const [showLogsTab, setShowLogsTab] = useState(false);
 
 	useEffect(() => {
-		const onConfigLoaded = (message: string) => {
-			window.Main.removeListener("config:get-all", onConfigLoaded);
+const onConfigLoaded = (message: any) => {
+
 			try {
-				const config = JSON.parse(message);
+				const config = message;
 				setHiddenTabs(normalizeHiddenTabs(config?.hiddenTabs));
 				setShowLogsTab(config?.showLogsTab === true);
 			} catch {
@@ -87,17 +89,21 @@ const RouterProvider: React.FC<
 				setShowLogsTab(false);
 			}
 		};
-		window.Main.on("config:get-all", onConfigLoaded);
-		window.Main.send("config:get-all");
-		return () => window.Main.removeListener("config:get-all", onConfigLoaded);
-	}, []);
+
+		let active = true;
+
+		invoke<any>("config_get_all").then(reply => { if (active) onConfigLoaded(reply); }).catch(error => { if (active) onConfigLoaded({ success: false, error: String(error) }); });
+
+		return () => { active = false; };
+}, []);
 
 	useEffect(() => {
-		const onConfigChanged = (event: Event) => {
+const onConfigChanged = (event: Event) => {
 			const detail = (event as CustomEvent<{ key?: string; value?: unknown }>).detail;
 			if (detail?.key === "hiddenTabs") setHiddenTabs(normalizeHiddenTabs(detail.value));
 			if (detail?.key === "showLogsTab") setShowLogsTab(detail.value === true);
 		};
+
 		window.addEventListener("valoutils:config-changed", onConfigChanged);
 		return () => window.removeEventListener("valoutils:config-changed", onConfigChanged);
 	}, []);
@@ -125,7 +131,7 @@ const Router = () => {
 
 	const selectRoute = (routeId: string) => {
 		goTo(routeId);
-		window.Main.send("analytics:track", "tab_change", JSON.stringify({ tab: routeId }));
+		invoke("analytics_track", { args: ["tab_change", JSON.stringify({ tab: routeId })] }).catch(reportIpcError);
 	};
 
 	return (

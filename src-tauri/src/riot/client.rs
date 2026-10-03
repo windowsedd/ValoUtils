@@ -1,3 +1,4 @@
+use crate::riot::{error::RiotError, lockfile};
 use serde_json::Value;
 use std::sync::Mutex;
 use std::time::SystemTime;
@@ -19,59 +20,28 @@ pub struct RiotClientInfo {
     pub protocol: String,
 }
 
-fn lockfile_path() -> std::path::PathBuf {
-    let localappdata = std::env::var("LOCALAPPDATA").unwrap_or_default();
-    std::path::PathBuf::from(localappdata)
-        .join("Riot Games")
-        .join("Riot Client")
-        .join("Config")
-        .join("lockfile")
-}
-
 fn insecure_client() -> &'static reqwest::Client {
     static CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
     CLIENT.get_or_init(|| {
         reqwest::Client::builder()
             .danger_accept_invalid_certs(true)
+            .no_proxy()
+            .timeout(std::time::Duration::from_secs(10))
             .build()
             .expect("failed to build insecure reqwest client")
     })
 }
 
-fn local_client_unavailable_error(path: &str) -> String {
-    format!(
-        "Riot Client is not ready (stale lockfile while requesting {path}). \
-         Make sure the Riot Client is running, then try again."
-    )
+/// Classify typed errors before converting them to display text at IPC boundaries.
+pub fn is_login_required_error(error: &RiotError) -> bool {
+    error.is_login_required()
 }
 
-/// Whether a local-API error means "nobody is signed in" rather than a real
-/// fault, so the caller can answer `{ code: "loginRequired" }` and the frontend
-/// can show its sign-in panel instead of dumping a raw HTTP error at the player.
-///
-/// Callers: `friends_get`, `chat_get`, `chat_history`, `matches_get`. Keep this
-/// the single definition — it used to be copied per command, and each copy knew
-/// about a different subset of these conditions.
-pub fn is_login_required_error(error: &str) -> bool {
-    let value = error.to_lowercase();
-    value.contains("lockfile")
-        || value.contains("connection refused")
-        || value.contains("failed to connect")
-        || value.contains("error sending request for url (https://127.0.0.1")
-        || value.contains("riot client is not running")
-        || value.contains("authentication failed")
-        || value.contains("session expired")
-        // The Riot Client is up and answering, but its chat service never came
-        // online because the player never signed in. Every chat route reports it
-        // the same way: 503 RPC_ERROR, "not connected to chat".
-        || value.contains("not connected to chat")
-}
-
-pub fn get_riot_client_info(state: &RiotState) -> Result<RiotClientInfo, String> {
-    let path = lockfile_path();
+pub fn get_riot_client_info(state: &RiotState) -> Result<RiotClientInfo, RiotError> {
+    let path = lockfile::path()?;
     let modified = std::fs::metadata(&path)
         .and_then(|m| m.modified())
-        .map_err(|e| format!("Failed to read Riot Client lockfile: {e}"))?;
+        .map_err(RiotError::from_lockfile_io)?;
 
     {
         let cache = state.lockfile_cache.lock().unwrap();
@@ -82,20 +52,14 @@ pub fn get_riot_client_info(state: &RiotState) -> Result<RiotClientInfo, String>
         }
     }
 
-    let content = std::fs::read_to_string(&path)
-        .map_err(|e| format!("Failed to read Riot Client lockfile: {e}"))?;
-    let parts: Vec<&str> = content.trim().split(':').collect();
-    if parts.len() < 5 {
-        return Err("Failed to read Riot Client lockfile: malformed contents".into());
-    }
+    let content = std::fs::read_to_string(&path).map_err(RiotError::from_lockfile_io)?;
+    let parsed = lockfile::parse(&content)?;
     let info = RiotClientInfo {
-        name: parts[0].to_string(),
-        pid: parts[1].parse().unwrap_or(0),
-        port: parts[2]
-            .parse()
-            .map_err(|_| "invalid port in lockfile".to_string())?,
-        password: parts[3].to_string(),
-        protocol: parts[4].to_string(),
+        name: parsed.name.clone(),
+        pid: parsed.pid,
+        port: parsed.port,
+        password: parsed.password().to_string(),
+        protocol: parsed.protocol.clone(),
     };
 
     *state.lockfile_cache.lock().unwrap() = Some((info.clone(), modified));
@@ -107,7 +71,7 @@ pub async fn send_internal_request(
     path: &str,
     method: reqwest::Method,
     body: Option<Value>,
-) -> Result<Value, String> {
+) -> Result<Value, RiotError> {
     let info = get_riot_client_info(state)?;
     let url = format!("{}://127.0.0.1:{}{}", info.protocol, info.port, path);
     let authorization = base64_encode(&format!("riot:{}", info.password));
@@ -122,38 +86,43 @@ pub async fn send_internal_request(
 
     let response = match req.send().await {
         Ok(response) => response,
-        Err(_) => {
+        Err(error) => {
+            let error = RiotError::from_transport(error);
+            if !error.is_login_required() {
+                return Err(error);
+            }
             *state.lockfile_cache.lock().unwrap() = None;
             *state.tokens_cache.lock().unwrap() = None;
-            return Err(local_client_unavailable_error(path));
+            return Err(error);
         }
     };
     let status = response.status();
-    let text = response.text().await.map_err(|e| e.to_string())?;
+    let text = response.text().await.map_err(RiotError::from_transport)?;
     if !status.is_success() {
-        // Every local endpoint answering 404 "Invalid URI format" means we are
-        // talking to a Riot Client that hasn't mounted its API routes — either
-        // one that is still starting up, or a dead one whose lockfile was left
-        // behind and whose port has since been reused. Both look identical over
-        // HTTP, and both are fixed the same way: drop the cached lockfile so the
-        // next call re-reads it, and report it as a "not signed in" condition so
-        // the frontend shows its login-required state instead of a raw 404.
-        //
-        // The word "lockfile" in the message is load-bearing: friends_get,
-        // chat_get and career_get map errors containing it to `loginRequired`.
-        if status == reqwest::StatusCode::NOT_FOUND && text.contains("RESOURCE_NOT_FOUND") {
+        let error = classify_local_http(status.as_u16(), &text);
+        if error.is_login_required() {
             *state.lockfile_cache.lock().unwrap() = None;
             *state.tokens_cache.lock().unwrap() = None;
-            return Err(format!(
-                "Riot Client is not ready (stale lockfile, no route for {path}). \
-                 Make sure the Riot Client is running, then try again."
-            ));
         }
-        return Err(format!(
-            "Riot Client request failed ({status}) for {path}: {text}"
-        ));
+        return Err(error);
     }
     serde_json::from_str(&text).or(Ok(Value::String(text)))
+}
+
+fn classify_local_http(status: u16, text: &str) -> RiotError {
+    let payload: Value = serde_json::from_str(text).unwrap_or(Value::Null);
+    let code = payload
+        .get("errorCode")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    let message = payload.get("message").and_then(Value::as_str).unwrap_or("");
+    match status {
+        401 | 403 => RiotError::LoginRequired,
+        404 if code == "RESOURCE_NOT_FOUND" => RiotError::RiotClientNotRunning,
+        503 if message.starts_with("not connected to chat") => RiotError::LoginRequired,
+        404 if code == "RPC_ERROR" && message == "not_found" => RiotError::ConversationNotFound,
+        _ => RiotError::LocalHttp { status },
+    }
 }
 
 fn base64_encode(input: &str) -> String {
@@ -191,7 +160,7 @@ fn access_token_ttl(tokens: &Value) -> Option<i64> {
 /// cache isn't enough — switching Riot accounts issues a brand new token
 /// without touching the lockfile, and the previous one starts failing remote
 /// calls with `BAD_CLAIMS` immediately.
-pub async fn get_tokens(state: &RiotState, skip_cache: bool) -> Result<Value, String> {
+pub async fn get_tokens(state: &RiotState, skip_cache: bool) -> Result<Value, RiotError> {
     const CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(60);
     /// Refresh early so a request can't be issued against a token that expires
     /// while it's in flight.
@@ -220,7 +189,7 @@ pub fn invalidate_tokens(state: &RiotState) {
     *state.tokens_cache.lock().unwrap() = None;
 }
 
-pub async fn get_user_info(state: &RiotState) -> Result<Value, String> {
+pub async fn get_user_info(state: &RiotState) -> Result<Value, RiotError> {
     send_internal_request(
         state,
         "/riot-client-auth/v1/userinfo",
@@ -230,7 +199,7 @@ pub async fn get_user_info(state: &RiotState) -> Result<Value, String> {
     .await
 }
 
-pub async fn swagger_spec(state: &RiotState) -> Result<Value, String> {
+pub async fn swagger_spec(state: &RiotState) -> Result<Value, RiotError> {
     send_internal_request(
         state,
         "/swagger/v3/openapi.json",
@@ -240,7 +209,7 @@ pub async fn swagger_spec(state: &RiotState) -> Result<Value, String> {
     .await
 }
 
-pub async fn get_region_locale(state: &RiotState) -> Result<Value, String> {
+pub async fn get_region_locale(state: &RiotState) -> Result<Value, RiotError> {
     send_internal_request(
         state,
         "/riotclient/region-locale",
@@ -254,7 +223,7 @@ pub async fn get_region_locale(state: &RiotState) -> Result<Value, String> {
 /// the `release-13.02-shipping-10-5229475` string Riot's game APIs want in
 /// `X-Riot-ClientVersion`. Callers must validate it — see
 /// `riot::api::looks_like_client_version`.
-pub async fn get_valorant_client_version(state: &RiotState) -> Result<String, String> {
+pub async fn get_valorant_client_version(state: &RiotState) -> Result<String, RiotError> {
     let sessions = send_internal_request(
         state,
         "/product-session/v1/external-sessions",
@@ -279,7 +248,7 @@ pub async fn get_valorant_client_version(state: &RiotState) -> Result<String, St
 /// base64 `private` blob (VALORANT presence) that includes the player's
 /// `partyId` — the only way to group players into parties during a live
 /// game, since coregame/pregame strip PartyID. Tries v4, falls back to v2.
-pub async fn get_presences(state: &RiotState) -> Result<Vec<Value>, String> {
+pub async fn get_presences(state: &RiotState) -> Result<Vec<Value>, RiotError> {
     let data = match send_internal_request(state, "/chat/v4/presences", reqwest::Method::GET, None)
         .await
     {
@@ -295,7 +264,7 @@ pub async fn get_presences(state: &RiotState) -> Result<Vec<Value>, String> {
         .unwrap_or_default())
 }
 
-pub async fn get_friends(state: &RiotState) -> Result<Vec<Value>, String> {
+pub async fn get_friends(state: &RiotState) -> Result<Vec<Value>, RiotError> {
     let data = send_internal_request(state, "/chat/v4/friends", reqwest::Method::GET, None).await?;
     Ok(data
         .get("friends")
@@ -307,7 +276,7 @@ pub async fn get_friends(state: &RiotState) -> Result<Vec<Value>, String> {
 /// Pending friend invites in both directions. Each entry carries a
 /// `subscription` of `pending_in` (they invited us) or `pending_out` (we
 /// invited them).
-pub async fn get_friend_requests(state: &RiotState) -> Result<Vec<Value>, String> {
+pub async fn get_friend_requests(state: &RiotState) -> Result<Vec<Value>, RiotError> {
     let data =
         send_internal_request(state, "/chat/v4/friendrequests", reqwest::Method::GET, None).await?;
     Ok(data
@@ -320,7 +289,7 @@ pub async fn get_friend_requests(state: &RiotState) -> Result<Vec<Value>, String
 pub async fn get_chat_messages(
     state: &RiotState,
     conversation_id: Option<&str>,
-) -> Result<Value, String> {
+) -> Result<Value, RiotError> {
     match conversation_id {
         None => send_internal_request(state, "/chat/v6/messages", reqwest::Method::GET, None).await,
         Some(cid) => specific_history_or_fallback(state, cid).await,
@@ -344,8 +313,11 @@ fn conversation_entries(payload: &Value) -> Vec<Value> {
         .unwrap_or_default()
 }
 
-async fn find_listed_conversation(state: &RiotState, cid: &str) -> Result<Option<Value>, String> {
-    let mut payloads = vec![get_chat_conversations(state).await.unwrap_or(Value::Null)];
+async fn find_listed_conversation(
+    state: &RiotState,
+    cid: &str,
+) -> Result<Option<Value>, RiotError> {
+    let mut payloads = vec![get_chat_conversations(state).await?];
     if cid.contains("@ares-parties") {
         payloads.push(get_party_chat_info(state).await.unwrap_or(Value::Null));
     } else if cid.contains("@ares-pregame") {
@@ -367,7 +339,7 @@ async fn find_listed_conversation(state: &RiotState, cid: &str) -> Result<Option
     Ok(None)
 }
 
-async fn all_history_filtered(state: &RiotState, cid: &str) -> Result<Value, String> {
+async fn all_history_filtered(state: &RiotState, cid: &str) -> Result<Value, RiotError> {
     let payload =
         send_internal_request(state, "/chat/v6/messages", reqwest::Method::GET, None).await?;
     let messages = payload
@@ -383,16 +355,15 @@ async fn all_history_filtered(state: &RiotState, cid: &str) -> Result<Value, Str
     Ok(serde_json::json!({ "messages": filtered }))
 }
 
-fn is_rpc_not_found(error: &str) -> bool {
-    let lower = error.to_ascii_lowercase();
-    if lower.contains("resource_not_found") || lower.contains("invalid uri") {
-        return false;
-    }
-    (lower.contains("404") || lower.contains("not found")) && lower.contains("not_found")
+fn is_rpc_not_found(error: &RiotError) -> bool {
+    matches!(error, RiotError::ConversationNotFound)
 }
 
-async fn specific_history_or_fallback(state: &RiotState, raw_cid: &str) -> Result<Value, String> {
-    let cid = crate::riot::models::validate_riot_cid(raw_cid).map_err(|error| error.to_string())?;
+async fn specific_history_or_fallback(
+    state: &RiotState,
+    raw_cid: &str,
+) -> Result<Value, RiotError> {
+    let cid = crate::riot::models::validate_riot_cid(raw_cid)?;
     let listed = match find_listed_conversation(state, cid).await? {
         Some(item) => item,
         None => {
@@ -406,7 +377,6 @@ async fn specific_history_or_fallback(state: &RiotState, raw_cid: &str) -> Resul
                 crate::riot::error::RiotError::StaleConversation {
                     channel: channel_hint(cid),
                 }
-                .to_string()
             })?
         }
     };
@@ -424,16 +394,14 @@ async fn specific_history_or_fallback(state: &RiotState, raw_cid: &str) -> Resul
         return all_history_filtered(state, cid).await;
     }
 
-    let path =
-        crate::riot::models::messages_path_for_cid(cid).map_err(|error| error.to_string())?;
+    let path = crate::riot::models::messages_path_for_cid(cid)?;
     match send_internal_request(state, &path, reqwest::Method::GET, None).await {
         Ok(payload) => Ok(payload),
         Err(error) if is_rpc_not_found(&error) => {
             if find_listed_conversation(state, cid).await?.is_none() {
                 return Err(crate::riot::error::RiotError::StaleConversation {
                     channel: channel_hint(cid),
-                }
-                .to_string());
+                });
             }
             log::info!(
                 "GET /chat/v6/messages status=404 channel={} cid={} fallback=true",
@@ -446,11 +414,11 @@ async fn specific_history_or_fallback(state: &RiotState, raw_cid: &str) -> Resul
     }
 }
 
-pub async fn get_chat_conversations(state: &RiotState) -> Result<Value, String> {
+pub async fn get_chat_conversations(state: &RiotState) -> Result<Value, RiotError> {
     send_internal_request(state, "/chat/v6/conversations", reqwest::Method::GET, None).await
 }
 
-pub async fn get_party_chat_info(state: &RiotState) -> Result<Value, String> {
+pub async fn get_party_chat_info(state: &RiotState) -> Result<Value, RiotError> {
     send_internal_request(
         state,
         "/chat/v6/conversations/ares-parties",
@@ -460,7 +428,7 @@ pub async fn get_party_chat_info(state: &RiotState) -> Result<Value, String> {
     .await
 }
 
-pub async fn get_pre_game_chat_info(state: &RiotState) -> Result<Value, String> {
+pub async fn get_pre_game_chat_info(state: &RiotState) -> Result<Value, RiotError> {
     send_internal_request(
         state,
         "/chat/v6/conversations/ares-pregame",
@@ -470,7 +438,7 @@ pub async fn get_pre_game_chat_info(state: &RiotState) -> Result<Value, String> 
     .await
 }
 
-pub async fn get_current_game_chat_info(state: &RiotState) -> Result<Value, String> {
+pub async fn get_current_game_chat_info(state: &RiotState) -> Result<Value, RiotError> {
     send_internal_request(
         state,
         "/chat/v6/conversations/ares-coregame",
@@ -485,7 +453,7 @@ pub async fn send_chat_message(
     conversation_id: &str,
     message: &str,
     msg_type: &str,
-) -> Result<Value, String> {
+) -> Result<Value, RiotError> {
     let body = serde_json::json!({ "cid": conversation_id, "message": message, "type": msg_type });
     send_internal_request(
         state,
@@ -514,11 +482,31 @@ mod tests {
     use super::*;
 
     #[test]
-    fn transport_failure_is_classified_as_login_required() {
-        let message = local_client_unavailable_error("/entitlements/v1/token");
-
-        assert!(message.contains("lockfile"));
-        assert!(message.contains("Riot Client is not ready"));
-        assert!(!message.contains("127.0.0.1"));
+    fn local_http_classification_uses_status_and_payload_fields() {
+        assert!(is_login_required_error(&classify_local_http(401, "")));
+        assert!(is_login_required_error(&classify_local_http(
+            404,
+            r#"{"errorCode":"RESOURCE_NOT_FOUND"}"#
+        )));
+        assert!(is_login_required_error(&classify_local_http(
+            503,
+            r#"{"message":"not connected to chat, service unavailable"}"#
+        )));
+        assert!(!is_login_required_error(&classify_local_http(
+            503,
+            r#"{"message":"backend timeout"}"#
+        )));
+        assert!(!is_login_required_error(&classify_local_http(
+            500,
+            r#"{"message":"lockfile authentication failed"}"#
+        )));
+        assert!(is_rpc_not_found(&classify_local_http(
+            404,
+            r#"{"errorCode":"RPC_ERROR","message":"not_found"}"#
+        )));
+        assert!(!is_rpc_not_found(&classify_local_http(
+            404,
+            r#"{"errorCode":"RESOURCE_NOT_FOUND"}"#
+        )));
     }
 }

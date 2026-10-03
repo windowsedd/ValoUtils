@@ -1,3 +1,4 @@
+import { invoke } from "@tauri-apps/api/core";
 import { formatDpr } from "@/components/match-dpr";
 import {
 	MatchScoreboard,
@@ -201,9 +202,8 @@ const Matches = () => {
 	const { details, errors, pending, ensure, prefetch } = useMatchDetails();
 
 	useEffect(() => {
-		if (!window.Main) return;
-		window.Main.on("match:list", (message: string) => {
-			const res = JSON.parse(message) as MatchListResponse;
+const applyResponse = (message: any) => {
+			const res = message as MatchListResponse;
 			setLoading(false);
 			if (!res.success) {
 				setLoginRequired(res.code === "loginRequired");
@@ -219,10 +219,14 @@ const Matches = () => {
 			setError(null);
 			setEntries(res.matches);
 			setTotal(res.total);
-		});
-		window.Main.send("match:list", 0, PAGE_SIZE);
-		return () => window.Main.removeAllListeners("match:list");
-	}, [t, reloadKey]);
+		};
+
+		let active = true;
+
+		invoke<any>("match_list", { args: [0, PAGE_SIZE] }).then(reply => { if (active) applyResponse(reply); }).catch(error => { if (active) applyResponse({ success: false, error: String(error) }); });
+
+		return () => { active = false; };
+}, [t, reloadKey]);
 
 	useEffect(() => {
 		const ids = entries.map((e) => e.matchId).filter(Boolean);

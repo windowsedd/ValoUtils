@@ -208,18 +208,18 @@ fn normalize_friend_profile(
 pub async fn friend_profile_get(
     args: Vec<Value>,
     riot: State<'_, RiotState>,
-) -> Result<String, ()> {
+) -> Result<Value, ()> {
     let puuid = match validated_puuid(args.first().and_then(Value::as_str)) {
         Ok(puuid) => puuid,
         Err(error) => {
             return Ok(
-                json!({ "success": false, "code": "invalidPlayer", "error": error }).to_string(),
+                json!({ "success": false, "code": "invalidPlayer", "error": error }),
             )
         }
     };
 
     if let Some(profile) = local_friend_profile(&puuid) {
-        return Ok(json!({ "success": true, "puuid": puuid, "profile": profile }).to_string());
+        return Ok(json!({ "success": true, "puuid": puuid, "profile": profile }));
     }
 
     let result = api::with_api(&riot, |api| {
@@ -255,13 +255,13 @@ pub async fn friend_profile_get(
     .await;
 
     Ok(match result {
-        Ok(profile) => json!({ "success": true, "puuid": puuid, "profile": profile }).to_string(),
-        Err(error) if error.contains("lockfile") => {
-            json!({ "success": false, "code": "loginRequired" }).to_string()
+        Ok(profile) => json!({ "success": true, "puuid": puuid, "profile": profile }),
+        Err(error) if error.is_login_required() => {
+            json!({ "success": false, "code": "loginRequired" })
         }
-        Err(error) => match super::rate_limited_reply(&error).await {
-            Some(reply) => reply.to_string(),
-            None => json!({ "success": false, "code": "unavailable", "error": error }).to_string(),
+        Err(error) => match super::rate_limited_reply(&error.to_string()).await {
+            Some(reply) => reply,
+            None => json!({ "success": false, "code": error.code(), "error": error }),
         },
     })
 }

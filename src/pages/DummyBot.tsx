@@ -1,5 +1,7 @@
+import { reportIpcError } from "@/util/ipc";
+import { invoke } from "@tauri-apps/api/core";
 import { PageHeader, SectionCard, SectionRow, pageBodyClass } from "@/components/section-card";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback,  useEffect, useRef, useState, type ReactNode  } from "react";
 import { useTranslation } from "react-i18next";
 import { LuBot, LuPencil, LuPlay, LuPlus, LuTrash2, LuX } from "react-icons/lu";
 import {
@@ -70,17 +72,20 @@ const DummyBot = () => {
 	const [provider, setProvider] = useState<TranslationProvider>("google");
 	const transcriptRef = useRef<HTMLDivElement>(null);
 
-	useEffect(() => {
-		const applyState = (message: string) => { try { setState(JSON.parse(message)); } catch { /* ignore */ } };
-		const applyLaunch = (message: string) => { try { setLaunch(JSON.parse(message)); } catch { /* ignore */ } };
-		const launched = (message: string) => {
+	const launched = useCallback((message: any) => {
 			setLaunchBusy(false);
-			try { const result = JSON.parse(message); setLaunchError(result.success ? null : result.error); }
+			try { const result = message; setLaunchError(result.success ? null : result.error); }
 			catch { setLaunchError(t("dummyBot.launchFailed")); }
-		};
-		const applyConfig = (message: string) => {
+		}, [t]);
+
+	useEffect(() => {
+const applyState = (message: any) => { try { setState(message); } catch { /* ignore */ } };
+
+const applyLaunch = (message: any) => { try { setLaunch(message); } catch { /* ignore */ } };
+
+const applyConfig = (message: any) => {
 			try {
-				const config = JSON.parse(message) as {
+				const config = message as {
 					botCustomCommands?: unknown;
 					translatorProvider?: unknown;
 				};
@@ -88,21 +93,16 @@ const DummyBot = () => {
 				setProvider(config.translatorProvider === "deepl" ? "deepl" : "google");
 			} catch { /* ignore */ }
 		};
-		window.Main.on("fake_player:state", applyState);
-		window.Main.on("client:config-status", applyLaunch);
-		window.Main.on("riot:launch-with-config", launched);
-		window.Main.on("riot:launch-normal", launched);
-		window.Main.on("config:get-all", applyConfig);
-		const poll = () => { window.Main.send("fake_player:state"); window.Main.send("client:config-status"); window.Main.send("config:get-all"); };
+
+		let active = true;
+
+		const poll = () => { invoke<any>("fake_player_state").then(reply => { if (active) applyState(reply); }).catch(error => { if (active) applyState({ success: false, error: String(error) }); }); invoke<any>("client_config_status").then(reply => { if (active) applyLaunch(reply); }).catch(error => { if (active) applyLaunch({ success: false, error: String(error) }); }); invoke<any>("config_get_all").then(reply => { if (active) applyConfig(reply); }).catch(error => { if (active) applyConfig({ success: false, error: String(error) }); }); };
 		poll();
 		const timer = setInterval(poll, 2000);
-		return () => {
+		return () => {active = false;
+
 			clearInterval(timer);
-			window.Main.removeAllListeners("fake_player:state");
-			window.Main.removeAllListeners("client:config-status");
-			window.Main.removeAllListeners("riot:launch-with-config");
-			window.Main.removeAllListeners("riot:launch-normal");
-			window.Main.removeAllListeners("config:get-all");
+
 		};
 	}, [t]);
 
@@ -117,7 +117,7 @@ const DummyBot = () => {
 	const saveCustomCommands = (next: CustomBotCommand[]) => {
 		const normalized = normalizeCustomBotCommands(next);
 		setCustomCommands(normalized);
-		window.Main.send("config:set", "botCustomCommands", normalized);
+		invoke("config_set", { args: ["botCustomCommands", normalized] }).catch(reportIpcError);
 	};
 
 	const blankDraft: CustomBotCommand = {
@@ -267,7 +267,7 @@ const DummyBot = () => {
 					<div className="flex shrink-0 items-center gap-2">
 						<button
 							type="button"
-							onClick={() => { setLaunchBusy(true); setLaunchError(null); window.Main.send("riot:launch-normal", "valorant", "live"); }}
+							onClick={() => { setLaunchBusy(true); setLaunchError(null); invoke<any>("riot_launch_normal", { args: ["valorant", "live"] }).then(launched).catch(error => launched({ success: false, error: String(error) })); }}
 							disabled={launchDisabled}
 							className="flex h-8 items-center gap-1.5 rounded-[6px] border border-(--border) bg-(--control) px-3 text-[12px] font-medium text-(--text-primary) transition-colors hover:bg-(--surface-hover) disabled:cursor-not-allowed disabled:opacity-40"
 						>
@@ -276,7 +276,7 @@ const DummyBot = () => {
 						</button>
 						<button
 							type="button"
-							onClick={() => { setLaunchBusy(true); setLaunchError(null); window.Main.send("riot:launch-with-config", "valorant", "live"); }}
+							onClick={() => { setLaunchBusy(true); setLaunchError(null); invoke<any>("riot_launch_with_config", { args: ["valorant", "live"] }).then(launched).catch(error => launched({ success: false, error: String(error) })); }}
 							disabled={launchDisabled}
 							className="flex h-8 items-center gap-1.5 rounded-[6px] border border-(--accent-border) bg-(--accent-soft) px-3 text-[12px] font-medium text-(--accent-selected) transition-colors hover:bg-(--accent-soft-hover) disabled:cursor-not-allowed disabled:opacity-40"
 						>

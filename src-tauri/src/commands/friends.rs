@@ -1,3 +1,4 @@
+use crate::riot::error::RiotError;
 use crate::riot::client::{self as riot_client, RiotState};
 use base64::Engine;
 use serde_json::{json, Value};
@@ -143,8 +144,8 @@ fn normalize_request(request: &Value) -> Option<Value> {
 }
 
 #[tauri::command]
-pub async fn friends_get(riot: State<'_, RiotState>) -> Result<String, ()> {
-    let result: Result<Value, String> = async {
+pub async fn friends_get(riot: State<'_, RiotState>) -> Result<Value, ()> {
+    let result: Result<Value, RiotError> = async {
         // The roster is the only hard requirement; presences and requests are
         // best-effort so a hiccup in either still renders a usable list.
         let friends_payload = riot_client::get_friends(&riot).await?;
@@ -250,14 +251,14 @@ pub async fn friends_get(riot: State<'_, RiotState>) -> Result<String, ()> {
     .await;
 
     Ok(match result {
-        Ok(value) => value.to_string(),
+        Ok(value) => value,
         Err(e) => {
             let code = if riot_client::is_login_required_error(&e) {
                 json!("loginRequired")
             } else {
-                Value::Null
+                json!(e.code())
             };
-            json!({ "success": false, "code": code, "error": e }).to_string()
+            json!({ "success": false, "code": code, "error": e })
         }
     })
 }

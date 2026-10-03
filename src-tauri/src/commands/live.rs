@@ -350,7 +350,7 @@ pub struct LiveCache {
     /// A first pregame fetch does a name and MMR lookup for all ten players and
     /// routinely outruns the bot's template budget; without this the message
     /// rendered every variable as N/A.
-    last_snapshot: Mutex<Option<(Instant, String)>>,
+    last_snapshot: Mutex<Option<(Instant, Value)>>,
     /// Coregame rosters and loadouts, keyed by match id.
     match_documents: DocumentCache,
     /// Party lookups, reused only while a match is running.
@@ -405,17 +405,17 @@ impl LiveCache {
         *self.refresh_generation.lock().unwrap()
     }
 
-    fn store_snapshot(&self, payload: &str, now: Instant) {
-        *self.last_snapshot.lock().unwrap() = Some((now, payload.to_string()));
+    fn store_snapshot(&self, payload: &Value, now: Instant) {
+        *self.last_snapshot.lock().unwrap() = Some((now, payload.clone()));
     }
 
-    pub(crate) fn recent_snapshot_at(&self, now: Instant) -> Option<String> {
+    pub(crate) fn recent_snapshot_at(&self, now: Instant) -> Option<Value> {
         let guard = self.last_snapshot.lock().unwrap();
         let (stored_at, payload) = guard.as_ref()?;
         (now.duration_since(*stored_at) < SNAPSHOT_FALLBACK_TTL).then(|| payload.clone())
     }
 
-    pub(crate) fn recent_snapshot(&self) -> Option<String> {
+    pub(crate) fn recent_snapshot(&self) -> Option<Value> {
         self.recent_snapshot_at(Instant::now())
     }
 }
@@ -462,7 +462,7 @@ fn assemble_live_payload(
     events: Vec<Value>,
     warning: Option<&str>,
     retry_in_seconds: Option<u64>,
-) -> String {
+) -> Value {
     json!({
         "success": true,
         "state": state.as_str(),
@@ -474,7 +474,6 @@ fn assemble_live_payload(
         "warning": warning,
         "retryInSeconds": retry_in_seconds
     })
-    .to_string()
 }
 
 fn finish_live_snapshot(
@@ -490,7 +489,7 @@ fn finish_live_snapshot(
     premade: &HashSet<String>,
     warning: Option<&str>,
     retry_in_seconds: Option<u64>,
-) -> String {
+) -> Value {
     apply_party_labels(&mut players, party_labels);
     apply_party_membership(&mut players, premade);
     let (_, public_roster_key) =
@@ -1659,7 +1658,7 @@ pub async fn live_game_fetch(
     riot: State<'_, RiotState>,
     cache: State<'_, LiveCache>,
     party_history_cache: State<'_, LivePartyHistoryCache>,
-) -> Result<String, ()> {
+) -> Result<Value, ()> {
     // Polls and manual refreshes can overlap. Serializing detect prevents an
     // older, slower request from replacing a newer snapshot/cache. Names and
     // ranks continue after this lock is released so loadouts can paint.
@@ -1667,7 +1666,7 @@ pub async fn live_game_fetch(
     let refresh_generation = cache.bump_refresh_generation();
     let api = match api::create_api(&riot).await {
         Ok(api) => api,
-        Err(_) => return Ok(json!({ "success": false, "code": "loginRequired" }).to_string()),
+        Err(error) => return Ok(json!({ "success": false, "code": error.code(), "error": error })),
     };
 
     let result = async {
@@ -1682,8 +1681,7 @@ pub async fn live_game_fetch(
                 "teams": [],
                 "events": [],
                 "players": []
-            })
-            .to_string();
+            });
             return Ok(payload);
         }
 
@@ -1942,7 +1940,7 @@ pub async fn live_game_fetch(
             let _ = app.emit("live-game:fetch", payload);
         });
 
-        Ok::<String, String>(early)
+        Ok::<Value, String>(early)
     }
     .await;
 
@@ -1951,9 +1949,9 @@ pub async fn live_game_fetch(
             if let Some(payload) = rate_limited_snapshot(&cache) {
                 return payload;
             }
-            return json!({ "success": false, "error": RATE_LIMITED_ERROR }).to_string();
+            return json!({ "success": false, "error": RATE_LIMITED_ERROR });
         }
-        json!({ "success": false, "error": PUBLIC_UNAVAILABLE_ERROR }).to_string()
+        json!({ "success": false, "error": PUBLIC_UNAVAILABLE_ERROR })
     }))
 }
 
@@ -1962,9 +1960,9 @@ pub async fn live_game_fetch(
 /// The renderer already keeps a snapshot on a hard error, but this reply is
 /// what a cold open and the bot template both read. A missing snapshot still
 /// falls through to the hard `rateLimited` error.
-fn rate_limited_snapshot(cache: &LiveCache) -> Option<String> {
+fn rate_limited_snapshot(cache: &LiveCache) -> Option<Value> {
     let payload = cache.recent_snapshot()?;
-    let mut value: Value = serde_json::from_str(&payload).ok()?;
+    let mut value = payload;
     if value.get("success").and_then(Value::as_bool) != Some(true) {
         return None;
     }
@@ -1973,7 +1971,7 @@ fn rate_limited_snapshot(cache: &LiveCache) -> Option<String> {
     }
     value["warning"] = json!(RATE_LIMITED_ERROR);
     value["retryInSeconds"] = json!(PREGAME_MATCH_TTL.as_secs());
-    Some(value.to_string())
+    Some(value)
 }
 
 async fn fetch_recent_stats(
@@ -2123,7 +2121,7 @@ pub async fn live_game_stats(
     riot: State<'_, RiotState>,
     cache: State<'_, LiveStatsCache>,
     pd_cache: State<'_, LivePartyHistoryCache>,
-) -> Result<String, ()> {
+) -> Result<Value, ()> {
     use tauri::Emitter;
 
     let roster_key = args
@@ -2151,7 +2149,7 @@ pub async fn live_game_stats(
         })
         .collect();
     if roster_key.is_empty() || players.is_empty() {
-        return Ok(json!({ "success": true, "rosterKey": roster_key, "attemptId": attempt_id, "count": 0 }).to_string());
+        return Ok(json!({ "success": true, "rosterKey": roster_key, "attemptId": attempt_id, "count": 0 }));
     }
 
     let api = match api::create_api(&riot).await {
@@ -2162,8 +2160,7 @@ pub async fn live_game_stats(
                 "rosterKey": roster_key,
                 "attemptId": attempt_id,
                 "error": PUBLIC_UNAVAILABLE_ERROR,
-            })
-            .to_string())
+            }))
         }
     };
     let requested = players.len();
@@ -2214,7 +2211,7 @@ pub async fn live_game_stats(
                     "error": error,
                 }),
             };
-            let _ = app.emit("live-game:player-stats", payload.to_string());
+            let _ = app.emit("live-game:player-stats", payload);
         }
 
         if stop_for_throttle {
@@ -2233,16 +2230,16 @@ pub async fn live_game_stats(
         }
     }
 
-    Ok(json!({ "success": true, "rosterKey": roster_key, "attemptId": attempt_id, "count": requested }).to_string())
+    Ok(json!({ "success": true, "rosterKey": roster_key, "attemptId": attempt_id, "count": requested }))
 }
 
 #[tauri::command]
-pub async fn live_game_dump(app: AppHandle, riot: State<'_, RiotState>) -> Result<String, ()> {
+pub async fn live_game_dump(app: AppHandle, riot: State<'_, RiotState>) -> Result<Value, ()> {
     use tauri_plugin_dialog::DialogExt;
 
     let api = match api::create_api(&riot).await {
         Ok(api) => api,
-        Err(_) => return Ok(json!({ "success": false, "code": "loginRequired" }).to_string()),
+        Err(error) => return Ok(json!({ "success": false, "code": error.code(), "error": error })),
     };
 
     let mut out = Map::new();
@@ -2328,11 +2325,11 @@ pub async fn live_game_dump(app: AppHandle, riot: State<'_, RiotState>) -> Resul
         .blocking_save_file();
 
     let Some(file_path) = file_path.and_then(|p| p.as_path().map(|p| p.to_path_buf())) else {
-        return Ok(json!({ "success": false }).to_string());
+        return Ok(json!({ "success": false }));
     };
 
     if let Err(e) = std::fs::write(&file_path, json_str) {
-        return Ok(json!({ "success": false, "error": e.to_string() }).to_string());
+        return Ok(json!({ "success": false, "error": e.to_string() }));
     }
 
     use tauri::Emitter;
@@ -2340,7 +2337,7 @@ pub async fn live_game_dump(app: AppHandle, riot: State<'_, RiotState>) -> Resul
         "alert:info",
         format!("Live dump saved to {}", file_path.to_string_lossy()),
     );
-    Ok(json!({ "success": true, "filePath": file_path.to_string_lossy() }).to_string())
+    Ok(json!({ "success": true, "filePath": file_path.to_string_lossy() }))
 }
 
 #[cfg(test)]
@@ -2600,10 +2597,10 @@ mod tests {
         let now = Instant::now();
         assert_eq!(cache.recent_snapshot_at(now), None);
 
-        cache.store_snapshot("{\"success\":true}", now);
+        cache.store_snapshot(&json!({ "success": true }), now);
         assert_eq!(
             cache.recent_snapshot_at(now + Duration::from_secs(30)),
-            Some("{\"success\":true}".to_string())
+            Some(json!({ "success": true }))
         );
         // Past the TTL it is a different match's roster, so it is withheld.
         assert_eq!(
@@ -2782,7 +2779,7 @@ mod tests {
         cache.store_snapshot(&payload, Instant::now());
 
         let served = rate_limited_snapshot(&cache).expect("cached roster");
-        let value: Value = serde_json::from_str(&served).unwrap();
+        let value = served;
         assert_eq!(value["success"], true);
         assert_eq!(value["state"], "pregame");
         assert_eq!(value["warning"], RATE_LIMITED_ERROR);
@@ -2816,7 +2813,7 @@ mod tests {
             None,
             None,
         );
-        let value: Value = serde_json::from_str(&payload).unwrap();
+        let value = payload;
 
         assert_eq!(value["success"], true);
         assert_eq!(value["state"], "pregame");

@@ -36,7 +36,7 @@ import { SWRConfig } from "swr";
 import { DynamicModalProvider } from "./components/dynamic-modal";
 import "./index.css";
 import "./i18n/config";
-import "./util/tauri-bridge";
+
 import About from "./pages/About.tsx";
 import Logs from "@/pages/Logs.tsx";
 

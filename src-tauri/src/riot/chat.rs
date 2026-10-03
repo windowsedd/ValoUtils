@@ -182,7 +182,11 @@ impl RiotChatClient {
                 cids.push(cid);
             }
         }
-        let side = if matches!(channel, ChatChannel::Team | ChatChannel::Pregame) {
+        // One team room is unambiguous. Looking up our side in that case
+        // spends GLZ requests on every chat tick for no benefit.
+        let side = if matches!(channel, ChatChannel::Team | ChatChannel::Pregame)
+            && cids.iter().filter(|cid| ChatChannel::Team.matches_cid(cid)).count() > 1
+        {
             self.local_team_side().await
         } else {
             None

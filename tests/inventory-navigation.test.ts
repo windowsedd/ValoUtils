@@ -50,8 +50,8 @@ describe("Inventory navigation and filters", () => {
   });
 
   test("loads entitlements over IPC and joins valorant-api.com catalogs", () => {
-    expect(page).toContain('send("inventory:get"');
-    expect(page).toContain('send("analytics:track", "inventory:view"');
+    expect(page).toContain('"inventory_get"');
+    expect(page).toContain('"inventory:view"');
     expect(page).toContain("getInventoryIndex");
     expect(page).toContain("summarizeSkins");
     expect(page).toContain("groupAccessories");

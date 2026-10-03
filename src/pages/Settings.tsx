@@ -1,4 +1,6 @@
-import { useEffect, useState } from "react";
+import { reportIpcError } from "@/util/ipc";
+import { invoke } from "@tauri-apps/api/core";
+import { useCallback,  useEffect, useState  } from "react";
 import { Toast } from "@heroui/react";
 import { useTranslation } from "react-i18next";
 import { FaGlobe, FaRocket, FaCode, FaChartBar, FaLanguage, FaKey, FaArrowUpRightFromSquare, FaCopy, FaCheck, FaEye, FaEyeSlash, FaBook, FaComments, FaGaugeHigh, FaListOl } from "react-icons/fa6";
@@ -156,12 +158,10 @@ const Settings = () => {
 	});
 	const [analytics, setAnalytics] = useState(() => localStorage.getItem("valoutils-analytics") !== "false");
 
-	useEffect(() => {
-		if (!window.Main) return;
-		const onStartup = (message: string) => {
+	const onStartup = useCallback((message: any) => {
 			setStartupSaving(false);
 			try {
-				const response = JSON.parse(message) as { success: boolean; enabled?: boolean };
+				const response = message as { success: boolean; enabled?: boolean };
 				if (!response.success || typeof response.enabled !== "boolean") {
 					throw new Error("Startup request failed");
 				}
@@ -169,22 +169,21 @@ const Settings = () => {
 			} catch {
 				Toast.toast.danger(t("settings.openAtStartupError"));
 			}
-		};
-		window.Main.on("startup:get", onStartup);
-		window.Main.on("startup:set", onStartup);
-		window.Main.send("startup:get");
-		return () => {
-			window.Main.removeListener("startup:get", onStartup);
-			window.Main.removeListener("startup:set", onStartup);
-		};
-	}, [t]);
+		}, [t]);
 
 	useEffect(() => {
-		if (!window.Main) return;
-		const onConfigLoaded = (msg: string) => {
-			window.Main.removeListener("config:get-all", onConfigLoaded);
+		let active = true;
+
+		invoke<any>("startup_get").then(reply => { if (active) onStartup(reply); }).catch(error => { if (active) onStartup({ success: false, error: String(error) }); });
+
+		return () => { active = false; };
+}, [onStartup]);
+
+	useEffect(() => {
+const onConfigLoaded = (msg: any) => {
+
 			try {
-				const config = JSON.parse(msg) as Partial<AppConfig>;
+				const config = msg as Partial<AppConfig>;
 				const translation = normalizeTranslationSelection({
 					provider: config.translatorProvider,
 					sourceLanguage: config.translatorSourceLanguage,
@@ -212,31 +211,37 @@ const Settings = () => {
 					translatorTargetLanguage: translation.targetLanguage,
 				})) {
 					if (config[key as keyof AppConfig] !== value) {
-						window.Main.send("config:set", key, value);
+						invoke("config_set", { args: [key, value] }).catch(reportIpcError);
 					}
 				}
 			} catch {
 				setAppConfig((current) => ({ ...current, hiddenTabs: [] }));
 			}
 		};
-		window.Main.on("config:get-all", onConfigLoaded);
-		window.Main.send("config:get-all");
-		return () => { window.Main.removeListener("config:get-all", onConfigLoaded); };
-	}, []);
+
+		let active = true;
+
+		invoke<any>("config_get_all").then(reply => { if (active) onConfigLoaded(reply); }).catch(error => { if (active) onConfigLoaded({ success: false, error: String(error) }); });
+
+		return () => { active = false; };
+}, []);
 
 	useEffect(() => {
-		if (!window.Main) return;
-		window.Main.on("client_info:get", (msg: string) => {
-			window.Main.removeAllListeners("client_info:get");
+const applyClientInfo = (msg: any) => {
+
 			try {
-				const info = JSON.parse(msg);
+				const info = msg;
 				if (info?.port) setClientPort(info.port);
 				if (info?.password) setClientPassword(info.password);
 			} catch { /* ignore */ }
-		});
-		window.Main.send("client_info:get");
-		return () => { window.Main.removeAllListeners("client_info:get"); };
-	}, []);
+		};
+
+		let active = true;
+
+		invoke<any>("client_info_get").then(reply => { if (active) applyClientInfo(reply); }).catch(error => { if (active) applyClientInfo({ success: false, error: String(error) }); });
+
+		return () => { active = false; };
+}, []);
 
 	const changeLang = (code: string) => {
 		i18n.changeLanguage(code);
@@ -245,7 +250,7 @@ const Settings = () => {
 	};
 
 	const setConfig = (key: string, value: boolean | number | string | string[]) => {
-		window.Main.send("config:set", key, value);
+		invoke("config_set", { args: [key, value] }).catch(reportIpcError);
 		setAppConfig((prev) => ({ ...prev, [key]: value }));
 		window.dispatchEvent(
 			new CustomEvent("valoutils:config-changed", { detail: { key, value } }),
@@ -254,7 +259,7 @@ const Settings = () => {
 
 	const setConfigs = (values: Partial<AppConfig>) => {
 		for (const [key, value] of Object.entries(values)) {
-			window.Main.send("config:set", key, value);
+			invoke("config_set", { args: [key, value] }).catch(reportIpcError);
 			window.dispatchEvent(
 				new CustomEvent("valoutils:config-changed", {
 					detail: { key, value },
@@ -291,7 +296,7 @@ const Settings = () => {
 	};
 
 	const setPresence = (action: string, value?: boolean | string) => {
-		window.Main.send("presence:status-set", action, ...(value === undefined ? [] : [value]));
+		invoke("presence_status_set", { args: [action, ...(value === undefined ? [] : [value])] }).catch(reportIpcError);
 		setAppConfig(prev => ({
 			...prev,
 			...(action === "enable" ? { presenceEnabled: true } : {}),
@@ -303,31 +308,14 @@ const Settings = () => {
 		}));
 	};
 
-	const importChatCert = () => {
-		setCertImporting(true);
-		return new Promise<void>((resolve, reject) => {
-			window.Main.send("presence:cert-import", appConfig.presenceCert);
-			window.Main.on("presence:cert-import", (msg: string) => {
-				window.Main.removeAllListeners("presence:cert-import");
-				setCertImporting(false);
-				try {
-					const data = JSON.parse(msg) as { success: boolean; cancelled?: boolean; error?: string; expiresAt?: number };
-					if (data.success) {
-						if (data.expiresAt) {
-							Toast.toast.info(`Certificate imported. Valid until ${new Date(data.expiresAt * 1000).toLocaleDateString()}.`);
-						}
-						resolve();
-					} else if (!data.cancelled) {
-						reject(new Error(data.error || "Could not import the certificate."));
-					} else {
-						resolve();
-					}
-				} catch {
-					reject(new Error("Could not import the certificate."));
-				}
-			});
-		});
-	};
+    const importChatCert = async () => {
+        setCertImporting(true);
+        try {
+            const data = await invoke<{ success: boolean; cancelled?: boolean; error?: string; expiresAt?: number }>("presence_cert_import", { args: [appConfig.presenceCert] });
+            if (!data.success && !data.cancelled) throw new Error(data.error || "Could not import the certificate.");
+            if (data.success && data.expiresAt) Toast.toast.info(`Certificate imported. Valid until ${new Date(data.expiresAt * 1000).toLocaleDateString()}.`);
+        } finally { setCertImporting(false); }
+    };
 
 	if (view === "api-reference") return <SwaggerPage onBack={() => setView("settings")} />;
 
@@ -473,7 +461,7 @@ const Settings = () => {
 							disabled={startupEnabled === null || startupSaving}
 							onChange={(enabled) => {
 								setStartupSaving(true);
-								window.Main.send("startup:set", enabled);
+								invoke<any>("startup_set", { args: [enabled] }).then(onStartup).catch(error => onStartup({ success: false, error: String(error) }));
 							}}
 						/>
 					}
@@ -660,7 +648,7 @@ const Settings = () => {
 							<button
 								onClick={() => {
 									if (!clientPort) return;
-									window.Main.send("open_url", `https://127.0.0.1:${clientPort}/chat/v6/messages`);
+									invoke("open_url", { args: [`https://127.0.0.1:${clientPort}/chat/v6/messages`] }).catch(reportIpcError);
 								}}
 								disabled={!clientPort}
 								className="flex h-7 items-center gap-1.5 px-2.5 rounded-[6px] text-[11px] font-medium border border-(--border) bg-(--control) text-(--text-secondary) hover:text-(--text-primary) hover:bg-(--surface-hover) disabled:opacity-40 disabled:cursor-not-allowed transition-[background-color,border-color,color] duration-150"
@@ -671,7 +659,7 @@ const Settings = () => {
 							<button
 								onClick={() => {
 									if (!clientPort) return;
-									window.Main.send("clipboard:set", `https://127.0.0.1:${clientPort}/chat/v6/messages`);
+									invoke("clipboard_set", { args: [`https://127.0.0.1:${clientPort}/chat/v6/messages`] }).catch(reportIpcError);
 									setCopied("chat");
 									setTimeout(() => setCopied(null), 2000);
 								}}
@@ -698,7 +686,7 @@ const Settings = () => {
 							<button
 								onClick={() => {
 									if (!clientPort) return;
-									window.Main.send("open_url", `https://127.0.0.1:${clientPort}/swagger/v3/openapi.json`);
+									invoke("open_url", { args: [`https://127.0.0.1:${clientPort}/swagger/v3/openapi.json`] }).catch(reportIpcError);
 								}}
 								disabled={!clientPort}
 								className="flex h-7 items-center gap-1.5 px-2.5 rounded-[6px] text-[11px] font-medium border border-(--border) bg-(--control) text-(--text-secondary) hover:text-(--text-primary) hover:bg-(--surface-hover) disabled:opacity-40 disabled:cursor-not-allowed transition-[background-color,border-color,color] duration-150"
@@ -710,7 +698,7 @@ const Settings = () => {
 								onClick={() => {
 									if (!clientPort) return;
 									const url = `https://127.0.0.1:${clientPort}/swagger/v3/openapi.json`;
-									window.Main.send("clipboard:set", url);
+									invoke("clipboard_set", { args: [url] }).catch(reportIpcError);
 									setCopied("url");
 									setTimeout(() => setCopied(null), 2000);
 								}}
@@ -744,7 +732,7 @@ const Settings = () => {
 							<button
 								onClick={() => {
 									if (!clientPassword) return;
-									window.Main.send("clipboard:set", clientPassword);
+									invoke("clipboard_set", { args: [clientPassword] }).catch(reportIpcError);
 									setCopied("pwd");
 									setTimeout(() => setCopied(null), 2000);
 								}}

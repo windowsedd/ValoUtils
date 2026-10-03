@@ -731,8 +731,6 @@ async fn load_snapshot(
         .and_then(Result::ok);
 
         if let Some(snapshot) = fetched
-            .as_deref()
-            .and_then(|response| serde_json::from_str::<Value>(response).ok())
             .as_ref()
             .and_then(TemplateSnapshot::from_value)
         {
@@ -753,8 +751,7 @@ async fn load_snapshot(
 
     best.or_else(|| {
         let stored = app.state::<live::LiveCache>().recent_snapshot()?;
-        let value: Value = serde_json::from_str(&stored).ok()?;
-        TemplateSnapshot::from_value(&value)
+        TemplateSnapshot::from_value(&stored)
     })
 }
 

@@ -48,8 +48,8 @@ describe("Battle Pass navigation and page viewer", () => {
   });
 
   test("loads player progress over IPC and joins valorant-api.com pages", () => {
-    expect(page).toContain('send("battlepass:get"');
-    expect(page).toContain('send("analytics:track", "battlepass:view"');
+    expect(page).toContain('"battlepass_get"');
+    expect(page).toContain('"battlepass:view"');
     expect(page).toContain("getBattlepassContracts");
     expect(page).toContain("getBattlepassReward");
     expect(page).toContain("data-battlepass-pages=");

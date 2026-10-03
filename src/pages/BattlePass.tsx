@@ -1,3 +1,5 @@
+import { reportIpcError } from "@/util/ipc";
+import { invoke } from "@tauri-apps/api/core";
 import { LoginRequiredPanel } from "@/components/login-required-panel";
 import { PageHeader, SectionCard, pageBodyClass } from "@/components/section-card";
 import {
@@ -154,12 +156,11 @@ const BattlePass = () => {
 	}, []);
 
 	useEffect(() => {
-		if (!window.Main) return;
-		const onResponse = (message: string) => {
-			window.Main.removeAllListeners("battlepass:get");
+const onResponse = (message: any) => {
+
 			let response: BattlepassResponse;
 			try {
-				response = JSON.parse(message) as BattlepassResponse;
+				response = message as BattlepassResponse;
 			} catch {
 				setError(t("battlepass.failedToLoad"));
 				setLoading(false);
@@ -188,11 +189,14 @@ const BattlePass = () => {
 			setPremiumIds(response.premiumContractIds ?? []);
 			setLoading(false);
 		};
-		window.Main.on("battlepass:get", onResponse);
-		window.Main.send("analytics:track", "battlepass:view", JSON.stringify({}));
-		window.Main.send("battlepass:get");
-		return () => window.Main.removeAllListeners("battlepass:get");
-	}, [t, reloadKey]);
+
+		let active = true;
+
+		invoke("analytics_track", { args: ["battlepass:view", JSON.stringify({})] }).catch(error => { if (active) return (reportIpcError)(error); });
+		invoke<any>("battlepass_get").then(reply => { if (active) onResponse(reply); }).catch(error => { if (active) onResponse({ success: false, error: String(error) }); });
+
+		return () => { active = false; };
+}, [t, reloadKey]);
 
 	const seasonWindows: SeasonWindow[] = useMemo(
 		() =>

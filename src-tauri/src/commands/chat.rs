@@ -1,3 +1,4 @@
+use crate::riot::error::RiotError;
 use crate::riot::api;
 use crate::riot::client::{self as riot_client, is_login_required_error, RiotState};
 use crate::store::ConfigStore;
@@ -23,8 +24,8 @@ fn mark_chat_forwarder_started(flag: &std::sync::atomic::AtomicBool) -> bool {
 
 fn presence_event_payload(
     snapshot: &xmpp::presence::PresenceSnapshot,
-) -> Result<String, serde_json::Error> {
-    serde_json::to_string(snapshot)
+) -> Result<Value, serde_json::Error> {
+    serde_json::to_value(snapshot)
 }
 
 fn ensure_chat_forwarders(app: &AppHandle) {
@@ -37,7 +38,7 @@ fn ensure_chat_forwarders(app: &AppHandle) {
         loop {
             match receiver.recv().await {
                 Ok(message) => {
-                    if let Ok(payload) = serde_json::to_string(&message) {
+                    if let Ok(payload) = serde_json::to_value(&message) {
                         let _ = message_app.emit("chat:message", payload);
                     }
                 }
@@ -424,19 +425,11 @@ fn confirmed_party_room(joined_room: &str) -> String {
     joined_room.to_string()
 }
 
-fn is_missing_conversation_history(error: &str) -> bool {
-    // Party/match MUCs are live in XMPP but often have no Riot Client REST
-    // store. That comes back as RPC 404 `not_found`, which is "empty", not
-    // "history failed". The stale-lockfile 404 (`RESOURCE_NOT_FOUND` /
-    // Invalid URI) is a different condition and must stay a real error.
-    let lower = error.to_ascii_lowercase();
-    if lower.contains("resource_not_found") || lower.contains("invalid uri") {
-        return false;
-    }
-    (lower.contains("404") || lower.contains("not found")) && lower.contains("not_found")
+fn is_missing_conversation_history(error: &RiotError) -> bool {
+    matches!(error, RiotError::ConversationNotFound)
 }
 
-fn history_from_fetch_error(request_id: &str, cid: &str, error: &str) -> Value {
+fn history_from_fetch_error(request_id: &str, cid: &str, error: &RiotError) -> Value {
     if is_missing_conversation_history(error) {
         json!({
             "success": true,
@@ -448,9 +441,9 @@ fn history_from_fetch_error(request_id: &str, cid: &str, error: &str) -> Value {
         let code = if is_login_required_error(error) {
             "loginRequired"
         } else {
-            ""
+            error.code()
         };
-        history_error(request_id, cid, code, error)
+        history_error(request_id, cid, code, &error.to_string())
     }
 }
 
@@ -1249,9 +1242,9 @@ fn unique_messages(messages: Vec<Value>) -> Vec<Value> {
 }
 
 #[tauri::command]
-pub async fn chat_get(app: AppHandle, riot: State<'_, RiotState>) -> Result<String, ()> {
+pub async fn chat_get(app: AppHandle, riot: State<'_, RiotState>) -> Result<Value, ()> {
     ensure_chat_forwarders(&app);
-    let result: Result<Value, String> = async {
+    let result: Result<Value, RiotError> = async {
         xmpp::ensure_connected(&riot).await?;
         let live_presence = xmpp::presence_snapshot();
         let base_payload = riot_client::get_chat_messages(&riot, None).await?;
@@ -1434,29 +1427,29 @@ pub async fn chat_get(app: AppHandle, riot: State<'_, RiotState>) -> Result<Stri
     .await;
 
     Ok(match result {
-        Ok(v) => v.to_string(),
+        Ok(v) => v,
         Err(e) => {
             let code = if is_login_required_error(&e) {
                 json!("loginRequired")
             } else {
-                Value::Null
+                json!(e.code())
             };
-            json!({ "success": false, "code": code, "error": e }).to_string()
+            json!({ "success": false, "code": code, "error": e })
         }
     })
 }
 
 #[tauri::command]
-pub async fn chat_history(args: Vec<Value>, riot: State<'_, RiotState>) -> Result<String, ()> {
+pub async fn chat_history(args: Vec<Value>, riot: State<'_, RiotState>) -> Result<Value, ()> {
     let request_id = arg(&args, 0).unwrap_or_default();
     let cid = arg(&args, 1).unwrap_or_default().trim().to_string();
     if cid.is_empty() {
         return Ok(
-            history_error(&request_id, &cid, "unavailable", "No chat room selected.").to_string(),
+            history_error(&request_id, &cid, "unavailable", "No chat room selected."),
         );
     }
 
-    let result: Result<Value, String> = async {
+    let result: Result<Value, RiotError> = async {
         let payload = riot_client::get_chat_messages(&riot, Some(&cid)).await?;
         let conversations_payload = riot_client::get_chat_conversations(&riot).await.ok();
         let conversations = conversations_payload
@@ -1492,8 +1485,8 @@ pub async fn chat_history(args: Vec<Value>, riot: State<'_, RiotState>) -> Resul
     .await;
 
     Ok(match result {
-        Ok(value) => value.to_string(),
-        Err(error) => history_from_fetch_error(&request_id, &cid, &error).to_string(),
+        Ok(value) => value,
+        Err(error) => history_from_fetch_error(&request_id, &cid, &error),
     })
 }
 
@@ -1501,9 +1494,9 @@ pub async fn chat_history(args: Vec<Value>, riot: State<'_, RiotState>) -> Resul
 pub async fn chat_translate(
     args: Vec<Value>,
     config: State<'_, ConfigStore>,
-) -> Result<String, ()> {
+) -> Result<Value, ()> {
     let Some(text) = arg(&args, 0) else {
-        return Ok(json!({ "success": false, "error": "no text" }).to_string());
+        return Ok(json!({ "success": false, "error": "no text" }));
     };
     let target_language_arg = arg(&args, 1);
 
@@ -1543,22 +1536,21 @@ pub async fn chat_translate(
                 "provider": provider,
                 "sourceLanguage": result.source_language,
                 "targetLanguage": result.target_language,
-            })
-            .to_string(),
-            Err(e) => json!({ "success": false, "error": e }).to_string(),
+            }),
+            Err(e) => json!({ "success": false, "error": e }),
         },
     )
 }
 
 #[tauri::command]
-pub async fn chat_send(args: Vec<Value>, riot: State<'_, RiotState>) -> Result<String, ()> {
+pub async fn chat_send(args: Vec<Value>, riot: State<'_, RiotState>) -> Result<Value, ()> {
     let request_id = arg(&args, 0).unwrap_or_default();
     let Some(conversation_id) = arg(&args, 1).filter(|s| !s.trim().is_empty()) else {
-        return Ok(send_error(&request_id, "", "No chat room selected.").to_string());
+        return Ok(send_error(&request_id, "", "No chat room selected."));
     };
     let cid = conversation_id.trim().to_string();
     let Some(message) = arg(&args, 2).filter(|s| !s.trim().is_empty()) else {
-        return Ok(send_error(&request_id, &cid, "Message is empty.").to_string());
+        return Ok(send_error(&request_id, &cid, "Message is empty."));
     };
     let body = message.trim().to_string();
     let msg_type = get_send_type(&cid);
@@ -1570,26 +1562,26 @@ pub async fn chat_send(args: Vec<Value>, riot: State<'_, RiotState>) -> Result<S
         if cid.contains("@ares-parties.") {
             transport = "xmpp";
             if let Err(e) = xmpp::send_party_xmpp_message(&riot, &cid, &body).await {
-                return Ok(send_error(&request_id, &cid, &e).to_string());
+                return Ok(send_error(&request_id, &cid, &e));
             }
         } else if cid.contains("@ares-coregame.") {
             transport = "xmpp";
             if let Err(e) = xmpp::send_match_xmpp_message(&riot, &cid, &body).await {
-                return Ok(send_error(&request_id, &cid, &e).to_string());
+                return Ok(send_error(&request_id, &cid, &e));
             }
         } else {
-            return Ok(send_error(&request_id, &cid, &rest_err).to_string());
+            return Ok(send_error(&request_id, &cid, &rest_err.to_string()));
         }
     }
 
-    Ok(send_success(&request_id, &cid, msg_type, transport).to_string())
+    Ok(send_success(&request_id, &cid, msg_type, transport))
 }
 
 #[tauri::command]
 pub async fn chat_friend_action(
     args: Vec<Value>,
     riot: State<'_, RiotState>,
-) -> Result<String, ()> {
+) -> Result<Value, ()> {
     let action = arg(&args, 0).unwrap_or_default();
     let friend = args.get(1).cloned().unwrap_or(json!({}));
 
@@ -1634,22 +1626,22 @@ pub async fn chat_friend_action(
     .await;
 
     Ok(match result {
-        Ok(_) => json!({ "success": true, "action": action }).to_string(),
-        Err(e) => json!({ "success": false, "error": e }).to_string(),
+        Ok(_) => json!({ "success": true, "action": action }),
+        Err(e) => json!({ "success": false, "error": e }),
     })
 }
 
 #[tauri::command]
-pub async fn chat_mark_read(args: Vec<Value>, riot: State<'_, RiotState>) -> Result<String, ()> {
+pub async fn chat_mark_read(args: Vec<Value>, riot: State<'_, RiotState>) -> Result<Value, ()> {
     let cid = arg(&args, 0).unwrap_or_default();
     if cid.trim().is_empty() {
-        return Ok(json!({ "success": false, "error": "No conversation selected." }).to_string());
+        return Ok(json!({ "success": false, "error": "No conversation selected." }));
     }
     let mid = arg(&args, 1).unwrap_or_default();
     let conv_type = arg(&args, 2).unwrap_or_else(|| get_send_type(&cid).to_string());
     Ok(match mark_conversation_read(&riot, &cid, &mid, &conv_type).await {
-        Ok(_) => json!({ "success": true, "cid": cid }).to_string(),
-        Err(error) => json!({ "success": false, "cid": cid, "error": error }).to_string(),
+        Ok(_) => json!({ "success": true, "cid": cid }),
+        Err(error) => json!({ "success": false, "cid": cid, "error": error }),
     })
 }
 
@@ -1915,14 +1907,12 @@ mod tests {
         // That is "this MUC has no REST store", not a failed load — the thread
         // still has XMPP + the unfiltered poll. Surfacing the RPC string hid
         // the `sb` line behind a red banner.
-        let error = "Riot Client request failed (404 Not Found) for \
-            /chat/v6/messages?cid=27ccdf36-57e7-4eee-b111-96a9b0deb638%40ares-parties.jp1.pvp.net: \
-            {\"errorCode\":\"RPC_ERROR\",\"httpStatus\":404,\"implementationDetails\":{},\"message\":\"not_found\"}";
-        assert!(is_missing_conversation_history(error));
+        let error = RiotError::ConversationNotFound;
+        assert!(is_missing_conversation_history(&error));
         let value = history_from_fetch_error(
             "hist-1",
             "27ccdf36-57e7-4eee-b111-96a9b0deb638@ares-parties.jp1.pvp.net",
-            error,
+            &error,
         );
         assert_eq!(value["success"], true);
         assert_eq!(value["messages"], json!([]));
@@ -1930,14 +1920,7 @@ mod tests {
             value["cid"],
             "27ccdf36-57e7-4eee-b111-96a9b0deb638@ares-parties.jp1.pvp.net"
         );
-        assert!(!is_missing_conversation_history(
-            "Riot Client request failed (404 Not Found) for /chat/v4/friends: \
-             {\"errorCode\":\"RESOURCE_NOT_FOUND\"}"
-        ));
-        assert!(!is_missing_conversation_history(
-            "Riot Client request failed (503 Service Unavailable) for /chat/v6/messages: \
-             {\"message\":\"not connected to chat, service unavailable\"}"
-        ));
+        assert!(!is_missing_conversation_history(&RiotError::RiotClientNotRunning));
     }
 
     #[test]
@@ -1955,7 +1938,7 @@ mod tests {
         );
 
         let payload = presence_event_payload(&snapshot).unwrap();
-        let value: Value = serde_json::from_str(&payload).unwrap();
+        let value = payload;
 
         assert_eq!(value["state"], "ready");
         assert_eq!(value["generation"], 7);
@@ -2080,34 +2063,15 @@ mod tests {
     }
 
     #[test]
-    fn classifies_stopped_riot_client_as_login_required() {
-        assert!(is_login_required_error(
-			"error sending request for url (https://127.0.0.1:61867/entitlements/v1/token): connection refused"
-		));
-        assert!(is_login_required_error("Riot lockfile was not found"));
-        assert!(!is_login_required_error(
-            "message history payload was malformed"
-        ));
-    }
-
-    /// A signed-out player has a *running* Riot Client, so none of the
-    /// "client is down" signals fire — the chat routes just 503. Without this
-    /// case the frontend printed the raw RPC error instead of asking them to
-    /// sign in.
-    #[test]
-    fn classifies_disconnected_chat_service_as_login_required() {
-        assert!(is_login_required_error(
-			"Riot Client request failed (503 Service Unavailable) for /chat/v4/friends: {\"errorCode\":\"RPC_ERROR\",\"httpStatus\":503,\"implementationDetails\":{},\"message\":\"not connected to chat, service unavailable\"}"
-		));
-        assert!(is_login_required_error(
-            "Riot Client request failed (503 Service Unavailable) for /chat/v6/messages: \
-             {\"message\":\"not connected to chat, service unavailable\"}"
-        ));
-        // A 503 that isn't about the chat socket is a real outage, not a login.
-        assert!(!is_login_required_error(
-            "Riot Client request failed (503 Service Unavailable) for /chat/v4/friends: \
-             {\"message\":\"backend timeout\"}"
-        ));
+    fn classification_and_history_keep_faults_out_of_login_panel() {
+        for error in [RiotError::MalformedLockfile, RiotError::Timeout, RiotError::Other("lockfile failed".into())] {
+            assert!(!is_login_required_error(&error));
+            let reply = history_from_fetch_error("req", "room", &error);
+            assert_eq!(reply["success"], false);
+            assert_ne!(reply["code"], "loginRequired");
+        }
+        assert!(is_login_required_error(&RiotError::RiotClientNotRunning));
+        assert!(is_login_required_error(&RiotError::LoginRequired));
     }
 
     #[test]

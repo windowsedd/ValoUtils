@@ -117,7 +117,7 @@ fn validate_selection(args: &[Value], monitors: &[DisplayInfo]) -> Result<String
 }
 
 #[tauri::command]
-pub fn display_get(app: AppHandle, store: State<ConfigStore>) -> String {
+pub fn display_get(app: AppHandle, store: State<ConfigStore>) -> Value {
     match connected_displays(&app) {
         Ok(monitors) => json!({
             "success": true,
@@ -125,11 +125,11 @@ pub fn display_get(app: AppHandle, store: State<ConfigStore>) -> String {
             "selected": store.get(CONFIG_KEY).and_then(|value| value.as_str().map(str::to_string)).unwrap_or_default(),
         }),
         Err(error) => json!({ "success": false, "error": error }),
-    }.to_string()
+    }
 }
 
 #[tauri::command]
-pub fn display_set(args: Vec<Value>, app: AppHandle, store: State<ConfigStore>) -> String {
+pub fn display_set(args: Vec<Value>, app: AppHandle, store: State<ConfigStore>) -> Value {
     let result = connected_displays(&app).and_then(|monitors| {
         let selected = validate_selection(&args, &monitors)?;
         store.set(CONFIG_KEY, json!(selected));
@@ -137,7 +137,6 @@ pub fn display_set(args: Vec<Value>, app: AppHandle, store: State<ConfigStore>) 
     });
     result
         .unwrap_or_else(|error| json!({ "success": false, "error": error }))
-        .to_string()
 }
 
 #[cfg(test)]

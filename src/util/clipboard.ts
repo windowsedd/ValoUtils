@@ -1,10 +1,4 @@
-const getClipboard = async () => {
-  return new Promise<string>((resolve) => {
-    window.Main.on("clipboard:get", (data: string) => {
-      const { text } = JSON.parse(data);
-      resolve(text);
-    });
-    window.Main.send("clipboard:get");
-  });
-};
+import { invoke } from "@tauri-apps/api/core";
+
+const getClipboard = async () => (await invoke<{ text: string }>("clipboard_get")).text;
 export default getClipboard;

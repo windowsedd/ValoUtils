@@ -1,3 +1,5 @@
+import { listenEvent } from "@/util/ipc";
+import { invoke } from "@tauri-apps/api/core";
 import type { MatchDetails, MatchDetailsResponse, MatchPlayer } from "@/types/matches";
 import { rateLimitedSeconds } from "@/util/rate-limit";
 import {
@@ -60,13 +62,14 @@ export const useMatchDetails = () => {
 	// One long-lived listener keyed by match id, rather than a one-shot handler
 	// per request: `match:summaries` pushes many matches down this same channel,
 	// and several cards can be in flight at once.
-	useEffect(() => {
-		if (!window.Main) return;
-		const onMatchDetails = (message: string) => {
-			const res = JSON.parse(message) as MatchDetailsResponse;
+	const onMatchDetails = useCallback((message: MatchDetailsResponse) => {
+			const res = message as MatchDetailsResponse;
 			const id = res.success ? res.match.matchId : res.matchId;
 			if (!id) return;
-			if (res.success) setDetails((prev) => (prev[id] ? prev : { ...prev, [id]: res.match }));
+			if (res.success) {
+                setDetails((prev) => (prev[id] ? prev : { ...prev, [id]: res.match }));
+                setErrors((prev) => { const next = { ...prev }; delete next[id]; return next; });
+            }
 			else {
 				// A spent request budget is a pause, not a broken match: say when
 				// it is worth opening the card again rather than showing the
@@ -84,20 +87,21 @@ export const useMatchDetails = () => {
 				next.delete(id);
 				return next;
 			});
-		};
-		window.Main.on("match:details", onMatchDetails);
-		return () => window.Main.removeListener("match:details", onMatchDetails);
-	}, [t]);
+		}, [t]);
+
+const ensure = useCallback((matchId: string) => {
+			if (!matchId || details[matchId] || pending.has(matchId)) return;
+			setPending((prev) => new Set(prev).add(matchId));
+			invoke<MatchDetailsResponse>("match_details", { args: [matchId] }).then(onMatchDetails).catch(error => onMatchDetails({ success: false, matchId, error: String(error) }));
+		}, [details, pending, onMatchDetails]);
+
+	useEffect(() => {
+
+		const stopMatchDetails = listenEvent("match:details", onMatchDetails);
+		return () => stopMatchDetails();
+	}, [onMatchDetails]);
 
 	/** Fetch one match; already-loaded or in-flight ids are no-ops. */
-	const ensure = useCallback(
-		(matchId: string) => {
-			if (!window.Main || !matchId || details[matchId] || pending.has(matchId)) return;
-			setPending((prev) => new Set(prev).add(matchId));
-			window.Main.send("match:details", matchId);
-		},
-		[details, pending]
-	);
 
 	/**
 	 * Warm a whole list. Results arrive one at a time on `match:details`, so
@@ -105,17 +109,22 @@ export const useMatchDetails = () => {
 	 */
 	const prefetch = useCallback(
 		(matchIds: string[]) => {
-			if (!window.Main) return;
-			const wanted = matchIds.filter((id) => id && !details[id] && !pending.has(id));
+
+			const wanted = matchIds.filter((id) => id && !details[id] && !errors[id] && !pending.has(id));
 			if (wanted.length === 0) return;
 			setPending((prev) => {
 				const next = new Set(prev);
 				for (const id of wanted) next.add(id);
 				return next;
 			});
-			window.Main.send("match:summaries", wanted);
+			const fail = (ids: string[], error: string) => {
+                for (const matchId of ids) onMatchDetails({ success: false, matchId, error });
+            };
+            invoke<{ success: boolean; delivered?: string[]; error?: string }>("match_summaries", { args: [wanted] })
+                .then(reply => fail(wanted.filter(id => !reply.delivered?.includes(id)), reply.error ?? t("matches.failedToLoad")))
+                .catch(error => fail(wanted, String(error)));
 		},
-		[details, pending]
+		[details, errors, pending, onMatchDetails, t]
 	);
 
 	return { details, errors, pending, ensure, prefetch };

@@ -38,7 +38,7 @@ describe("clickable match player profiles", () => {
 
   test("cleans up only its own match-detail listener when the modal closes", () => {
     const scoreboard = source("src/components/match-scoreboard.tsx");
-    expect(scoreboard).toContain('removeListener("match:details", onMatchDetails)');
+    expect(scoreboard).toContain('listenEvent("match:details", onMatchDetails)');
     expect(scoreboard).not.toContain('removeAllListeners("match:details")');
   });
 });

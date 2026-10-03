@@ -1,3 +1,5 @@
+import { reportIpcError } from "@/util/ipc";
+import { invoke } from "@tauri-apps/api/core";
 import { LoginRequiredPanel } from "@/components/login-required-panel";
 import { PageHeader, SectionCard, SectionRow } from "@/components/section-card";
 import { groupAccessories, resolveOwnedAccessories } from "@/pages/inventory/inventory-accessories";
@@ -52,10 +54,9 @@ const Inventory = ({ embedded = false }: { embedded?: boolean }) => {
 	const { t } = useTranslation();
 
 	useEffect(() => {
-		if (!window.Main) return;
-		const onResponse = (message: string) => {
-			window.Main.removeAllListeners("inventory:get");
-			const response = JSON.parse(message) as InventoryResponse;
+const onResponse = (message: any) => {
+
+			const response = message as InventoryResponse;
 			if (!response.success) {
 				if (response.code === "loginRequired") {
 					setLoginRequired(true);
@@ -78,11 +79,14 @@ const Inventory = ({ embedded = false }: { embedded?: boolean }) => {
 			setItems(Array.isArray(response.items) ? response.items : []);
 			setLoading(false);
 		};
-		window.Main.on("inventory:get", onResponse);
-		window.Main.send("inventory:get");
-		window.Main.send("analytics:track", "inventory:view");
-		return () => window.Main.removeAllListeners("inventory:get");
-	}, [t, reloadKey]);
+
+		let active = true;
+
+		invoke<any>("inventory_get").then(reply => { if (active) onResponse(reply); }).catch(error => { if (active) onResponse({ success: false, error: String(error) }); });
+		invoke("analytics_track", { args: ["inventory:view"] }).catch(error => { if (active) return (reportIpcError)(error); });
+
+		return () => { active = false; };
+}, [t, reloadKey]);
 
 	useEffect(() => {
 		let cancelled = false;

@@ -1,3 +1,4 @@
+import { invoke } from "@tauri-apps/api/core";
 import { ActRankPanel } from "@/components/live-game/act-rank-panel";
 import { initialSeasonId, seasonFallbackLabel } from "@/components/live-game/act-rank";
 import { PreviousActsPanel } from "@/components/live-game/previous-acts-panel";
@@ -8,7 +9,7 @@ import type { Friend } from "@/types/friends";
 import { rateLimitedSeconds } from "@/util/rate-limit";
 import { getSeasonAssets, type CardAsset, type SeasonAsset, type TierAsset } from "@/util/valorant-assets";
 import { tierColor, tierName } from "@/util/valorant-ranks";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { LuArrowLeft, LuRotateCw, LuUser } from "react-icons/lu";
 import { acceptedFriendProfile } from "./friend-profile-state";
@@ -39,18 +40,10 @@ export const FriendProfile = ({ friend, card, tiers, presenceLabel, cachedProfil
 		return () => { cancelled = true; };
 	}, []);
 
-	const requestProfile = useCallback(() => {
-		setLoading(true);
-		setError(null);
-		window.Main.send("friend:profile:get", friend.puuid);
-	}, [friend.puuid]);
-
-	useEffect(() => {
-		if (!window.Main || embedded) return;
-		const onResponse = (message: string) => {
+	const onResponse = useCallback((message: any) => {
 			let response: FriendProfileResponse;
 			try {
-				response = JSON.parse(message) as FriendProfileResponse;
+				response = message as FriendProfileResponse;
 			} catch {
 				setLoading(false);
 				setError(t("friends.profileFailed"));
@@ -75,10 +68,22 @@ export const FriendProfile = ({ friend, card, tiers, presenceLabel, cachedProfil
 				);
 				setLoading(false);
 			}
-		};
-		window.Main.on("friend:profile:get", onResponse);
+		}, [friend.puuid, onProfileLoaded, t]);
+
+const requestGeneration = useRef(0);
+    useEffect(() => () => { requestGeneration.current += 1; }, [friend.puuid]);
+
+const requestProfile = useCallback(() => {
+        const generation = ++requestGeneration.current;
+		setLoading(true);
+		setError(null);
+		invoke<any>("friend_profile_get", { args: [friend.puuid] }).then(reply => { if (generation === requestGeneration.current) onResponse(reply); }).catch(error => { if (generation === requestGeneration.current) onResponse({ success: false, error: String(error) }); });
+	}, [friend.puuid, onResponse]);
+
+	useEffect(() => {
+		if (embedded) return;
+
 		if (!cachedProfile) requestProfile();
-		return () => window.Main.removeListener("friend:profile:get", onResponse);
 	}, [cachedProfile, embedded, friend.puuid, onProfileLoaded, requestProfile, t]);
 
 	const seasonStarts = useMemo(

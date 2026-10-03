@@ -130,17 +130,17 @@ describe("Live Match signed-in player marker", () => {
     expect(main).toContain("<LiveGameProvider>");
     expect(main).toContain("</LiveGameProvider>");
     expect(liveGameSession).toContain("timer = window.setTimeout(poll, pollDelayRef.current)");
-    expect(liveGameSession).toContain('if (!document.hidden) window.Main.send("live-game:fetch")');
+    expect(liveGameSession).toContain('!document.hidden && !pausedForMatchRef.current');
     expect(liveGamePage).not.toContain("setTimeout(poll");
     expect(liveGamePage).not.toContain("visibilitychange");
   });
 
   test("background live session only sends live-game channels", () => {
-    const sends = [...liveGameSession.matchAll(/window\.Main\.send\("([^"]+)"/g)].map(
+    const sends = [...liveGameSession.matchAll(/invoke(?:<[^>]+>)?\("([^"]+)"/g)].map(
       (match) => match[1],
     );
     expect(sends.length).toBeGreaterThan(0);
-    expect(sends.every((channel) => channel.startsWith("live-game:"))).toBe(true);
+    expect(sends.every((channel) => channel.startsWith("live_game_"))).toBe(true);
   });
 
   for (const locale of locales) {

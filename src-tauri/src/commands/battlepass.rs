@@ -87,7 +87,7 @@ pub fn parse_premium_contract_ids(entitlements: &Value) -> Vec<String> {
 }
 
 #[tauri::command]
-pub async fn battlepass_get(riot: State<'_, RiotState>) -> Result<String, ()> {
+pub async fn battlepass_get(riot: State<'_, RiotState>) -> Result<Value, ()> {
     let result = api::with_api(&riot, |api| async move {
         let puuid = api.puuid.clone();
         let contracts = api.get_contracts(&puuid).await?;
@@ -105,14 +105,13 @@ pub async fn battlepass_get(riot: State<'_, RiotState>) -> Result<String, ()> {
                 .as_ref()
                 .map(parse_premium_contract_ids)
                 .unwrap_or_default(),
-        })
-        .to_string(),
-        Err(error) if error.contains("lockfile") => {
-            json!({ "success": false, "code": "loginRequired" }).to_string()
+        }),
+        Err(error) if error.is_login_required() => {
+            json!({ "success": false, "code": "loginRequired" })
         }
-        Err(error) => match super::rate_limited_reply(&error).await {
-            Some(reply) => reply.to_string(),
-            None => json!({ "success": false, "error": error }).to_string(),
+        Err(error) => match super::rate_limited_reply(&error.to_string()).await {
+            Some(reply) => reply,
+            None => json!({ "success": false, "code": error.code(), "error": error }),
         },
     })
 }

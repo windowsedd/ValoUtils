@@ -11,17 +11,16 @@ fn mode_arg(args: &[Value]) -> Result<PresenceMode, String> {
         .ok_or_else(|| "Presence mode must be online, offline, or mobile.".to_string())
 }
 
-fn response() -> String {
+fn response() -> Value {
     json!({
         "success": true,
         "configRunning": crate::client_config::is_running(),
         "presence": crate::presence_proxy::controller().snapshot(),
     })
-    .to_string()
 }
 
 #[tauri::command]
-pub async fn presence_status_get() -> Result<String, ()> {
+pub async fn presence_status_get() -> Result<Value, ()> {
     Ok(response())
 }
 
@@ -29,7 +28,7 @@ pub async fn presence_status_get() -> Result<String, ()> {
 pub async fn presence_status_set(
     args: Vec<Value>,
     config: State<'_, ConfigStore>,
-) -> Result<String, ()> {
+) -> Result<Value, ()> {
     let action = args
         .first()
         .and_then(Value::as_str)
@@ -83,7 +82,7 @@ pub async fn presence_status_set(
         ),
     };
     if let Err(error) = result {
-        return Ok(json!({ "success": false, "error": error }).to_string());
+        return Ok(json!({ "success": false, "error": error }));
     }
     Ok(response())
 }
@@ -94,7 +93,7 @@ pub async fn presence_status_set(
 /// imported identity is the selected one, a running relay is restarted so the
 /// new certificate goes live.
 #[tauri::command]
-pub async fn presence_cert_import(args: Vec<Value>, app: AppHandle) -> Result<String, ()> {
+pub async fn presence_cert_import(args: Vec<Value>, app: AppHandle) -> Result<Value, ()> {
     use tauri_plugin_dialog::DialogExt;
 
     let id = args.first().and_then(Value::as_str).unwrap_or("");
@@ -108,12 +107,11 @@ pub async fn presence_cert_import(args: Vec<Value>, app: AppHandle) -> Result<St
         .add_filter("PFX certificate", &["pfx"])
         .blocking_pick_file();
     let Some(file_path) = picked else {
-        return Ok(json!({ "success": false, "cancelled": true }).to_string());
+        return Ok(json!({ "success": false, "cancelled": true }));
     };
     let Some(path) = file_path.as_path() else {
         return Ok(
-            json!({ "success": false, "error": "The selected file path is not usable." })
-                .to_string(),
+            json!({ "success": false, "error": "The selected file path is not usable." }),
         );
     };
     let bytes = match std::fs::read(path) {
@@ -122,8 +120,7 @@ pub async fn presence_cert_import(args: Vec<Value>, app: AppHandle) -> Result<St
             return Ok(json!({
                 "success": false,
                 "error": format!("Could not read the PFX file: {error}"),
-            })
-            .to_string())
+            }))
         }
     };
 
@@ -140,10 +137,9 @@ pub async fn presence_cert_import(args: Vec<Value>, app: AppHandle) -> Result<St
                 "certId": identity.id,
                 "certHost": identity.host,
                 "expiresAt": expires_at,
-            })
-            .to_string())
+            }))
         }
-        Err(error) => Ok(json!({ "success": false, "error": error }).to_string()),
+        Err(error) => Ok(json!({ "success": false, "error": error })),
     }
 }
 

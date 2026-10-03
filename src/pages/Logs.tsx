@@ -1,3 +1,5 @@
+import { reportIpcError } from "@/util/ipc";
+import { invoke } from "@tauri-apps/api/core";
 import CustomButton from "@/components/button";
 import { PageHeader, pageBodyClass } from "@/components/section-card";
 import { filterLogEntries, formatLogEntry, formatLogSize, LOG_LEVELS, type LogEntry, type LogLevel } from "@/pages/log-entries";
@@ -35,19 +37,11 @@ const Logs = () => {
 	const liveRef = useRef(live);
 	liveRef.current = live;
 
-	const read = useCallback(() => {
-		if (!window.Main) return;
-		window.Main.send("logs:read");
-	}, []);
-
-	useEffect(() => {
-		if (!window.Main) return;
-
-		const onRead = (message: string) => {
+	const onRead = useCallback((message: any) => {
 			setLoading(false);
 			let response: LogsResponse;
 			try {
-				response = JSON.parse(message) as LogsResponse;
+				response = message as LogsResponse;
 			} catch {
 				setError(t("logs.failed"));
 				return;
@@ -62,9 +56,15 @@ const Logs = () => {
 			setPath(response.path);
 			setBytes(response.bytes);
 			setTruncated(response.truncated);
-		};
+		}, [t]);
 
-		window.Main.on("logs:read", onRead);
+const read = useCallback(() => {
+
+		invoke<any>("logs_read").then(onRead).catch(error => onRead({ success: false, error: String(error) }));
+	}, [onRead]);
+
+	useEffect(() => {
+
 		read();
 		// The log only grows while the app is doing something, so a slow poll is
 		// enough; a hidden window is not reading it at all.
@@ -73,7 +73,7 @@ const Logs = () => {
 		}, REFRESH_MS);
 		return () => {
 			window.clearInterval(timer);
-			window.Main.removeListener("logs:read", onRead);
+
 		};
 	}, [read, t]);
 
@@ -108,19 +108,19 @@ const Logs = () => {
 				</CustomButton>
 				<CustomButton
 					size="sm"
-					onClick={() => window.Main.send("clipboard:set", visible.map(formatLogEntry).join("\n"))}
+					onClick={() => invoke("clipboard_set", { args: [visible.map(formatLogEntry).join("\n")] }).catch(reportIpcError)}
 					aria-label={t("logs.copy")}
 				>
 					<LuCopy />
 				</CustomButton>
-				<CustomButton size="sm" onClick={() => window.Main.send("logs:open")} aria-label={t("logs.openFolder")}>
+				<CustomButton size="sm" onClick={() => invoke("logs_open").catch(reportIpcError)} aria-label={t("logs.openFolder")}>
 					<LuFolderOpen />
 				</CustomButton>
 				<CustomButton
 					size="sm"
 					color="danger"
 					onClick={() => {
-						window.Main.send("logs:clear");
+						invoke("logs_clear").catch(reportIpcError);
 						setEntries([]);
 						setBytes(0);
 						read();

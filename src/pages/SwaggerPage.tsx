@@ -1,3 +1,4 @@
+import { invoke } from "@tauri-apps/api/core";
 import { PageHeader, SectionCard, pageBodyClass } from "@/components/section-card";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -17,21 +18,21 @@ const SwaggerPage = ({ onBack }: SwaggerPageProps) => {
 	const [url, setUrl] = useState<string | null>(null);
 
 	const openInBrowser = () => {
-		if (!window.Main) return;
+
 		setLoading(true);
 		setError(null);
-		window.Main.on("swagger:open", (msg: string) => {
-			window.Main.removeAllListeners("swagger:open");
+		const applyDocsResult = (msg: any) => {
+
 			setLoading(false);
 			try {
-				const res = JSON.parse(msg);
+				const res = msg;
 				if (res.success) setUrl(res.url ?? null);
 				else setError(res.error ?? t("apiReference.openFailed"));
 			} catch {
 				setError(t("apiReference.parseFailed"));
 			}
-		});
-		window.Main.send("swagger:open");
+		};
+		invoke<any>("swagger_open").then(applyDocsResult).catch(error => applyDocsResult({ success: false, error: String(error) }));
 	};
 
 	return (

@@ -1,4 +1,5 @@
 use crate::riot::client::{self, RiotState};
+use crate::riot::error::RiotError;
 use crate::riot::rate_gate;
 use base64::Engine;
 use serde_json::Value;
@@ -632,7 +633,7 @@ pub fn is_auth_error(error: &str) -> bool {
 /// Without this, switching Riot accounts breaks every remote call until the
 /// token cache happens to expire, because the cached token still parses fine
 /// locally — it's only the game API that rejects it.
-pub async fn with_api<T, F, Fut>(state: &RiotState, f: F) -> Result<T, String>
+pub async fn with_api<T, F, Fut>(state: &RiotState, f: F) -> Result<T, RiotError>
 where
     F: Fn(RiotApiClient) -> Fut,
     Fut: std::future::Future<Output = Result<T, String>>,
@@ -642,15 +643,15 @@ where
         Err(e) if is_auth_error(&e) => {
             client::invalidate_tokens(state);
             let api = create_api(state).await?;
-            f(api).await
+            f(api).await.map_err(RiotError::from)
         }
-        other => other,
+        other => other.map_err(RiotError::from),
     }
 }
 
 /// Builds an authenticated Riot API client from the local Riot Client
 /// tokens. Errors when the lockfile is missing or Riot Client isn't signed in.
-pub async fn create_api(state: &RiotState) -> Result<RiotApiClient, String> {
+pub async fn create_api(state: &RiotState) -> Result<RiotApiClient, RiotError> {
     let tokens = client::get_tokens(state, false).await?;
     let locale = client::get_region_locale(state).await?;
     let mut client_version = client::get_valorant_client_version(state)

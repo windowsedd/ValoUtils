@@ -135,25 +135,24 @@ pub(crate) fn local_resolved_player(query: &PlayerQuery) -> Option<ResolvedPlaye
     })
 }
 
-fn resolve_error(code: &str, error: &str) -> String {
-    json!({ "success": false, "code": code, "error": error }).to_string()
+fn resolve_error(code: &str, error: &str) -> Value {
+    json!({ "success": false, "code": code, "error": error })
 }
 
-fn resolve_success(player: ResolvedPlayer) -> String {
+fn resolve_success(player: ResolvedPlayer) -> Value {
     json!({
         "success": true,
         "puuid": player.puuid,
         "gameName": player.game_name,
         "tagLine": player.tag_line,
     })
-    .to_string()
 }
 
 #[tauri::command]
 pub async fn tools_player_resolve(
     args: Vec<Value>,
     riot: State<'_, RiotState>,
-) -> Result<String, ()> {
+) -> Result<Value, ()> {
     let query = match parse_player_query(args.first().and_then(Value::as_str).unwrap_or("")) {
         Ok(query) => query,
         Err(_) => {
@@ -204,13 +203,15 @@ pub async fn tools_player_resolve(
                 None => resolve_error("playerNotFound", "No Valorant player matched that lookup."),
             }
         }
-        Err(error) if error.contains("lockfile") => {
+        Err(error) if error.is_login_required() => {
             resolve_error("loginRequired", "Open the Riot Client and sign in.")
         }
-        Err(error) if error.contains("\"status\":404") => {
+        Err(error) if matches!(error, crate::riot::error::RiotError::LocalHttp { status: 404 }
+            | crate::riot::error::RiotError::ConversationNotFound)
+            || error.to_string().contains("\"status\":404") => {
             resolve_error("playerNotFound", "No Valorant player matched that lookup.")
         }
-        Err(error) => resolve_error("unavailable", &error),
+        Err(error) => resolve_error(error.code(), &error.to_string()),
     })
 }
 

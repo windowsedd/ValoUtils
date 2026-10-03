@@ -6,7 +6,7 @@ const router = readFileSync(join(import.meta.dir, "..", "src/components/router.t
 
 describe("dynamic navigation routes", () => {
   test("provider loads and filters hidden tabs", () => {
-    expect(router).toContain('window.Main.on("config:get-all", onConfigLoaded)');
+    expect(router).toContain('"config_get_all"');
     expect(router).toContain("filterVisibleRoutes(allRoutes, hiddenTabs)");
     expect(router).toContain(
       'window.addEventListener("valoutils:config-changed", onConfigChanged)',

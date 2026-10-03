@@ -105,9 +105,9 @@ fn parse_entries(text: &str, skip_first: bool) -> Vec<Value> {
 }
 
 #[tauri::command]
-pub fn logs_read(app: AppHandle) -> String {
+pub fn logs_read(app: AppHandle) -> Value {
     let Some(path) = log_path(&app) else {
-        return json!({ "success": false, "error": "The log directory is unavailable." }).to_string();
+        return json!({ "success": false, "error": "The log directory is unavailable." });
     };
     let display_path = path.to_string_lossy().to_string();
     if !path.exists() {
@@ -118,8 +118,7 @@ pub fn logs_read(app: AppHandle) -> String {
             "entries": [],
             "bytes": 0,
             "truncated": false,
-        })
-        .to_string();
+        });
     }
 
     match read_tail(&path) {
@@ -129,16 +128,15 @@ pub fn logs_read(app: AppHandle) -> String {
             "entries": parse_entries(&text, truncated),
             "bytes": size,
             "truncated": truncated,
-        })
-        .to_string(),
-        Err(error) => json!({ "success": false, "path": display_path, "error": error }).to_string(),
+        }),
+        Err(error) => json!({ "success": false, "path": display_path, "error": error }),
     }
 }
 
 #[tauri::command]
-pub fn logs_open(app: AppHandle) -> String {
+pub fn logs_open(app: AppHandle) -> Value {
     let Some(path) = log_path(&app) else {
-        return json!({ "success": false, "error": "The log directory is unavailable." }).to_string();
+        return json!({ "success": false, "error": "The log directory is unavailable." });
     };
     // Reveal the file where it exists, and its folder where it does not —
     // pointing the file manager at something missing is an error for no reason.
@@ -147,24 +145,24 @@ pub fn logs_open(app: AppHandle) -> String {
         false => path.parent().map_or_else(|| path.clone(), PathBuf::from),
     };
     match app.opener().reveal_item_in_dir(&target) {
-        Ok(()) => json!({ "success": true, "path": target.to_string_lossy() }).to_string(),
-        Err(error) => json!({ "success": false, "error": error.to_string() }).to_string(),
+        Ok(()) => json!({ "success": true, "path": target.to_string_lossy() }),
+        Err(error) => json!({ "success": false, "error": error.to_string() }),
     }
 }
 
 #[tauri::command]
-pub fn logs_clear(app: AppHandle) -> String {
+pub fn logs_clear(app: AppHandle) -> Value {
     let Some(path) = log_path(&app) else {
-        return json!({ "success": false, "error": "The log directory is unavailable." }).to_string();
+        return json!({ "success": false, "error": "The log directory is unavailable." });
     };
     if !path.exists() {
-        return json!({ "success": true }).to_string();
+        return json!({ "success": true });
     }
     // Truncated rather than removed: the logger holds the file open, and
     // deleting it out from under that handle sends later writes nowhere.
     match std::fs::write(&path, b"") {
-        Ok(()) => json!({ "success": true }).to_string(),
-        Err(error) => json!({ "success": false, "error": error.to_string() }).to_string(),
+        Ok(()) => json!({ "success": true }),
+        Err(error) => json!({ "success": false, "error": error.to_string() }),
     }
 }
 

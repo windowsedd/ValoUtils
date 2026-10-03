@@ -102,13 +102,10 @@ pub fn path() -> Result<PathBuf, RiotError> {
 
 /// Reads and parses the live lockfile.
 ///
-/// Any I/O failure collapses to `RiotClientNotRunning`: a missing file, a
-/// permission error and a half-written file are all indistinguishable to the
-/// player, and the remedy ("start the Riot Client") is the same. The
-/// underlying `io::Error` is intentionally not forwarded — its `Display`
-/// includes the full path, which is a user profile directory.
+/// Missing files mean the client is closed; unreadable files and malformed
+/// contents remain faults. Never forward paths or raw contents to the UI.
 pub fn read() -> Result<Lockfile, RiotError> {
-    let contents = std::fs::read_to_string(path()?).map_err(|_| RiotError::RiotClientNotRunning)?;
+    let contents = std::fs::read_to_string(path()?).map_err(RiotError::from_lockfile_io)?;
     parse(&contents)
 }
 

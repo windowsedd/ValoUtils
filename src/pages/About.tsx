@@ -1,3 +1,5 @@
+import { listenEvent, reportIpcError } from "@/util/ipc";
+import { invoke } from "@tauri-apps/api/core";
 import { PageHeader, SectionCard, SectionRow, pageBodyClass } from "@/components/section-card";
 import { openUrl } from "@/util";
 import { useEffect, useState } from "react";
@@ -31,56 +33,55 @@ const About = () => {
 	const { t } = useTranslation();
 
 	useEffect(() => {
-		if (!window.Main) return;
-		window.Main.on("version", (value: string) => setVersion(value));
-		window.Main.send("version");
-		return () => window.Main.removeAllListeners("version");
-	}, []);
+const applyVersion = (value: string) => setVersion(value);
+
+		let active = true;
+
+		invoke<any>("version").then(reply => { if (active) applyVersion(reply); }).catch(error => { if (active) return (reportIpcError)(error); });
+
+		return () => { active = false; };
+}, []);
 
 	useEffect(() => {
-		if (!window.Main) return;
-
-		const onChecking = () => {
-			setUpdateError(null);
-			setNextVersion(null);
-			setStage("checking");
+const onError = (message: any) => {
+			setUpdateError(message || null);
+			setStage("error");
 		};
-		const onAvailable = (message: string) => {
+
+const onNotAvailable = () => setStage("upToDate");
+
+const onDownloaded = () => setStage("downloaded");
+
+const onProgress = () => setStage("downloading");
+
+const onAvailable = (message: any) => {
 			try {
-				setNextVersion(JSON.parse(message)?.version ?? null);
+				setNextVersion(message?.version ?? null);
 			} catch {
 				setNextVersion(null);
 			}
 			setStage("downloading");
 		};
-		// Progress arrives as a bare tick with no byte counts, so it only confirms
-		// the download is alive — the bar it drives has to stay indeterminate.
-		const onProgress = () => setStage("downloading");
-		const onDownloaded = () => setStage("downloaded");
-		const onNotAvailable = () => setStage("upToDate");
-		const onError = (message: string) => {
-			setUpdateError(message || null);
-			setStage("error");
+
+const onChecking = () => {
+			setUpdateError(null);
+			setNextVersion(null);
+			setStage("checking");
 		};
 
-		window.Main.on("update:checking", onChecking);
-		window.Main.on("update:available", onAvailable);
-		window.Main.on("update:download-progress", onProgress);
-		window.Main.on("update:downloaded", onDownloaded);
-		window.Main.on("update:not-available", onNotAvailable);
-		window.Main.on("update:error", onError);
+		// Progress arrives as a bare tick with no byte counts, so it only confirms
+		// the download is alive — the bar it drives has to stay indeterminate.
+
+		const stopChecking = listenEvent("update:checking", onChecking);
+		const stopAvailable = listenEvent("update:available", onAvailable);
+		const stopProgress = listenEvent("update:download-progress", onProgress);
+		const stopDownloaded = listenEvent("update:downloaded", onDownloaded);
+		const stopNotAvailable = listenEvent("update:not-available", onNotAvailable);
+		const stopError = listenEvent("update:error", onError);
 		return () => {
-			for (const channel of [
-				"update:checking",
-				"update:available",
-				"update:download-progress",
-				"update:downloaded",
-				"update:not-available",
-				"update:error",
-			]) {
-				window.Main.removeAllListeners(channel);
-			}
-		};
+            stopChecking(); stopAvailable(); stopProgress();
+            stopDownloaded(); stopNotAvailable(); stopError();
+        };
 	}, []);
 
 	const busy = BUSY.has(stage);
@@ -173,7 +174,7 @@ const About = () => {
 						<button
 							type="button"
 							disabled={busy}
-							onClick={() => window.Main.send("update:check")}
+							onClick={() => invoke("update_check").catch(reportIpcError)}
 							className="flex h-8 shrink-0 items-center gap-1.5 rounded-[6px] border border-(--accent-border) bg-(--accent-soft) px-3 text-[12px] font-medium text-(--accent-selected) transition-colors hover:bg-(--accent-soft-hover) disabled:cursor-not-allowed disabled:opacity-40"
 						>
 							<LuRotateCw className={`h-3 w-3 ${busy ? "animate-spin motion-reduce:animate-none" : ""}`} />

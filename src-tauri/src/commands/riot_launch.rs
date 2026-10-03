@@ -93,15 +93,15 @@ fn spawn_riot(exe: &PathBuf, args: &[String]) -> Result<(), String> {
         .map_err(|error| format!("Failed to launch the Riot Client: {error}"))
 }
 
-fn command_result(result: Result<Value, String>) -> Result<String, ()> {
+fn command_result(result: Result<Value, String>) -> Result<Value, ()> {
     Ok(match result {
-        Ok(value) => value.to_string(),
-        Err(error) => json!({ "success": false, "error": error }).to_string(),
+        Ok(value) => value,
+        Err(error) => json!({ "success": false, "error": error }),
     })
 }
 
 #[tauri::command]
-pub async fn client_config_status() -> Result<String, ()> {
+pub async fn client_config_status() -> Result<Value, ()> {
     let presence = presence_proxy::controller().snapshot();
     Ok(json!({
         "success": true,
@@ -119,8 +119,7 @@ pub async fn client_config_status() -> Result<String, ()> {
         "certId": presence.cert_id,
         "certHost": presence.cert_host,
         "lastWarning": presence.last_warning,
-    })
-    .to_string())
+    }))
 }
 
 /// Starts the local config server (if needed) and launches the Riot Client
@@ -131,7 +130,7 @@ pub async fn client_config_status() -> Result<String, ()> {
 ///   --launch-product=valorant --launch-patchline=live
 /// ```
 #[tauri::command]
-pub async fn riot_launch_with_config(args: Vec<Value>) -> Result<String, ()> {
+pub async fn riot_launch_with_config(args: Vec<Value>) -> Result<Value, ()> {
     let _launch_guard = launch_lock().lock().await;
     let (product, patchline) = parse_launch_target(&args);
 
@@ -178,7 +177,7 @@ pub async fn riot_launch_with_config(args: Vec<Value>) -> Result<String, ()> {
 }
 
 #[tauri::command]
-pub async fn riot_launch_normal(args: Vec<Value>) -> Result<String, ()> {
+pub async fn riot_launch_normal(args: Vec<Value>) -> Result<Value, ()> {
     let _launch_guard = launch_lock().lock().await;
     let (product, patchline) = parse_launch_target(&args);
     let result = if riot_client_running() {
@@ -200,10 +199,10 @@ pub async fn riot_launch_normal(args: Vec<Value>) -> Result<String, ()> {
 }
 
 #[tauri::command]
-pub async fn client_config_stop() -> Result<String, ()> {
+pub async fn client_config_stop() -> Result<Value, ()> {
     client_config::stop();
     presence_proxy::stop().await;
-    Ok(json!({ "success": true, "running": false, "relayRunning": false }).to_string())
+    Ok(json!({ "success": true, "running": false, "relayRunning": false }))
 }
 
 #[cfg(test)]

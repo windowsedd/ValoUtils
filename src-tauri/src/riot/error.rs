@@ -1,4 +1,4 @@
-//! Typed errors for the local Riot Client chat integration.
+//! Typed errors for Riot Client requests and chat integration.
 //!
 //! Every variant is written so that its `Display` output is safe to hand
 //! straight to the frontend or to a log line. Specifically, no variant may
@@ -21,6 +21,21 @@ use thiserror::Error;
 pub enum RiotError {
     #[error("Riot Client is not running.")]
     RiotClientNotRunning,
+
+    #[error("Sign in to the Riot Client, then try again.")]
+    LoginRequired,
+
+    #[error("The Riot Client request timed out. Try again.")]
+    Timeout,
+
+    #[error("Could not read the Riot Client lockfile. Check file access and try again.")]
+    LockfileReadFailed,
+
+    #[error("{0}")]
+    Other(String),
+
+    #[error("Riot Client request failed (HTTP {status}).")]
+    LocalHttp { status: u16 },
 
     #[error("Riot Client lockfile is malformed.")]
     MalformedLockfile,
@@ -76,7 +91,33 @@ impl RiotError {
     /// (https://127.0.0.1:54321/chat/v6/messages)` and put the local port into
     /// anything that logged it.
     pub fn from_transport(error: reqwest::Error) -> Self {
-        RiotError::Transport(error.without_url().to_string())
+        if error.is_timeout() {
+            Self::Timeout
+        } else if error.is_connect() {
+            Self::RiotClientNotRunning
+        } else {
+            Self::Transport(error.without_url().to_string())
+        }
+    }
+
+    pub fn code(&self) -> &'static str {
+        if self.is_login_required() {
+            return "loginRequired";
+        }
+        match self {
+            Self::MalformedLockfile => "malformedLockfile",
+            Self::LockfileReadFailed => "lockfileReadFailed",
+            Self::Timeout => "timeout",
+            _ => "unavailable",
+        }
+    }
+
+    pub fn from_lockfile_io(error: std::io::Error) -> Self {
+        match error.kind() {
+            std::io::ErrorKind::NotFound => Self::RiotClientNotRunning,
+            std::io::ErrorKind::InvalidData => Self::MalformedLockfile,
+            _ => Self::LockfileReadFailed,
+        }
     }
 
     /// True when the failure means "nobody is signed in / the client isn't up"
@@ -87,21 +128,93 @@ impl RiotError {
         match self {
             RiotError::RiotClientNotRunning
             | RiotError::RiotClientUnavailable
-            | RiotError::MalformedLockfile
-            | RiotError::Transport(_)
+            | RiotError::LoginRequired
             | RiotError::NotConnected
             | RiotError::AuthenticationFailed { .. } => true,
             RiotError::Http { status } | RiotError::RequestFailed { status } => {
-                *status == 401 || *status == 403 || *status == 503
+                *status == 401 || *status == 403
             }
             _ => false,
         }
     }
 }
 
+// Preserve text at legacy IPC boundaries; classification must happen beforehand.
+impl From<RiotError> for String {
+    fn from(error: RiotError) -> Self {
+        error.to_string()
+    }
+}
+
+impl From<String> for RiotError {
+    fn from(error: String) -> Self {
+        Self::Other(error)
+    }
+}
+
+impl serde::Serialize for RiotError {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&self.to_string())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn faults_do_not_request_login() {
+        assert!(!RiotError::MalformedLockfile.is_login_required());
+        assert!(!RiotError::Timeout.is_login_required());
+        assert!(!RiotError::Transport("lockfile read timed out".into()).is_login_required());
+        assert!(!RiotError::Http { status: 503 }.is_login_required());
+        assert!(RiotError::RiotClientNotRunning.is_login_required());
+        assert!(RiotError::Http { status: 401 }.is_login_required());
+    }
+
+    #[test]
+    fn lockfile_io_faults_keep_their_kind_without_exposing_paths() {
+        for (kind, expected) in [
+            (std::io::ErrorKind::NotFound, "loginRequired"),
+            (std::io::ErrorKind::PermissionDenied, "lockfileReadFailed"),
+            (std::io::ErrorKind::InvalidData, "malformedLockfile"),
+        ] {
+            let error = RiotError::from_lockfile_io(std::io::Error::new(kind, "private-path"));
+            assert_eq!(error.code(), expected);
+            assert!(!error.to_string().contains("private-path"));
+            assert_eq!(serde_json::to_value(&error).unwrap(), error.to_string());
+        }
+    }
+
+    #[tokio::test]
+    async fn timeout_and_connection_refusal_have_different_login_behavior() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/", listener.local_addr().unwrap());
+        let client = reqwest::Client::builder()
+            .no_proxy()
+            .timeout(std::time::Duration::from_millis(100))
+            .build()
+            .unwrap();
+        // The listener accepts TCP connections but never sends an HTTP response.
+        let error = RiotError::from_transport(client.get(&url).send().await.unwrap_err());
+        assert!(matches!(error, RiotError::Timeout));
+        assert_eq!(error.code(), "timeout");
+        assert!(!error.is_login_required());
+
+        drop(listener);
+        let closed_listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let closed_url = format!("http://{}/", closed_listener.local_addr().unwrap());
+        drop(closed_listener);
+        let client = reqwest::Client::builder()
+            .no_proxy()
+            .timeout(std::time::Duration::from_secs(5))
+            .build()
+            .unwrap();
+        let error = RiotError::from_transport(client.get(&closed_url).send().await.unwrap_err());
+        assert!(matches!(error, RiotError::RiotClientNotRunning), "{error:?}");
+        assert!(error.is_login_required());
+        assert!(!error.to_string().contains("127.0.0.1"));
+    }
 
     #[test]
     fn channel_unavailable_names_the_channel_it_refused() {

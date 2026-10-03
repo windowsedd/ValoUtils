@@ -1,3 +1,4 @@
+import { invoke, isTauri } from "@tauri-apps/api/core";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { parseGameSettings } from "@/util/settings-parser";
@@ -339,11 +340,10 @@ function CrosshairTab({
                     <CustomButton
                         onClickLoading={() =>
                             new Promise<void>((resolve, reject) => {
-                                if (window.Main) {
-                                    window.Main.send("clipboard:set", generateCrosshair(mapped));
-                                    resolve();
+                                if (isTauri()) {
+                                    invoke<void>("clipboard_set", { args: [generateCrosshair(mapped)] }).then(resolve).catch(reject);
                                 } else {
-                                    reject("No window.Main");
+                                    reject("Tauri is unavailable");
                                 }
                             })
                         }

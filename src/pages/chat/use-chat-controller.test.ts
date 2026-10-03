@@ -4,21 +4,13 @@ import { readFileSync } from "node:fs";
 const source = readFileSync(new URL("./use-chat-controller.ts", import.meta.url), "utf8");
 
 describe("useChatController IPC lifecycle", () => {
-  test("owns and removes exact callbacks", () => {
-    expect(source).toContain('window.Main.on("chat:get", onSummary)');
-    expect(source).toContain('window.Main.removeListener("chat:get", onSummary)');
-    expect(source).toContain('window.Main.on("chat:history", onHistory)');
-    expect(source).toContain('window.Main.removeListener("chat:history", onHistory)');
-    expect(source).toContain('window.Main.on("chat:message", onRealtimeMessage)');
-    expect(source).toContain('window.Main.removeListener("chat:message", onRealtimeMessage)');
-    expect(source).not.toContain('window.Main.send("start_chat_polling")');
-    expect(source).not.toContain('window.Main.send("stop_chat_polling")');
-    expect(source).toContain('window.Main.on("chat:presence", onPresence)');
-    expect(source).toContain('window.Main.removeListener("chat:presence", onPresence)');
-    expect(source).toContain('window.Main.on("chat:send", onSend)');
-    expect(source).toContain('window.Main.removeListener("chat:send", onSend)');
-    expect(source).not.toContain("removeAllListeners");
-    expect(source).not.toContain('window.Main.send("chat:disconnect")');
+  test("uses request promises and owns only push subscriptions", () => {
+    expect(source).toContain('listenEvent("chat:message", onRealtimeMessage)');
+    expect(source).toContain('listenEvent("chat:presence", onPresence)');
+    expect(source).toContain('stopRealtimeMessage()');
+    expect(source).toContain('stopPresence()');
+    expect(source).not.toContain("window.Main");
+    expect(source).not.toContain('"chat_disconnect"');
   });
 
   test("presence snapshots update friends without waiting for summary polling", () => {
@@ -27,10 +19,10 @@ describe("useChatController IPC lifecycle", () => {
   });
 
   test("requests history and sends with request ids", () => {
-    expect(source).toContain('window.Main.send("chat:history", requestId, cid)');
-    expect(source).toContain('window.Main.send("chat:send", requestId, selectedCid, text)');
-    expect(source).toContain("window.Main?.send(");
-    expect(source).toContain('"chat:mark-read"');
+    expect(source).toContain('args: [requestId, cid]');
+    expect(source).toContain('args: [requestId, selectedCid, text]');
+    expect(source).toContain("invoke<");
+    expect(source).toContain('"chat_mark_read"');
     expect(source).toContain("lastConversationMessageId");
     expect(source).toContain("sessionMarkedUnread");
     expect(source).toContain("if (riotUnread <= 0) return");
@@ -42,7 +34,7 @@ describe("useChatController IPC lifecycle", () => {
   });
 
   test("commands carry the selected conversation so .ascii knows the room", () => {
-    expect(source).toContain('window.Main.send("chat:command", text, selectedCid)');
+    expect(source).toContain('args: [text, selectedCid]');
     // The raw command still never reaches the room.
     expect(source).toContain("if (isComposerCommand(text)) {");
     expect(source).not.toContain('window.Main.send("chat:send", requestId, selectedCid, text);\n    if (isComposerCommand');
