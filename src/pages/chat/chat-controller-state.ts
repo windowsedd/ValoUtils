@@ -29,6 +29,8 @@ export type SystemLine = {
   command: string;
   body: string;
   failed: boolean;
+  /** Still waiting for the backend (slow AI commands). */
+  pending?: boolean;
 };
 
 export const initialChatControllerState: ChatControllerState = {
@@ -63,6 +65,7 @@ export type ChatControllerAction =
   | { type: "sendFailed"; requestId: string; error: string }
   | { type: "summaryMessages"; messages: ChatMessage[] }
   | { type: "realtimeMessage"; message: ChatMessage }
+  | { type: "commandStarted"; cid: string; id: string; command: string }
   | {
       type: "commandResult";
       cid: string;
@@ -295,26 +298,38 @@ export const chatControllerReducer = (
         historyByCid,
       };
     }
+    case "commandStarted": {
+      const existing = state.systemByCid[action.cid] ?? [];
+      return {
+        ...state,
+        systemByCid: {
+          ...state.systemByCid,
+          [action.cid]: [
+            ...existing,
+            { id: action.id, command: action.command, body: "", failed: false, pending: true },
+          ].slice(-MAX_SYSTEM_LINES),
         },
       };
     }
     case "commandResult": {
       const existing = state.systemByCid[action.cid] ?? [];
+      const line: SystemLine = {
+        id: action.id,
+        command: action.command,
+        body: action.body,
+        failed: action.failed,
+      };
+      // A started line is replaced in place so the result keeps its position.
+      const lines = existing.some((item) => item.id === action.id)
+        ? existing.map((item) => (item.id === action.id ? line : item))
+        : [...existing, line];
       return {
         ...state,
         systemByCid: {
           ...state.systemByCid,
           // Bounded so a long session of commands cannot grow the
           // thread without limit.
-          [action.cid]: [
-            ...existing,
-            {
-              id: action.id,
-              command: action.command,
-              body: action.body,
-              failed: action.failed,
-            },
-          ].slice(-MAX_SYSTEM_LINES),
+          [action.cid]: lines.slice(-MAX_SYSTEM_LINES),
         },
       };
     }

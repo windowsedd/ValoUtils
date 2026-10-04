@@ -1,13 +1,10 @@
 import type { FriendConversation, FriendGameStatus } from "./chat-model";
 import { formatClock } from "./chat-model";
 import { FaMagnifyingGlass } from "react-icons/fa6";
+import { PlayerCardAvatar } from "./player-card-avatar";
+import type { ReactNode } from "react";
 
 export type FriendStatusLabels = Record<FriendGameStatus, string>;
-
-const conversationInitial = (title: string) => {
-	const name = title.split("#")[0]?.trim() || title.trim();
-	return (name[0] ?? "?").toUpperCase();
-};
 
 export const ChatConversationList = ({
 	conversations,
@@ -20,6 +17,7 @@ export const ChatConversationList = ({
 	onSearchChange,
 	onSelect,
 	onMarkRead,
+	pinned,
 }: {
 	conversations: FriendConversation[];
 	selectedCid: string | null;
@@ -31,6 +29,8 @@ export const ChatConversationList = ({
 	onSearchChange: (value: string) => void;
 	onSelect: (cid: string) => void;
 	onMarkRead: (cid: string) => void;
+	/** Rendered above the conversations, e.g. the Dummy Bot test chat. */
+	pinned?: ReactNode;
 }) => (
 	<aside className="flex w-[268px] shrink-0 flex-col border-r border-(--border-subtle) bg-(--sidebar)">
 		<div className="px-2 pb-2 pt-4">
@@ -47,6 +47,7 @@ export const ChatConversationList = ({
 			</label>
 		</div>
 		<div className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-2">
+			{pinned}
 			{conversations.length === 0 ? (
 				<p className="px-3 py-8 text-center text-[12px] text-(--text-muted)">{emptyLabel}</p>
 			) : (
@@ -64,15 +65,11 @@ export const ChatConversationList = ({
 									: "hover:bg-(--surface-hover)"
 							}`}
 						>
-							<span
-								className={`grid h-8 w-8 shrink-0 place-items-center rounded-[6px] text-[11px] font-medium ${
-									selected
-										? "bg-(--accent-soft) text-(--accent-selected)"
-										: "bg-(--control) text-(--text-secondary)"
-								}`}
-							>
-								{conversationInitial(conversation.title)}
-							</span>
+							<PlayerCardAvatar
+								cardId={conversation.playerCardId}
+								name={conversation.title}
+								className={`size-8 ${selected ? "ring-1 ring-(--accent-border)" : ""}`}
+							/>
 							<span className="min-w-0 flex-1">
 								<span className="flex items-baseline gap-2">
 									<span className="min-w-0 flex-1 truncate text-[12px] font-medium text-(--text-primary)">

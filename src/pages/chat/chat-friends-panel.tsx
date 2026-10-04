@@ -1,3 +1,4 @@
+import { PlayerCardAvatar } from "./player-card-avatar";
 import { FriendIdentity } from "@/components/friends/friend-identity";
 import type { ChatFriend } from "@/types/chat";
 import { useEffect, useRef } from "react";
@@ -172,10 +173,17 @@ const FriendsPanelContent = ({
 									className={`flex min-h-11 w-full items-center gap-2.5 rounded-[6px] px-2 text-left transition-colors duration-150 ${selected ? "bg-[rgba(128,100,233,0.15)] text-(--accent-selected)" : "hover:bg-(--surface-hover)"}`}
 									onClick={() => onFriendSelect(selected ? null : friend.puuid)}
 								>
-									<span
-										className={`size-1.5 shrink-0 ${syncing ? "bg-(--signal-warn)" : friend.isOnline ? "bg-(--signal-pos)" : "bg-(--ink-faint)"}`}
-										aria-label={statusLabel}
-									/>
+									<span className="relative shrink-0">
+										<PlayerCardAvatar
+											cardId={friend.playerCardId}
+											name={friend.displayName}
+											className={`size-8 ${friend.isOnline ? "" : "opacity-50 grayscale"}`}
+										/>
+										<span
+											className={`absolute -bottom-0.5 -right-0.5 size-2 rounded-full ring-2 ring-(--sidebar) ${syncing ? "bg-(--signal-warn)" : friend.isOnline ? "bg-(--signal-pos)" : "bg-(--ink-faint)"}`}
+											aria-label={statusLabel}
+										/>
+									</span>
 									<span className="min-w-0 flex-1">
 										<FriendIdentity person={friend} showNote />
 										<span className="block truncate text-[11px] text-(--ink-faint)">

@@ -486,3 +486,42 @@ describe("command results", () => {
     expect(lines[49]?.id).toBe("command-59");
   });
 });
+
+describe("pending commands", () => {
+  test("a started command shows as running and its result replaces it in place", () => {
+    const cid = "party@ares-parties.ap";
+    let state = chatControllerReducer(initialChatControllerState, {
+      type: "commandStarted",
+      cid,
+      id: "slow",
+      command: ".ai team gg",
+    });
+    state = chatControllerReducer(state, {
+      type: "commandStarted",
+      cid,
+      id: "fast",
+      command: ".dodge",
+    });
+    expect(state.systemByCid[cid]?.map((line) => line.pending)).toEqual([true, true]);
+    state = chatControllerReducer(state, {
+      type: "commandResult",
+      cid,
+      id: "fast",
+      command: ".dodge",
+      body: "Left agent select.",
+      failed: false,
+    });
+    state = chatControllerReducer(state, {
+      type: "commandResult",
+      cid,
+      id: "slow",
+      command: ".ai team gg",
+      body: "Sent AI message to Team.",
+      failed: false,
+    });
+    expect(state.systemByCid[cid]?.map((line) => [line.id, Boolean(line.pending)])).toEqual([
+      ["slow", false],
+      ["fast", false],
+    ]);
+  });
+});

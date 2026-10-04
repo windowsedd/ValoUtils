@@ -262,6 +262,11 @@ h6 {
 	background: #3c3c42;
 }
 
+/* Where two scrollbars meet; unstyled it paints a white square. */
+::-webkit-scrollbar-corner {
+	background: transparent;
+}
+
 .command-rail-scroll {
 	scrollbar-width: none;
 }

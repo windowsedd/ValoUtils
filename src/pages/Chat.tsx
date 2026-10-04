@@ -1,18 +1,29 @@
-import type { ChatFriend } from "@/types/chat";
+import type { ChatFriend, ChatMessage, ChatRound } from "@/types/chat";
 import { LoginRequiredPanel } from "@/components/login-required-panel";
+import { useLiveGameSession } from "@/components/live-game/live-game-session";
+import { getAgents, localize, type AgentAsset } from "@/util/valorant-assets";
 import { LuMessageSquare } from "react-icons/lu";
-import { useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ChatComposer } from "./chat/chat-composer";
 import { ChatChannelRail } from "./chat/chat-channel-rail";
-import { ChatChannelContext } from "./chat/chat-channel-context";
+import { ChatChannelContext, type ChatRoomMemberView } from "./chat/chat-channel-context";
 import {
 	ChatConversationList,
 	type FriendStatusLabels,
 } from "./chat/chat-conversation-list";
 import { ChatFriendsPanel } from "./chat/chat-friends-panel";
-import { ChatThread } from "./chat/chat-thread";
+import {
+	chatRoomMembers,
+	chatRosterIdentities,
+	chatSenderIdentity,
+	type ComposerCommandHint,
+} from "./chat/chat-model";
+import { ChatThread, type ChatThreadSender } from "./chat/chat-thread";
 import { useChatController } from "./chat/use-chat-controller";
+import { DUMMY_BOT_CID, useDummyBotChat } from "./chat/use-dummy-bot-chat";
+import valoUtilsIcon from "../../src-tauri/icons/icon.png";
+import { PlayerCardAvatar } from "./chat/player-card-avatar";
 
 const Chat = () => {
 	const { t } = useTranslation();
@@ -20,6 +31,23 @@ const Chat = () => {
 	const [friendsDrawerOpen, setFriendsDrawerOpen] = useState(false);
 	const [selectedFriendPuuid, setSelectedFriendPuuid] = useState<string | null>(null);
 	const friendsDrawerTriggerRef = useRef<HTMLButtonElement | null>(null);
+	const composerRef = useRef<HTMLTextAreaElement | null>(null);
+	const [botOpen, setBotOpen] = useState(false);
+	const { snapshot } = useLiveGameSession();
+	const [agents, setAgents] = useState<Map<string, AgentAsset>>(new Map());
+	useEffect(() => {
+		let cancelled = false;
+		getAgents().then((map) => {
+			if (!cancelled) setAgents(map);
+		});
+		return () => {
+			cancelled = true;
+		};
+	}, []);
+	const roster = useMemo(
+		() => chatRosterIdentities(snapshot?.state === "idle" ? [] : (snapshot?.players ?? [])),
+		[snapshot],
+	);
 
 	const friendStatusLabels: FriendStatusLabels = {
 		offline: t("friends.offline"),
@@ -41,12 +69,80 @@ const Chat = () => {
 		all: t("chat.matchAll"),
 	};
 	const isFriends = channel === "friends";
+	const botName = "ValoUtils Bot";
+	const bot = useDummyBotChat(isFriends && botOpen, botName);
+	const showBot = isFriends && botOpen;
+	// The in-game whisper thread with the bot is the same transcript as the
+	// pinned test chat, so it is listed once.
+	const friendConversations = bot.puuid
+		? controller.conversations.filter(
+				(conversation) =>
+					!`${conversation.participantPuuid} ${conversation.cid}`
+						.toLowerCase()
+						.includes(bot.puuid.toLowerCase()),
+			)
+		: controller.conversations;
 	const threadTitle = isFriends
 		? selectedConversationTitle || channelLabels.friends
 		: channelLabels[channel];
+	const livePlayers = snapshot && snapshot.state !== "idle" ? snapshot.players : [];
+	const roomMembers: ChatRoomMemberView[] = isFriends
+		? []
+		: chatRoomMembers(livePlayers, channel, snapshot?.state === "party").map((member) => {
+				const agent = member.agentId ? agents.get(member.agentId) : undefined;
+				const agentName = localize(agent?.name);
+				return {
+					...member,
+					displayName: member.name || agentName || t("chat.unknownPlayer"),
+					agentName,
+					agentIcon: agent?.icon ?? null,
+				};
+			});
 	const threadSubtitle = controller.selectedFriendConversation
 		? friendStatusLabels[controller.selectedFriendConversation.statusKey]
-		: channelLabels[channel];
+		: roomMembers.length > 0
+			? `${channelLabels[channel]} · ${t("chat.playerCount", { count: roomMembers.length })}`
+			: channelLabels[channel];
+	const commandHints: ComposerCommandHint[] = [
+		{ insert: ".ai ", syntax: t("dummyBot.aiSyntax"), description: t("chat.cmdAi") },
+		{ insert: ".ask ", syntax: t("dummyBot.askSyntax"), description: t("chat.cmdAsk") },
+		{ insert: ".send ", syntax: t("dummyBot.translateSyntax"), description: t("chat.cmdSend") },
+		{ insert: ".tran ", syntax: ".tran [n]", description: t("chat.cmdTran") },
+		{ insert: ".ascii ", syntax: t("dummyBot.asciiSyntax"), description: t("chat.cmdAscii") },
+		{ insert: ".dodge", syntax: t("dummyBot.dodgeSyntax"), description: t("chat.cmdDodge") },
+	];
+	const formatDay = (time: number) => {
+		const date = new Date(time);
+		const today = new Date();
+		const yesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1);
+		if (date.toDateString() === today.toDateString()) return t("chat.today");
+		if (date.toDateString() === yesterday.toDateString()) return t("chat.yesterday");
+		return date.toLocaleDateString(undefined, { month: "short", day: "numeric", weekday: "short" });
+	};
+	const pickCommand = (command: ComposerCommandHint) => {
+		controller.setDraft(command.insert);
+		requestAnimationFrame(() => composerRef.current?.focus());
+	};
+	const describeSender = (message: ChatMessage): ChatThreadSender => {
+		const identity = chatSenderIdentity(message, roster);
+		const agent = identity.agentId ? agents.get(identity.agentId) : undefined;
+		const agentName = localize(agent?.name);
+		return {
+			name: identity.name || agentName || t("chat.unknownPlayer"),
+			agentLabel: !identity.onRoster ? "" : agentName || t("chat.noAgent"),
+			agentIcon: agent?.icon ?? null,
+			cardId: identity.cardId,
+		};
+	};
+	const formatRound = (round: ChatRound) => {
+		if (round.phase === "pregame") return t("chat.roundAgentSelect");
+		if (!round.round) return t("chat.roundInMatch");
+		const score =
+			round.allyScore == null || round.enemyScore == null
+				? ""
+				: ` · ${round.allyScore} : ${round.enemyScore}`;
+		return `${t("chat.roundNumber", { round: round.round })}${score}`;
+	};
 	const emptyLabel = t(
 		{
 			friends: "chat.emptyFriends",
@@ -97,15 +193,36 @@ const Chat = () => {
 			/>
 			{isFriends ? (
 				<ChatConversationList
-					conversations={controller.conversations}
-					selectedCid={controller.selectedCid}
+					conversations={friendConversations}
+					selectedCid={showBot ? null : controller.selectedCid}
+					pinned={
+						<button
+							type="button"
+							aria-current={showBot || undefined}
+							onClick={() => setBotOpen(true)}
+							className={`relative mb-1 flex w-full items-center gap-2.5 rounded-[8px] border border-dashed px-2 py-2 text-left outline-none transition-colors duration-150 focus-visible:shadow-[0_0_0_2px_var(--accent-soft)] ${
+								showBot
+									? "border-(--accent-border) bg-[rgba(128,100,233,0.15)]"
+									: "border-(--border) hover:bg-(--surface-hover)"
+							}`}
+						>
+							<img src={valoUtilsIcon} alt="" className="size-8 shrink-0 rounded-[6px] bg-(--control) object-contain p-1" />
+							<span className="min-w-0 flex-1">
+								<span className="block truncate text-[12px] font-medium text-(--text-primary)">{botName}</span>
+								<span className="block truncate text-[11px] text-(--text-muted)">{t("chat.dummyBotHint")}</span>
+							</span>
+						</button>
+					}
 					statusLabels={friendStatusLabels}
 					search={controller.conversationSearch}
 					searchLabel={t("chat.searchConversations")}
 					emptyLabel={t("chat.noConversations")}
 					markAsReadLabel={t("chat.markAsRead")}
 					onSearchChange={controller.setConversationSearch}
-					onSelect={controller.selectConversation}
+					onSelect={(cid) => {
+						setBotOpen(false);
+						controller.selectConversation(cid);
+					}}
 					onMarkRead={controller.markConversationRead}
 				/>
 			) : (
@@ -113,8 +230,20 @@ const Chat = () => {
 					channel={channel}
 					title={channelLabels[channel]}
 					available={!!controller.selectedCid}
-					availableLabel={t("chat.available")}
-					unavailableLabel={noRoomLabel}
+					members={roomMembers}
+					commands={commandHints}
+					labels={{
+						available: t("chat.available"),
+						unavailable: noRoomLabel,
+						members: t("chat.roomMembers"),
+						membersEmpty: t("chat.roomMembersEmpty"),
+						allies: t("chat.allies"),
+						enemies: t("chat.enemies"),
+						you: t("chat.you"),
+						noAgent: t("chat.noAgent"),
+						commands: t("chat.commands"),
+					}}
+					onPickCommand={pickCommand}
 				/>
 			)}
 
@@ -130,7 +259,7 @@ const Chat = () => {
 					<div className="flex min-h-0 flex-1 items-center justify-center text-[12px] text-(--text-muted)">
 						{t("chat.loading")}
 					</div>
-				) : controller.loginRequired ? (
+				) : controller.loginRequired && !showBot ? (
 					<LoginRequiredPanel
 						onRetry={controller.refreshSummary}
 						icon={<LuMessageSquare />}
@@ -148,13 +277,24 @@ const Chat = () => {
 				) : (
 					<>
 						<ChatThread
-							conversationId={controller.selectedCid}
-							title={threadTitle}
-							subtitle={threadSubtitle}
-							messages={controller.visibleMessages}
-							systemLines={controller.systemLines}
-							historyLoading={controller.historyLoading}
-							historyError={controller.historyError}
+							conversationId={showBot ? DUMMY_BOT_CID : controller.selectedCid}
+							title={showBot ? botName : threadTitle}
+							icon={
+								showBot ? (
+									<img src={valoUtilsIcon} alt="" className="size-7.5 shrink-0 rounded-[6px] bg-(--control) object-contain p-1" />
+								) : controller.selectedFriendConversation ? (
+									<PlayerCardAvatar
+										cardId={controller.selectedFriendConversation.playerCardId}
+										name={controller.selectedFriendConversation.title}
+										className="size-7.5"
+									/>
+								) : undefined
+							}
+							subtitle={showBot ? t("chat.dummyBotSubtitle") : threadSubtitle}
+							messages={showBot ? bot.messages : controller.visibleMessages}
+							systemLines={showBot ? [] : controller.systemLines}
+							historyLoading={showBot ? false : controller.historyLoading}
+							historyError={showBot ? null : controller.historyError}
 							translatedByMessageId={controller.translatedByMessageId}
 							translationErrorByMessageId={controller.translationErrorByMessageId}
 							translatingMessageId={controller.translatingMessageId}
@@ -166,25 +306,48 @@ const Chat = () => {
 								translate: t("chat.translate"),
 								translating: t("chat.translating"),
 								empty: emptyLabel,
+								running: t("chat.commandRunning"),
+								formatDay,
+								sent: t("chat.sent"),
 							}}
 							onRetryHistory={controller.retryHistory}
 							onTranslate={controller.translateMessage}
+							describeSender={
+								showBot
+									? () => ({ name: botName, agentLabel: "BOT", agentIcon: valoUtilsIcon, iconContain: true })
+									: isFriends
+										? (message) => ({
+												name: message.senderName || controller.selectedFriendConversation?.title || "",
+												agentLabel: "",
+												agentIcon: null,
+												cardId: controller.selectedFriendConversation?.playerCardId,
+											})
+										: describeSender
+							}
+							notice={
+								!isFriends && controller.selectedCid
+									? t("chat.joinedRoom", { room: channelLabels[channel] })
+									: undefined
+							}
+							formatRound={isFriends ? undefined : formatRound}
 							onOpenFriends={(trigger) => {
 								friendsDrawerTriggerRef.current = trigger;
 								setFriendsDrawerOpen(true);
 							}}
 						/>
 						<ChatComposer
-							draft={controller.draft}
-							disabled={!controller.selectedCid}
+							draft={showBot ? bot.draft : controller.draft}
+							disabled={showBot ? false : !controller.selectedCid}
 							disabledReason={disabledReason}
-							sending={controller.sending}
-							sendError={controller.sendError}
-							placeholder={placeholder}
+							sending={showBot ? bot.sending : controller.sending}
+							sendError={showBot ? bot.error : controller.sendError}
+							placeholder={showBot ? t("chat.dummyBotPlaceholder") : placeholder}
 							sendLabel={t("chat.send")}
 							sendingLabel={t("chat.sending")}
-							onDraftChange={controller.setDraft}
-							onSend={controller.sendMessage}
+							commands={commandHints}
+							inputRef={composerRef}
+							onDraftChange={showBot ? bot.setDraft : controller.setDraft}
+							onSend={showBot ? bot.send : controller.sendMessage}
 						/>
 					</>
 				)}

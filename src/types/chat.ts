@@ -20,6 +20,14 @@ export type ChatConversation = {
   supportsHistory: boolean;
 };
 
+/** Match state when a party/team/all message arrived (from our own presence). */
+export type ChatRound = {
+  phase: "pregame" | "ingame";
+  round?: number;
+  allyScore?: number;
+  enemyScore?: number;
+};
+
 export type ChatMessage = {
   id: string;
   conversationId: string;
@@ -30,6 +38,7 @@ export type ChatMessage = {
   type: string;
   scope: ChatScope;
   isSelf: boolean;
+  round?: ChatRound;
   _raw?: any;
 };
 
@@ -47,6 +56,8 @@ export type ChatFriend = {
   partyId: string;
   partySize: number | null;
   maxPartySize: number | null;
+  /** From Valorant presence; empty while offline (the UI keeps the last one seen). */
+  playerCardId?: string;
   isOnline: boolean;
   presenceState: ChatPresenceState;
 };

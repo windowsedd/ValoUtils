@@ -33,10 +33,14 @@ import {
   messagesForConversation,
   resolveChannelCid,
   supportsConversationHistory,
+  withRememberedPlayerCards,
   withResolvedSenderNames,
 } from "./chat-model";
 
 const POLL_MS = 5000;
+type PlayerCardResponse = { success: boolean; cardId?: string | null; code?: string };
+const cardCacheKey = (puuid: string) => puuid.split("@")[0].toLocaleLowerCase();
+const PLAYER_CARD_CACHE_KEY = "chat:playerCards";
 
 type ChatSummary = Extract<ChatResponse, { success: true }>;
 type FriendAction = "invite" | "join";
@@ -144,13 +148,13 @@ const requestHistory = useCallback((cid: string, supportsHistory: boolean) => {
     invoke<ChatHistoryResponse>("chat_history", { args: [requestId, cid] }).then(onHistory).catch(error => onHistory({ success: false, requestId, cid, code: "unavailable", error: String(error) }));
   }, [onHistory]);
 
-const onCommand = useCallback((payload: CommandResponse, pending: { cid: string; command: string }) => {
+const onCommand = useCallback((payload: CommandResponse, pending: { cid: string; command: string; id: string }) => {
 		if (!mounted.current) return;
       const response = payload;
       dispatch({
         type: "commandResult",
         cid: pending.cid,
-        id: nextRequestId("command"),
+        id: pending.id,
         command: pending.command,
         body: response
           ? response.success
@@ -263,8 +267,9 @@ const sendMessage = useCallback(() => {
     // it as a message would leak the raw line to the room and then have the
     // poller run it a second time when it read our own message back.
     if (isComposerCommand(text)) {
-      const pending = { cid: selectedCid, command: text };
+      const pending = { cid: selectedCid, command: text, id: nextRequestId("command") };
       dispatch({ type: "setDraft", cid: selectedCid, draft: "" });
+      dispatch({ type: "commandStarted", cid: selectedCid, id: pending.id, command: text });
       // The selected conversation goes along so a command with no destination
       // of its own (.ascii) knows which room the player is looking at. The
       // backend reads only the channel out of it.
@@ -431,31 +436,94 @@ const onRealtimeMessage = (payload: ChatMessage) => {
     [state.selectedCid],
   );
 
+  // Offline friends keep the last card seen, across restarts.
+  const playerCardCacheRef = useRef<Record<string, string> | null>(null);
+  if (playerCardCacheRef.current === null) {
+    try {
+      playerCardCacheRef.current = JSON.parse(localStorage.getItem(PLAYER_CARD_CACHE_KEY) ?? "{}");
+    } catch {
+      playerCardCacheRef.current = {};
+    }
+  }
+  // Cards found for offline friends through their latest match.
+  const [lookedUpCards, setLookedUpCards] = useState<Record<string, string>>({});
+  const remembered = useMemo(
+    () =>
+      withRememberedPlayerCards(summary.friends, {
+        ...playerCardCacheRef.current,
+        ...lookedUpCards,
+      }),
+    [summary.friends, lookedUpCards],
+  );
+  const knownFriends = remembered.friends;
+  useEffect(() => {
+    playerCardCacheRef.current = remembered.cache;
+    try {
+      localStorage.setItem(PLAYER_CARD_CACHE_KEY, JSON.stringify(remembered.cache));
+    } catch {
+      // Cache is a convenience; avatars fall back to initials.
+    }
+  }, [remembered.cache]);
+
   const allCachedMessages = useMemo(
     () => mergeChatMessages(summary.messages, ...Object.values(state.historyByCid)),
     [state.historyByCid, summary.messages],
   );
   const conversations = useMemo(
     () =>
-      buildFriendConversations(allCachedMessages, summary.conversations, summary.friends).map(
+      buildFriendConversations(allCachedMessages, summary.conversations, knownFriends).map(
         (item) => ({
           ...item,
           unreadCount: visibleUnreadCount(item.unreadCount, markedUnreadByCid[item.cid]),
         }),
       ),
-    [allCachedMessages, markedUnreadByCid, summary.conversations, summary.friends],
+    [allCachedMessages, markedUnreadByCid, summary.conversations, knownFriends],
   );
+  // One lookup at a time, each friend at most once per session; the result
+  // joins the persistent card cache, so a friend is only ever looked up once.
+  const cardLookupRef = useRef({ attempted: new Set<string>(), busy: false, stopped: false });
+  const [cardLookupTick, setCardLookupTick] = useState(0);
+  useEffect(() => {
+    const lookup = cardLookupRef.current;
+    if (lookup.busy || lookup.stopped) return;
+    const next = conversations.find(
+      (conversation) =>
+        conversation.participantPuuid &&
+        !conversation.playerCardId &&
+        !lookup.attempted.has(cardCacheKey(conversation.participantPuuid)),
+    );
+    if (!next) return;
+    const key = cardCacheKey(next.participantPuuid);
+    lookup.attempted.add(key);
+    lookup.busy = true;
+    invoke<PlayerCardResponse>("player_card_get", { args: [next.participantPuuid] })
+      .then((reply) => {
+        if (!mounted.current) return;
+        if (reply?.success && reply.cardId) {
+          setLookedUpCards((current) => ({ ...current, [key]: reply.cardId as string }));
+        } else if (!reply?.success && (reply?.code === "rateLimited" || reply?.code === "loginRequired")) {
+          // Leave Riot's budget to the features that need it.
+          lookup.stopped = true;
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        lookup.busy = false;
+        if (mounted.current) setCardLookupTick((tick) => tick + 1);
+      });
+  }, [conversations, cardLookupTick]);
+
   const filteredConversations = useMemo(
-    () => filterFriendConversations(conversations, summary.friends, conversationSearch),
-    [conversationSearch, conversations, summary.friends],
+    () => filterFriendConversations(conversations, knownFriends, conversationSearch),
+    [conversationSearch, conversations, knownFriends],
   );
   const selectedFriendConversation = useMemo(
     () => conversations.find((item) => item.cid === state.selectedCid) ?? null,
     [conversations, state.selectedCid],
   );
   const friends = useMemo(
-    () => filterChatFriends(summary.friends, friendSearch),
-    [friendSearch, summary.friends],
+    () => filterChatFriends(knownFriends, friendSearch),
+    [friendSearch, knownFriends],
   );
   const selectedConversation = useMemo(
     () =>
@@ -469,9 +537,9 @@ const onRealtimeMessage = (payload: ChatMessage) => {
     () =>
       withResolvedSenderNames(
         messagesForConversation(state.selectedCid, state.historyByCid, summary.messages),
-        summary.friends,
+        knownFriends,
       ),
-    [state.historyByCid, state.selectedCid, summary.friends, summary.messages],
+    [state.historyByCid, state.selectedCid, knownFriends, summary.messages],
   );
   const availableChannels = useMemo(
     () => ({

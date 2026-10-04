@@ -620,3 +620,144 @@ describe("forgetMarkedUnread", () => {
     expect(forgetMarkedUnread("cid-absent", marked)).toBe(marked);
   });
 });
+
+describe("chat sender identities", () => {
+  const mate = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+  const hidden = "11111111-2222-3333-4444-555555555555";
+  const roster = chatModel.chatRosterIdentities([
+    { puuid: mate, gameName: "Skyline", tagLine: "TW1", characterId: "ADD6443A-41BD", incognito: false, isSelf: false },
+    { puuid: hidden, gameName: "Secret", tagLine: "X", characterId: null, incognito: true, isSelf: false },
+  ]);
+  const groupMessage = (sender: string, senderName = sender): ChatMessage => ({
+    id: sender,
+    conversationId: "party-cid",
+    sender: `${sender}@ares-parties.jp1.pvp.net`,
+    senderName,
+    body: "hi",
+    timestamp: "1000",
+    type: "groupchat",
+    scope: "party",
+    isSelf: false,
+  });
+
+  test("resolves a PUUID sender to the roster Riot ID and agent", () => {
+    expect(chatModel.chatSenderIdentity(groupMessage(mate), roster)).toEqual({
+      name: "Skyline#TW1",
+      agentId: "add6443a-41bd",
+      cardId: null,
+      onRoster: true,
+    });
+  });
+
+  test("keeps incognito names hidden and reports a missing agent", () => {
+    expect(chatModel.chatSenderIdentity(groupMessage(hidden), roster)).toEqual({
+      name: "",
+      agentId: null,
+      cardId: null,
+      onRoster: true,
+    });
+  });
+
+  test("prefers an existing readable name and marks off-roster senders", () => {
+    expect(chatModel.chatSenderIdentity(groupMessage("stranger", "Friend#1"), roster)).toEqual({
+      name: "Friend#1",
+      agentId: null,
+      cardId: null,
+      onRoster: false,
+    });
+  });
+});
+
+describe("remembered player cards", () => {
+  const base = (puuid: string, playerCardId?: string) =>
+    ({ puuid, displayName: puuid, playerCardId }) as ChatFriend;
+
+  test("fills offline friends from the last card seen and records new ones", () => {
+    const { friends, cache } = chatModel.withRememberedPlayerCards(
+      [base("online", "CARD-A"), base("offline")],
+      { offline: "card-b" },
+    );
+    expect(friends.map((friend) => friend.playerCardId)).toEqual(["CARD-A", "card-b"]);
+    expect(cache).toEqual({ offline: "card-b", online: "card-a" });
+  });
+});
+
+describe("chat round dividers", () => {
+  const at = (id: string, round?: ChatMessage["round"]) =>
+    ({ id, conversationId: "team", sender: "x", senderName: "x", body: id, timestamp: id, type: "groupchat", scope: "match", isSelf: false, round }) as ChatMessage;
+
+  test("opens a divider only when the phase or round changes", () => {
+    const dividers = chatModel.chatRoundDividers([
+      at("1", { phase: "pregame" }),
+      at("2", { phase: "pregame" }),
+      at("3", { phase: "ingame", round: 1, allyScore: 0, enemyScore: 0 }),
+      at("4"),
+      at("5", { phase: "ingame", round: 1, allyScore: 0, enemyScore: 0 }),
+      at("6", { phase: "ingame", round: 2, allyScore: 1, enemyScore: 0 }),
+    ]);
+    expect(dividers.map((round) => round?.round ?? round?.phase ?? null)).toEqual([
+      "pregame", null, 1, null, null, 2,
+    ]);
+  });
+});
+
+describe("chat room members", () => {
+  const player = (puuid: string, teamId: string | null, extra: Partial<chatModel.ChatRoomPlayer> = {}) => ({
+    puuid,
+    gameName: puuid,
+    tagLine: "T",
+    characterId: null,
+    incognito: false,
+    isSelf: false,
+    teamId,
+    ...extra,
+  });
+  const players = [
+    player("enemy", "Red"),
+    player("mate", "Blue", { inMyParty: true }),
+    player("me", "Blue", { isSelf: true }),
+    player("solo", "Blue"),
+  ];
+
+  test("party is your Riot party, team is your side, all lists allies first", () => {
+    expect(chatModel.chatRoomMembers(players, "party", false).map((m) => m.puuid)).toEqual(["me", "mate"]);
+    expect(chatModel.chatRoomMembers(players, "team", false).map((m) => m.puuid)).toEqual(["me", "mate", "solo"]);
+    expect(
+      chatModel.chatRoomMembers(players, "all", false).map((m) => `${m.puuid}:${m.side}`),
+    ).toEqual(["me:ally", "mate:ally", "solo:ally", "enemy:enemy"]);
+  });
+
+  test("the whole lobby roster is the party", () => {
+    expect(chatModel.chatRoomMembers(players, "party", true)).toHaveLength(4);
+  });
+
+  test("lobby members carry their player card for the portrait", () => {
+    const lobby = [player("me", null, { isSelf: true, cardId: "CARD-1" })];
+    expect(chatModel.chatRoomMembers(lobby, "party", true)[0].cardId).toBe("card-1");
+  });
+});
+
+describe("chat day dividers", () => {
+  test("marks the first message of each day", () => {
+    const at = (timestamp: string) => ({ id: timestamp, conversationId: "c", sender: "s", senderName: "s", body: "b", timestamp, type: "chat", scope: "friends", isSelf: false }) as ChatMessage;
+    const first = new Date(2026, 9, 3, 23, 0).getTime();
+    const second = new Date(2026, 9, 3, 23, 30).getTime();
+    const third = new Date(2026, 9, 4, 0, 10).getTime();
+    expect(chatModel.chatDayDividers([at(String(first)), at(String(second)), at(String(third))])).toEqual([first, null, third]);
+  });
+});
+
+describe("composer command matching", () => {
+  const commands = [
+    { insert: ".ai ", syntax: ".ai", description: "" },
+    { insert: ".ask ", syntax: ".ask", description: "" },
+    { insert: ".dodge", syntax: ".dodge", description: "" },
+  ];
+  test("suggests by prefix and stops once arguments start", () => {
+    expect(chatModel.matchComposerCommands(".a", commands).map((c) => c.insert)).toEqual([".ai ", ".ask "]);
+    expect(chatModel.matchComposerCommands(".", commands)).toHaveLength(3);
+    expect(chatModel.matchComposerCommands(".ai", commands).map((c) => c.insert)).toEqual([]);
+    expect(chatModel.matchComposerCommands(".ai team", commands)).toEqual([]);
+    expect(chatModel.matchComposerCommands("hello", commands)).toEqual([]);
+  });
+});

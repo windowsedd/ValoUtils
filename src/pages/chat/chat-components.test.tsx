@@ -6,7 +6,7 @@ import { ChatChannelContext } from "./chat-channel-context";
 import { ChatComposer, shouldRestoreComposerFocus } from "./chat-composer";
 import { ChatConversationList } from "./chat-conversation-list";
 import { ChatFriendsPanel, focusFriendsDrawer } from "./chat-friends-panel";
-import { ChatThread } from "./chat-thread";
+import { ChatThread, isBlockArt } from "./chat-thread";
 
 const channelLabels: Record<ChatChannel, string> = {
 	friends: "Friends",
@@ -34,6 +34,20 @@ const threadLabels = {
 	translate: "Translate",
 	translating: "Translating",
 	empty: "No messages",
+	running: "Running",
+	formatDay: () => "Today",
+};
+
+const roomLabels = {
+	available: "Available",
+	unavailable: "No team room",
+	members: "In this room",
+	membersEmpty: "Nobody yet",
+	allies: "Allies",
+	enemies: "Enemies",
+	you: "You",
+	noAgent: "No agent",
+	commands: "Commands",
 };
 
 const message = (id: string, body: string, timestamp: string): ChatMessage => ({
@@ -82,6 +96,25 @@ describe("Chat components", () => {
 		expect(markup).toContain("Party");
 		expect(markup).toContain("Team");
 		expect(markup).toContain(">All<");
+	});
+
+	test("conversation list renders a pinned entry above an empty list", () => {
+		const markup = renderToStaticMarkup(
+			<ChatConversationList
+				conversations={[]}
+				selectedCid={null}
+				statusLabels={statusLabels}
+				search=""
+				searchLabel="Search conversations"
+				emptyLabel="No conversations"
+				markAsReadLabel="Mark as read"
+				onSearchChange={() => {}}
+				onSelect={() => {}}
+				onMarkRead={() => {}}
+				pinned={<button type="button">ValoUtils Bot</button>}
+			/>,
+		);
+		expect(markup.indexOf("ValoUtils Bot")).toBeLessThan(markup.indexOf("No conversations"));
 	});
 
 	test("conversation list shows real unread metadata and selected state", () => {
@@ -144,6 +177,33 @@ describe("Chat components", () => {
 		expect(markup).toContain("Translation unavailable");
 	});
 
+	test("group thread shows the sender portrait, name and agent above the bubble", () => {
+		const markup = renderToStaticMarkup(
+			<ChatThread
+				conversationId="party-cid"
+				title="Party"
+				subtitle="Party"
+				messages={[message("one", "hello", "1000")]}
+				systemLines={[]}
+				historyLoading={false}
+				historyError={null}
+				translatedByMessageId={{ "friend-cid:one": "translated hello" }}
+				translationErrorByMessageId={{}}
+				translatingMessageId={null}
+				labels={threadLabels}
+				onRetryHistory={() => {}}
+				onTranslate={() => {}}
+				onOpenFriends={() => {}}
+				describeSender={() => ({ name: "Skyline#TW1", agentLabel: "Jett", agentIcon: "jett.png" })}
+			/>,
+		);
+		expect(markup).toContain('src="jett.png"');
+		expect(markup.indexOf("Skyline#TW1")).toBeLessThan(markup.indexOf(">hello<"));
+		expect(markup).toContain(">Jett<");
+		expect(markup).toContain('aria-pressed="true"');
+		expect(markup.indexOf(">hello<")).toBeLessThan(markup.indexOf("translated hello"));
+	});
+
 	test("composer is multiline and reports unavailable state", () => {
 		const markup = renderToStaticMarkup(
 			<ChatComposer
@@ -172,13 +232,71 @@ describe("Chat components", () => {
 				channel="team"
 				title="Team"
 				available={false}
-				availableLabel="Available"
-				unavailableLabel="No team room"
+				members={[]}
+				commands={[]}
+				labels={roomLabels}
+				onPickCommand={() => {}}
 			/>,
 		);
 		expect(markup).toContain('data-channel-context="team"');
 		expect(markup).toContain('data-channel-available="false"');
 		expect(markup).toContain("No team room");
+		expect(markup).toContain("Nobody yet");
+	});
+
+	test("all chat context splits allies and enemies and marks yourself", () => {
+		const member = (puuid: string, side: "ally" | "enemy", isSelf = false) => ({
+			puuid,
+			name: puuid,
+			displayName: `${puuid}#TAG`,
+			agentId: null,
+			agentName: side === "ally" ? "Jett" : "",
+			agentIcon: null,
+			isSelf,
+			side,
+		});
+		const markup = renderToStaticMarkup(
+			<ChatChannelContext
+				channel="all"
+				title="All"
+				available
+				members={[member("me", "ally", true), member("foe", "enemy")]}
+				commands={[{ insert: ".ai ", syntax: ".ai <prompt>", description: "AI line" }]}
+				labels={roomLabels}
+				onPickCommand={() => {}}
+			/>,
+		);
+		expect(markup.indexOf("Allies")).toBeLessThan(markup.indexOf("Enemies"));
+		expect(markup).toContain(">You<");
+		expect(markup).toContain(">Jett<");
+		expect(markup).toContain(">No agent<");
+		expect(markup).toContain(">.ai<");
+	});
+
+	test("composer suggests commands for a bare dot word", () => {
+		const markup = renderToStaticMarkup(
+			<ChatComposer
+				draft=".a"
+				disabled={false}
+				disabledReason=""
+				sending={false}
+				sendError={null}
+				placeholder="Type"
+				sendLabel="Send"
+				sendingLabel="Sending"
+				hint="Enter to send"
+				commands={[
+					{ insert: ".ai ", syntax: ".ai <prompt>", description: "AI line" },
+					{ insert: ".dodge", syntax: ".dodge", description: "Leave" },
+				]}
+				onDraftChange={() => {}}
+				onSend={() => {}}
+			/>,
+		);
+		expect(markup).toContain('role="listbox"');
+		expect(markup).toContain(".ai &lt;prompt&gt;");
+		expect(markup).not.toContain(".dodge");
+		expect(markup).toContain("Enter to send");
 	});
 
 	test("friends panel keeps notes visible and exposes the selected friend's actions", () => {
@@ -272,5 +390,13 @@ describe("Chat components", () => {
 		expect(markup).toContain("Reconnecting...");
 		expect(markup).not.toContain("In Lobby");
 		expect(markup).not.toContain('aria-label="Online"');
+	});
+});
+
+describe("block art", () => {
+	test("detects .ascii panels but not ordinary text", () => {
+		expect(isBlockArt("░░░░░░███░░░██░░████░░░░░░")).toBe(true);
+		expect(isBlockArt("gg █ wp")).toBe(false);
+		expect(isBlockArt("要一起打競技嗎？")).toBe(false);
 	});
 });

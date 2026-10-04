@@ -6,12 +6,14 @@ import type {
   ChatPresenceSnapshot,
   ChatRoomKey,
   ChatRooms,
+  ChatRound,
 } from "@/types/chat";
 
 export type FriendConversation = {
   cid: string;
   title: string;
   participantPuuid: string;
+  playerCardId?: string;
   statusKey: FriendGameStatus;
   unreadCount: number;
   latestTime: number;
@@ -113,6 +115,13 @@ const presenceProductPriority = (product: string) => {
   }
 };
 
+const presenceCardId = (value: unknown): string => {
+  if (!value || typeof value !== "object") return "";
+  const blob = value as { playerCardId?: unknown; playerPresenceData?: { playerCardId?: unknown } };
+  const id = blob.playerPresenceData?.playerCardId ?? blob.playerCardId;
+  return typeof id === "string" ? id : "";
+};
+
 export const applyPresenceSnapshot = (
   friends: ChatFriend[],
   snapshot: ChatPresenceSnapshot,
@@ -136,6 +145,7 @@ export const applyPresenceSnapshot = (
       status: ready ? (selected?.status ?? "offline") : "offline",
       statusMessage: ready ? (selected?.statusMessage ?? "") : "",
       sessionLoopState: ready ? (selected?.sessionLoopState ?? "") : "",
+      playerCardId: presenceCardId(selected?.private) || friend.playerCardId,
     };
   });
 
@@ -233,6 +243,7 @@ export const buildFriendConversations = (
         title:
           conversation?.title || friend?.displayName || other?.senderName || other?.sender || cid,
         participantPuuid: conversation?.participantPuuid || "",
+        playerCardId: friend?.playerCardId,
         statusKey: resolveFriendGameStatus(friend),
         unreadCount: conversation?.unreadCount ?? 0,
         latestTime: Math.max(0, ...ordered.map(messageTime)),
@@ -438,3 +449,172 @@ export const shouldStickToBottom = (metrics: ScrollMetrics, sentBySelf: boolean)
 
 export const shouldResetThreadPosition = (previousCid: string | null, nextCid: string | null) =>
   previousCid !== nextCid;
+
+export type ChatRosterPlayer = {
+  puuid: string;
+  gameName: string;
+  tagLine: string;
+  characterId: string | null;
+  /** Player card from the Live Game roster (party lobby and matches). */
+  cardId?: string | null;
+  incognito: boolean;
+  isSelf: boolean;
+  inMyParty?: boolean;
+};
+
+export type ChatSenderIdentity = {
+  /** Riot ID, or "" when unknown or hidden by incognito. */
+  name: string;
+  /** Agent UUID (lowercase), or null before agent select. */
+  agentId: string | null;
+  cardId: string | null;
+};
+
+/** Live Game roster keyed by PUUID, so party/team/all senders gain their agent. */
+export const chatRosterIdentities = (players: ChatRosterPlayer[]) => {
+  const roster = new Map<string, ChatSenderIdentity>();
+  for (const player of players) {
+    const visible = !player.incognito || player.isSelf || player.inMyParty;
+    roster.set(idRoot(player.puuid), {
+      name: visible && player.gameName ? `${player.gameName}#${player.tagLine}` : "",
+      agentId: player.characterId ? player.characterId.toLowerCase() : null,
+      cardId: player.cardId ? player.cardId.toLowerCase() : null,
+    });
+  }
+  return roster;
+};
+
+/** Display name and agent for a group-chat sender. `onRoster` is false outside the live roster. */
+export const chatSenderIdentity = (
+  message: ChatMessage,
+  roster: Map<string, ChatSenderIdentity>,
+) => {
+  const entry = roster.get(idRoot(message.sender));
+  const labeled = message.senderName.trim();
+  return {
+    name: labeled && !looksLikePuuid(labeled) ? labeled : (entry?.name ?? ""),
+    agentId: entry?.agentId ?? null,
+    cardId: entry?.cardId ?? null,
+    onRoster: Boolean(entry),
+  };
+};
+
+/**
+ * Presence only carries a card while a friend is online. Fill offline friends
+ * from the last card seen and return the updated puuid → card cache.
+ */
+export const withRememberedPlayerCards = (
+  friends: ChatFriend[],
+  remembered: Record<string, string>,
+) => {
+  const cache = { ...remembered };
+  const withCards = friends.map((friend) => {
+    const key = idRoot(friend.puuid);
+    if (friend.playerCardId) {
+      cache[key] = friend.playerCardId.toLowerCase();
+      return friend;
+    }
+    return cache[key] ? { ...friend, playerCardId: cache[key] } : friend;
+  });
+  return { friends: withCards, cache };
+};
+
+const chatRoundKey = (round: ChatRound) =>
+  round.phase === "pregame" ? "pregame" : `ingame:${round.round ?? ""}`;
+
+/**
+ * The round each message opens, or null when it continues the previous one.
+ * Messages without a stamp (friends, optimistic echoes) never open a round.
+ */
+export const chatRoundDividers = (messages: ChatMessage[]) => {
+  let current = "";
+  return messages.map((message) => {
+    if (!message.round) return null;
+    const key = chatRoundKey(message.round);
+    if (key === current) return null;
+    current = key;
+    return message.round;
+  });
+};
+
+export type ChatRoomPlayer = ChatRosterPlayer & { teamId: string | null };
+
+export type ChatRoomMember = {
+  puuid: string;
+  name: string;
+  agentId: string | null;
+  cardId: string | null;
+  isSelf: boolean;
+  side: "ally" | "enemy";
+};
+
+/**
+ * Who is in a group room, from the Live Game roster. Party is your Riot party
+ * (the whole roster while in the lobby); Team is your side; All is everyone.
+ */
+export const chatRoomMembers = (
+  players: ChatRoomPlayer[],
+  channel: Exclude<ChatChannel, "friends">,
+  inLobby: boolean,
+): ChatRoomMember[] => {
+  const ownTeam = players.find((player) => player.isSelf)?.teamId ?? null;
+  const side = (player: ChatRoomPlayer): ChatRoomMember["side"] =>
+    !ownTeam || !player.teamId || player.teamId === ownTeam ? "ally" : "enemy";
+  const members = players.filter((player) =>
+    channel === "party"
+      ? inLobby || player.isSelf || player.inMyParty
+      : channel === "team"
+        ? side(player) === "ally"
+        : true,
+  );
+  const identities = chatRosterIdentities(members);
+  return members
+    .map((player) => ({
+      puuid: player.puuid,
+      name: identities.get(idRoot(player.puuid))?.name ?? "",
+      agentId: identities.get(idRoot(player.puuid))?.agentId ?? null,
+      cardId: identities.get(idRoot(player.puuid))?.cardId ?? null,
+      isSelf: player.isSelf,
+      side: side(player),
+    }))
+    .sort(
+      (a, b) =>
+        Number(a.side === "enemy") - Number(b.side === "enemy") ||
+        Number(b.isSelf) - Number(a.isSelf),
+    );
+};
+
+const dayKey = (message: ChatMessage) => {
+  const time = messageTime(message);
+  if (!time) return "";
+  const date = new Date(time);
+  return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+};
+
+/** Timestamp of the first message of each calendar day, else null. */
+export const chatDayDividers = (messages: ChatMessage[]) => {
+  let current = "";
+  return messages.map((message) => {
+    const key = dayKey(message);
+    if (!key || key === current) return null;
+    current = key;
+    return messageTime(message);
+  });
+};
+
+export type ComposerCommandHint = {
+  /** Text placed in the composer when picked, e.g. ".ai ". */
+  insert: string;
+  syntax: string;
+  description: string;
+};
+
+/** Commands matching a draft that is still just a `.word` with no arguments. */
+export const matchComposerCommands = (draft: string, commands: ComposerCommandHint[]) => {
+  const head = draft.trimStart();
+  if (!head.startsWith(".") || /\s/.test(head)) return [];
+  const query = head.toLocaleLowerCase();
+  return commands.filter(
+    (command) => command.insert.trim().startsWith(query) && command.insert.trim() !== query,
+  );
+};
