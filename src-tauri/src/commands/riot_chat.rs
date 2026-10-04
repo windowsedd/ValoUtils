@@ -504,8 +504,25 @@ pub async fn chat_command(args: Vec<Value>, app: AppHandle) -> Result<Value, ()>
     // used; see [`AsciiSource`].
     let selected_cid = args.get(1).and_then(Value::as_str).unwrap_or_default();
 
+    Ok(match run_composer_command(&input, selected_cid, &app, false).await {
+        Ok(reply) => json!({ "success": true, "reply": reply }),
+        Err(error) => json!({ "success": false, "error": error }),
+    })
+}
+
+/// Executes a `.` command the way the Chat composer does and returns the text
+/// to show the player. Shared with the in-app Dummy Bot chat, where
+/// `in_bot_chat` makes a Direct custom command answer in that thread instead of
+/// whispering through the game relay.
+pub(crate) async fn run_composer_command(
+    input: &str,
+    selected_cid: &str,
+    app: &AppHandle,
+    in_bot_chat: bool,
+) -> Result<String, String> {
+    let app = app.clone();
     let commands = load_custom_commands(Some(&app));
-    let outcome = match classify_composer_command(&input, &commands) {
+    let outcome = match classify_composer_command(input, &commands) {
         ComposerCommand::History(command) => {
             execute_history_translation(&command, Some(&app)).await
         }
@@ -522,6 +539,7 @@ pub async fn chat_command(args: Vec<Value>, app: AppHandle) -> Result<Value, ()>
                         .await
                         .map(|outcome| format_translation_reply(&outcome))
                 }
+                Ok(Some(ResolvedCustomCommand::Direct(body))) if in_bot_chat => Ok(body),
                 Ok(Some(ResolvedCustomCommand::Direct(body))) => deliver_proactive_direct(&body),
                 Ok(None) => Err(RiotError::InvalidCommand(
                     "Saved custom command is invalid.".into(),
@@ -543,18 +561,9 @@ pub async fn chat_command(args: Vec<Value>, app: AppHandle) -> Result<Value, ()>
         }
         // Private by default: the answer is shown only under the composer.
         ComposerCommand::Ai(line) | ComposerCommand::Ask(line) => ai_command_reply(&line).await,
-        ComposerCommand::Unknown => {
-            return Ok(json!({
-                "success": false,
-                "error": format!("Unknown command '{}'.", input.trim()),
-            }))
-        }
+        ComposerCommand::Unknown => return Err(format!("Unknown command '{}'.", input.trim())),
     };
-
-    Ok(match outcome {
-        Ok(reply) => json!({ "success": true, "reply": reply }),
-        Err(error) => json!({ "success": false, "error": error.to_string() }),
-    })
+    outcome.map_err(|error| error.to_string())
 }
 
 fn load_custom_commands(app: Option<&AppHandle>) -> Vec<chat_command::CustomBotCommand> {
