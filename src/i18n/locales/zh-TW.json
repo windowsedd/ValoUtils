@@ -53,6 +53,8 @@
     }
   },
   "profiles": {
+    "confirmDeleteTitle": "刪除設定檔？",
+    "confirmDeleteBody": "確定刪除「{{name}}」嗎？此操作無法復原。",
     "title": "設定檔",
     "addProfile": "新增設定檔",
     "loadFromAccount": "從帳號載入",

@@ -53,6 +53,8 @@
     }
   },
   "profiles": {
+    "confirmDeleteTitle": "Delete profile?",
+    "confirmDeleteBody": "Delete \"{{name}}\"? This cannot be undone.",
     "title": "Profiles",
     "addProfile": "Add Profile",
     "loadFromAccount": "Load from account",

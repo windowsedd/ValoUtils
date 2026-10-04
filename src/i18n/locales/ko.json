@@ -53,6 +53,8 @@
     }
   },
   "profiles": {
+    "confirmDeleteTitle": "프로필을 삭제할까요?",
+    "confirmDeleteBody": "\"{{name}}\" 프로필을 삭제할까요? 이 작업은 되돌릴 수 없습니다.",
     "title": "프로필",
     "addProfile": "프로필 추가",
     "loadFromAccount": "계정에서 불러오기",

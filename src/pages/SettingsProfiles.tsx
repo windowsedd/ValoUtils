@@ -150,7 +150,7 @@ const SettingsProfiles = () => {
 
 									invoke("analytics_track", { args: ["profile:add:load_share", "{}"] }).catch(reportIpcError);
 									const input = window.document.getElementById("share-code") as HTMLInputElement;
-									const inputData = input.value;
+									const inputData = input.value.trim();
 									if (!inputData) throw t("profiles.noInputData");
 									if (inputData.length != 10) throw t("profiles.invalidShareCode");
 
@@ -491,6 +491,22 @@ const SettingsProfiles = () => {
 			}
 		});
 
+	const confirmRemoveProfile = (profile: Profile) => {
+		showModal({
+			title: t("profiles.confirmDeleteTitle"),
+			body: t("profiles.confirmDeleteBody", { name: profile.name }),
+			footer: (
+				<>
+					<CustomButton color="secondary" onPress={closeModal}>{t("common.cancel")}</CustomButton>
+					<CustomButton color="danger" onClickLoading={async () => {
+						await removeProfile(profile);
+						closeModal();
+					}}>{t("profiles.delete")}</CustomButton>
+				</>
+			),
+		});
+	};
+
 	const removeProfile = (profile: Profile) =>
 		new Promise<void>((resolve, reject) => {
 			if (isTauri()) {
@@ -573,7 +589,7 @@ const SettingsProfiles = () => {
 									<CustomButton size="sm" className={iconButtonClass} aria-label={t("profiles.shareProfile")} onClickLoading={() => shareProfile(profile)}>
 										<FaShare />
 									</CustomButton>
-									<CustomButton size="sm" className={iconButtonClass} color="danger" aria-label={t("profiles.delete")} onClickLoading={() => removeProfile(profile)}>
+									<CustomButton size="sm" className={iconButtonClass} color="danger" aria-label={t("profiles.delete")} onPress={() => confirmRemoveProfile(profile)}>
 										<FaTrash />
 									</CustomButton>
 								</div>
