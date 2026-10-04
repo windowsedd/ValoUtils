@@ -9,7 +9,8 @@ import Matches from "@/pages/Matches.tsx";
 import Store from "@/pages/Store.tsx";
 import Settings from "@/pages/Settings.tsx";
 import { fetcher } from "@/util/swr";
-import { Toast } from "@heroui/react";
+import { GooeyToaster } from "goey-toast";
+import "goey-toast/styles.css";
 import React from "react";
 import ReactDOM from "react-dom/client";
 import {
@@ -60,10 +61,10 @@ const AppShell = () => {
 				}}
 			>
 				<DynamicModalProvider>
-				{/* Corner placement — the default ("bottom") centres a 460px-wide
-				    toast, which lands squarely on top of the full-width
+				{/* Corner placement — a bottom-centred toast would land
+				    squarely on top of the full-width
 				    "Check for Updates" button at the bottom of the About page. */}
-				<Toast.Provider placement="bottom end" />
+				<GooeyToaster position="bottom-right" theme="dark" preset="smooth" closeButton="top-right" />
 				<AlertContainer>
 					<RouterProvider
 						routes={[

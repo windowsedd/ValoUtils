@@ -1,7 +1,7 @@
 import { reportIpcError } from "@/util/ipc";
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback,  useEffect, useState  } from "react";
-import { Toast } from "@heroui/react";
+import { gooeyToast as toast } from "goey-toast";
 import { useTranslation } from "react-i18next";
 import { FaGlobe, FaRocket, FaCode, FaChartBar, FaLanguage, FaKey, FaArrowUpRightFromSquare, FaCopy, FaCheck, FaEye, FaEyeSlash, FaBook, FaComments, FaGaugeHigh, FaListOl } from "react-icons/fa6";
 import { LuBot, LuMonitor, LuScrollText, LuSettings } from "react-icons/lu";
@@ -167,7 +167,7 @@ const Settings = () => {
 				}
 				setStartupEnabled(response.enabled);
 			} catch {
-				Toast.toast.danger(t("settings.openAtStartupError"));
+				toast.error(t("settings.openAtStartupError"));
 			}
 		}, [t]);
 
@@ -313,7 +313,7 @@ const applyClientInfo = (msg: any) => {
         try {
             const data = await invoke<{ success: boolean; cancelled?: boolean; error?: string; expiresAt?: number }>("presence_cert_import", { args: [appConfig.presenceCert] });
             if (!data.success && !data.cancelled) throw new Error(data.error || "Could not import the certificate.");
-            if (data.success && data.expiresAt) Toast.toast.info(`Certificate imported. Valid until ${new Date(data.expiresAt * 1000).toLocaleDateString()}.`);
+            if (data.success && data.expiresAt) toast.info(`Certificate imported. Valid until ${new Date(data.expiresAt * 1000).toLocaleDateString()}.`);
         } finally { setCertImporting(false); }
     };
 
@@ -616,7 +616,7 @@ const applyClientInfo = (msg: any) => {
 								))}
 							</select>
 							<button
-								onClick={() => importChatCert().catch(error => Toast.toast.danger(error instanceof Error ? error.message : String(error)))}
+								onClick={() => importChatCert().catch(error => toast.error(error instanceof Error ? error.message : String(error)))}
 								disabled={certImporting}
 								className="h-7 rounded-[6px] border border-(--border) bg-(--control) px-3 text-[11px] font-medium text-(--text-primary) hover:bg-(--surface-hover) disabled:opacity-40 disabled:cursor-not-allowed transition-[background-color,border-color,color] duration-150"
 							>
