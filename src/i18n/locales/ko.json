@@ -22,6 +22,7 @@
     "unavailable": "랭크 보호막 상태를 확인할 수 없음"
   },
   "common": {
+    "actionFailed": "작업에 실패했습니다. 다시 시도해 주세요.",
     "close": "닫기",
     "cancel": "취소",
     "save": "저장",

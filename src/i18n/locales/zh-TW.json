@@ -22,6 +22,7 @@
     "unavailable": "無法取得牌位護盾狀態"
   },
   "common": {
+    "actionFailed": "操作失敗，請再試一次。",
     "close": "關閉",
     "cancel": "取消",
     "save": "儲存",

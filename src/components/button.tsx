@@ -1,7 +1,9 @@
 import React, { ComponentProps, useEffect } from "react";
 import { Button as HeroButton } from "@heroui/react";
+import { gooeyToast as toast } from "goey-toast";
 import { PressEvent } from "@react-types/shared";
-import { useDynamicModal } from "@/components/dynamic-modal";
+import { useTranslation } from "react-i18next";
+import { runButtonAction } from "./button-action";
 import { FaCheck, FaX } from "react-icons/fa6";
 
 // HeroUI v3 dropped the `color` prop in favour of `variant`, and renamed
@@ -32,8 +34,9 @@ type CustomButtonProps = {
   children?: React.ReactNode;
 } & Omit<ComponentProps<typeof HeroButton>, "color" | "onClick" | "onPress" | "variant" | "children">;
 
-const CustomButton = ({ modalOnError: _modalOnError = true, showStatusColor = false, ...props }: CustomButtonProps) => {
-  const { showModal, closeModal } = useDynamicModal();
+const CustomButton = ({ modalOnError = true, showStatusColor = false, ...props }: CustomButtonProps) => {
+  const { t } = useTranslation();
+  const pending = React.useRef(false);
   const [loading, setLoading] = React.useState(false);
   const [statusIcon, setStatusIcon] = React.useState<React.ReactNode | null>(null);
   const [btnColor, setBtnColor] = React.useState<ButtonColor>(props.color ?? "primary");
@@ -65,44 +68,28 @@ const CustomButton = ({ modalOnError: _modalOnError = true, showStatusColor = fa
       variant={colorToVariant[btnColor]}
       className={mergedClassName}
       isPending={loading || isLoading}
-      onPress={(e: PressEvent) => {
+      onPress={async (e: PressEvent) => {
         if (onClickLoading) {
+          if (pending.current || isLoading) return;
+          pending.current = true;
           setLoading(true);
-          const promise = onClickLoading(e);
-          if (promise) {
-            let error = false;
-            promise
-              .catch((err: any) => {
-                error = true;
-                // if there is res.data.message, show it
-                if (err?.response?.data?.message) {
-                  showModal({
-                    title: "Error",
-                    body: err.response.data.message,
-                    footer: (
-                      <HeroButton variant={"danger"} onPress={closeModal}>
-                        Close
-                      </HeroButton>
-                    ),
-                  });
-                }
-              })
-              .finally(() => {
-                setLoading(false);
-                if (showStatusColor) {
-                  const originalColor = props.color;
-                  setBtnColor(error ? "danger" : "success");
-                  setStatusIcon(error ? <FaX /> : <FaCheck />);
-                  setTimeout(() => {
-                    setBtnColor(originalColor ?? "primary");
-                    setStatusIcon(null);
-                    if (props.closeModal) {
-                      props.closeModal();
-                    }
-                  }, 1000);
-                }
-              });
-          } else {
+          try {
+            const success = await runButtonAction(
+              () => onClickLoading(e),
+              message => { if (modalOnError) toast.error(message); },
+              t("common.actionFailed"),
+            );
+            if (showStatusColor) {
+              setBtnColor(success ? "success" : "danger");
+              setStatusIcon(success ? <FaCheck /> : <FaX />);
+              setTimeout(() => {
+                setBtnColor(props.color ?? "primary");
+                setStatusIcon(null);
+                if (success) props.closeModal?.();
+              }, 1000);
+            }
+          } finally {
+            pending.current = false;
             setLoading(false);
           }
         } else if (onClick) {
