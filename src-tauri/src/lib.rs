@@ -232,6 +232,7 @@ pub fn run() {
             commands::friend_profile::friend_profile_get,
             commands::tools::tools_player_resolve,
             commands::fake_player::fake_player_state,
+            commands::friend_profile::player_card_get,
             commands::riot_launch::riot_launch_normal,
             commands::riot_launch::riot_launch_with_config,
             commands::riot_launch::client_config_status,

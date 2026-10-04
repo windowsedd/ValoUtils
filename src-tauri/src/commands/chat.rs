@@ -724,6 +724,13 @@ fn normalize_friends(
                 party.get("partyId").and_then(|v| v.as_str()),
                 priv_val.get("partyId").and_then(|v| v.as_str()),
             ]);
+            let player_card_id = pick_string([
+                priv_val
+                    .get("playerPresenceData")
+                    .and_then(|v| v.get("playerCardId"))
+                    .and_then(|v| v.as_str()),
+                priv_val.get("playerCardId").and_then(|v| v.as_str()),
+            ]);
             let party_size = party.get("partySize").cloned().unwrap_or(Value::Null);
             let max_party_size = party.get("maxPartySize").cloned().unwrap_or(Value::Null);
             let status_final = if status.is_empty() {
@@ -746,6 +753,7 @@ fn normalize_friends(
                 "partyId": party_id,
                 "partySize": party_size,
                 "maxPartySize": max_party_size,
+                "playerCardId": player_card_id,
                 "isOnline": is_online,
                 "presenceState": live.state,
             }))

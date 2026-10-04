@@ -266,10 +266,78 @@ pub async fn friend_profile_get(
     })
 }
 
+/// The card a player wore in their most recent match, from its details.
+fn player_card_from_match(details: &Value, puuid: &str) -> Option<String> {
+    details
+        .get("players")
+        .and_then(Value::as_array)?
+        .iter()
+        .find(|player| {
+            player
+                .get("subject")
+                .and_then(Value::as_str)
+                .is_some_and(|subject| subject.eq_ignore_ascii_case(puuid))
+        })
+        .and_then(|player| player.get("playerCard").and_then(Value::as_str))
+        .filter(|card| !card.is_empty())
+        .map(str::to_ascii_lowercase)
+}
+
+/// Looks up a player's card while they are offline. Presence only carries the
+/// card for online friends, so this reads it from their latest match: one
+/// history call and one details call. The frontend caches the answer for good,
+/// so each friend costs this once.
+#[tauri::command]
+pub async fn player_card_get(args: Vec<Value>, riot: State<'_, RiotState>) -> Result<Value, ()> {
+    let puuid = match validated_puuid(args.first().and_then(Value::as_str)) {
+        Ok(puuid) => puuid,
+        Err(error) => return Ok(json!({ "success": false, "code": "invalidPlayer", "error": error })),
+    };
+    let result = api::with_api(&riot, |api| {
+        let puuid = puuid.clone();
+        async move {
+            let history = api.get_match_history(&puuid, 0, 1).await?;
+            let Some(match_id) = history
+                .pointer("/History/0/MatchID")
+                .and_then(Value::as_str)
+                .filter(|id| !id.is_empty())
+                .map(str::to_string)
+            else {
+                return Ok(None);
+            };
+            let details = api.get_match_details(&match_id).await?;
+            Ok(player_card_from_match(&details, &puuid))
+        }
+    })
+    .await;
+
+    Ok(match result {
+        Ok(card) => json!({ "success": true, "puuid": puuid, "cardId": card }),
+        Err(error) if error.is_login_required() => {
+            json!({ "success": false, "code": "loginRequired" })
+        }
+        Err(error) => match super::rate_limited_reply(&error.to_string()).await {
+            Some(reply) => reply,
+            None => json!({ "success": false, "code": error.code(), "error": error }),
+        },
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn reads_the_players_card_from_match_details() {
+        let details = json!({ "players": [
+            { "subject": "someone-else", "playerCard": "other" },
+            { "subject": "ABC", "playerCard": "CARD-1" },
+        ]});
+        assert_eq!(player_card_from_match(&details, "abc"), Some("card-1".into()));
+        assert_eq!(player_card_from_match(&details, "missing"), None);
+        assert_eq!(player_card_from_match(&json!({}), "abc"), None);
+    }
 
     fn leaderboard_thresholds_fixture(
         immortal_two: i64,
