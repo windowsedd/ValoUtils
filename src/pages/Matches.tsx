@@ -1,3 +1,4 @@
+import { MatchAiPanel } from "@/components/match-ai-panel";
 import { invoke } from "@tauri-apps/api/core";
 import { formatDpr } from "@/components/match-dpr";
 import {
@@ -15,7 +16,7 @@ import { localize } from "@/util/valorant-assets";
 import type { MatchDetails, MatchListEntry, MatchListResponse } from "@/types/matches";
 import { mapIcon, mapName } from "@/util/valorant-maps";
 import { queueAccent, queueLabel } from "@/util/valorant-queues";
-import { useEffect, useState, type ComponentProps } from "react";
+import { useEffect, useRef, useState, type ComponentProps } from "react";
 import { useTranslation } from "react-i18next";
 import { LuChevronDown, LuHistory } from "react-icons/lu";
 
@@ -64,7 +65,17 @@ const MatchCard = ({
 	onToggle,
 	assets,
 	onPlayerSelect,
+	aiText,
+	onAiResult,
+	aiPending,
+	onAiStart,
+	onAiFinish,
 }: {
+	aiPending: boolean;
+	onAiStart: () => boolean;
+	onAiFinish: () => void;
+	aiText?: string;
+	onAiResult: (text: string) => void;
 	entry: MatchListEntry;
 	details?: MatchDetails;
 	loading: boolean;
@@ -178,6 +189,7 @@ const MatchCard = ({
 
 			{expanded && (
 				<div className="border-t border-(--line) px-3 py-3">
+					{details && self && <MatchAiPanel details={details} assets={assets} text={aiText} onResult={onAiResult} pending={aiPending} onStart={onAiStart} onFinish={onAiFinish} />}
 					<MatchScoreboard details={details} assets={assets} loading={loading} error={error} onPlayerSelect={onPlayerSelect} />
 				</div>
 			)}
@@ -197,6 +209,9 @@ const Matches = () => {
 	const [error, setError] = useState<string | null>(null);
 	const [loginRequired, setLoginRequired] = useState(false);
 
+	const [aiResults, setAiResults] = useState<Record<string, string>>({});
+	const aiPendingRef = useRef(new Set<string>());
+	const [aiPending, setAiPending] = useState(new Set<string>());
 	const assets = useMatchAssets();
 	const openMatchPlayerProfile = useMatchPlayerProfileModal(assets);
 	const { details, errors, pending, ensure, prefetch } = useMatchDetails();
@@ -293,6 +308,19 @@ const applyResponse = (message: any) => {
 									onToggle={() => toggle(entry.matchId)}
 									assets={assets}
 									onPlayerSelect={openMatchPlayerProfile}
+                                    aiText={aiResults[entry.matchId]}
+                                    aiPending={aiPending.has(entry.matchId)}
+                                    onAiStart={() => {
+                                        if (aiPendingRef.current.has(entry.matchId)) return false;
+                                        aiPendingRef.current.add(entry.matchId);
+                                        setAiPending(new Set(aiPendingRef.current));
+                                        return true;
+                                    }}
+                                    onAiFinish={() => {
+                                        aiPendingRef.current.delete(entry.matchId);
+                                        setAiPending(new Set(aiPendingRef.current));
+                                    }}
+                                    onAiResult={text => setAiResults(previous => ({ ...previous, [entry.matchId]: text }))}
 								/>
 							))}
 							</>

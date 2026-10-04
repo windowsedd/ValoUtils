@@ -119,6 +119,7 @@ Rust command conventions:
 | `analytics:track` | `analytics_track` | Fire an Aptabase event |
 | `ai:test` | `ai_test` | Test the selected AI provider |
 | `ai:models` | `ai_models` | Fetch models for the selected provider and credentials |
+| `ai:match-analyze` | `ai_match_analyze` | Analyze anonymized match stats |
 | `update:check` | `update_check` | Trigger update check |
 | `display:get` / `display:set` | `display_get/set` | List connected displays and save the display used on the next launch |
 | `open_url` | `open_url` | Open URL in system browser |
@@ -253,6 +254,9 @@ invalidated when the provider, key or endpoint changes. Never log credentials.
 Completions (bot blocks, translation, Test, match analysis) share `ai::REQUEST_TIMEOUT`
 (60 s), since self-hosted and reasoning models often take 30 s+.
 
+Match analysis sends only anonymized scoreboard stats: `You`, `Ally N`, and
+`Enemy N`. Never send other players' Riot IDs, PUUIDs, or party IDs in match
+analysis. Results stay in Matches state by match ID; Regenerate makes a new call.
 
 ### Add a new IPC channel
 

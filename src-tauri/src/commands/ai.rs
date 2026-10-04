@@ -34,3 +34,30 @@ pub async fn ai_test() -> Value {
         Err(error) => failure(error),
     }
 }
+#[tauri::command]
+pub async fn ai_match_analyze(args: Vec<Value>) -> Value {
+    let Some(context) = args
+        .first()
+        .and_then(Value::as_str)
+        .filter(|s| !s.trim().is_empty() && s.chars().count() <= 20_000)
+    else {
+        return json!({"success":false,"error":"Invalid match context (maximum 20,000 characters).","code":"invalidInput"});
+    };
+    let language = match args.get(1).and_then(Value::as_str) {
+        Some("Korean") => "Korean",
+        Some("Traditional Chinese") => "Traditional Chinese",
+        _ => "English",
+    };
+    let system = ai::prompts::MATCH_COACH.replace("{language}", language);
+    match ai::complete(AiRequest {
+        system: &system,
+        prompt: context,
+        max_tokens: 900,
+        timeout: ai::REQUEST_TIMEOUT,
+    })
+    .await
+    {
+        Ok(text) => json!({"success":true,"text":text}),
+        Err(error) => failure(error),
+    }
+}

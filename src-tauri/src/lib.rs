@@ -199,6 +199,7 @@ pub fn run() {
             commands::app::config_set,
             commands::ai::ai_test,
             commands::ai::ai_models,
+            commands::ai::ai_match_analyze,
             commands::startup::startup_get,
             commands::startup::startup_set,
             commands::display::display_get,
