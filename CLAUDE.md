@@ -21,6 +21,7 @@ ValoUtils is a Windows desktop app (Tauri 2 + React + Vite + TypeScript, Rust ba
 ```
 src-tauri/         Rust backend (Tauri)
   src/
+    ai/            Shared AI provider config, HTTP adapters and prompts
     lib.rs         App entry: plugins, managed state, command registry, hourly update check
     commands/      One module per feature — all #[tauri::command] handlers
       app.rs       open_url, version, clipboard, config store, analytics, update_check
@@ -116,6 +117,8 @@ Rust command conventions:
 | `chat:get/send/translate/friend-action/disconnect` | `chat_*` | Chat (REST + XMPP) |
 | `clipboard:get/set` | `clipboard_get/set` | Clipboard access |
 | `analytics:track` | `analytics_track` | Fire an Aptabase event |
+| `ai:test` | `ai_test` | Test the selected AI provider |
+| `ai:models` | `ai_models` | Fetch models for the selected provider and credentials |
 | `update:check` | `update_check` | Trigger update check |
 | `display:get` / `display:set` | `display_get/set` | List connected displays and save the display used on the next launch |
 | `open_url` | `open_url` | Open URL in system browser |
@@ -229,6 +232,27 @@ Both tokens come from `riot::client::get_tokens()` / the `tokens:get` IPC channe
 Riot chat is XMPP over raw TLS to `<affinity>.chat.si.riotgames.com:5223`, with a custom `X-Riot-RSO-PAS` SASL mechanism (access token + PAS token from `riot-geo.pas.si.riotgames.com/pas/v1/service/chat`). Implemented in `src-tauri/src/xmpp/` — handshake sequence, region table, and MUC join/leave/send mirror the old `@windowsedd/valorant-api` client.
 
 ## Common Tasks
+
+### AI providers
+
+Settings → AI selects Anthropic, OpenAI, Google Gemini, or an OpenAI-compatible
+endpoint. `aiProvider` defaults to `none`; `aiProviders` retains each provider's
+`apiKey`, `model`, and (for compatible endpoints) `baseUrl`. Empty models use the
+built-in default, except compatible endpoints which require a model. Config loads
+into the process-wide `ai` RwLock at startup and refreshes through `config_set`.
+The AI HTTP client verifies TLS and permits HTTP only on localhost. Keys are
+plaintext in local config.json, like the existing DeepL key; never log them or
+request bodies. Text is sent only when an AI feature is used.
+
+Settings provides a Fetch models button and a model dropdown, while preserving
+manual model IDs. `ai_models` takes a snapshot of the chosen provider and its
+settings, so listing works before selecting a model on a compatible endpoint.
+Anthropic and Gemini pagination is followed within a 20-second total timeout;
+Gemini lists only models supporting generateContent. Lists are transient and
+invalidated when the provider, key or endpoint changes. Never log credentials.
+Completions (bot blocks, translation, Test, match analysis) share `ai::REQUEST_TIMEOUT`
+(60 s), since self-hosted and reasoning models often take 30 s+.
+
 
 ### Add a new IPC channel
 

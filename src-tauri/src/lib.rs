@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
+mod ai;
 mod api_docs;
 mod aptabase;
 mod chat_certs;
@@ -74,6 +75,8 @@ pub fn run() {
             config_defaults.insert("translatorSourceLanguage".into(), json!("auto"));
             config_defaults.insert("translatorTargetLanguage".into(), json!("en"));
             config_defaults.insert("deeplApiKey".into(), json!(""));
+            config_defaults.insert("aiProvider".into(), json!("none"));
+            config_defaults.insert("aiProviders".into(), json!({}));
             config_defaults.insert("hiddenTabs".into(), json!([]));
             config_defaults.insert("showLogsTab".into(), json!(false));
             config_defaults.insert("botCustomCommands".into(), json!([]));
@@ -140,6 +143,14 @@ pub fn run() {
                     .unwrap_or_default(),
             );
 
+            ai::set_config(
+                &config_store
+                    .get("aiProvider")
+                    .unwrap_or(serde_json::Value::Null),
+                &config_store
+                    .get("aiProviders")
+                    .unwrap_or(serde_json::Value::Null),
+            );
             app.manage(ConfigStore(config_store));
             presence_proxy::attach_app(app.handle().clone())
                 .expect("presence app handle initialized once");
@@ -186,6 +197,8 @@ pub fn run() {
             commands::app::update_check,
             commands::app::config_get_all,
             commands::app::config_set,
+            commands::ai::ai_test,
+            commands::ai::ai_models,
             commands::startup::startup_get,
             commands::startup::startup_set,
             commands::display::display_get,

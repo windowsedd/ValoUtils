@@ -2026,6 +2026,7 @@ fn translator_config(app: &AppHandle) -> TranslatorConfig {
     };
     let provider = match text("translatorProvider").as_str() {
         "deepl" => "deepl".to_string(),
+        "ai" => "ai".to_string(),
         _ => "google".to_string(),
     };
     let target_language = text("translatorTargetLanguage");

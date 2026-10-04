@@ -28,6 +28,14 @@ fn language_catalog() -> &'static Vec<LanguageEntry> {
     })
 }
 
+fn catalog_provider(provider: &str) -> &str {
+    if provider == "ai" {
+        "google"
+    } else {
+        provider
+    }
+}
+
 fn normalize_language(provider: &str, role: &str, code: &str) -> Result<String, String> {
     if role == "source" && code.eq_ignore_ascii_case("auto") {
         return Ok("auto".into());
@@ -35,7 +43,7 @@ fn normalize_language(provider: &str, role: &str, code: &str) -> Result<String, 
     language_catalog()
         .iter()
         .find(|entry| {
-            entry.provider == provider
+            entry.provider == catalog_provider(provider)
                 && entry.code.eq_ignore_ascii_case(code)
                 && match role {
                     "source" => entry.source,
@@ -204,7 +212,7 @@ fn match_provider_target(provider: &str, wanted: &str) -> Option<String> {
     language_catalog()
         .iter()
         .find(|entry| {
-            entry.provider == provider
+            entry.provider == catalog_provider(provider)
                 && entry.target
                 && (fold_language_key(&entry.code) == wanted
                     || fold_language_key(&entry.english_name) == wanted)
@@ -216,7 +224,7 @@ fn match_provider_canonical(provider: &str, canonical_id: &str) -> Option<String
     language_catalog()
         .iter()
         .find(|entry| {
-            entry.provider == provider
+            entry.provider == catalog_provider(provider)
                 && entry.target
                 && entry.canonical_id.eq_ignore_ascii_case(canonical_id)
         })
@@ -261,7 +269,7 @@ pub async fn translate_text(
     target_language: &str,
     deepl_api_key: &str,
 ) -> Result<TranslationResult, String> {
-    if provider != "google" && provider != "deepl" {
+    if provider != "google" && provider != "deepl" && provider != "ai" {
         return Err(format!("Unsupported translation provider '{provider}'."));
     }
     let source = if source_language.trim().is_empty() {
@@ -288,7 +296,33 @@ pub async fn translate_text(
         });
     }
 
-    let (translated_text, detected_source) = if provider == "deepl" {
+    let (translated_text, detected_source) = if provider == "ai" {
+        if !crate::ai::is_configured() {
+            return Err(crate::ai::AiError::NotConfigured.to_string());
+        }
+        let name = |code: &str| {
+            language_catalog()
+                .iter()
+                .find(|e| e.provider == "google" && e.code == code)
+                .map(|e| e.english_name.as_str())
+                .unwrap_or("auto")
+        };
+        let prompt = format!(
+            "Target language: {}\nSource language: {}\nChat text:\n{}",
+            name(&target),
+            name(&source),
+            text
+        );
+        let translated = crate::ai::complete(crate::ai::AiRequest {
+            system: crate::ai::prompts::TRANSLATE,
+            prompt: &prompt,
+            max_tokens: (text.len().saturating_mul(2).saturating_add(64)).min(1024) as u32,
+            timeout: crate::ai::REQUEST_TIMEOUT,
+        })
+        .await
+        .map_err(|e| e.to_string())?;
+        (translated, source.clone())
+    } else if provider == "deepl" {
         if deepl_api_key.trim().is_empty() {
             return Err("DeepL API key is required.".into());
         }
@@ -593,5 +627,15 @@ mod tests {
         assert!(automatic.contains(&("target_lang", "en-US".to_string())));
         let explicit = deepl_form("hello", "ja", "en-US");
         assert!(explicit.contains(&("source_lang", "ja".to_string())));
+    }
+}
+
+#[cfg(test)]
+mod ai_language_tests {
+    use super::*;
+    #[test]
+    fn ai_catalog_resolves_languages() {
+        assert_eq!(resolve_target_language("ai", "kr"), Some("ko".into()));
+        assert_eq!(normalize_language("ai", "target", "en"), Ok("en".into()));
     }
 }

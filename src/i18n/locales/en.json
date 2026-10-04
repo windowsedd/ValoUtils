@@ -791,5 +791,46 @@
     "empty": "Nothing logged yet",
     "emptyHint": "Warnings and errors from this session will appear here.",
     "truncated": "Only the most recent part of the log file is shown."
+  },
+  "ai": {
+    "fetchModels": "Fetch models",
+    "availableModels": "Available models",
+    "chooseModel": "Choose a model",
+    "modelsHint": "Choose a chat model supported by your endpoint, or enter a model ID manually.",
+    "modelsCredentials": "Enter an API key, or a base URL for a local endpoint, first.",
+    "noModels": "No models found. You can still enter a model ID manually.",
+
+    "label": "AI",
+    "section": "AI",
+    "provider": "Provider",
+    "apiKey": "API key",
+    "model": "Model",
+    "baseUrl": "Base URL",
+    "test": "Test connection",
+    "testSuccess": "Connected to {{provider}} ({{model}})",
+    "analyze": "Analyze with AI",
+    "regenerate": "Regenerate",
+    "configureHint": "Set up an AI provider in Settings",
+    "translationHint": "Configure in AI settings below",
+    "block": "AI block",
+    "blockHelp": "Generates one line with your AI provider. Variables inside are filled in first.",
+    "privacy": "Text you translate or analyze is sent to the selected provider. Keys are stored locally in config.json.",
+    "providers": {
+      "none": "None",
+      "anthropic": "Anthropic",
+      "openai": "OpenAI",
+      "gemini": "Google Gemini",
+      "compatible": "OpenAI-compatible"
+    },
+    "errors": {
+      "notConfigured": "Set up an AI provider in Settings.",
+      "auth": "AI authentication failed. Check your API key.",
+      "rateLimited": "AI provider rate limit reached. Try again later.",
+      "timeout": "AI request timed out. Try again.",
+      "invalidBaseUrl": "Use HTTPS, or HTTP on localhost, for the base URL.",
+      "unavailable": "AI request failed. Check the provider settings and try again.",
+      "emptyResponse": "AI provider returned no text. Try another model or regenerate.",
+      "invalidInput": "Match context is missing or too long."
+    }
   }
 }

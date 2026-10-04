@@ -105,3 +105,10 @@ describe("displayTranslationLanguage fallbacks", () => {
     expect(displayTranslationLanguage(french!, "en").toLowerCase()).toContain("french");
   });
 });
+
+test("AI shares Google languages and maps DeepL canonical ids", () => {
+  expect(getTranslationLanguages("ai", "target")).toEqual(getTranslationLanguages("google", "target"));
+  const next = switchTranslationProvider({ provider: "deepl", sourceLanguage: "KO", targetLanguage: "ZH-HANT" }, "ai");
+  expect(next).toEqual({ provider: "ai", sourceLanguage: "ko", targetLanguage: "zh-TW" });
+  expect(switchTranslationProvider(next, "deepl").targetLanguage).toBe("zh-HANT");
+});

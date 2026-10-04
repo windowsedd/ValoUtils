@@ -1,3 +1,6 @@
+import CustomButton from "@/components/button";
+import { AiModelPicker } from "@/components/ai-model-picker";
+import { type AiProvider, type AiSettings, type AiReply } from "@/util/ai";
 import { reportIpcError } from "@/util/ipc";
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback,  useEffect, useState  } from "react";
@@ -32,7 +35,7 @@ const CERT_OPTIONS: { id: AppConfig["presenceCert"]; host: string }[] = [
 	{ id: "valoutils", host: "valoutils-localhost.windowsed.me" },
 ];
 
-type AppConfig = {
+type AppConfig = AiSettings & {
 	autoUpdate: boolean;
 	openDevTools: boolean;
 	presenceEnabled: boolean;
@@ -140,6 +143,8 @@ const Settings = () => {
 	const [startupSaving, setStartupSaving] = useState(false);
 	const [view, setView] = useState<"settings" | "api-reference">("settings");
 	const [appConfig, setAppConfig] = useState<AppConfig>({
+		aiProvider: "none",
+        aiProviders: {},
 		autoUpdate: true,
 		openDevTools: false,
 		presenceEnabled: true,
@@ -249,7 +254,7 @@ const applyClientInfo = (msg: any) => {
 		setCurrentLang(code);
 	};
 
-	const setConfig = (key: string, value: boolean | number | string | string[]) => {
+	const setConfig = (key: string, value: boolean | number | string | string[] | AiSettings["aiProviders"]) => {
 		invoke("config_set", { args: [key, value] }).catch(reportIpcError);
 		setAppConfig((prev) => ({ ...prev, [key]: value }));
 		window.dispatchEvent(
@@ -359,12 +364,12 @@ const applyClientInfo = (msg: any) => {
 				<SettingRow
 					icon={<FaLanguage />}
 					label={t("settings.translatorProvider")}
-					description={t("settings.translatorProviderDesc")}
+					description={appConfig.aiProvider === "none" ? t("ai.translationHint") : t("settings.translatorProviderDesc")}
 					right={
 						<div className="flex gap-2">
-							{(["google", "deepl"] as const).map((provider) => (
+							{(["google", "deepl", "ai"] as const).map((provider) => (
 								<button
-									key={provider}
+									key={provider === "ai" ? t("ai.label") : provider}
 									onClick={() => changeTranslatorProvider(provider)}
 									className={`px-2.5 py-1 rounded-[5px] text-[11px] font-medium uppercase transition-[background-color,border-color,color] duration-150 ${
 										appConfig.translatorProvider === provider
@@ -372,7 +377,7 @@ const applyClientInfo = (msg: any) => {
 											: "text-(--text-secondary) hover:text-(--text-primary) border border-(--border) hover:bg-(--surface-hover)"
 									}`}
 								>
-									{provider}
+									{provider === "ai" ? t("ai.label") : provider}
 								</button>
 							))}
 						</div>
@@ -441,7 +446,40 @@ const applyClientInfo = (msg: any) => {
 					</div>
 				</SectionCard>
 
-				<SectionCard title={t("settings.sectionApp")} accent="#a78bfa">
+				<SectionCard title={t("ai.section")} accent="#8064e9">
+                    <div className="flex flex-col px-1">
+                        <SettingRow icon={<LuBot />} label={t("ai.provider")} description="" right={
+                            <select aria-label={t("ai.provider")} value={appConfig.aiProvider} className="h-7 max-w-56 rounded-[6px] border border-(--border) bg-(--control) px-2 text-[12px] text-(--text-primary)" onChange={event => {
+                                const provider = event.target.value as AiProvider;
+                                setConfig("aiProvider", provider);
+                                invoke("analytics_track", {args:["ai:provider_change", JSON.stringify({ provider })]}).catch(reportIpcError);
+                            }}>
+                                {(["none", "anthropic", "openai", "gemini", "compatible"] as const).map(provider => <option key={provider} value={provider}>{t(`ai.providers.${provider}`)}</option>)}
+                            </select>
+                        } />
+                        {appConfig.aiProvider !== "none" && <>
+                            {(["apiKey", "model", ...(appConfig.aiProvider === "compatible" ? ["baseUrl"] : [])] as Array<"apiKey" | "model" | "baseUrl">).map(field => <SettingRow key={field} icon={<FaKey />} label={t(`ai.${field}`)} description="" right={
+                                field === "model" ? <AiModelPicker provider={appConfig.aiProvider as Exclude<AiProvider, "none">} settings={appConfig.aiProviders[appConfig.aiProvider as Exclude<AiProvider, "none">] ?? { apiKey: "", model: "" }} onChange={model => {
+                                    const provider = appConfig.aiProvider as Exclude<AiProvider, "none">;
+                                    setConfig("aiProviders", { ...appConfig.aiProviders, [provider]: { apiKey: "", ...appConfig.aiProviders[provider], model } });
+                                }} /> : <input aria-label={t(`ai.${field}`)} type={field === "apiKey" ? "password" : "text"} value={appConfig.aiProviders[appConfig.aiProvider as Exclude<AiProvider, "none">]?.[field] ?? ""} placeholder={field === "baseUrl" ? "http://localhost:11434/v1" : ""} className="h-7 w-56 rounded-[6px] border border-(--border) bg-(--control) px-2 text-[12px] text-(--text-primary)" onChange={event => {
+                                    const provider = appConfig.aiProvider as Exclude<AiProvider, "none">;
+                                    setConfig("aiProviders", { ...appConfig.aiProviders, [provider]: { apiKey: "", model: "", ...appConfig.aiProviders[provider], [field]: event.target.value } });
+                                }} />
+                            } />)}
+                            <SettingRow icon={<LuBot />} label={t("ai.test")} description="" right={<CustomButton onClickLoading={async () => {
+                                invoke("analytics_track", {args:["ai:test"]}).catch(reportIpcError);
+                                let reply: AiReply;
+                                try { reply = await invoke<AiReply>("ai_test"); } catch { throw t("ai.errors.unavailable"); }
+                                if (!reply.success) throw t(`ai.errors.${reply.code}`, {defaultValue:t("ai.errors.unavailable")});
+                                toast.success(t("ai.testSuccess", {provider: t(`ai.providers.${reply.provider}`), model:reply.model}));
+                            }}>{t("ai.test")}</CustomButton>} />
+                        </>}
+                        <p className="py-2 text-[11px] text-(--text-muted)">{t("ai.privacy")}</p>
+                    </div>
+                </SectionCard>
+
+                <SectionCard title={t("settings.sectionApp")} accent="#a78bfa">
 					<div className="flex flex-col px-1">
 				<SettingRow
 					icon={<LuMonitor />}

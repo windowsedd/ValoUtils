@@ -1,4 +1,4 @@
-export type TranslatorProvider = "google" | "deepl";
+export type TranslatorProvider = "google" | "deepl" | "ai";
 export type ChatScope = "friends" | "party" | "match";
 export type ChatChannel = "friends" | "party" | "team" | "all";
 export type ChatPresenceState = "syncing" | "ready" | "reconnecting";

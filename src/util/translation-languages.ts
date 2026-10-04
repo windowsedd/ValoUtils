@@ -1,6 +1,6 @@
 import catalogJson from "@/data/translation-languages.json";
 
-export type TranslationProvider = "google" | "deepl";
+export type TranslationProvider = "google" | "deepl" | "ai";
 export type TranslationLanguageRole = "source" | "target";
 
 export type TranslationLanguage = {
@@ -20,6 +20,7 @@ export type TranslationSelection = {
 
 const catalog = catalogJson as TranslationLanguage[];
 const defaults = {
+  ai: { sourceLanguage: "auto", targetLanguage: "en" },
   google: { sourceLanguage: "auto", targetLanguage: "en" },
   deepl: { sourceLanguage: "auto", targetLanguage: "en-US" },
 } satisfies Record<TranslationProvider, Omit<TranslationSelection, "provider">>;
@@ -27,7 +28,7 @@ const defaults = {
 export const getTranslationLanguages = (
   provider: TranslationProvider,
   role: TranslationLanguageRole,
-) => catalog.filter((item) => item.provider === provider && item[role]);
+) => catalog.filter((item) => item.provider === (provider === "ai" ? "google" : provider) && item[role]);
 
 export const normalizeTranslationCode = (
   provider: TranslationProvider,
@@ -48,7 +49,7 @@ export const normalizeTranslationCode = (
 export const normalizeTranslationSelection = (
   value: Partial<TranslationSelection>,
 ): TranslationSelection => {
-  const provider: TranslationProvider = value.provider === "deepl" ? "deepl" : "google";
+  const provider: TranslationProvider = value.provider === "deepl" || value.provider === "ai" ? value.provider : "google";
   return {
     provider,
     sourceLanguage:

@@ -783,5 +783,46 @@
     "empty": "尚未有任何日誌",
     "emptyHint": "本次工作階段的警告與錯誤會顯示在這裡。",
     "truncated": "僅顯示日誌檔案最近的部分。"
+  },
+  "ai": {
+    "fetchModels": "取得模型",
+    "availableModels": "可用模型",
+    "chooseModel": "選擇模型",
+    "modelsHint": "選擇端點支援的聊天模型，或手動輸入模型 ID。",
+    "modelsCredentials": "請先輸入 API 金鑰，或本機端點的基礎 URL。",
+    "noModels": "找不到模型，仍可手動輸入模型 ID。",
+
+    "label": "AI",
+    "section": "AI",
+    "provider": "供應商",
+    "apiKey": "API 金鑰",
+    "model": "模型",
+    "baseUrl": "基礎 URL",
+    "test": "測試連線",
+    "testSuccess": "已連線至 {{provider}}（{{model}}）",
+    "analyze": "使用 AI 分析",
+    "regenerate": "重新產生",
+    "configureHint": "請在設定中配置 AI 供應商",
+    "translationHint": "請在下方 AI 設定中配置",
+    "block": "AI 區塊",
+    "blockHelp": "使用 AI 供應商產生一行文字，內部變數會先填入。",
+    "privacy": "翻譯或分析的文字會傳送至所選供應商。金鑰儲存在本機 config.json。",
+    "providers": {
+      "none": "無",
+      "anthropic": "Anthropic",
+      "openai": "OpenAI",
+      "gemini": "Google Gemini",
+      "compatible": "OpenAI 相容"
+    },
+    "errors": {
+      "notConfigured": "請在設定中配置 AI 供應商。",
+      "auth": "AI 驗證失敗，請檢查 API 金鑰。",
+      "rateLimited": "已達 AI 供應商請求上限，請稍後再試。",
+      "timeout": "AI 請求逾時，請重試。",
+      "invalidBaseUrl": "請使用 HTTPS，或 localhost 的 HTTP URL。",
+      "unavailable": "AI 請求失敗，請檢查供應商設定後重試。",
+      "emptyResponse": "AI 未回傳文字，請改用其他模型或重新產生。",
+      "invalidInput": "對戰資料缺失或過長。"
+    }
   }
 }

@@ -90,7 +90,7 @@ const applyConfig = (message: any) => {
 					translatorProvider?: unknown;
 				};
 				setCustomCommands(normalizeCustomBotCommands(config.botCustomCommands));
-				setProvider(config.translatorProvider === "deepl" ? "deepl" : "google");
+				setProvider(config.translatorProvider === "deepl" || config.translatorProvider === "ai" ? config.translatorProvider : "google");
 			} catch { /* ignore */ }
 		};
 

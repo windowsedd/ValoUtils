@@ -108,6 +108,8 @@ pub fn config_get_all(store: State<ConfigStore>) -> Value {
         "translatorProvider": get_or("translatorProvider", json!("google")),
         "translatorSourceLanguage": get_or("translatorSourceLanguage", json!("auto")),
         "translatorTargetLanguage": get_or("translatorTargetLanguage", json!("en")),
+        "aiProvider": get_or("aiProvider", json!("none")),
+        "aiProviders": get_or("aiProviders", json!({})),
         "deeplApiKey": get_or("deeplApiKey", json!("")),
         "hiddenTabs": get_or("hiddenTabs", json!([])),
         "riotRequestPacing": get_or("riotRequestPacing", json!("balanced")),
@@ -131,5 +133,11 @@ pub fn config_set(args: Vec<Value>, store: State<ConfigStore>) -> Value {
         crate::riot::rate_gate::set_pacing(value.as_str().unwrap_or_default());
     }
     store.set(&key, value);
+    if key == "aiProvider" || key == "aiProviders" {
+        crate::ai::set_config(
+            &store.get("aiProvider").unwrap_or(Value::Null),
+            &store.get("aiProviders").unwrap_or(Value::Null),
+        );
+    }
     json!({ "success": true, "key": key })
 }
