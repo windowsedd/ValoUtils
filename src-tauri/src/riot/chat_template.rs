@@ -1,4 +1,4 @@
-use serde::Deserialize;
+    use serde::Deserialize;
 use std::collections::{BTreeSet, HashMap};
 use std::sync::OnceLock;
 
@@ -12,6 +12,7 @@ struct TemplateVariable {
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct TemplatePlan {
     pub variables: BTreeSet<String>,
+    pub needs_ai: bool,
     pub needs_roster: bool,
     pub needs_recent: bool,
     pub needs_content: bool,
@@ -20,6 +21,7 @@ pub struct TemplatePlan {
 impl TemplatePlan {
     pub fn merge(&mut self, other: &Self) {
         self.variables.extend(other.variables.iter().cloned());
+        self.needs_ai |= other.needs_ai;
         self.needs_roster |= other.needs_roster;
         self.needs_recent |= other.needs_recent;
         self.needs_content |= other.needs_content;
@@ -46,6 +48,15 @@ pub fn plan_template(message: &str) -> TemplatePlan {
     while let Some(open_offset) = message[cursor..].find("{{") {
         let open = cursor + open_offset;
         let value_start = open + 2;
+        if is_ai_opener(&message[value_start..]) {
+            let Some(end) = balanced_end(message, open) else {
+                break;
+            };
+            plan.needs_ai = true;
+            plan.merge(&plan_template(&message[value_start + 3..end - 2]));
+            cursor = end;
+            continue;
+        }
         let Some(close_offset) = message[value_start..].find("}}") else {
             break;
         };
@@ -72,6 +83,17 @@ pub fn render_template(message: &str, values: &HashMap<String, String>) -> Strin
         let open = cursor + open_offset;
         output.push_str(&message[cursor..open]);
         let value_start = open + 2;
+        if is_ai_opener(&message[value_start..]) {
+            let Some(end) = balanced_end(message, open) else {
+                output.push_str(&message[open..]);
+                return output;
+            };
+            output.push_str("{{ai:");
+            output.push_str(&render_template(&message[value_start + 3..end - 2], values));
+            output.push_str("}}");
+            cursor = end;
+            continue;
+        }
         let Some(close_offset) = message[value_start..].find("}}") else {
             output.push_str(&message[open..]);
             return output;
@@ -172,4 +194,71 @@ mod tests {
         assert_eq!(format_decimal(16.0, 1), "16");
         assert_eq!(format_percent(53.6), "54%");
     }
+}
+
+#[cfg(test)]
+mod ai_tests {
+    use super::*;
+    #[test]
+    fn ai_blocks_balance_nested_variables_and_preserve_broken_blocks() {
+        let message = "Hi {{AI: roast {{map}} kindly}}!";
+        let plan = plan_template(message);
+        assert!(plan.needs_ai);
+        assert!(plan.variables.contains("map"));
+        let rendered = render_template(message, &HashMap::from([("map".into(), "Ascent".into())]));
+        assert_eq!(rendered, "Hi {{ai: roast Ascent kindly}}!");
+        let blocks = ai_blocks(&rendered);
+        assert_eq!(
+            &rendered[blocks[0].0.clone()],
+            "{{ai: roast Ascent kindly}}"
+        );
+        assert_eq!(blocks[0].1, "roast Ascent kindly");
+        let broken = "{{ai: foo {{map}}";
+        assert_eq!(render_template(broken, &HashMap::new()), broken);
+        let mut merged = TemplatePlan::default();
+        merged.merge(&plan);
+        assert!(merged.needs_ai);
+        assert_eq!(render_template("unchanged", &HashMap::new()), "unchanged");
+    }
+}
+
+fn is_ai_opener(text: &str) -> bool {
+    text.get(..3).is_some_and(|s| s.eq_ignore_ascii_case("ai:"))
+}
+fn balanced_end(text: &str, start: usize) -> Option<usize> {
+    let bytes = text.as_bytes();
+    let mut depth = 1;
+    let mut cursor = start + 2;
+    while cursor + 1 < bytes.len() {
+        if &bytes[cursor..cursor + 2] == b"{{" {
+            depth += 1;
+            cursor += 2;
+        } else if &bytes[cursor..cursor + 2] == b"}}" {
+            depth -= 1;
+            cursor += 2;
+            if depth == 0 {
+                return Some(cursor);
+            }
+        } else {
+            cursor += 1;
+        }
+    }
+    None
+}
+pub fn ai_blocks(rendered: &str) -> Vec<(std::ops::Range<usize>, String)> {
+    let mut blocks = Vec::new();
+    let mut cursor = 0;
+    while let Some(offset) = rendered[cursor..].find("{{") {
+        let start = cursor + offset;
+        if is_ai_opener(&rendered[start + 2..]) {
+            let Some(end) = balanced_end(rendered, start) else {
+                break;
+            };
+            blocks.push((start..end, rendered[start + 5..end - 2].trim().to_string()));
+            cursor = end;
+        } else {
+            cursor = start + 2;
+        }
+    }
+    blocks
 }

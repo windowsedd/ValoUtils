@@ -254,6 +254,10 @@ invalidated when the provider, key or endpoint changes. Never log credentials.
 Completions (bot blocks, translation, Test, match analysis) share `ai::REQUEST_TIMEOUT`
 (60 s), since self-hosted and reasoning models often take 30 s+.
 
+The `ai` chat translator shares Google's language catalog. Bot custom commands
+support balanced `{{ai: … {{map}} …}}` blocks: variables resolve first, then up to
+three AI blocks per message run concurrently before translation. Failed blocks
+become `N/A`. The editor provides a separate AI block insert button.
 Match analysis sends only anonymized scoreboard stats: `You`, `Ally N`, and
 `Enemy N`. Never send other players' Riot IDs, PUUIDs, or party IDs in match
 analysis. Results stay in Matches state by match ID; Regenerate makes a new call.

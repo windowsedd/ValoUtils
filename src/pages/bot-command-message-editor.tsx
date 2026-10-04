@@ -1,3 +1,6 @@
+import { useAiConfigured } from "@/util/ai";
+import { invoke } from "@tauri-apps/api/core";
+import { reportIpcError } from "@/util/ipc";
 import { useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -13,6 +16,7 @@ const GROUPS: BotTemplateGroup[] = ["enemy", "ally", "me", "match"];
 
 export const BotCommandMessageEditor = ({ value, onChange, placeholder }: Props) => {
 	const { t } = useTranslation();
+	const aiConfigured = useAiConfigured();
 	const inputRef = useRef<HTMLInputElement>(null);
 	const [open, setOpen] = useState(false);
 	const [caret, setCaret] = useState(value.length);
@@ -74,8 +78,17 @@ export const BotCommandMessageEditor = ({ value, onChange, placeholder }: Props)
 			>
 				{t("dummyBot.variablesButton")}
 			</button>
-		</div>
-		{open && <div id="bot-template-options" role="listbox" aria-label={t("dummyBot.variablesLabel")} className="absolute z-30 mt-1 max-h-64 w-full overflow-y-auto rounded-sm border border-(--line-strong) bg-(--panel) p-1 shadow-xl">
+            <button type="button" title={t("ai.blockHelp")} className="shrink-0 rounded-sm border border-(--line) px-2 text-[10px]" onClick={() => {
+                const position = inputRef.current?.selectionStart ?? value.length;
+                const end = inputRef.current?.selectionEnd ?? position;
+                onChange(value.slice(0, position) + "{{ai: }}" + value.slice(end));
+                setCaret(position + 6); setOpen(false);
+                invoke("analytics_track", { args: ["ai:bot_block_insert"] }).catch(reportIpcError);
+                requestAnimationFrame(() => { inputRef.current?.focus(); inputRef.current?.setSelectionRange(position + 6, position + 6); });
+            }}>{t("ai.block")}</button>
+        </div>
+        {/\{\{ai:/i.test(value) && <p className="mt-1 text-[10px] text-(--text-muted)">{t("ai.blockHelp")}{!aiConfigured && <> {t("ai.configureHint")}</>}</p>}
+        {open && <div id="bot-template-options" role="listbox" aria-label={t("dummyBot.variablesLabel")} className="absolute z-30 mt-1 max-h-64 w-full overflow-y-auto rounded-sm border border-(--line-strong) bg-(--panel) p-1 shadow-xl">
 			{GROUPS.map((group) => {
 				const items = matches.filter((item) => item.group === group);
 				if (items.length === 0) return null;

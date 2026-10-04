@@ -730,10 +730,7 @@ async fn load_snapshot(
         .ok()
         .and_then(Result::ok);
 
-        if let Some(snapshot) = fetched
-            .as_ref()
-            .and_then(TemplateSnapshot::from_value)
-        {
+        if let Some(snapshot) = fetched.as_ref().and_then(TemplateSnapshot::from_value) {
             if snapshot_is_usable(&snapshot, needs_enemies) {
                 return Some(snapshot);
             }
@@ -781,14 +778,17 @@ pub(crate) async fn resolve_custom_messages(
         plan.merge(message_plan);
     }
     if plan.variables.is_empty() {
-        return Ok(messages.to_vec());
+        return Ok(expand_ai_messages(messages.to_vec()).await);
     }
     let deadline = tokio::time::Instant::now() + TEMPLATE_RESOLUTION_TIMEOUT;
     let Some(snapshot) = load_snapshot(app, deadline, wants_enemy_data(&plan)).await else {
-        return Ok(messages
-            .iter()
-            .map(|message| chat_template::render_template(message, &HashMap::new()))
-            .collect());
+        return Ok(expand_ai_messages(
+            messages
+                .iter()
+                .map(|message| chat_template::render_template(message, &HashMap::new()))
+                .collect(),
+        )
+        .await);
     };
     let puuids = requested_recent_puuids(&plan, &snapshot);
     let recent = if puuids.is_empty() {
@@ -808,9 +808,10 @@ pub(crate) async fn resolve_custom_messages(
     let labels = load_content_labels(&plan, deadline)
         .await
         .unwrap_or_default();
-    Ok(render_custom_messages(
+    Ok(expand_ai_messages(render_custom_messages(
         messages, &snapshot, &recent, &labels,
     ))
+    .await)
 }
 
 pub(crate) async fn resolve_custom_message(app: &AppHandle, message: &str) -> String {
@@ -988,6 +989,8 @@ mod tests {
         // longer than this, so waiting costs nothing that matters.
         assert_eq!(TEMPLATE_RESOLUTION_TIMEOUT, Duration::from_secs(15));
         assert!(TEMPLATE_RESOLUTION_TIMEOUT < Duration::from_secs(60));
+        // A 33s compatible-endpoint reply must not render as N/A.
+        assert!(crate::ai::REQUEST_TIMEOUT >= Duration::from_secs(45));
     }
 
     #[test]
@@ -1147,4 +1150,78 @@ mod tests {
         assert_eq!(normalize_server("local-pod"), "local-pod");
         assert_eq!(normalize_server(""), "");
     }
+}
+
+#[cfg(test)]
+mod ai_sanitizer_tests {
+    use super::*;
+    #[test]
+    fn sanitizes_chat_line() {
+        assert_eq!(sanitize_ai_line("  `\"hi\n there\"`  "), "hi there");
+        assert_eq!(
+            sanitize_ai_line(&"\u{4f60}".repeat(250)).chars().count(),
+            200
+        );
+    }
+}
+
+fn sanitize_ai_line(text: &str) -> String {
+    clean_ai_line(text, 200)
+}
+
+/// One chat-safe line: whitespace collapsed, wrapping quotes dropped, capped.
+pub(crate) fn clean_ai_line(text: &str, max_chars: usize) -> String {
+    text.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .trim_matches(['\"', '\'', '`'])
+        .trim()
+        .chars()
+        .take(max_chars)
+        .collect()
+}
+async fn expand_ai_messages(messages: Vec<String>) -> Vec<String> {
+    let mut expanded = Vec::with_capacity(messages.len());
+    for mut message in messages {
+        let blocks = chat_template::ai_blocks(&message);
+        let mut jobs = tokio::task::JoinSet::new();
+        for (index, (_, prompt)) in blocks.iter().take(3).enumerate() {
+            let prompt = prompt.clone();
+            jobs.spawn(async move {
+                let text = match crate::ai::complete(crate::ai::AiRequest {
+                    system: crate::ai::prompts::BOT_LINE,
+                    prompt: &prompt,
+                    max_tokens: 120,
+                    timeout: crate::ai::REQUEST_TIMEOUT,
+                })
+                .await
+                {
+                    Ok(text) => {
+                        let text = sanitize_ai_line(&text);
+                        if text.is_empty() {
+                            "N/A".into()
+                        } else {
+                            text
+                        }
+                    }
+                    Err(error) => {
+                        log::warn!("Bot AI block failed: {}", error.code());
+                        "N/A".into()
+                    }
+                };
+                (index, text)
+            });
+        }
+        let mut results = vec!["N/A".to_string(); blocks.len()];
+        while let Some(result) = jobs.join_next().await {
+            if let Ok((index, text)) = result {
+                results[index] = text;
+            }
+        }
+        for ((span, _), text) in blocks.into_iter().zip(results).rev() {
+            message.replace_range(span, &text);
+        }
+        expanded.push(message);
+    }
+    expanded
 }
