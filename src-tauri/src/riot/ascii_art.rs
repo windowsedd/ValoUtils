@@ -17,7 +17,9 @@
 //! draws as a hatched panel with the word standing out of it.
 //!
 //! Every visual row is padded to VALORANT's 26-column chat width and joined by
-//! [`ROW_SEPARATOR`]. The compact face lets `HK GAY` fit on one visual line.
+//! [`ROW_SEPARATOR`]. A message holds at most [`MAX_ROWS`] rows (350 characters,
+//! the chat limit). The bold face is tried first - one line, or two split at a
+//! space - and the compact face takes over for longer text, up to three lines.
 //!
 //! That separator started as an ordinary space, on the theory that the game
 //! collapses newlines and a space at least hands it a legal wrap point. In
@@ -37,14 +39,17 @@ use crate::riot::models::ChatChannel;
 ///
 /// Riot does not document this width. It comes from the known-good sample used
 /// for runtime verification: 234 characters divide into exactly nine rows of
-/// 26. Changing it changes the wire format, not just the visual padding.
+/// 26, and thirteen such rows reach the 350-character message limit. Changing
+/// it changes the wire format, not just the visual padding.
 pub const MAX_COLUMNS: usize = 26;
 /// What sits between two visual rows. Exactly one character wide by
 /// construction: every payload length below assumes that.
 pub const ROW_SEPARATOR: char = '\n';
-/// Nine complete rows plus the eight separators between them stay below the
-/// game's message length limit while preserving the 26-column alignment.
-pub const MAX_PAYLOAD_CHARACTERS: usize = MAX_COLUMNS * 9 + 8;
+/// Rows in the tallest panel. Thirteen 26-column rows plus twelve separators is
+/// exactly 350 characters, VALORANT's chat message limit.
+pub const MAX_ROWS: usize = 13;
+/// The longest payload: [`MAX_ROWS`] complete rows and the separators between.
+pub const MAX_PAYLOAD_CHARACTERS: usize = MAX_COLUMNS * MAX_ROWS + (MAX_ROWS - 1);
 /// Background columns between adjacent glyphs.
 pub const GLYPH_GAP: usize = 1;
 /// Background rows between stacked words.
@@ -74,7 +79,7 @@ pub struct AsciiCommand {
 /// Which of the two faces drew a payload.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Face {
-    /// Five rows of four columns. Reads best; runs out of width first.
+    /// Five rows of four columns. Reads best, so it is always tried first.
     Bold,
     /// Three rows of three columns, using half-blocks for the extra vertical
     /// detail. Fits roughly half again as many characters on a line.
@@ -99,6 +104,23 @@ impl Face {
     /// Columns a run of `characters` glyphs occupies, gaps included.
     fn width(self, characters: usize) -> usize {
         characters * self.columns() + characters.saturating_sub(1) * GLYPH_GAP
+    }
+
+    /// Panel height for `lines` lines of this face, border and gaps included.
+    fn panel_rows(self, lines: usize) -> usize {
+        BORDER * 2 + lines * self.rows() + lines.saturating_sub(1) * LINE_GAP
+    }
+
+    /// How many lines of this face fit in [`MAX_ROWS`]: Bold 2, Compact 3.
+    pub fn max_lines(self) -> usize {
+        (1..=MAX_ROWS)
+            .take_while(|lines| self.panel_rows(*lines) <= MAX_ROWS)
+            .last()
+            .unwrap_or(0)
+    }
+
+    fn fits(self, line: &str) -> bool {
+        self.width(line.chars().count()) + BORDER * 2 <= MAX_COLUMNS
     }
 
     fn supports(self, character: char) -> bool {
@@ -242,59 +264,85 @@ pub fn render_with_face(text: &str) -> Result<(String, Face), RiotError> {
         return Err(RiotError::InvalidCommand(USAGE.into()));
     }
 
-    // The compact face matches the three-row block alphabet used by VALORANT
-    // chat art and keeps a six-character phrase inside one 26-column row.
-    let face = Face::Compact;
-    if face.width(characters) + BORDER * 2 <= MAX_COLUMNS {
-        return Ok((render_lines(&[text], face), face));
-    }
-
-    // Still too wide, so choose one existing word boundary that makes two
-    // balanced visual lines. The fixed 9-row budget allows exactly two glyph
-    // lines: top border + 3 rows + gap + 3 rows + bottom border.
     let words: Vec<&str> = text.split(' ').filter(|word| !word.is_empty()).collect();
-    if words.len() > 1 {
-        let split = (1..words.len())
-            .filter_map(|index| {
-                let left = words[..index].join(" ");
-                let right = words[index..].join(" ");
-                let left_width = face.width(left.chars().count());
-                let right_width = face.width(right.chars().count());
-                (left_width + BORDER * 2 <= MAX_COLUMNS && right_width + BORDER * 2 <= MAX_COLUMNS)
-                    .then_some((index, left_width.max(right_width)))
-            })
-            .min_by_key(|(_, widest)| *widest)
-            .map(|(index, _)| index);
-
-        if let Some(index) = split {
-            let left = words[..index].join(" ");
-            let right = words[index..].join(" ");
-            let payload = render_lines(&[&left, &right], face);
-            debug_assert_eq!(payload.chars().count(), MAX_PAYLOAD_CHARACTERS);
+    for face in [Face::Bold, Face::Compact] {
+        if let Some(lines) = plan_lines(&words, face) {
+            let refs: Vec<&str> = lines.iter().map(String::as_str).collect();
+            let payload = render_lines(&refs, face);
+            debug_assert!(payload.chars().count() <= MAX_PAYLOAD_CHARACTERS);
             return Ok((payload, face));
         }
-
-        if words
-            .iter()
-            .all(|word| face.width(word.chars().count()) + BORDER * 2 <= MAX_COLUMNS)
-        {
-            return Err(RiotError::InvalidCommand(format!(
-                "'{text}' makes artwork that is too long for one VALORANT chat message."
-            )));
-        }
     }
 
-    let longest = words
-        .iter()
-        .map(|word| word.chars().count())
-        .max()
-        .unwrap_or(characters);
     let limit = max_characters_on_one_line(Face::Compact);
+    if words.iter().all(|word| Face::Compact.fits(word)) {
+        return Err(RiotError::InvalidCommand(format!(
+            "'{text}' makes artwork that is too long for one VALORANT chat message. \
+             Fit it in {lines} lines of {limit} characters.",
+            lines = Face::Compact.max_lines(),
+        )));
+    }
     Err(RiotError::InvalidCommand(format!(
-        "'{text}' is too wide for one VALORANT artwork message. Use at most {limit} characters, \
-         or split it into words of {longest_hint} or fewer.",
-        longest_hint = max_characters_on_one_line(Face::Compact).min(longest.saturating_sub(1)),
+        "'{text}' is too wide for one VALORANT artwork message. \
+         Keep each word to {limit} characters or fewer."
     )))
+}
+
+/// Splits words into the fewest lines that fit, at most [`Face::max_lines`].
+///
+/// Words are never broken, and the order is kept. Among splits with the same
+/// line count the most balanced one wins, so the panel stays compact.
+fn plan_lines(words: &[&str], face: Face) -> Option<Vec<String>> {
+    if words.is_empty() {
+        return None;
+    }
+    for count in 1..=face.max_lines().min(words.len()) {
+        let mut best: Option<(usize, Vec<String>)> = None;
+        for_each_split(words.len(), count, &mut |cuts| {
+            let mut lines = Vec::with_capacity(count);
+            let mut start = 0;
+            for &end in cuts.iter().chain(std::iter::once(&words.len())) {
+                lines.push(words[start..end].join(" "));
+                start = end;
+            }
+            if lines.iter().all(|line| face.fits(line)) {
+                let widest = lines.iter().map(|line| line.chars().count()).max().unwrap_or(0);
+                if best.as_ref().is_none_or(|(current, _)| widest < *current) {
+                    best = Some((widest, lines));
+                }
+            }
+        });
+        if let Some((_, lines)) = best {
+            return Some(lines);
+        }
+    }
+    None
+}
+
+/// Calls `visit` with every way to cut `len` words into `parts` non-empty runs,
+/// as the ascending word indexes where each later run starts.
+fn for_each_split(len: usize, parts: usize, visit: &mut impl FnMut(&[usize])) {
+    fn walk(
+        next: usize,
+        len: usize,
+        remaining: usize,
+        cuts: &mut Vec<usize>,
+        visit: &mut impl FnMut(&[usize]),
+    ) {
+        if remaining == 0 {
+            visit(cuts);
+            return;
+        }
+        for cut in next..=len - remaining {
+            cuts.push(cut);
+            walk(cut + 1, len, remaining - 1, cuts, visit);
+            cuts.pop();
+        }
+    }
+    if parts == 0 || parts > len {
+        return;
+    }
+    walk(1, len, parts - 1, &mut Vec::new(), visit);
 }
 
 /// The most characters a face fits on one line inside the border.
@@ -596,42 +644,58 @@ mod tests {
     }
 
     #[test]
-    fn a_short_phrase_stays_on_one_compact_line() {
-        assert_eq!(face_of("nice"), Face::Compact);
+    fn the_message_limit_is_thirteen_rows_of_350_characters() {
+        assert_eq!(MAX_PAYLOAD_CHARACTERS, 350);
+        assert_eq!(Face::Bold.max_lines(), 2);
+        assert_eq!(Face::Compact.max_lines(), 3);
+        assert_eq!(max_characters_on_one_line(Face::Bold), 5);
+        assert_eq!(max_characters_on_one_line(Face::Compact), 6);
+    }
+
+    #[test]
+    fn a_short_phrase_stays_on_one_bold_line() {
+        assert_eq!(face_of("nice"), Face::Bold);
         let payload = parse_ascii_command(".ascii nice").unwrap().payload;
         let lines = rows(&payload);
-        assert_eq!(lines.len(), Face::Compact.rows() + BORDER * 2);
+        assert_eq!(lines.len(), Face::Bold.rows() + BORDER * 2);
     }
 
     #[test]
     fn spaces_stay_on_the_line_rather_than_breaking_it() {
-        // The Discord reference keeps a phrase on one line; so do we, while it
-        // fits. "HK GAY" is 6 characters plus the space.
-        assert_eq!(face_of("hk gay"), Face::Compact);
-        let payload = parse_ascii_command(".ascii hk gay").unwrap().payload;
-        assert_eq!(rows(&payload).len(), Face::Compact.rows() + BORDER * 2);
+        // "GG EZ" is five characters with the space: exactly one bold line.
+        assert_eq!(face_of("gg ez"), Face::Bold);
+        let payload = parse_ascii_command(".ascii gg ez").unwrap().payload;
+        assert_eq!(rows(&payload).len(), Face::Bold.rows() + BORDER * 2);
     }
 
     #[test]
-    fn hk_gay_is_a_paste_ready_fixed_width_payload() {
+    fn two_words_stack_into_two_bold_lines_at_the_limit() {
         let parsed = parse_ascii_command(".ascii hk gay").unwrap();
 
-        assert_eq!(face_of("hk gay"), Face::Compact);
+        assert_eq!(face_of("hk gay"), Face::Bold);
         assert!(!parsed.payload.contains('\r'));
-        assert_eq!(parsed.payload.chars().count(), MAX_COLUMNS * 5 + 4);
+        assert_eq!(parsed.payload.chars().count(), MAX_PAYLOAD_CHARACTERS);
         assert!(rows(&parsed.payload)
             .iter()
             .all(|row| row.chars().count() == 26));
     }
 
     #[test]
+    fn longer_text_falls_back_to_three_compact_lines() {
+        let payload = render_ascii_art("NICE TRY BOT").unwrap();
+        assert_eq!(face_of("nice try bot"), Face::Compact);
+        assert_eq!(rows(&payload).len(), MAX_ROWS);
+        assert_eq!(payload.chars().count(), MAX_PAYLOAD_CHARACTERS);
+    }
+
+    #[test]
     fn visual_rows_are_separated_by_one_line_break() {
-        let payload = parse_ascii_command(".ascii hk gay").unwrap().payload;
+        let payload = parse_ascii_command(".ascii gg").unwrap().payload;
         let rows: Vec<&str> = payload.split(ROW_SEPARATOR).collect();
 
-        assert_eq!(rows.len(), 5);
+        assert_eq!(rows.len(), 7);
         assert!(rows.iter().all(|row| row.chars().count() == MAX_COLUMNS));
-        assert_eq!(payload.chars().count(), MAX_COLUMNS * 5 + 4);
+        assert_eq!(payload.chars().count(), MAX_COLUMNS * 7 + 6);
         // A bare newline and nothing else: a CR would draw as a stray
         // glyph, and a leftover space would add a sixth row to the split.
         assert!(!payload.contains('\r'));
@@ -639,11 +703,11 @@ mod tests {
     }
 
     #[test]
-    fn artwork_never_exceeds_nine_complete_chat_rows() {
-        let two_lines = render_ascii_art("AAAAAA AAAAAA").unwrap();
-        assert_eq!(two_lines.chars().count(), MAX_PAYLOAD_CHARACTERS);
+    fn artwork_never_exceeds_thirteen_complete_chat_rows() {
+        let three_lines = render_ascii_art("AAAAAA AAAAAA AAAAAA").unwrap();
+        assert_eq!(three_lines.chars().count(), MAX_PAYLOAD_CHARACTERS);
 
-        let error = render_ascii_art("AAAAAA AAAAAA AAAAAA")
+        let error = render_ascii_art("AAAAAA AAAAAA AAAAAA AAAAAA")
             .unwrap_err()
             .to_string();
         assert!(error.contains("too long"), "{error}");
@@ -653,8 +717,9 @@ mod tests {
     fn several_short_words_pack_around_one_boundary() {
         let payload = render_ascii_art("A B C D").unwrap();
 
+        assert_eq!(face_of("a b c d"), Face::Bold);
         assert_eq!(payload.chars().count(), MAX_PAYLOAD_CHARACTERS);
-        assert_eq!(rows(&payload).len(), 9);
+        assert_eq!(rows(&payload).len(), MAX_ROWS);
     }
 
     #[test]
@@ -674,6 +739,7 @@ mod tests {
 
         let payload = render_ascii_art(&text).unwrap();
         let lines = rows(&payload);
+        assert_eq!(face_of(&text), Face::Compact);
         assert_eq!(
             lines.len(),
             Face::Compact.rows() * 2 + LINE_GAP + BORDER * 2
@@ -742,9 +808,11 @@ mod tests {
             payload,
             [
                 "░░░░░░░░░░░░░░░░░░░░░░░░░░",
-                "░░░░░░░░░▄▀▀░▄▀▀░░░░░░░░░░",
-                "░░░░░░░░░█░▄░█░▄░░░░░░░░░░",
-                "░░░░░░░░░▀▄█░▀▄█░░░░░░░░░░",
+                "░░░░░░░░░███░░███░░░░░░░░░",
+                "░░░░░░░░█░░░░█░░░░░░░░░░░░",
+                "░░░░░░░░█░██░█░██░░░░░░░░░",
+                "░░░░░░░░█░░█░█░░█░░░░░░░░░",
+                "░░░░░░░░░███░░███░░░░░░░░░",
                 "░░░░░░░░░░░░░░░░░░░░░░░░░░",
             ]
             .join(&ROW_SEPARATOR.to_string())
@@ -759,7 +827,7 @@ mod tests {
             assert!(!parsed.payload.contains('\r'), "{input}");
             assert_eq!(
                 parsed.payload.chars().count(),
-                MAX_COLUMNS * 5 + 4,
+                MAX_COLUMNS * 7 + 6,
                 "{input}"
             );
         }
@@ -780,7 +848,7 @@ mod tests {
     #[test]
     fn the_largest_payload_stays_a_reasonable_chat_message() {
         let word = "A".repeat(max_characters_on_one_line(Face::Compact));
-        let payload = render_ascii_art(&format!("{word} {word}")).unwrap();
+        let payload = render_ascii_art(&format!("{word} {word} {word}")).unwrap();
         assert_eq!(payload.chars().count(), MAX_PAYLOAD_CHARACTERS);
     }
 }
