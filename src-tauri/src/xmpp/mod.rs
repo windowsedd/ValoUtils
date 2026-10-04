@@ -567,6 +567,7 @@ async fn push_own_message(state_guard: &mut Inner, room: &str, message: &str, sc
             msg_type: "groupchat".into(),
             scope: scope.into(),
             is_self: true,
+            round: crate::xmpp::client::ChatRound::current(),
         });
     }
 }

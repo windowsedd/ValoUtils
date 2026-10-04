@@ -10,6 +10,45 @@ use tokio::sync::{broadcast, Mutex as AsyncMutex};
 use tokio_rustls::client::TlsStream;
 use tokio_rustls::TlsConnector;
 
+/// Where the match stood when a group message arrived, from our own presence.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
+pub struct ChatRound {
+    /// `pregame` (agent select) or `ingame`.
+    pub phase: &'static str,
+    /// 1-based round number; absent before the first score update.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub round: Option<u32>,
+    #[serde(rename = "allyScore", skip_serializing_if = "Option::is_none")]
+    pub ally_score: Option<u32>,
+    #[serde(rename = "enemyScore", skip_serializing_if = "Option::is_none")]
+    pub enemy_score: Option<u32>,
+}
+
+impl ChatRound {
+    pub fn from_presence(state: &crate::riot::chat_lifecycle::PresenceMatchState) -> Option<Self> {
+        let phase = match state.session_loop_state.as_deref()? {
+            "PREGAME" => "pregame",
+            "INGAME" => "ingame",
+            _ => return None,
+        };
+        let (ally_score, enemy_score) = if phase == "ingame" {
+            (state.ally_score, state.enemy_score)
+        } else {
+            (None, None)
+        };
+        Some(Self {
+            phase,
+            round: ally_score.zip(enemy_score).map(|(ally, enemy)| ally + enemy + 1),
+            ally_score,
+            enemy_score,
+        })
+    }
+
+    pub fn current() -> Option<Self> {
+        Self::from_presence(&crate::presence_proxy::presence_match_state())
+    }
+}
+
 #[derive(Clone, serde::Serialize)]
 pub struct ChatMessage {
     pub id: String,
@@ -25,6 +64,8 @@ pub struct ChatMessage {
     pub scope: String,
     #[serde(rename = "isSelf")]
     pub is_self: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub round: Option<ChatRound>,
 }
 
 const MAX_BUFFERED_MESSAGES: usize = 200;
@@ -499,6 +540,7 @@ fn handle_incoming_stanza(
             msg_type: "groupchat".into(),
             scope: scope.into(),
             is_self,
+            round: ChatRound::current(),
         };
         {
             let mut buffer = messages.lock().unwrap();
@@ -643,5 +685,34 @@ mod tests {
             crate::xmpp::presence::PresenceSignal::Available { generation: 5, .. }
         ));
         assert!(messages.lock().unwrap().is_empty());
+    }
+}
+
+#[cfg(test)]
+mod chat_round_tests {
+    use super::ChatRound;
+    use crate::riot::chat_lifecycle::PresenceMatchState;
+
+    fn state(loop_state: &str, ally: Option<u32>, enemy: Option<u32>) -> PresenceMatchState {
+        PresenceMatchState {
+            session_loop_state: Some(loop_state.into()),
+            queue_id: None,
+            ally_score: ally,
+            enemy_score: enemy,
+        }
+    }
+
+    #[test]
+    fn in_game_round_is_the_next_round_after_the_score() {
+        let round = ChatRound::from_presence(&state("INGAME", Some(3), Some(1))).unwrap();
+        assert_eq!(round.phase, "ingame");
+        assert_eq!(round.round, Some(5));
+    }
+
+    #[test]
+    fn agent_select_has_no_round_and_menus_has_no_stamp() {
+        let round = ChatRound::from_presence(&state("PREGAME", Some(0), Some(0))).unwrap();
+        assert_eq!((round.phase, round.round, round.ally_score), ("pregame", None, None));
+        assert_eq!(ChatRound::from_presence(&state("MENUS", None, None)), None);
     }
 }

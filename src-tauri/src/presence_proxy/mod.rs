@@ -329,9 +329,10 @@ fn live_chat() -> &'static Mutex<VecDeque<xml::LiveChatLine>> {
 
 pub fn record_live_chat(stanza: &str) {
     record_group_muc_from_stanza(stanza);
-    let Some(line) = xml::parse_groupchat_line(stanza) else {
+    let Some(mut line) = xml::parse_groupchat_line(stanza) else {
         return;
     };
+    line.round = crate::xmpp::client::ChatRound::current();
     // Only server traffic reaches the GUI; outgoing bot commands may be consumed.
     if !line.is_self {
         let own = ChatChannel::EVERY

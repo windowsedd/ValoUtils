@@ -41,6 +41,8 @@ pub struct LiveChatLine {
     pub body: String,
     pub timestamp: String,
     pub is_self: bool,
+    /// Stamped when the relay records the line, not when it is parsed.
+    pub round: Option<crate::xmpp::client::ChatRound>,
 }
 
 static NEXT_CHAT_ID: AtomicU64 = AtomicU64::new(0);
@@ -66,6 +68,7 @@ impl LiveChatLine {
             .into(),
             is_self: self.is_self
                 || (!own_puuid.is_empty() && self.sender.eq_ignore_ascii_case(own_puuid)),
+            round: self.round.clone(),
         })
     }
 }
@@ -128,6 +131,7 @@ pub fn parse_groupchat_line(stanza: &str) -> Option<LiveChatLine> {
         body,
         timestamp: unix_millis().to_string(),
         is_self: !incoming,
+        round: None,
     })
 }
 
