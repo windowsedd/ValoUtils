@@ -1092,10 +1092,13 @@ async fn prepare_translation_command(
     use_observed_room: bool,
 ) -> Result<InternalPreparedTranslation, RiotError> {
     let channel = effective_send_channel(parsed.channel);
+    let agent_select = agent_select_room(channel);
     // Resolve and snapshot the destination before the external translation
     // request. The live relay already knows its joined MUC, so it deliberately
     // skips REST resolution when that pinned room matches the requested channel.
-    let pinned_live_cid = pinned_live_cid.filter(|cid| channel.matches_cid(cid));
+    let pinned_live_cid = pinned_live_cid
+        .or(agent_select.as_deref())
+        .filter(|cid| channel.matches_cid(cid));
     let (rest_cid, live_cid) = if let Some(cid) = pinned_live_cid {
         (cid.to_string(), cid.to_string())
     } else {
@@ -1137,6 +1140,35 @@ fn no_translation_body(parsed: &TranslationCommand) -> Option<&str> {
         .language
         .eq_ignore_ascii_case("none")
         .then_some(parsed.message.as_str())
+}
+
+/// During agent select the game sits in its pregame team room, which the relay
+/// watched it join. Re-resolving through REST/XMPP instead fails there: REST
+/// only lists core-game rooms for "team", and the app's own pregame join can
+/// miss or spell the room differently, so whispered `.send team|pregame`
+/// answered "channel unavailable". Gated on the game's own PREGAME presence
+/// because observed rooms outlive the match they belonged to.
+fn agent_select_room(channel: ChatChannel) -> Option<String> {
+    agent_select_room_for(
+        channel,
+        crate::presence_proxy::presence_match_state()
+            .session_loop_state
+            .as_deref(),
+        crate::presence_proxy::last_group_muc_jid(ChatChannel::Pregame),
+    )
+}
+
+fn agent_select_room_for(
+    channel: ChatChannel,
+    session_loop_state: Option<&str>,
+    observed_pregame: Option<String>,
+) -> Option<String> {
+    let team_side = matches!(channel, ChatChannel::Team | ChatChannel::Pregame);
+    let in_agent_select = session_loop_state.is_some_and(|state| state.eq_ignore_ascii_case("PREGAME"));
+    (team_side && in_agent_select)
+        .then_some(observed_pregame)
+        .flatten()
+        .filter(|room| ChatChannel::Pregame.matches_cid(room))
 }
 
 fn effective_send_channel(channel: ChatChannel) -> ChatChannel {
@@ -2641,6 +2673,25 @@ mod tests {
             classify_composer_command(".aim", &commands),
             ComposerCommand::Unknown
         );
+    }
+
+    #[test]
+    fn agent_select_sends_to_the_pregame_room_the_game_joined() {
+        let room = Some("m1-blue@ares-pregame.jp1.pvp.net".to_string());
+        assert_eq!(
+            agent_select_room_for(ChatChannel::Team, Some("PREGAME"), room.clone()),
+            room
+        );
+        assert_eq!(
+            agent_select_room_for(ChatChannel::Pregame, Some("PREGAME"), room.clone()),
+            room
+        );
+        // Outside agent select, or for party/all, normal resolution applies.
+        assert_eq!(agent_select_room_for(ChatChannel::Team, Some("INGAME"), room.clone()), None);
+        assert_eq!(agent_select_room_for(ChatChannel::Team, None, room.clone()), None);
+        assert_eq!(agent_select_room_for(ChatChannel::All, Some("PREGAME"), room.clone()), None);
+        assert_eq!(agent_select_room_for(ChatChannel::Team, Some("PREGAME"), None), None);
+        assert!(ChatChannel::Team.matches_cid(room.as_deref().unwrap()));
     }
 
     #[test]
