@@ -336,6 +336,16 @@ const applyConfig = (message: any) => {
 					<p className="mt-1 font-mono text-[11px] text-(--text-muted)">{t("dummyBot.asciiExample")}</p>
 				</div>
 				<div className="border-t border-(--line) px-2.5 py-2">
+					<p className="font-mono text-[12px] text-(--accent-selected)">{t("dummyBot.aiSyntax")}</p>
+					<p className="mt-1 text-[11px] leading-5 text-(--text-secondary)">{t("dummyBot.aiDesc")}</p>
+					<p className="mt-1 font-mono text-[11px] text-(--text-muted)">{t("dummyBot.aiExample")}</p>
+				</div>
+				<div className="border-t border-(--line) px-2.5 py-2">
+					<p className="font-mono text-[12px] text-(--accent-selected)">{t("dummyBot.askSyntax")}</p>
+					<p className="mt-1 text-[11px] leading-5 text-(--text-secondary)">{t("dummyBot.askDesc")}</p>
+					<p className="mt-1 font-mono text-[11px] text-(--text-muted)">{t("dummyBot.askExample")}</p>
+				</div>
+				<div className="border-t border-(--line) px-2.5 py-2">
 					<p className="font-mono text-[12px] text-(--accent-selected)">{t("dummyBot.dodgeSyntax")}</p>
 					<p className="mt-1 text-[11px] leading-5 text-(--text-secondary)">{t("dummyBot.dodgeDesc")}</p>
 				</div>
@@ -577,6 +587,9 @@ const RESERVED = new Set([
 	".tran",
 	".translate",
 	".dodge",
+	".ascii",
+	".ai",
+	".ask",
 	"$online",
 	"$offline",
 	"$mobile",

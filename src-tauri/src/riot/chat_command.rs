@@ -232,6 +232,50 @@ pub fn is_dodge_command(input: &str) -> bool {
     is_dot_command(input, ".dodge")
 }
 
+/// `.ai [party|team|all] <prompt>` — post one AI-written line to a group room.
+pub fn is_ai_command(input: &str) -> bool {
+    is_dot_command(input, ".ai")
+}
+
+/// `.ask <question>` — an AI answer for the local player only.
+pub fn is_ask_command(input: &str) -> bool {
+    is_dot_command(input, ".ask")
+}
+
+fn dot_command_rest<'a>(input: &'a str, command: &str) -> Option<&'a str> {
+    is_dot_command(input, command).then(|| input.trim_start()[command.len()..].trim())
+}
+
+/// Splits `.ai` into an optional leading destination and the prompt. As with
+/// `.ascii`, the three channel names are always a destination, never prompt text.
+pub fn parse_ai_command(input: &str) -> Result<(Option<ChatChannel>, String), RiotError> {
+    let rest = dot_command_rest(input, ".ai")
+        .ok_or_else(|| RiotError::InvalidCommand("Commands must start with .ai.".into()))?;
+    let (first, remainder) = rest.split_once(char::is_whitespace).unwrap_or((rest, ""));
+    let channel = match first.to_ascii_lowercase().as_str() {
+        "party" => Some(ChatChannel::Party),
+        "team" => Some(ChatChannel::Team),
+        "all" => Some(ChatChannel::All),
+        _ => None,
+    };
+    let prompt = if channel.is_some() { remainder.trim() } else { rest };
+    if prompt.is_empty() {
+        return Err(RiotError::InvalidCommand(
+            "Usage: .ai {party|team|all} <prompt>, e.g. .ai team hype us up.".into(),
+        ));
+    }
+    Ok((channel, prompt.to_string()))
+}
+
+pub fn parse_ask_command(input: &str) -> Result<String, RiotError> {
+    match dot_command_rest(input, ".ask") {
+        Some(question) if !question.is_empty() => Ok(question.to_string()),
+        _ => Err(RiotError::InvalidCommand(
+            "Usage: .ask <question>, e.g. .ask how do I counter Raze?".into(),
+        )),
+    }
+}
+
 fn is_dot_command(input: &str, command: &str) -> bool {
     let trimmed = input.trim_start();
     let Some(head) = trimmed.get(..command.len()) else {
@@ -323,6 +367,8 @@ pub fn is_skippable_history_line(body: &str) -> bool {
         || is_translation_command(body)
         || is_history_translate_command(body)
         || is_dodge_command(body)
+        || is_ai_command(body)
+        || is_ask_command(body)
         || crate::riot::ascii_art::is_ascii_command(body)
         || body.starts_with('$')
 }
@@ -1067,5 +1113,20 @@ mod tests {
         assert!(is_skippable_history_line(".ascii gg"));
         assert!(is_skippable_history_line(".ascii team nice"));
         assert!(!is_skippable_history_line(".asciify gg"));
+    }
+
+    #[test]
+    fn ai_and_ask_commands_parse_their_destination_and_text() {
+        assert!(is_ai_command(".AI team gg") && !is_ai_command(".ascii gg") && !is_ai_command(".aim"));
+        assert!(is_ask_command(".ask why") && !is_ask_command(".ascii why"));
+        assert_eq!(
+            parse_ai_command(".ai team hype us up").unwrap(),
+            (Some(ChatChannel::Team), "hype us up".into())
+        );
+        assert_eq!(parse_ai_command(".ai say gg").unwrap(), (None, "say gg".into()));
+        assert!(parse_ai_command(".ai team").is_err());
+        assert_eq!(parse_ask_command(".ask  counter Raze? ").unwrap(), "counter Raze?");
+        assert!(parse_ask_command(".ask").is_err());
+        assert!(is_skippable_history_line(".ai all gg") && is_skippable_history_line(".ask hi"));
     }
 }

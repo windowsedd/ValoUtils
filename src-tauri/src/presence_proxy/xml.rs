@@ -16,6 +16,8 @@ pub enum BotCommand {
     TranslateHistory,
     Dodge,
     Ascii,
+    Ai,
+    Ask,
     Unknown,
     Consume,
 }
@@ -231,6 +233,10 @@ pub fn parse_bot_message(stanza: &str) -> Result<Option<(String, BotCommand)>, S
         BotCommand::Dodge
     } else if crate::riot::ascii_art::is_ascii_command(&body) {
         BotCommand::Ascii
+    } else if crate::riot::chat_command::is_ai_command(&body) {
+        BotCommand::Ai
+    } else if crate::riot::chat_command::is_ask_command(&body) {
+        BotCommand::Ask
     } else {
         parse_bot_command(&body).unwrap_or(BotCommand::Unknown)
     };

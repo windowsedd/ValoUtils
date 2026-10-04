@@ -437,6 +437,10 @@ pub enum ComposerCommand {
     Dodge,
     /// `.ascii` — render block text and post it to a group room.
     Ascii(String),
+    /// `.ai` — post an AI-written line to a group room.
+    Ai(String),
+    /// `.ask` — an AI answer shown only to the player.
+    Ask(String),
     Unknown,
 }
 
@@ -473,6 +477,10 @@ pub fn classify_composer_command(
         ComposerCommand::Dodge
     } else if ascii_art::is_ascii_command(&expanded) {
         ComposerCommand::Ascii(expanded)
+    } else if chat_command::is_ai_command(&expanded) {
+        ComposerCommand::Ai(expanded)
+    } else if chat_command::is_ask_command(&expanded) {
+        ComposerCommand::Ask(expanded)
     } else {
         ComposerCommand::Unknown
     }
@@ -528,6 +536,13 @@ pub async fn chat_command(args: Vec<Value>, app: AppHandle) -> Result<Value, ()>
                 .await
                 .map(|(channel, _)| format_ascii_reply(channel))
         }
+        ComposerCommand::Ai(line) if ai_posts_to_room(&line) => {
+            execute_ai_command(&line, Some(&app))
+                .await
+                .map(|(channel, _)| format_ai_reply(channel))
+        }
+        // Private by default: the answer is shown only under the composer.
+        ComposerCommand::Ai(line) | ComposerCommand::Ask(line) => ai_command_reply(&line).await,
         ComposerCommand::Unknown => {
             return Ok(json!({
                 "success": false,
@@ -692,7 +707,16 @@ async fn prepare_ascii_command(
     let parsed = ascii_art::parse_ascii_command(line)?;
 
     let (channel, pinned_live_cid) = resolve_ascii_destination(parsed.channel, source)?;
+    prepare_group_post(channel, pinned_live_cid, parsed.payload, app).await
+}
 
+/// Resolves the room for a verbatim group post (`.ascii`, `.ai`) without sending.
+async fn prepare_group_post(
+    channel: ChatChannel,
+    pinned_live_cid: Option<String>,
+    payload: String,
+    app: Option<&AppHandle>,
+) -> Result<(RiotChatClient, ChatChannel, InternalPreparedTranslation), RiotError> {
     let client = RiotChatClient::connect()?;
     let config = app
         .map(translator_config)
@@ -707,7 +731,7 @@ async fn prepare_ascii_command(
         channel,
         language: "none".into(),
         language_input: "none".into(),
-        message: parsed.payload,
+        message: payload,
     };
     let prepared = prepare_translation_command(
         &client,
@@ -759,6 +783,94 @@ pub(crate) async fn prepare_ascii_for_bot(
         body: prepared.body,
         reply: format_ascii_reply(channel),
     })
+}
+
+/// Runs one AI completion and flattens it to a single chat line.
+async fn ai_chat_line(system: &str, prompt: &str, max_chars: usize) -> Result<String, RiotError> {
+    let text = crate::ai::complete(crate::ai::AiRequest {
+        system,
+        prompt,
+        max_tokens: 400,
+        timeout: crate::ai::REQUEST_TIMEOUT,
+    })
+    .await
+    .map_err(|error| RiotError::Other(error.to_string()))?;
+    let line = super::bot_template::clean_ai_line(&text, max_chars);
+    if line.is_empty() {
+        return Err(RiotError::Other("AI provider returned no text.".into()));
+    }
+    Ok(line)
+}
+
+/// Parses a `.ai` that names a room, then writes the line and prepares it for
+/// posting. Without a channel `.ai` is private; see [`ai_command_reply`].
+async fn prepare_ai_command(
+    line: &str,
+    app: Option<&AppHandle>,
+) -> Result<(RiotChatClient, ChatChannel, InternalPreparedTranslation), RiotError> {
+    let (explicit, prompt) = chat_command::parse_ai_command(line)?;
+    let Some(channel) = explicit else {
+        return Err(RiotError::InvalidCommand(
+            "Name a channel to post: .ai {party|team|all} <prompt>.".into(),
+        ));
+    };
+    let text = ai_chat_line(crate::ai::prompts::BOT_LINE, &prompt, 200).await?;
+    prepare_group_post(channel, None, text, app).await
+}
+
+/// Whether a `.ai` line names a room to post to. Anything else is private.
+pub(crate) fn ai_posts_to_room(line: &str) -> bool {
+    matches!(chat_command::parse_ai_command(line), Ok((Some(_), _)))
+}
+
+/// The private answer for `.ask`, or for `.ai` without a channel.
+pub async fn ai_command_reply(line: &str) -> Result<String, RiotError> {
+    if chat_command::is_ask_command(line) {
+        return execute_ask(line).await;
+    }
+    let (_, prompt) = chat_command::parse_ai_command(line)?;
+    ai_chat_line(crate::ai::prompts::BOT_LINE, &prompt, 200).await
+}
+
+pub(crate) fn format_ai_reply(channel: ChatChannel) -> String {
+    format!("Sent AI message to {channel}.")
+}
+
+/// Writes one line with AI and posts it to the group room the line names.
+async fn execute_ai_command(
+    line: &str,
+    app: Option<&AppHandle>,
+) -> Result<(ChatChannel, String), RiotError> {
+    let (client, channel, prepared) = prepare_ai_command(line, app).await?;
+    deliver_translated_line(
+        &client,
+        channel,
+        &prepared.rest_cid,
+        &prepared.live_cid,
+        &prepared.body,
+        app,
+    )
+    .await?;
+    Ok((channel, prepared.body))
+}
+
+/// Prepares a `.ai` whispered to the Dummy Bot; it must name a channel.
+pub(crate) async fn prepare_ai_for_bot(
+    line: &str,
+    app: Option<&AppHandle>,
+) -> Result<PreparedTranslation, RiotError> {
+    let (_, channel, prepared) = prepare_ai_command(line, app).await?;
+    Ok(PreparedTranslation {
+        live_cid: prepared.live_cid,
+        body: prepared.body,
+        reply: format_ai_reply(channel),
+    })
+}
+
+/// Answers `.ask` privately; nothing is posted to any room.
+pub async fn execute_ask(line: &str) -> Result<String, RiotError> {
+    let question = chat_command::parse_ask_command(line)?;
+    ai_chat_line(crate::ai::prompts::ASK, &question, 400).await
 }
 
 pub async fn execute_history_translation(
@@ -1405,6 +1517,8 @@ enum OwnMessage {
     Dodge,
     /// `.ascii` — render block text and post it to a group room.
     Ascii(String),
+    /// `.ai` / `.ask` — AI line, posted only when a channel is named.
+    Ai(String),
 }
 
 /// Classifies a line from the local player.
@@ -1428,6 +1542,9 @@ fn plan_own_message(
     }
     if ascii_art::is_ascii_command(body) {
         return OwnMessage::Ascii(body.to_string());
+    }
+    if chat_command::is_ai_command(body) || chat_command::is_ask_command(body) {
+        return OwnMessage::Ai(body.to_string());
     }
     // A custom trigger expands to a full command. Triggers whose action is
     // `tran` expand to `.tran ...`, which produces a text summary with nowhere
@@ -1860,6 +1977,31 @@ async fn dispatch(
                     Ok((channel, payload)) => {
                         memory.echoes.remember(&payload);
                         let _ = app.emit(EVENT_COMMAND, format_ascii_reply(channel));
+                    }
+                    Err(error) => {
+                        let _ = app.emit(EVENT_ERROR, error.to_string());
+                    }
+                }
+            }
+            OwnMessage::Ai(line) if ai_posts_to_room(&line) => {
+                match execute_ai_command(&line, Some(app)).await {
+                    Ok((channel, payload)) => {
+                        memory.echoes.remember(&payload);
+                        let _ = app.emit(EVENT_COMMAND, format_ai_reply(channel));
+                    }
+                    Err(error) => {
+                        let _ = app.emit(EVENT_ERROR, error.to_string());
+                    }
+                }
+            }
+            OwnMessage::Ai(line) => {
+                let outcome = match ai_command_reply(&line).await {
+                    Ok(answer) => deliver_proactive_direct(&answer),
+                    Err(error) => Err(error),
+                };
+                match outcome {
+                    Ok(reply) => {
+                        let _ = app.emit(EVENT_COMMAND, reply);
                     }
                     Err(error) => {
                         let _ = app.emit(EVENT_ERROR, error.to_string());
@@ -2486,6 +2628,33 @@ mod tests {
         assert_eq!(
             classify_composer_command("  .DODGE", &commands),
             ComposerCommand::Dodge
+        );
+        assert_eq!(
+            classify_composer_command(".ai team hype us up", &commands),
+            ComposerCommand::Ai(".ai team hype us up".into())
+        );
+        assert_eq!(
+            classify_composer_command(".ASK how to play Viper", &commands),
+            ComposerCommand::Ask(".ASK how to play Viper".into())
+        );
+        assert_eq!(
+            classify_composer_command(".aim", &commands),
+            ComposerCommand::Unknown
+        );
+    }
+
+    #[test]
+    fn ai_is_private_unless_it_names_a_room() {
+        assert!(ai_posts_to_room(".ai team hype us up"));
+        assert!(ai_posts_to_room(".AI party gl"));
+        assert!(!ai_posts_to_room(".ai hype us up"));
+        assert!(!ai_posts_to_room(".ask team comp?"));
+        assert!(!ai_posts_to_room(".ai team"));
+        let commands = Vec::new();
+        let mut echoes = PendingEchoes::default();
+        assert_eq!(
+            plan_own_message(".ask how to play Viper", &commands, &mut echoes),
+            OwnMessage::Ai(".ask how to play Viper".into())
         );
     }
 

@@ -260,6 +260,11 @@ The `ai` chat translator shares Google's language catalog. Bot custom commands
 support balanced `{{ai: … {{map}} …}}` blocks: variables resolve first, then up to
 three AI blocks per message run concurrently before translation. Failed blocks
 become `N/A`. The editor provides a separate AI block insert button.
+`.ai` and `.ask` are private by default: the answer goes only to the player (a
+composer system line, or a Dummy Bot DM/whisper). `.ai party|team|all <prompt>`
+is the only form that posts, to the named room. The relay swallows `.ai`/`.ask`
+typed in party/team/all chat so the raw line never reaches the room; without the
+relay, the REST poller sees it after it was sent and still answers by bot DM.
 Match analysis sends only anonymized scoreboard stats: `You`, `Ally N`, and
 `Enemy N`. Never send other players' Riot IDs, PUUIDs, or party IDs in match
 analysis. Results stay in Matches state by match ID; Regenerate makes a new call.

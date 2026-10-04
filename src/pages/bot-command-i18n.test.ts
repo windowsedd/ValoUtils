@@ -19,7 +19,17 @@ const required = [
 
 // The built-in command reference has to read in every shipped language, not
 // just fall back to English for the newest command.
-const commandReference = ["asciiSyntax", "asciiDesc", "asciiExample"] as const;
+const commandReference = [
+  "asciiSyntax",
+  "asciiDesc",
+  "asciiExample",
+  "aiSyntax",
+  "aiDesc",
+  "aiExample",
+  "askSyntax",
+  "askDesc",
+  "askExample",
+] as const;
 
 const at = (value: unknown, path: string): unknown =>
   path

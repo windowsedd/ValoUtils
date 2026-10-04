@@ -265,6 +265,18 @@ async fn client_to_remote(
                         }
                         log::warn!("Live chat command queue is full; forwarding original stanza");
                     }
+                    // `.ai` / `.ask` typed in a group room never reach it: the
+                    // answer is a Dummy Bot DM unless `.ai` names a room.
+                    if let Some(body) = outgoing_ai_command(stanza) {
+                        let remote_write = remote_write.clone();
+                        tauri::async_runtime::spawn(async move {
+                            let reply = ai_command_on_connection(&body, &remote_write).await;
+                            if let Err(error) = crate::presence_proxy::send_bot_direct(&reply) {
+                                log::warn!("AI command reply could not be delivered: {error:?}");
+                            }
+                        });
+                        continue;
+                    }
                     if outgoing_dodge_command(stanza) {
                         tauri::async_runtime::spawn(async {
                             match tokio::time::timeout(
@@ -302,6 +314,8 @@ async fn client_to_remote(
                                     }
                                 } else if command == BotCommand::Ascii {
                                     ascii_bot_command_on_connection(&body, &remote_write).await
+                                } else if command == BotCommand::Ai || command == BotCommand::Ask {
+                                    ai_command_on_connection(&body, &remote_write).await
                                 } else if command == BotCommand::Dodge {
                                     match crate::commands::riot_chat::execute_dodge(
                                         crate::presence_proxy::app_handle(),
@@ -503,6 +517,42 @@ async fn ascii_bot_command_on_connection(
     prepared.reply
 }
 
+/// Runs `.ai` / `.ask` from a whisper or a group room. The answer is private
+/// (returned for a DM) unless `.ai` names a room, in which case the line is
+/// posted on this connection like a whispered `.ascii`.
+async fn ai_command_on_connection(
+    command: &str,
+    remote_write: &Arc<AsyncMutex<WriteHalf<RemoteTls>>>,
+) -> String {
+    if !crate::commands::riot_chat::ai_posts_to_room(command) {
+        return match crate::commands::riot_chat::ai_command_reply(command).await {
+            Ok(answer) => answer,
+            Err(error) => error.to_string(),
+        };
+    }
+    let prepared = match crate::commands::riot_chat::prepare_ai_for_bot(
+        command,
+        crate::presence_proxy::app_handle(),
+    )
+    .await
+    {
+        Ok(prepared) => prepared,
+        Err(error) => return error.to_string(),
+    };
+
+    let stanza = crate::presence_proxy::game_groupchat_stanza(&prepared.live_cid, &prepared.body);
+    crate::commands::riot_chat::record_live_translation_echo(&prepared.live_cid, &prepared.body);
+    if let Err(error) = write_frame(remote_write, stanza.as_bytes()).await {
+        crate::commands::riot_chat::discard_live_translation_echo(
+            &prepared.live_cid,
+            &prepared.body,
+        );
+        return format!("Could not send AI message: {error}");
+    }
+
+    prepared.reply
+}
+
 async fn remote_to_client(
     mut read: ReadHalf<RemoteTls>,
     local_write: Arc<AsyncMutex<WriteHalf<LocalTls>>>,
@@ -647,6 +697,13 @@ fn outgoing_translation_command(stanza: &str) -> Option<OutgoingTranslationComma
         source_channel: channel,
         source_cid: cid,
     })
+}
+
+fn outgoing_ai_command(stanza: &str) -> Option<String> {
+    let (_, _, body) = outgoing_live_groupchat(stanza)?;
+    (crate::riot::chat_command::is_ai_command(&body)
+        || crate::riot::chat_command::is_ask_command(&body))
+    .then_some(body)
 }
 
 fn outgoing_dodge_command(stanza: &str) -> bool {
