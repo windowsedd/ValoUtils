@@ -562,6 +562,16 @@ describe("sameRoomCid", () => {
 });
 
 describe("messagesForConversation", () => {
+  test("deduplicates an event and summary carrying the same message under room aliases", () => {
+    const cid = "game-all@ares-coregame.ap1.pvp.net";
+    const alias = "game-all@ares-coregame.ap";
+    const line = message({ id: "same-id", conversationId: cid });
+    expect(
+      chatModel.messagesForConversation(cid, { [alias]: [{ ...line, conversationId: alias }] }, [
+        line,
+      ]),
+    ).toHaveLength(1);
+  });
   test("includes a party line whose cid is an alias of the selected room", () => {
     const selected = "p-1@ares-parties.ap";
     const rest = "p-1@ares-parties.ap1.pvp.net";

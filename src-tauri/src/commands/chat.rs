@@ -1,6 +1,6 @@
-use crate::riot::error::RiotError;
 use crate::riot::api;
 use crate::riot::client::{self as riot_client, is_login_required_error, RiotState};
+use crate::riot::error::RiotError;
 use crate::store::ConfigStore;
 use crate::translate;
 use crate::xmpp;
@@ -1344,6 +1344,19 @@ pub async fn chat_get(app: AppHandle, riot: State<'_, RiotState>) -> Result<Valu
             &names,
         );
         messages.extend(xmpp_messages);
+        // Game relay traffic may never enter the REST store or app XMPP socket.
+        messages.extend(
+            crate::presence_proxy::live_chat_transcript()
+                .into_iter()
+                .filter(|line| !line.is_self)
+                .filter_map(|line| {
+                    let mut message = line.chat_message(&own_puuid)?;
+                    if let Some(name) = names.get(&id_root(&message.sender)) {
+                        message.sender_name = name.clone();
+                    }
+                    serde_json::to_value(message).ok()
+                }),
+        );
 
         let final_party_room =
             canonical_room_cid(&confirmed_party_room(&party_room), &conversation_metadata);
@@ -1444,9 +1457,12 @@ pub async fn chat_history(args: Vec<Value>, riot: State<'_, RiotState>) -> Resul
     let request_id = arg(&args, 0).unwrap_or_default();
     let cid = arg(&args, 1).unwrap_or_default().trim().to_string();
     if cid.is_empty() {
-        return Ok(
-            history_error(&request_id, &cid, "unavailable", "No chat room selected."),
-        );
+        return Ok(history_error(
+            &request_id,
+            &cid,
+            "unavailable",
+            "No chat room selected.",
+        ));
     }
 
     let result: Result<Value, RiotError> = async {
@@ -1491,10 +1507,7 @@ pub async fn chat_history(args: Vec<Value>, riot: State<'_, RiotState>) -> Resul
 }
 
 #[tauri::command]
-pub async fn chat_translate(
-    args: Vec<Value>,
-    config: State<'_, ConfigStore>,
-) -> Result<Value, ()> {
+pub async fn chat_translate(args: Vec<Value>, config: State<'_, ConfigStore>) -> Result<Value, ()> {
     let Some(text) = arg(&args, 0) else {
         return Ok(json!({ "success": false, "error": "no text" }));
     };
@@ -1555,33 +1568,23 @@ pub async fn chat_send(args: Vec<Value>, riot: State<'_, RiotState>) -> Result<V
     let body = message.trim().to_string();
     let msg_type = get_send_type(&cid);
 
-    // Riot Local API is authoritative; group rooms retain the existing XMPP fallback.
-    let mut transport = "rest";
-    let rest_result = riot_client::send_chat_message(&riot, &cid, &body, msg_type).await;
-    if let Err(rest_err) = rest_result {
-        if cid.contains("@ares-parties.") {
-            transport = "xmpp";
-            if let Err(e) = xmpp::send_party_xmpp_message(&riot, &cid, &body).await {
-                return Ok(send_error(&request_id, &cid, &e));
-            }
-        } else if cid.contains("@ares-coregame.") {
-            transport = "xmpp";
-            if let Err(e) = xmpp::send_match_xmpp_message(&riot, &cid, &body).await {
-                return Ok(send_error(&request_id, &cid, &e));
-            }
-        } else {
-            return Ok(send_error(&request_id, &cid, &rest_err.to_string()));
+    let transport = if msg_type == "groupchat" {
+        if let Err(error) = crate::presence_proxy::send_gui_group_through_game(&cid, &body).await {
+            return Ok(send_error(&request_id, &cid, &error));
         }
-    }
+        "xmpp"
+    } else {
+        if let Err(error) = riot_client::send_chat_message(&riot, &cid, &body, msg_type).await {
+            return Ok(send_error(&request_id, &cid, &error.to_string()));
+        }
+        "rest"
+    };
 
     Ok(send_success(&request_id, &cid, msg_type, transport))
 }
 
 #[tauri::command]
-pub async fn chat_friend_action(
-    args: Vec<Value>,
-    riot: State<'_, RiotState>,
-) -> Result<Value, ()> {
+pub async fn chat_friend_action(args: Vec<Value>, riot: State<'_, RiotState>) -> Result<Value, ()> {
     let action = arg(&args, 0).unwrap_or_default();
     let friend = args.get(1).cloned().unwrap_or(json!({}));
 
@@ -1639,10 +1642,12 @@ pub async fn chat_mark_read(args: Vec<Value>, riot: State<'_, RiotState>) -> Res
     }
     let mid = arg(&args, 1).unwrap_or_default();
     let conv_type = arg(&args, 2).unwrap_or_else(|| get_send_type(&cid).to_string());
-    Ok(match mark_conversation_read(&riot, &cid, &mid, &conv_type).await {
-        Ok(_) => json!({ "success": true, "cid": cid }),
-        Err(error) => json!({ "success": false, "cid": cid, "error": error }),
-    })
+    Ok(
+        match mark_conversation_read(&riot, &cid, &mid, &conv_type).await {
+            Ok(_) => json!({ "success": true, "cid": cid }),
+            Err(error) => json!({ "success": false, "cid": cid, "error": error }),
+        },
+    )
 }
 
 async fn mark_conversation_read(
@@ -1816,8 +1821,7 @@ mod tests {
             active_conversation_body("party@ares-parties.ap")["type"],
             "groupchat"
         );
-        let with_mid =
-            active_conversation_body_with_mid("friend@jp1.pvp.net", "msg-9", "chat");
+        let with_mid = active_conversation_body_with_mid("friend@jp1.pvp.net", "msg-9", "chat");
         assert_eq!(with_mid["mid"], "msg-9");
         assert_eq!(with_mid.get("unread_count"), None);
     }
@@ -1862,7 +1866,10 @@ mod tests {
         assert_eq!(targets[0].0, "/chat/v7/conversations/read");
         assert_eq!(targets[0].1, reqwest::Method::POST);
         let paths: Vec<&str> = targets.iter().map(|(path, _)| path.as_str()).collect();
-        assert_eq!(paths, vec!["/chat/v7/conversations/read", "/chat/v6/conversations/read"]);
+        assert_eq!(
+            paths,
+            vec!["/chat/v7/conversations/read", "/chat/v6/conversations/read"]
+        );
     }
 
     #[test]
@@ -1920,7 +1927,9 @@ mod tests {
             value["cid"],
             "27ccdf36-57e7-4eee-b111-96a9b0deb638@ares-parties.jp1.pvp.net"
         );
-        assert!(!is_missing_conversation_history(&RiotError::RiotClientNotRunning));
+        assert!(!is_missing_conversation_history(
+            &RiotError::RiotClientNotRunning
+        ));
     }
 
     #[test]
@@ -2064,7 +2073,11 @@ mod tests {
 
     #[test]
     fn classification_and_history_keep_faults_out_of_login_panel() {
-        for error in [RiotError::MalformedLockfile, RiotError::Timeout, RiotError::Other("lockfile failed".into())] {
+        for error in [
+            RiotError::MalformedLockfile,
+            RiotError::Timeout,
+            RiotError::Other("lockfile failed".into()),
+        ] {
             assert!(!is_login_required_error(&error));
             let reply = history_from_fetch_error("req", "room", &error);
             assert_eq!(reply["success"], false);

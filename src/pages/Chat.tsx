@@ -4,6 +4,8 @@ import { LuMessageSquare } from "react-icons/lu";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ChatComposer } from "./chat/chat-composer";
+import { ChatChannelRail } from "./chat/chat-channel-rail";
+import { ChatChannelContext } from "./chat/chat-channel-context";
 import {
 	ChatConversationList,
 	type FriendStatusLabels,
@@ -31,13 +33,45 @@ const Chat = () => {
 	};
 	const selectedConversationTitle =
 		controller.selectedFriendConversation?.title || controller.selectedConversation?.title;
-	const threadTitle = selectedConversationTitle || t("chat.scopeFriends");
+	const channel = controller.selectedChannel;
+	const channelLabels = {
+		friends: t("chat.scopeFriends"),
+		party: t("chat.scopeParty"),
+		team: t("chat.matchTeam"),
+		all: t("chat.matchAll"),
+	};
+	const isFriends = channel === "friends";
+	const threadTitle = isFriends
+		? selectedConversationTitle || channelLabels.friends
+		: channelLabels[channel];
 	const threadSubtitle = controller.selectedFriendConversation
 		? friendStatusLabels[controller.selectedFriendConversation.statusKey]
-		: t("chat.scopeFriends");
-	const emptyLabel = t("chat.emptyFriends");
-	const disabledReason = controller.loginRequired ? t("chat.loginRequiredDesc") : t("chat.noRoom");
-	const placeholder = t("chat.placeholder");
+		: channelLabels[channel];
+	const emptyLabel = t(
+		{
+			friends: "chat.emptyFriends",
+			party: "chat.emptyParty",
+			team: "chat.emptyTeam",
+			all: "chat.emptyAll",
+		}[channel],
+	);
+	const noRoomLabel = t(
+		{
+			friends: "chat.noRoom",
+			party: "chat.noPartyRoom",
+			team: "chat.noTeamRoom",
+			all: "chat.noAllRoom",
+		}[channel],
+	);
+	const disabledReason = controller.loginRequired ? t("chat.loginRequiredDesc") : noRoomLabel;
+	const placeholder = t(
+		{
+			friends: "chat.placeholder",
+			party: "chat.partyPlaceholder",
+			team: "chat.matchTeamPlaceholder",
+			all: "chat.matchAllPlaceholder",
+		}[channel],
+	);
 	// markReadError included so a rejected mark-read is visible rather than
 	// leaving the badge silently hidden.
 	const pageError =
@@ -55,18 +89,34 @@ const Chat = () => {
 
 	return (
 		<div className="flex h-full min-h-0 overflow-hidden bg-(--ground) text-(--ink-dim) animate-fade-in">
-			<ChatConversationList
-				conversations={controller.conversations}
-				selectedCid={controller.selectedCid}
-				statusLabels={friendStatusLabels}
-				search={controller.conversationSearch}
-				searchLabel={t("chat.searchConversations")}
-				emptyLabel={t("chat.noConversations")}
-				markAsReadLabel={t("chat.markAsRead")}
-				onSearchChange={controller.setConversationSearch}
-				onSelect={controller.selectConversation}
-				onMarkRead={controller.markConversationRead}
+			<ChatChannelRail
+				selected={channel}
+				available={controller.availableChannels}
+				labels={channelLabels}
+				onSelect={controller.selectChannel}
 			/>
+			{isFriends ? (
+				<ChatConversationList
+					conversations={controller.conversations}
+					selectedCid={controller.selectedCid}
+					statusLabels={friendStatusLabels}
+					search={controller.conversationSearch}
+					searchLabel={t("chat.searchConversations")}
+					emptyLabel={t("chat.noConversations")}
+					markAsReadLabel={t("chat.markAsRead")}
+					onSearchChange={controller.setConversationSearch}
+					onSelect={controller.selectConversation}
+					onMarkRead={controller.markConversationRead}
+				/>
+			) : (
+				<ChatChannelContext
+					channel={channel}
+					title={channelLabels[channel]}
+					available={!!controller.selectedCid}
+					availableLabel={t("chat.available")}
+					unavailableLabel={noRoomLabel}
+				/>
+			)}
 
 			<main className="flex min-w-0 flex-1 flex-col bg-(--background) px-2 pb-2 pt-4">
 				<div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[8px] border border-(--border) bg-(--surface)">

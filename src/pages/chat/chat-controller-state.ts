@@ -1,5 +1,5 @@
 import type { ChatChannel, ChatMessage } from "@/types/chat";
-import { channelForCid, chatMessageKey, mergeChatMessages } from "./chat-model";
+import { channelForCid, chatMessageKey, mergeChatMessages, sameRoomCid } from "./chat-model";
 
 export type ChatControllerState = {
   selectedChannel: ChatChannel;
@@ -96,7 +96,12 @@ const reconcileOptimisticMessages = (existing: ChatMessage[], incoming: ChatMess
     const match = selfMessages.findIndex((candidate) => {
       const candidateTime = timestamp(candidate);
       return (
-        !knownMessageKeys.has(chatMessageKey(candidate)) &&
+        !knownMessageKeys.has(
+          chatMessageKey({
+            ...candidate,
+            conversationId: message._raw?.knownServerMessageCid ?? message.conversationId,
+          }),
+        ) &&
         candidate.body === message.body &&
         optimisticTime > 0 &&
         candidateTime > 0 &&
@@ -107,6 +112,19 @@ const reconcileOptimisticMessages = (existing: ChatMessage[], incoming: ChatMess
     selfMessages.splice(match, 1);
     return false;
   });
+};
+
+const mergeIncomingMessages = (
+  history: Record<string, ChatMessage[]>,
+  cid: string,
+  incoming: ChatMessage[],
+) => {
+  const aliases = Object.keys(history).filter((key) => sameRoomCid(key, cid));
+  const existing = mergeChatMessages(
+    ...aliases.map((key) => history[key].map((message) => ({ ...message, conversationId: cid }))),
+  );
+  for (const key of aliases) delete history[key];
+  history[cid] = mergeChatMessages(reconcileOptimisticMessages(existing, incoming), incoming);
 };
 
 export const chatControllerReducer = (
@@ -167,9 +185,11 @@ export const chatControllerReducer = (
         pendingSendId: action.requestId,
         pendingSendCid: action.cid,
         pendingSendBody: action.body,
-        pendingSendKnownMessageKeys: (state.historyByCid[action.cid] ?? [])
+        pendingSendKnownMessageKeys: Object.entries(state.historyByCid)
+          .filter(([cid]) => sameRoomCid(cid, action.cid))
+          .flatMap(([, messages]) => messages)
           .filter((message) => message._raw?.optimistic !== true)
-          .map(chatMessageKey),
+          .map((message) => chatMessageKey({ ...message, conversationId: action.cid })),
         sendErrorByCid: withoutKey(state.sendErrorByCid, action.cid),
       };
     case "sendSucceeded":
@@ -184,35 +204,42 @@ export const chatControllerReducer = (
         };
       }
       const pendingChannel = channelForCid(state.pendingSendCid);
+      const sentHistory = { ...state.historyByCid };
+      mergeIncomingMessages(sentHistory, state.pendingSendCid, []);
+      const serverMessages = sentHistory[state.pendingSendCid];
       return {
         ...state,
         historyByCid: {
-          ...state.historyByCid,
+          ...sentHistory,
           [state.pendingSendCid]: mergeChatMessages(
-            state.historyByCid[state.pendingSendCid] ?? [],
-            [
-              {
-                id: `optimistic:${action.requestId}`,
-                conversationId: state.pendingSendCid,
-                sender: "",
-                senderName: "",
-                body: state.pendingSendBody,
-                timestamp: action.sentAt,
-                type: pendingChannel === "friends" ? "chat" : "groupchat",
-                scope:
-                  pendingChannel === "friends"
-                    ? "friends"
-                    : pendingChannel === "party"
-                      ? "party"
-                      : "match",
-                isSelf: true,
-                _raw: {
-                  optimistic: true,
-                  requestId: action.requestId,
-                  knownServerMessageKeys: state.pendingSendKnownMessageKeys,
+            serverMessages,
+            reconcileOptimisticMessages(
+              [
+                {
+                  id: `optimistic:${action.requestId}`,
+                  conversationId: state.pendingSendCid,
+                  sender: "",
+                  senderName: "",
+                  body: state.pendingSendBody,
+                  timestamp: action.sentAt,
+                  type: pendingChannel === "friends" ? "chat" : "groupchat",
+                  scope:
+                    pendingChannel === "friends"
+                      ? "friends"
+                      : pendingChannel === "party"
+                        ? "party"
+                        : "match",
+                  isSelf: true,
+                  _raw: {
+                    optimistic: true,
+                    requestId: action.requestId,
+                    knownServerMessageKeys: state.pendingSendKnownMessageKeys,
+                    knownServerMessageCid: state.pendingSendCid,
+                  },
                 },
-              },
-            ],
+              ],
+              serverMessages,
+            ),
           ),
         },
         draftByCid: withoutKey(state.draftByCid, state.pendingSendCid),
@@ -254,18 +281,20 @@ export const chatControllerReducer = (
       }
       const historyByCid = { ...state.historyByCid };
       for (const [cid, messages] of grouped) {
-        historyByCid[cid] = mergeChatMessages(historyByCid[cid] ?? [], messages);
+        mergeIncomingMessages(historyByCid, cid, messages);
       }
       return { ...state, historyByCid };
     }
     case "realtimeMessage": {
       const cid = action.message.conversationId;
       if (!cid) return state;
+      const historyByCid = { ...state.historyByCid };
+      mergeIncomingMessages(historyByCid, cid, [action.message]);
       return {
         ...state,
-        historyByCid: {
-          ...state.historyByCid,
-          [cid]: mergeChatMessages(state.historyByCid[cid] ?? [], [action.message]),
+        historyByCid,
+      };
+    }
         },
       };
     }

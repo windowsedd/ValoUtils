@@ -143,6 +143,7 @@ async fn handle_socket(socket: TcpStream, acceptor: TlsAcceptor) -> Result<(), S
     {
         crate::presence_proxy::controller().set_warning(None);
     }
+    let (gui_connection, gui_packets) = super::gui_chat_hub().register();
     let client_loop = client_to_remote(
         local_read,
         local_write.clone(),
@@ -151,6 +152,8 @@ async fn handle_socket(socket: TcpStream, acceptor: TlsAcceptor) -> Result<(), S
         bot_inserted.clone(),
         welcome_sent.clone(),
         bot_version.clone(),
+        gui_connection.id,
+        gui_packets,
     );
     let server_loop = remote_to_client(
         remote_read,
@@ -159,6 +162,7 @@ async fn handle_socket(socket: TcpStream, acceptor: TlsAcceptor) -> Result<(), S
         bot_inserted,
         welcome_sent,
         bot_version,
+        gui_connection.id,
     );
     tokio::pin!(client_loop);
     tokio::pin!(server_loop);
@@ -180,6 +184,8 @@ async fn client_to_remote(
     bot_inserted: Arc<AtomicBool>,
     welcome_sent: Arc<AtomicBool>,
     bot_version: Arc<AsyncMutex<Option<String>>>,
+    gui_connection: u64,
+    mut gui_packets: mpsc::Receiver<super::gui_chat::Packet>,
 ) -> Result<(), String> {
     let mut framer = XmppFramer::new(256 * 1024);
     let mut buffer = vec![0u8; 16 * 1024];
@@ -196,6 +202,11 @@ async fn client_to_remote(
 
     loop {
         tokio::select! {
+            Some(packet) = gui_packets.recv() => {
+                if super::gui_chat_hub().is_pending(&packet.id) {
+                    write_frame(&remote_write, packet.stanza.as_bytes()).await?;
+                }
+            }
             direct_result = bot_direct.recv() => {
                 match direct_result {
                     Ok(message) => {
@@ -388,8 +399,10 @@ async fn client_to_remote(
                         let rewritten = presence_for_state(stanza, state)
                             .map_err(|error| format!("Presence rewrite failed: {error}"))?
                             .unwrap_or_else(|| stanza.to_string());
+                        super::gui_chat_hub().outgoing(gui_connection, stanza);
                         write_frame(&remote_write, rewritten.as_bytes()).await?;
                     } else {
+                        super::gui_chat_hub().outgoing(gui_connection, stanza);
                         write_frame(&remote_write, &frame).await?;
                     }
                 }
@@ -497,6 +510,7 @@ async fn remote_to_client(
     bot_inserted: Arc<AtomicBool>,
     welcome_sent: Arc<AtomicBool>,
     bot_version: Arc<AsyncMutex<Option<String>>>,
+    gui_connection: u64,
 ) -> Result<(), String> {
     let mut framer = XmppFramer::new(256 * 1024);
     let mut buffer = vec![0u8; 16 * 1024];
@@ -544,6 +558,7 @@ async fn remote_to_client(
                 }
             }
             if let Ok(stanza) = std::str::from_utf8(&frame) {
+                super::gui_chat_hub().incoming(gui_connection, stanza);
                 crate::presence_proxy::record_live_chat(stanza);
             }
             write_frame(&local_write, &frame).await?;
@@ -685,9 +700,12 @@ async fn live_translation_worker(
 }
 
 pub async fn stop() {
-    if let Some(active) = runtime().lock().unwrap().take() {
+    let active = runtime().lock().unwrap().take();
+    if let Some(active) = active {
         active.handle.abort();
+        let _ = active.handle.await;
     }
+    crate::presence_proxy::controller().reset_chat_session();
     // Nothing observes the game's presence once the relay is down, so the last
     // state it reported must not keep answering for it.
     crate::presence_proxy::clear_presence_match_state();

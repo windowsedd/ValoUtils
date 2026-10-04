@@ -38,14 +38,15 @@ describe("Chat navigation and page shell", () => {
     expect(main.indexOf('id: "chat"')).toBeLessThan(main.indexOf('id: "settings"'));
   });
 
-  test("uses the shared controller and the friends Chat UI", () => {
+  test("uses the shared controller for friends and in-game channel Chat UI", () => {
     expect(chat).toContain("useChatController()");
     expect(chat).toContain("<ChatConversationList");
     expect(chat).toContain("<ChatThread");
     expect(chat).toContain("<ChatComposer");
     expect(chat).toContain("<ChatFriendsPanel");
-    expect(chat).not.toContain("<ChatChannelRail");
-    expect(chat).not.toContain("<ChatChannelContext");
+    expect(chat).toContain("<ChatChannelRail");
+    expect(chat).toContain("<ChatChannelContext");
+    expect(chat).toContain("onSelect={controller.selectChannel}");
     expect(chat).not.toContain("removeAllListeners");
     expect(chat).not.toContain('send("chat:disconnect")');
   });

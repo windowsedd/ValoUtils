@@ -16,6 +16,104 @@ const message = (overrides: Partial<ChatMessage> = {}): ChatMessage => ({
 });
 
 describe("chat controller state", () => {
+  test("a replay of a prior self message through an alias keeps the newer optimistic reply", () => {
+    const cid = "game-blue@ares-coregame.ap1.pvp.net";
+    const previous = message({
+      id: "prior",
+      conversationId: cid,
+      body: "gg",
+      timestamp: "3000",
+      isSelf: true,
+    });
+    let state = chatControllerReducer(
+      { ...initialChatControllerState, historyByCid: { [cid]: [previous] } },
+      {
+        type: "sendStarted",
+        cid,
+        requestId: "send-again",
+        body: "gg",
+      },
+    );
+    state = chatControllerReducer(state, {
+      type: "sendSucceeded",
+      requestId: "send-again",
+      sentAt: "3100",
+    });
+    state = chatControllerReducer(state, {
+      type: "realtimeMessage",
+      message: { ...previous, conversationId: "game-blue@ares-coregame.ap" },
+    });
+    expect(
+      Object.values(state.historyByCid)
+        .flat()
+        .map((item) => item.id),
+    ).toEqual(["prior", "optimistic:send-again"]);
+  });
+  test("a group echo arriving before send success does not gain an optimistic duplicate", () => {
+    const cid = "game-all@ares-coregame.ap1.pvp.net";
+    let state = chatControllerReducer(initialChatControllerState, {
+      type: "sendStarted",
+      requestId: "send-fast",
+      cid,
+      body: "gg",
+    });
+    state = chatControllerReducer(state, {
+      type: "realtimeMessage",
+      message: message({
+        id: "fast-echo",
+        conversationId: "game-all@ares-coregame.ap",
+        body: "gg",
+        scope: "match",
+        isSelf: true,
+        timestamp: "3000",
+      }),
+    });
+    state = chatControllerReducer(state, {
+      type: "sendSucceeded",
+      requestId: "send-fast",
+      sentAt: "3100",
+    });
+    expect(
+      Object.values(state.historyByCid)
+        .flat()
+        .map((item) => item.id),
+    ).toEqual(["fast-echo"]);
+  });
+  for (const event of ["summaryMessages", "realtimeMessage"] as const) {
+    test(`${event} replaces an optimistic group reply even through a room alias`, () => {
+      const cid = "game-blue@ares-coregame.ap1.pvp.net";
+      const sending = chatControllerReducer(initialChatControllerState, {
+        type: "sendStarted",
+        requestId: "send-group",
+        cid,
+        body: "push A",
+      });
+      const sent = chatControllerReducer(sending, {
+        type: "sendSucceeded",
+        requestId: "send-group",
+        sentAt: "3000",
+      });
+      const echo = message({
+        id: "group-echo",
+        conversationId: "game-blue@ares-coregame.ap",
+        body: "push A",
+        timestamp: "3100",
+        scope: "match",
+        isSelf: true,
+      });
+      const result = chatControllerReducer(
+        sent,
+        event === "summaryMessages"
+          ? { type: event, messages: [echo] }
+          : { type: event, message: echo },
+      );
+      expect(
+        Object.values(result.historyByCid)
+          .flat()
+          .map((item) => item.id),
+      ).toEqual(["group-echo"]);
+    });
+  }
   test("stores a completed history request under its own cid without changing selection", () => {
     const selected = {
       ...initialChatControllerState,

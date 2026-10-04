@@ -40,6 +40,34 @@ pub struct LiveChatLine {
     pub sender: String,
     pub body: String,
     pub timestamp: String,
+    pub is_self: bool,
+}
+
+static NEXT_CHAT_ID: AtomicU64 = AtomicU64::new(0);
+
+impl LiveChatLine {
+    pub fn chat_message(&self, own_puuid: &str) -> Option<crate::xmpp::client::ChatMessage> {
+        let channel = ChatChannel::EVERY
+            .into_iter()
+            .find(|channel| channel.matches_cid(&self.cid))?;
+        Some(crate::xmpp::client::ChatMessage {
+            id: self.id.clone(),
+            conversation_id: self.cid.clone(),
+            sender: self.sender.clone(),
+            sender_name: self.sender.clone(),
+            body: self.body.clone(),
+            timestamp: self.timestamp.clone(),
+            msg_type: "groupchat".into(),
+            scope: if channel == ChatChannel::Party {
+                "party"
+            } else {
+                "match"
+            }
+            .into(),
+            is_self: self.is_self
+                || (!own_puuid.is_empty() && self.sender.eq_ignore_ascii_case(own_puuid)),
+        })
+    }
 }
 
 pub fn parse_groupchat_line(stanza: &str) -> Option<LiveChatLine> {
@@ -64,23 +92,33 @@ pub fn parse_groupchat_line(stanza: &str) -> Option<LiveChatLine> {
     }
     let from = root.attributes.get("from").cloned().unwrap_or_default();
     let to = root.attributes.get("to").cloned().unwrap_or_default();
-    let (cid, sender) = if let Some((room, nick)) = from.split_once('/') {
-        (room.to_string(), nick.to_string())
-    } else if !from.is_empty() && from.contains('@') {
-        (from, String::new())
+    let from_room = from.split('/').next().unwrap_or(&from);
+    let incoming = ChatChannel::EVERY
+        .into_iter()
+        .any(|channel| channel.matches_cid(from_room));
+    let cid = if incoming {
+        from_room
     } else {
-        (
-            to.split('/').next().unwrap_or(&to).to_string(),
-            String::new(),
-        )
-    };
-    if cid.is_empty() {
+        to.split('/').next().unwrap_or(&to)
+    }
+    .to_string();
+    if !ChatChannel::EVERY
+        .into_iter()
+        .any(|channel| channel.matches_cid(&cid))
+    {
         return None;
     }
+    let sender = if incoming {
+        from.split_once('/').map(|(_, nick)| nick).unwrap_or("")
+    } else {
+        from.split('@').next().unwrap_or("")
+    }
+    .to_string();
     let id = root.attributes.get("id").cloned().unwrap_or_else(|| {
         format!(
-            "{cid}:{sender}:{}",
-            body.chars().take(24).collect::<String>()
+            "relay:{}:{}",
+            unix_millis(),
+            NEXT_CHAT_ID.fetch_add(1, Ordering::Relaxed)
         )
     });
     Some(LiveChatLine {
@@ -89,6 +127,7 @@ pub fn parse_groupchat_line(stanza: &str) -> Option<LiveChatLine> {
         sender,
         body,
         timestamp: unix_millis().to_string(),
+        is_self: !incoming,
     })
 }
 
@@ -914,6 +953,26 @@ mod tests {
             r#"<message to="bot@na1.pvp.net" type="chat"><body>.tran</body></message>"#
         )
         .is_none());
+    }
+
+    #[test]
+    fn outgoing_groupchat_uses_the_room_instead_of_the_player_jid() {
+        let line = parse_groupchat_line(
+            r#"<message from="me@ap1.pvp.net/RC" to="game-blue@ares-coregame.ap1.pvp.net" type="groupchat" id="out-1"><body>push A</body></message>"#,
+        ).unwrap();
+        assert_eq!(line.cid, "game-blue@ares-coregame.ap1.pvp.net");
+        assert_eq!(line.sender, "me");
+        assert!(line.chat_message("me").unwrap().is_self);
+    }
+
+    #[test]
+    fn repeated_idless_game_messages_keep_distinct_observation_ids() {
+        let stanza = r#"<message from="game-all@ares-coregame.ap/friend" type="groupchat"><body>gg</body></message>"#;
+        let first = parse_groupchat_line(stanza).unwrap();
+        let second = parse_groupchat_line(stanza).unwrap();
+        assert_ne!(first.id, second.id);
+        assert!(first.chat_message("friend").unwrap().is_self);
+        assert!(!first.chat_message("me").unwrap().is_self);
     }
 
     #[test]

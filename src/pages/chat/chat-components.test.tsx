@@ -67,7 +67,7 @@ const friend: ChatFriend = {
 };
 
 describe("Chat components", () => {
-	test("channel rail is friends-only", () => {
+	test("channel rail exposes friends and all three game channels", () => {
 		const markup = renderToStaticMarkup(
 			<ChatChannelRail
 				selected="friends"
@@ -76,12 +76,12 @@ describe("Chat components", () => {
 				onSelect={() => {}}
 			/>,
 		);
-		expect(visibleChatChannels).toEqual(["friends"]);
+		expect(visibleChatChannels).toEqual(["friends", "party", "team", "all"]);
 		expect(markup).toContain("Friends");
 		expect(markup).toContain('aria-pressed="true"');
-		expect(markup).not.toContain("Party");
-		expect(markup).not.toContain("Team");
-		expect(markup).not.toContain(">All<");
+		expect(markup).toContain("Party");
+		expect(markup).toContain("Team");
+		expect(markup).toContain(">All<");
 	});
 
 	test("conversation list shows real unread metadata and selected state", () => {

@@ -1,4 +1,5 @@
 mod bot_direct;
+mod gui_chat;
 mod local_ca;
 mod relay;
 mod xml;
@@ -204,6 +205,24 @@ impl PresenceController {
     pub fn connection_closed(&self) {
         let mut inner = self.inner.lock().unwrap();
         inner.active_connections = inner.active_connections.saturating_sub(1);
+        if inner.active_connections == 0 {
+            if let Ok(mut transcript) = live_chat().lock() {
+                transcript.clear();
+            }
+            if let Ok(mut rooms) = observed_mucs().lock() {
+                *rooms = ObservedMucs::default();
+            }
+        }
+    }
+    pub fn reset_chat_session(&self) {
+        gui_chat_hub().reset();
+        self.inner.lock().unwrap().active_connections = 0;
+        if let Ok(mut transcript) = live_chat().lock() {
+            transcript.clear();
+        }
+        if let Ok(mut rooms) = observed_mucs().lock() {
+            *rooms = ObservedMucs::default();
+        }
     }
     pub fn capture_presence(&self, stanza: String) {
         self.inner.lock().unwrap().last_presence = Some(stanza);
@@ -313,6 +332,17 @@ pub fn record_live_chat(stanza: &str) {
     let Some(line) = xml::parse_groupchat_line(stanza) else {
         return;
     };
+    // Only server traffic reaches the GUI; outgoing bot commands may be consumed.
+    if !line.is_self {
+        let own = ChatChannel::EVERY
+            .into_iter()
+            .find(|channel| channel.matches_cid(&line.cid))
+            .map(last_group_muc_resource)
+            .unwrap_or_default();
+        if let Some(message) = line.chat_message(&own) {
+            let _ = crate::xmpp::message_publisher().send(message);
+        }
+    }
     if let Ok(mut transcript) = live_chat().lock() {
         transcript.push_back(line);
         while transcript.len() > LIVE_CHAT_MAX {
@@ -440,6 +470,15 @@ pub fn send_groupchat_through_game(cid: &str, body: &str) -> bool {
         return false;
     }
     outbound().send(game_groupchat_stanza(cid, body)).is_ok()
+}
+
+fn gui_chat_hub() -> &'static std::sync::Arc<gui_chat::Hub> {
+    static HUB: OnceLock<std::sync::Arc<gui_chat::Hub>> = OnceLock::new();
+    HUB.get_or_init(|| std::sync::Arc::new(gui_chat::Hub::default()))
+}
+
+pub async fn send_gui_group_through_game(cid: &str, body: &str) -> Result<(), String> {
+    gui_chat_hub().send(cid, body).await
 }
 
 fn groupchat_stanza_with_id(cid: &str, body: &str, id: &str) -> String {
@@ -571,6 +610,23 @@ fn emit_status(app: &AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn game_groupchat_is_forwarded_to_the_gui_message_stream() {
+        let mut receiver = crate::xmpp::subscribe_messages();
+        record_live_chat(
+            r#"<message from="gui-test-all@ares-coregame.ap1.pvp.net/friend" type="groupchat" id="gui-live-1"><body>hello GUI</body></message>"#,
+        );
+        let message = receiver.try_recv().expect("game message forwarded");
+        assert_eq!(message.id, "gui-live-1");
+        assert_eq!(
+            message.conversation_id,
+            "gui-test-all@ares-coregame.ap1.pvp.net"
+        );
+        assert_eq!(message.sender, "friend");
+        assert_eq!(message.scope, "match");
+        assert!(!message.is_self);
+    }
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     #[test]

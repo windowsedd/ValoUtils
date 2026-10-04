@@ -338,8 +338,10 @@ export const messagesForConversation = (
     .filter(([key]) => sameRoomCid(key, cid))
     .flatMap(([, messages]) => messages);
   return mergeChatMessages(
-    fromHistory,
-    summaryMessages.filter((message) => sameRoomCid(message.conversationId, cid)),
+    fromHistory.map((message) => ({ ...message, conversationId: cid })),
+    summaryMessages
+      .filter((message) => sameRoomCid(message.conversationId, cid))
+      .map((message) => ({ ...message, conversationId: cid })),
   );
 };
 

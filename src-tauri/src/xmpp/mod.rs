@@ -583,10 +583,12 @@ pub async fn send_match_xmpp_message(
         ensure_match_xmpp_chat(riot).await?;
         state_guard = STATE.get_or_init(Default::default).inner.lock().await;
     }
-    handle.send_muc_message(room, message).await?;
+    let room = joined_room_alias(&state_guard.joined_rooms, room)
+        .ok_or_else(|| "Selected match chat room is no longer joined.".to_string())?;
+    handle.send_muc_message(&room, message).await?;
     push_own_message(
         &mut state_guard,
-        room,
+        &room,
         message,
         if room.to_lowercase().contains(PARTY_ROOM_MARKER) {
             "party"
@@ -610,9 +612,25 @@ pub async fn send_party_xmpp_message(
         ensure_party_xmpp_chat(riot).await;
         state_guard = STATE.get_or_init(Default::default).inner.lock().await;
     }
-    handle.send_muc_message(room, message).await?;
-    push_own_message(&mut state_guard, room, message, "party").await;
+    let room = joined_room_alias(&state_guard.joined_rooms, room)
+        .ok_or_else(|| "Selected party chat room is no longer joined.".to_string())?;
+    handle.send_muc_message(&room, message).await?;
+    push_own_message(&mut state_guard, &room, message, "party").await;
     Ok(())
+}
+
+fn joined_room_alias(rooms: &HashSet<String>, requested: &str) -> Option<String> {
+    use crate::riot::models::{cid_local_part, ChatChannel};
+    let channel = ChatChannel::EVERY
+        .into_iter()
+        .find(|channel| channel.matches_cid(requested))?;
+    rooms
+        .iter()
+        .find(|room| {
+            channel.matches_cid(room)
+                && cid_local_part(room).eq_ignore_ascii_case(cid_local_part(requested))
+        })
+        .cloned()
 }
 
 fn chrono_millis() -> i64 {
@@ -636,6 +654,27 @@ static STATE: std::sync::OnceLock<ChatXmppState> = std::sync::OnceLock::new();
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sends_only_to_a_joined_alias_of_the_selected_room() {
+        let rooms = HashSet::from(["game-blue@ares-coregame.ap".to_string()]);
+        assert_eq!(
+            joined_room_alias(&rooms, "game-blue@ares-coregame.ap1.pvp.net").as_deref(),
+            Some("game-blue@ares-coregame.ap")
+        );
+        assert_eq!(
+            joined_room_alias(&rooms, "game-red@ares-coregame.ap1.pvp.net"),
+            None
+        );
+        assert_eq!(
+            joined_room_alias(&rooms, "game-blue@ares-pregame.ap1.pvp.net"),
+            None
+        );
+        assert_eq!(
+            joined_room_alias(&rooms, "old-blue@ares-coregame.ap1.pvp.net"),
+            None
+        );
+    }
 
     #[test]
     fn pregame_payload_exposes_the_ally_team_room() {

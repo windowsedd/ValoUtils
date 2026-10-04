@@ -1,20 +1,20 @@
 import type { ChatChannel } from "@/types/chat";
 import type { ComponentType } from "react";
-import { FaComments } from "react-icons/fa6";
+import { FaComments, FaUsers, FaShieldHalved, FaGlobe } from "react-icons/fa6";
 
 type ChannelAvailability = Record<ChatChannel, boolean>;
 type ChannelLabels = Record<ChatChannel, string>;
 
 const channels: Array<{ id: ChatChannel; icon: ComponentType<{ className?: string }> }> = [
 	{ id: "friends", icon: FaComments },
+	{ id: "party", icon: FaUsers },
+	{ id: "team", icon: FaShieldHalved },
+	{ id: "all", icon: FaGlobe },
 ];
 
-/** Chat tab only offers friends DMs. Party/team/all stay on the in-game bot. */
-export const visibleChatChannels: ChatChannel[] = ["friends"];
+export const visibleChatChannels: ChatChannel[] = ["friends", "party", "team", "all"];
 
-const visibleChannels = channels.filter((channel) =>
-	visibleChatChannels.includes(channel.id),
-);
+const visibleChannels = channels.filter((channel) => visibleChatChannels.includes(channel.id));
 
 export const ChatChannelRail = ({
 	selected,
