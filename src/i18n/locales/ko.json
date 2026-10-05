@@ -144,6 +144,9 @@
   },
   "store": {
     "title": "상점",
+    "updating": "업데이트 중…",
+    "showingSaved": "이전에 저장된 상점을 표시합니다.",
+    "refresh": "상점과 지갑 새로고침",
     "loading": "상점을 불러오는 중...",
     "failedToLoad": "상점을 불러오지 못했습니다",
     "loginRequired": "Riot 클라이언트가 실행 중이 아닙니다",

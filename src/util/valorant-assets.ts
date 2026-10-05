@@ -3,12 +3,14 @@ import type { AccessoryKind, AccessoryRecord } from "@/pages/inventory/inventory
 import type { SkinRecord, SkinTheme, SkinTierName } from "@/pages/inventory/inventory-skins";
 import type { WeaponSkin } from "@/types/live-game";
 import { formatSeasonActLabel } from "@/util/season-label";
+import { cachedFetch } from "@/util/asset-cache";
 
 // Cached lookups against the public valorant-api.com CDN. Used by the Live Game
 // tab to turn raw Riot UUIDs (agents, weapon skins, competitive tiers/seasons)
 // into localized display names + images. All assets are fetched with
 // `?language=all` so a single cache serves every UI language, and memoised at
-// module scope so the ~5s poll never refetches.
+// module scope so the ~5s poll never refetches. Responses are also kept on
+// disk by `cachedFetch`, so a relaunch does not download them again.
 
 const API = "https://valorant-api.com/v1";
 
@@ -62,7 +64,7 @@ const battlepassRewardCache = new Map<string, Promise<SkinAsset | null>>();
 // --- Agents ------------------------------------------------------------------
 export const getAgents = (): Promise<Map<string, AgentAsset>> => {
   if (!agentsPromise) {
-    agentsPromise = fetch(`${API}/agents?isPlayableCharacter=true&language=all`)
+    agentsPromise = cachedFetch(`${API}/agents?isPlayableCharacter=true&language=all`)
       .then((r) => r.json())
       .then((json) => {
         const map = new Map<string, AgentAsset>();
@@ -86,7 +88,7 @@ export const getPlayerCard = (cardId?: string | null): Promise<CardAsset | null>
   if (!cardCache.has(key)) {
     cardCache.set(
       key,
-      fetch(`${API}/playercards/${key}?language=all`)
+      cachedFetch(`${API}/playercards/${key}?language=all`)
         .then((r) => r.json())
         .then((json) => {
           const d = json?.data;
@@ -109,7 +111,7 @@ export const getPlayerCard = (cardId?: string | null): Promise<CardAsset | null>
  */
 export const getMaps = (): Promise<Map<string, MapAsset>> => {
   if (!mapsPromise) {
-    mapsPromise = fetch(`${API}/maps?language=all`)
+    mapsPromise = cachedFetch(`${API}/maps?language=all`)
       .then((r) => r.json())
       .then((json) => {
         const map = new Map<string, MapAsset>();
@@ -137,7 +139,7 @@ export const getMaps = (): Promise<Map<string, MapAsset>> => {
 // --- Competitive tiers (rank icons, tracker.gg style) ------------------------
 export const getTiers = (): Promise<Map<number, TierAsset>> => {
   if (!tiersPromise) {
-    tiersPromise = fetch(`${API}/competitivetiers?language=all`)
+    tiersPromise = cachedFetch(`${API}/competitivetiers?language=all`)
       .then((r) => r.json())
       .then((json) => {
         const episodes: any[] = json?.data ?? [];
@@ -165,7 +167,7 @@ const getSkinData = (skinId: string): Promise<any | null> => {
   if (!skinDataCache.has(key)) {
     skinDataCache.set(
       key,
-      fetch(`${API}/weapons/skins/${key}?language=all`)
+      cachedFetch(`${API}/weapons/skins/${key}?language=all`)
         .then((r) => r.json())
         .then((json) => json?.data ?? null)
         .catch(() => null),
@@ -240,7 +242,7 @@ export const getSkinLevel = (levelId: string): Promise<SkinAsset | null> => {
   if (!skinLevelCache.has(key)) {
     skinLevelCache.set(
       key,
-      fetch(`${API}/weapons/skinlevels/${key}?language=all`)
+      cachedFetch(`${API}/weapons/skinlevels/${key}?language=all`)
         .then((r) => r.json())
         .then((json) => {
           const level = json?.data;
@@ -259,7 +261,7 @@ export const getBundle = (dataAssetId: string): Promise<BundleAsset | null> => {
   if (!bundleCache.has(key)) {
     bundleCache.set(
       key,
-      fetch(`${API}/bundles/${key}?language=all`)
+      cachedFetch(`${API}/bundles/${key}?language=all`)
         .then((r) => r.json())
         .then((json) => {
           const bundle = json?.data;
@@ -320,7 +322,7 @@ const accessoryFromJson = (
 };
 
 const fetchAccessoryEndpoint = (endpoint: string, itemId: string): Promise<SkinAsset | null> =>
-  fetch(`${API}/${endpoint}/${itemId}?language=all`)
+  cachedFetch(`${API}/${endpoint}/${itemId}?language=all`)
     .then((r) => r.json())
     .then((json) => accessoryFromJson(json?.data ?? null))
     .catch(() => null);
@@ -407,13 +409,13 @@ const collectPassRewardIds = (contracts: readonly unknown[]): Set<string> => {
 export const getInventoryIndex = (): Promise<InventoryIndex> => {
   if (!inventoryIndexPromise) {
     inventoryIndexPromise = Promise.all([
-      fetch(`${API}/weapons?language=all`).then((r) => r.json()),
-      fetch(`${API}/sprays?language=all`).then((r) => r.json()),
-      fetch(`${API}/buddies?language=all`).then((r) => r.json()),
-      fetch(`${API}/playercards?language=all`).then((r) => r.json()),
-      fetch(`${API}/playertitles?language=all`).then((r) => r.json()),
-      fetch(`${API}/flex?language=all`).then((r) => r.json()),
-      fetch(`${API}/themes?language=all`).then((r) => r.json()),
+      cachedFetch(`${API}/weapons?language=all`).then((r) => r.json()),
+      cachedFetch(`${API}/sprays?language=all`).then((r) => r.json()),
+      cachedFetch(`${API}/buddies?language=all`).then((r) => r.json()),
+      cachedFetch(`${API}/playercards?language=all`).then((r) => r.json()),
+      cachedFetch(`${API}/playertitles?language=all`).then((r) => r.json()),
+      cachedFetch(`${API}/flex?language=all`).then((r) => r.json()),
+      cachedFetch(`${API}/themes?language=all`).then((r) => r.json()),
       getBattlepassContracts(),
     ])
       .then(([weapons, sprays, buddies, cards, titles, flexes, themesJson, contracts]) => {
@@ -648,7 +650,7 @@ const enName = (v: any): string =>
 
 export const getSeasonAssets = (): Promise<Map<string, SeasonAsset>> => {
   if (!seasonAssetsPromise) {
-    seasonAssetsPromise = fetch(`${API}/seasons?language=all`)
+    seasonAssetsPromise = cachedFetch(`${API}/seasons?language=all`)
       .then((r) => r.json())
       .then((json) => {
         const seasons: any[] = json?.data ?? [];
@@ -708,7 +710,7 @@ const REWARD_ENDPOINTS: Record<string, string> = {
 
 export const getEventAssets = (): Promise<Map<string, EventAsset>> => {
   if (!eventAssetsPromise) {
-    eventAssetsPromise = fetch(`${API}/events?language=all`)
+    eventAssetsPromise = cachedFetch(`${API}/events?language=all`)
       .then((r) => r.json())
       .then((json) => {
         const assets = new Map<string, EventAsset>();
@@ -729,7 +731,7 @@ export const getEventAssets = (): Promise<Map<string, EventAsset>> => {
 
 export const getBattlepassContracts = (): Promise<unknown[]> => {
   if (!battlepassContractsPromise) {
-    battlepassContractsPromise = fetch(`${API}/contracts?language=all`)
+    battlepassContractsPromise = cachedFetch(`${API}/contracts?language=all`)
       .then((r) => r.json())
       .then((json) => (Array.isArray(json?.data) ? json.data : []))
       .catch(() => [] as unknown[]);
@@ -744,7 +746,7 @@ export const getBattlepassReward = (type: string, uuid: string): Promise<SkinAss
   if (!battlepassRewardCache.has(key)) {
     battlepassRewardCache.set(
       key,
-      fetch(`${API}/${endpoint}/${uuid.toLowerCase()}?language=all`)
+      cachedFetch(`${API}/${endpoint}/${uuid.toLowerCase()}?language=all`)
         .then((r) => r.json())
         .then((json) => {
           const item = json?.data;

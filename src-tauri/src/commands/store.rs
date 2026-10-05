@@ -12,7 +12,8 @@
 //! vanish.
 
 use crate::riot::api;
-use crate::riot::client::RiotState;
+use crate::riot::client::{self, RiotState};
+use crate::store::CacheStore;
 use serde::Serialize;
 use serde_json::{json, Value};
 use tauri::State;
@@ -374,23 +375,78 @@ pub fn parse_storefront(storefront: &Value, wallet: &Value) -> Storefront {
 // Command
 // ---------------------------------------------------------------------------
 
+fn cache_key(puuid: &str) -> String {
+    format!("storefront:{}", puuid.to_ascii_lowercase())
+}
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_millis() as u64)
+        .unwrap_or_default()
+}
+
+/// What `cache.json` holds for one account: the parsed reply and when it was
+/// fetched, so the countdowns can be wound forward on the next launch.
+fn cache_entry(payload: &Value, fetched_at: u64) -> Value {
+    let mut payload = payload.clone();
+    if let Some(object) = payload.as_object_mut() {
+        object.remove("success");
+    }
+    json!({ "fetchedAt": fetched_at, "payload": payload })
+}
+
+/// The reply for a cached entry, or `None` when it is missing or malformed.
+fn cached_reply(entry: Option<Value>) -> Option<Value> {
+    let entry = entry?;
+    let fetched_at = entry.get("fetchedAt")?.as_u64()?;
+    let mut reply = entry.get("payload")?.as_object()?.clone();
+    reply.insert("success".into(), Value::Bool(true));
+    reply.insert("cached".into(), Value::Bool(true));
+    reply.insert("fetchedAt".into(), json!(fetched_at));
+    Some(Value::Object(reply))
+}
+
+/// The last storefront fetched for the signed-in account, from `cache.json`.
+///
+/// Only the local Riot Client is asked who is signed in; no PD request is
+/// made, so the Store can paint before `store_get` returns. Keyed by PUUID, so
+/// switching accounts never shows the other account's shop.
 #[tauri::command]
-pub async fn store_get(riot: State<'_, RiotState>) -> Result<Value, ()> {
+pub async fn store_cached(
+    riot: State<'_, RiotState>,
+    cache: State<'_, CacheStore>,
+) -> Result<Value, ()> {
+    let puuid = client::get_tokens(&riot, false)
+        .await
+        .ok()
+        .and_then(|tokens| tokens.get("subject").and_then(Value::as_str).map(str::to_string))
+        .filter(|puuid| !puuid.is_empty());
+    let reply = puuid.and_then(|puuid| cached_reply(cache.get(&cache_key(&puuid))));
+    Ok(reply.unwrap_or_else(|| json!({ "success": false, "code": "empty" })))
+}
+
+#[tauri::command]
+pub async fn store_get(
+    riot: State<'_, RiotState>,
+    cache: State<'_, CacheStore>,
+) -> Result<Value, ()> {
     // `with_api` retries once with fresh tokens if the cached one has been
     // invalidated (expired, or the player switched accounts).
     let result = api::with_api(&riot, |api| async move {
         let puuid = api.puuid.clone();
         let (storefront, wallet) =
             tokio::try_join!(api.get_storefront(&puuid), api.get_wallet(&puuid))?;
-        Ok((storefront, wallet))
+        Ok((puuid, storefront, wallet))
     })
     .await;
 
     Ok(match result {
-        Ok((storefront, wallet)) => {
+        Ok((puuid, storefront, wallet)) => {
             let parsed = parse_storefront(&storefront, &wallet);
             match serde_json::to_value(&parsed) {
                 Ok(mut value) => {
+                    cache.set(&cache_key(&puuid), cache_entry(&value, now_ms()));
                     if let Some(object) = value.as_object_mut() {
                         object.insert("success".into(), Value::Bool(true));
                     }
@@ -591,6 +647,25 @@ mod tests {
         assert!(parsed.featured_bundle.is_none());
         assert!(parsed.night_market.is_none());
         assert!(parsed.accessory.is_none());
+    }
+
+    #[test]
+    fn a_cached_storefront_round_trips_with_its_fetch_time() {
+        let parsed = serde_json::to_value(parse_storefront(&storefront(), &wallet())).unwrap();
+        let reply = cached_reply(Some(cache_entry(&parsed, 1_700_000_000_000))).unwrap();
+        assert_eq!(reply["success"], true);
+        assert_eq!(reply["cached"], true);
+        assert_eq!(reply["fetchedAt"], 1_700_000_000_000u64);
+        assert_eq!(reply["daily"], parsed["daily"]);
+        assert_eq!(reply["wallet"], parsed["wallet"]);
+    }
+
+    #[test]
+    fn a_missing_or_malformed_cache_entry_is_no_reply() {
+        assert!(cached_reply(None).is_none());
+        assert!(cached_reply(Some(json!({ "payload": {} }))).is_none());
+        assert!(cached_reply(Some(json!({ "fetchedAt": 1, "payload": [] }))).is_none());
+        assert_eq!(cache_key("ABC-def"), "storefront:abc-def");
     }
 
     #[test]

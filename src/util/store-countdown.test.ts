@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { formatCountdown, remainingSeconds } from "./store-countdown";
+import { formatCountdown, remainingSeconds, secondsUntilRotation } from "./store-countdown";
 
 describe("store countdown", () => {
   test("formats under a day as h:mm:ss", () => {
@@ -25,5 +25,18 @@ describe("store countdown", () => {
     // The tab was left open past the rotation.
     expect(remainingSeconds(100, 500)).toBe(0);
     expect(remainingSeconds(100, 0)).toBe(100);
+  });
+});
+
+describe("secondsUntilRotation", () => {
+  test("a saved shop is current until its first section rotates", () => {
+    // Daily resets in an hour; the bundle runs for days.
+    expect(secondsUntilRotation([3_600, 500_000, null, undefined], 600)).toBe(3_000);
+    expect(secondsUntilRotation([3_600, 500_000], 3_600)).toBe(0);
+  });
+
+  test("ignores absent sections and treats a shop with no timers as stale", () => {
+    expect(secondsUntilRotation([null, 0, 7_200], 0)).toBe(7_200);
+    expect(secondsUntilRotation([null, undefined, 0], 0)).toBe(0);
   });
 });

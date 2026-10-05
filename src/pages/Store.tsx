@@ -10,11 +10,11 @@ import {
 	type SkinAsset,
 } from "@/util/valorant-assets";
 import { rateLimitedSeconds } from "@/util/rate-limit";
-import { formatCountdown, remainingSeconds } from "@/util/store-countdown";
-import { useEffect, useMemo, useState } from "react";
+import { formatCountdown, remainingSeconds, secondsUntilRotation } from "@/util/store-countdown";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { LuStore } from "react-icons/lu";
+import { LuRotateCw, LuStore } from "react-icons/lu";
 
 type Currency = "valorantPoints" | "radianite" | "kingdomCredits" | "unknown";
 type Price = { amount: number; currency: Currency };
@@ -156,11 +156,29 @@ const Store = () => {
 	const [error, setError] = useState<string | null>(null);
 	const [loginRequired, setLoginRequired] = useState(false);
 	const [loading, setLoading] = useState(true);
+	// True while the Refresh button's request is in flight over a shown shop.
+	const [refreshing, setRefreshing] = useState(false);
+	// Set by the Refresh button: skip the saved shop and ask Riot.
+	const forceLiveRef = useRef(false);
 	const { t } = useTranslation();
 
 	useEffect(() => {
-const onResponse = (message: any) => {
+		let active = true;
 
+		const show = (response: any, at: number) => {
+			setData({
+				wallet: response.wallet,
+				daily: response.daily,
+				featuredBundle: response.featuredBundle ?? null,
+				nightMarket: response.nightMarket ?? null,
+				accessory: response.accessory ?? null,
+			});
+			setFetchedAt(at);
+			setLoading(false);
+		};
+
+		const onResponse = (message: any) => {
+			setRefreshing(false);
 			const response = message;
 			if (!response.success) {
 				if (response.code === "loginRequired") {
@@ -181,23 +199,78 @@ const onResponse = (message: any) => {
 			// for the content instead of hiding a successful load behind it.
 			setLoginRequired(false);
 			setError(null);
-			setData({
-				wallet: response.wallet,
-				daily: response.daily,
-				featuredBundle: response.featuredBundle ?? null,
-				nightMarket: response.nightMarket ?? null,
-				accessory: response.accessory ?? null,
-			});
-			setFetchedAt(Date.now());
-			setLoading(false);
+			show(response, Date.now());
 		};
 
-		let active = true;
+		const fetchLive = () =>
+			invoke<any>("store_get")
+				.then((reply) => { if (active) onResponse(reply); })
+				.catch((error) => { if (active) onResponse({ success: false, error: String(error) }); });
 
-		invoke<any>("store_get").then(reply => { if (active) onResponse(reply); }).catch(error => { if (active) onResponse({ success: false, error: String(error) }); });
+		if (forceLiveRef.current) {
+			forceLiveRef.current = false;
+			setRefreshing(true);
+			fetchLive();
+			return () => { active = false; };
+		}
+
+		// Offers only change when a section rotates, so this account's saved shop
+		// is used as-is until then, with no request to Riot. Each account has its
+		// own entry, saved the first time its shop is fetched.
+		invoke<any>("store_cached")
+			.then((reply) => {
+				if (!active) return;
+				const at = reply?.fetchedAt;
+				const current =
+					reply?.success &&
+					typeof at === "number" &&
+					secondsUntilRotation(
+						[
+							reply.daily?.remainingSeconds,
+							reply.featuredBundle?.remainingSeconds,
+							reply.nightMarket?.remainingSeconds,
+							reply.accessory?.remainingSeconds,
+						],
+						(Date.now() - at) / 1000,
+					) > 0;
+				if (current) {
+					setLoginRequired(false);
+					setError(null);
+					show(reply, at);
+				} else {
+					fetchLive();
+				}
+			})
+			.catch(() => { if (active) fetchLive(); });
 
 		return () => { active = false; };
 }, [t, reloadKey]);
+
+	// When the first section rotates while the page is open, load the new shop.
+	useEffect(() => {
+		if (!data) return;
+		const left = secondsUntilRotation(
+			[
+				data.daily.remainingSeconds,
+				data.featuredBundle?.remainingSeconds,
+				data.nightMarket?.remainingSeconds,
+				data.accessory?.remainingSeconds,
+			],
+			(Date.now() - fetchedAt) / 1000,
+		);
+		if (left <= 0) return;
+		// A few seconds late, so Riot has rolled over; capped to stay a valid delay.
+		const timer = window.setTimeout(
+			() => setReloadKey((key) => key + 1),
+			Math.min(left + 5, 24 * 60 * 60) * 1000,
+		);
+		return () => window.clearTimeout(timer);
+	}, [data, fetchedAt]);
+
+	const refresh = () => {
+		forceLiveRef.current = true;
+		setReloadKey((key) => key + 1);
+	};
 
 	// Daily + Night Market rows are always weapon skin levels.
 	const skinLevelIds = useMemo(() => {
@@ -265,7 +338,17 @@ const onResponse = (message: any) => {
 
 	return (
 		<div className="flex h-full flex-col animate-fade-in">
-			<PageHeader icon={<LuStore className="text-lg" />} title={t("store.title")}>
+			<PageHeader icon={<LuStore className="text-lg" />} title={t("store.title")} subtitle={refreshing ? t("store.updating") : undefined}>
+				<button
+					type="button"
+					onClick={refresh}
+					disabled={refreshing || loading}
+					aria-label={t("store.refresh")}
+					title={t("store.refresh")}
+					className="press-tile grid h-8 w-8 shrink-0 place-items-center rounded-[8px] border border-(--border) text-(--text-secondary) transition-colors hover:bg-(--surface-hover) hover:text-(--text-primary) disabled:opacity-40 focus-visible:outline-none focus-visible:shadow-[0_0_0_2px_var(--accent-soft)]"
+				>
+					<LuRotateCw className={`h-3.5 w-3.5 ${refreshing ? "animate-spin motion-reduce:animate-none" : ""}`} />
+				</button>
 				{wallet && (
 					<div className="flex shrink-0 items-center gap-1.5">
 						{(
@@ -305,14 +388,20 @@ const onResponse = (message: any) => {
 					/>
 				)}
 
-				{!loading && error && !loginRequired && (
+				{!loading && error && !loginRequired && data && (
+					<p role="status" className="rounded-[10px] border border-(--signal-warn)/25 bg-(--signal-warn)/8 px-3 py-2 text-[11px] text-(--signal-warn)">
+						{t("store.showingSaved")} {error}
+					</p>
+				)}
+
+				{!loading && error && !loginRequired && !data && (
 					<div className="panel px-4 py-3">
 						<p className="text-[12px] font-semibold text-(--signal-neg)">{t("store.failedToLoad")}</p>
 						<p className="mt-0.5 text-xs text-(--text-muted)">{error}</p>
 					</div>
 				)}
 
-				{!loading && !error && !loginRequired && data && (
+				{!loading && !loginRequired && data && (
 					<>
 						<SectionCard
 							title={t("store.dailyOffers")}

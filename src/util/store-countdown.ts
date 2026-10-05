@@ -12,6 +12,20 @@ export const remainingSeconds = (fetchedSeconds: number, elapsedSeconds: number)
   Math.max(0, Math.floor(fetchedSeconds - elapsedSeconds));
 
 /**
+ * Seconds until the first shop section rotates, given each section's remaining
+ * duration at fetch time; 0 once any of them has. Sections that are absent or
+ * report no duration are ignored. Until then a saved shop is still the shop.
+ */
+export const secondsUntilRotation = (
+  durations: readonly (number | null | undefined)[],
+  elapsedSeconds: number,
+): number => {
+  const running = durations.filter((seconds): seconds is number => typeof seconds === "number" && seconds > 0);
+  if (running.length === 0) return 0;
+  return Math.max(0, Math.min(...running) - elapsedSeconds);
+};
+
+/**
  * `7:12:44` under a day, `6d 04:11` over one.
  *
  * Days get their own unit because a bundle runs for a week, and rendering that

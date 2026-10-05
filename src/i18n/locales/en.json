@@ -145,6 +145,9 @@
   },
   "store": {
     "title": "Store",
+    "updating": "Updating…",
+    "showingSaved": "Showing the shop saved earlier.",
+    "refresh": "Refresh store and wallet",
     "loading": "Loading store...",
     "failedToLoad": "Failed to load the store",
     "loginRequired": "Riot Client not running",

@@ -144,6 +144,9 @@
   },
   "store": {
     "title": "商店",
+    "updating": "更新中…",
+    "showingSaved": "正在顯示先前儲存的商店。",
+    "refresh": "重新整理商店與錢包",
     "loading": "正在載入商店...",
     "failedToLoad": "無法載入商店",
     "loginRequired": "Riot 客戶端未執行",

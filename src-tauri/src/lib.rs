@@ -20,7 +20,7 @@ mod xmpp;
 
 use riot::client::RiotState;
 use serde_json::json;
-use store::{ConfigStore, ProfilesStore, Store};
+use store::{CacheStore, ConfigStore, ProfilesStore, Store};
 use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -155,6 +155,7 @@ pub fn run() {
             presence_proxy::attach_app(app.handle().clone())
                 .expect("presence app handle initialized once");
             app.manage(ProfilesStore(profiles_store));
+            app.manage(CacheStore(Store::new("cache", serde_json::Map::new())));
             app.manage(RiotState::default());
             app.manage(commands::riot_chat::RiotChatState::default());
             app.manage(commands::live::LiveCache::default());
@@ -224,6 +225,7 @@ pub fn run() {
             commands::career::career_get,
             commands::battlepass::battlepass_get,
             commands::store::store_get,
+            commands::store::store_cached,
             commands::inventory::inventory_get,
             commands::live::live_game_fetch,
             commands::live::live_game_stats,

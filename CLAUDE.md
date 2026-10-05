@@ -110,7 +110,8 @@ Rust command conventions:
 | `career:get` | `career_get` | MMR + competitive history |
 | `tools:player:resolve` | `tools_player_resolve` | Resolve `GameName#Tag` or PUUID to a canonical Riot ID |
 | `friend:profile:get` | `friend_profile_get` | Player profile used by Friends and Tools (rank + matches) |
-| `store:get` | `store_get` | Storefront (daily, bundle, Night Market, accessories) + wallet |
+| `store:get` | `store_get` | Storefront (daily, bundle, Night Market, accessories) + wallet; also saved per account in `cache.json` |
+| `store:cached` | `store_cached` | Last saved storefront for the signed-in account (no PD request), shown while `store_get` loads |
 | `battlepass:get` | `battlepass_get` | Act battle pass XP/level + owned premium contract ids |
 | `chat:command` | `chat_command` | Runs a `.`-prefixed command typed in the Chat composer; the raw line is never posted |
 | `live-game:fetch` / `live-game:dump` | `live_game_fetch/dump` | Live match state (polled ~5s) |

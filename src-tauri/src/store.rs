@@ -55,6 +55,16 @@ impl Store {
 /// `app.manage()`d at once.
 pub struct ConfigStore(pub Store);
 pub struct ProfilesStore(pub Store);
+/// `cache.json`: data kept only to show something sooner on the next launch,
+/// such as the last storefront per account. Losing it costs one fetch.
+pub struct CacheStore(pub Store);
+
+impl std::ops::Deref for CacheStore {
+    type Target = Store;
+    fn deref(&self) -> &Store {
+        &self.0
+    }
+}
 
 impl std::ops::Deref for ConfigStore {
     type Target = Store;
