@@ -803,7 +803,12 @@ pub(crate) async fn prepare_ai_for_bot(
 /// Answers `.ask` privately; nothing is posted to any room.
 pub async fn execute_ask(line: &str) -> Result<String, RiotError> {
     let question = chat_command::parse_ask_command(line)?;
-    ai_chat_line(crate::ai::prompts::ASK, &question, 400).await
+    let game = match crate::presence_proxy::app_handle() {
+        Some(app) => super::bot_template::ask_game_context(app).await,
+        None => None,
+    };
+    let request = crate::ai::prompts::ask_request(&question, game.as_deref());
+    ai_chat_line(crate::ai::prompts::ASK, &request, 400).await
 }
 
 pub async fn execute_history_translation(

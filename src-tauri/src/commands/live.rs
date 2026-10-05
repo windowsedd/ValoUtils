@@ -450,6 +450,21 @@ impl Default for LiveStatsCache {
     }
 }
 
+impl LiveStatsCache {
+    /// Recent form already computed for a player in this queue, without asking
+    /// Riot. Of several stored match windows, the one covering most matches wins.
+    pub(crate) fn cached(&self, puuid: &str, queue_id: &str) -> Option<Value> {
+        let prefix = format!("{}:{}:", puuid.to_lowercase(), queue_id.to_lowercase());
+        self.values
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(key, _)| key.starts_with(&prefix))
+            .max_by_key(|(_, stats)| stats["matches"].as_u64().unwrap_or_default())
+            .map(|(_, stats)| stats.clone())
+    }
+}
+
 #[derive(Clone, Copy, PartialEq)]
 enum LiveState {
     CoreGame,
@@ -3320,6 +3335,21 @@ mod tests {
     fn recent_stats_pool_has_three_global_permits() {
         let cache = LiveStatsCache::default();
         assert_eq!(cache.permits.available_permits(), 3);
+    }
+
+    #[test]
+    fn cached_recent_stats_match_player_and_queue_without_fetching() {
+        let cache = LiveStatsCache::default();
+        {
+            let mut values = cache.values.lock().unwrap();
+            values.insert("p1:competitive:m1,m2".into(), json!({ "matches": 2 }));
+            values.insert("p1:competitive:m1,m2,m3".into(), json!({ "matches": 3 }));
+            values.insert("p1:unrated:m4".into(), json!({ "matches": 1 }));
+            values.insert("p10:competitive:m5".into(), json!({ "matches": 9 }));
+        }
+        assert_eq!(cache.cached("P1", "Competitive"), Some(json!({ "matches": 3 })));
+        assert_eq!(cache.cached("p1", "unrated"), Some(json!({ "matches": 1 })));
+        assert_eq!(cache.cached("p2", "competitive"), None);
     }
 
     #[test]

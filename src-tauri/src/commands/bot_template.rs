@@ -25,7 +25,9 @@ struct TemplatePlayer {
     level: Option<u64>,
     current_tier: u64,
     current_rr: u64,
+    peak_tier: u64,
     is_self: bool,
+    in_my_party: bool,
     incognito: bool,
 }
 
@@ -171,8 +173,16 @@ impl TemplateSnapshot {
                         .get("currentRR")
                         .and_then(Value::as_u64)
                         .unwrap_or_default(),
+                    peak_tier: player
+                        .get("peakTier")
+                        .and_then(Value::as_u64)
+                        .unwrap_or_default(),
                     is_self: player
                         .get("isSelf")
+                        .and_then(Value::as_bool)
+                        .unwrap_or(false),
+                    in_my_party: player
+                        .get("inMyParty")
                         .and_then(Value::as_bool)
                         .unwrap_or(false),
                     incognito: player
@@ -822,6 +832,113 @@ pub(crate) async fn resolve_custom_message(app: &AppHandle, message: &str) -> St
         .unwrap_or_else(|| chat_template::render_template(message, &HashMap::new()))
 }
 
+/// Budget for `.ask` to find the match it is asked about. A stored roster
+/// answers at once; this only bounds the one fetch made when it has lapsed.
+const ASK_CONTEXT_TIMEOUT: Duration = Duration::from_secs(8);
+
+fn rounded(value: f64, places: i32) -> f64 {
+    let scale = 10f64.powi(places);
+    (value * scale).round() / scale
+}
+
+/// The match `.ask` may describe, as JSON for the `<live_game>` block.
+///
+/// Players are only `You`, `Ally N` and `Enemy N`, as in match analysis: Riot
+/// IDs, PUUIDs and party ids never reach the AI provider. `recent` returns a
+/// player's already-computed recent form, if any.
+fn ask_context(
+    snapshot: &TemplateSnapshot,
+    labels: &ContentLabels,
+    recent: impl Fn(&str) -> Option<Value>,
+) -> Option<Value> {
+    let me = snapshot.players.iter().find(|player| player.is_self)?;
+    let (mut allies, mut enemies) = (0, 0);
+    let players: Vec<Value> = snapshot
+        .players
+        .iter()
+        .map(|player| {
+            let ally = me.team_id.is_empty() || player.team_id == me.team_id;
+            let label = if player.is_self {
+                "You".to_string()
+            } else if ally {
+                allies += 1;
+                format!("Ally {allies}")
+            } else {
+                enemies += 1;
+                format!("Enemy {enemies}")
+            };
+            let mut entry = serde_json::json!({
+                "player": label,
+                "agent": labels.agents.get(&player.character_id),
+                "rank": rank_label(player.current_tier),
+                "peakRank": rank_label(player.peak_tier),
+            });
+            if player.current_tier >= 3 {
+                entry["rr"] = player.current_rr.into();
+            }
+            if let Some(level) = player.level {
+                entry["level"] = level.into();
+            }
+            if ally && !player.is_self {
+                entry["premadeWithYou"] = player.in_my_party.into();
+            }
+            if let Some(stats) = recent(&player.puuid) {
+                entry["recent"] = serde_json::json!({
+                    "matches": stats.get("matches").and_then(Value::as_u64).unwrap_or_default(),
+                    "kd": rounded(recent_number(&stats, "kd"), 2),
+                    "winRate": rounded(recent_number(&stats, "winRate"), 0),
+                    "acs": rounded(recent_number(&stats, "acs"), 0),
+                    "dpr": rounded(recent_number(&stats, "dpr"), 0),
+                });
+            }
+            entry
+        })
+        .collect();
+    let map = labels.maps.get(&snapshot.map_id.to_ascii_lowercase()).cloned();
+    Some(serde_json::json!({
+        "phase": phase_label(&snapshot.state),
+        "mode": mode_label(&snapshot.queue_id),
+        "map": map,
+        "players": players,
+    }))
+}
+
+/// What `.ask` knows about the match you are in, or `None` outside one.
+///
+/// Reads the roster Live Game already keeps; only when that has lapsed (the
+/// window skips polls while you play) does it fetch once. Recent form comes
+/// from the stats cache alone, so this never adds match-history requests.
+pub(crate) async fn ask_game_context(app: &AppHandle) -> Option<String> {
+    let deadline = tokio::time::Instant::now() + ASK_CONTEXT_TIMEOUT;
+    let stored = match app.state::<live::LiveCache>().recent_snapshot() {
+        Some(stored) => stored,
+        None => tokio::time::timeout_at(
+            deadline,
+            live::live_game_fetch(
+                app.clone(),
+                app.state::<RiotState>(),
+                app.state::<live::LiveCache>(),
+                app.state::<LivePartyHistoryCache>(),
+            ),
+        )
+        .await
+        .ok()?
+        .ok()?,
+    };
+    let snapshot = TemplateSnapshot::from_value(&stored)?;
+    if !matches!(snapshot.state.as_str(), "pregame" | "coregame") {
+        return None;
+    }
+    let plan = TemplatePlan {
+        needs_content: true,
+        ..TemplatePlan::default()
+    };
+    let labels = load_content_labels(&plan, deadline).await.unwrap_or_default();
+    let stats = app.state::<live::LiveStatsCache>();
+    ask_context(&snapshot, &labels, |puuid| stats.cached(puuid, &snapshot.queue_id))
+        .map(|context| context.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -840,6 +957,45 @@ mod tests {
             ]
         }))
         .unwrap()
+    }
+
+    #[test]
+    fn ask_context_labels_players_without_names_or_ids() {
+        let labels = ContentLabels {
+            agents: HashMap::from([("sage".into(), "Sage".into()), ("jett".into(), "Jett".into())]),
+            maps: HashMap::from([("/game/maps/ascent/ascent".into(), "Ascent".into())]),
+        };
+        let context = ask_context(&snapshot(), &labels, |puuid| {
+            (puuid == "enemy").then(|| json!({ "matches": 5, "kd": 1.2421, "winRate": 54.4, "acs": 238.4, "dpr": 151.0 }))
+        })
+        .unwrap();
+
+        assert_eq!(context["phase"], "Agent Select");
+        assert_eq!(context["map"], "Ascent");
+        assert_eq!(context["mode"], "Competitive");
+        let players = context["players"].as_array().unwrap();
+        let names: Vec<_> = players.iter().map(|player| player["player"].as_str().unwrap()).collect();
+        assert_eq!(names, ["You", "Ally 1", "Enemy 1", "Enemy 2"]);
+        assert_eq!(players[0]["agent"], "Sage");
+        assert_eq!(players[0]["rank"], "Diamond 1");
+        assert_eq!(players[0]["rr"], 62);
+        assert!(players[0].get("premadeWithYou").is_none());
+        assert_eq!(players[1]["premadeWithYou"], false);
+        assert!(players[2].get("premadeWithYou").is_none());
+        assert_eq!(players[2]["recent"], json!({ "matches": 5, "kd": 1.24, "winRate": 54.0, "acs": 238.0, "dpr": 151.0 }));
+        assert!(players[3].get("rr").is_none() && players[3].get("recent").is_none());
+
+        let text = context.to_string();
+        for leaked in ["Me", "Duo", "TW", "Hidden", "\"me\"", "\"ally\"", "\"enemy\""] {
+            assert!(!text.contains(leaked), "{leaked} reached the AI context: {text}");
+        }
+    }
+
+    #[test]
+    fn ask_context_needs_you_in_the_roster() {
+        let mut snapshot = snapshot();
+        snapshot.players.retain(|player| !player.is_self);
+        assert!(ask_context(&snapshot, &ContentLabels::default(), |_| None).is_none());
     }
 
     #[test]

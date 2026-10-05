@@ -266,6 +266,11 @@ composer system line, or a Dummy Bot DM/whisper). `.ai party|team|all <prompt>`
 is the only form that posts, to the named room. The relay swallows `.ai`/`.ask`
 typed in party/team/all chat so the raw line never reaches the room; without the
 relay, the REST poller sees it after it was sent and still answers by bot DM.
+In agent select or a live match, `.ask` also sends a fenced `<live_game>` block
+(`bot_template::ask_game_context`): map, mode, phase, and per player agent, rank,
+RR, peak, level and cached recent form, labelled `You` / `Ally N` / `Enemy N`.
+It reads the stored Live Game roster (one fetch only when that has lapsed) and
+`LiveStatsCache` only, never extra match-history requests. No live score exists.
 Match analysis sends only anonymized scoreboard stats: `You`, `Ally N`, and
 `Enemy N`. Never send other players' Riot IDs, PUUIDs, or party IDs in match
 analysis. Results stay in Matches state by match ID; Regenerate makes a new call.
