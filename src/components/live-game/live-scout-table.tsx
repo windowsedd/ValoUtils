@@ -31,6 +31,12 @@ type Props = {
 };
 
 
+/** Roster columns follow the table's own width, not the window's: the Events
+ *  sidebar and page inset make the table far narrower than the viewport, and the
+ *  fixed tracks then pushed the chevron past the right edge. Breakpoints are the
+ *  minimum each template needs (tracks + gaps + padding + 3px party accent). */
+const ROSTER_COLUMNS = "grid-cols-[minmax(150px,1.5fr)_88px_44px_52px_56px_34px] @min-[51rem]:grid-cols-[minmax(180px,300px)_110px_44px_140px_52px_56px_52px_52px_minmax(34px,1fr)] @min-[63rem]:grid-cols-[minmax(180px,300px)_76px_110px_44px_140px_52px_56px_52px_52px_100px_minmax(34px,1fr)]";
+
 const statsErrorText = (error: string, t: ReturnType<typeof useTranslation>["t"]) =>
 	error === "rateLimited"
 		? t("liveGame.rateLimited")
@@ -177,7 +183,7 @@ const PlayerRow = ({ player, assets, stats, expanded, onToggle, teamLabel, recen
 				aria-expanded={expanded}
 				aria-controls={detailsId}
 				aria-label={`${t(expanded ? "liveGame.collapsePlayer" : "liveGame.expandPlayer", { player: displayName })}, ${teamLabel}${partyLabel ? `, ${partyLabel}` : ""}`}
-				className="w-full min-h-12 grid grid-cols-[minmax(150px,1.5fr)_88px_44px_52px_56px_34px] md:grid-cols-[minmax(180px,300px)_110px_44px_140px_52px_56px_52px_52px_minmax(34px,1fr)] xl:grid-cols-[minmax(180px,300px)_76px_110px_44px_140px_52px_56px_52px_52px_100px_minmax(34px,1fr)] items-center gap-2 px-3 py-1.5 text-left hover:bg-white/4 focus-visible:outline-none focus-visible:shadow-[inset_0_0_0_2px_var(--accent-soft)] transition-colors motion-reduce:transition-none"
+				className={`w-full min-h-12 grid ${ROSTER_COLUMNS} items-center gap-2 px-3 py-1.5 text-left hover:bg-white/4 focus-visible:outline-none focus-visible:shadow-[inset_0_0_0_2px_var(--accent-soft)] transition-colors motion-reduce:transition-none`}
 			>
 				<div className="flex items-center gap-2 min-w-0">
 					<div className="relative w-8 h-9 rounded-md bg-white/5 overflow-hidden shrink-0">
@@ -196,17 +202,17 @@ const PlayerRow = ({ player, assets, stats, expanded, onToggle, teamLabel, recen
 						</p>
 					</div>
 				</div>
-				<div className="hidden xl:flex items-center min-w-0">
+				<div className="hidden @min-[63rem]:flex items-center min-w-0">
 					{player.party && <span className="text-[10px] font-medium truncate" style={{ color: partyColor(player.party) }}>{player.party}</span>}
 				</div>
 				<RankValue tier={player.currentTier} assets={assets} />
 				<RrValue tier={player.currentTier} rr={player.currentRR} stats={stats} />
-				<div className="hidden md:block"><RankValue tier={player.peakTier} act={peakAct ?? undefined} assets={assets} /></div>
+				<div className="hidden @min-[51rem]:block"><RankValue tier={player.peakTier} act={peakAct ?? undefined} assets={assets} /></div>
 				<StatValue state={stats} field="kd" />
 				<StatValue state={stats} field="winRate" />
-				<div className="hidden md:block"><StatValue state={stats} field="acs" /></div>
-				<div className="hidden md:block"><StatValue state={stats} field="dpr" /></div>
-				<div className="hidden xl:flex items-center gap-1">
+				<div className="hidden @min-[51rem]:block"><StatValue state={stats} field="acs" /></div>
+				<div className="hidden @min-[51rem]:block"><StatValue state={stats} field="dpr" /></div>
+				<div className="hidden @min-[63rem]:flex items-center gap-1">
 					{player.loadout ? [player.loadout.vandal, player.loadout.phantom, player.loadout.knife].map((weapon, index) => {
 						const skin = assets.skins.get(weaponSkinKey(weapon) ?? "");
 						return skin?.icon ? <img key={index} src={skin.icon} alt="" className="w-7 h-5 object-contain" /> : <span key={index} aria-label={t("liveGame.unavailable")} className="w-5 h-1 rounded bg-white/10" />;
@@ -401,9 +407,9 @@ export const LiveScoutTable = ({ snapshot, assets, recent, refreshing, refreshEr
 			</section>
 
 			{/* No scroll box of its own: the page scrolls, and the header sticks to its top. */}
-			<section className="rounded-[12px] border border-(--border) bg-(--surface)" aria-label={t("liveGame.players")}>
-				<div className="sticky top-0 z-10 grid grid-cols-[minmax(150px,1.5fr)_88px_44px_52px_56px_34px] md:grid-cols-[minmax(180px,300px)_110px_44px_140px_52px_56px_52px_52px_minmax(34px,1fr)] xl:grid-cols-[minmax(180px,300px)_76px_110px_44px_140px_52px_56px_52px_52px_100px_minmax(34px,1fr)] gap-2 rounded-t-[12px] border-b border-(--line) bg-(--panel-raised) px-3 py-2 text-[9px] uppercase tracking-widest text-(--text-muted)">
-					<span>{t("matches.player")}</span><span className="hidden xl:block">{t("liveGame.detectedParties")}</span><span>{t("liveGame.current")}</span><span>{t("liveGame.rr")}</span><span className="hidden md:block">{t("liveGame.peak")}</span><span>{t("liveGame.kd")}</span><span>{t("liveGame.winRate")}</span><span className="hidden md:block">{t("liveGame.acs")}</span><span className="hidden md:block">{t("liveGame.dpr")}</span><span className="hidden xl:block">{t("liveGame.skins")}</span><span />
+			<section className="@container rounded-[12px] border border-(--border) bg-(--surface)" aria-label={t("liveGame.players")}>
+				<div className={`sticky top-0 z-10 grid ${ROSTER_COLUMNS} gap-2 rounded-t-[12px] border-b border-(--line) bg-(--panel-raised) py-2 pr-3 pl-[15px] text-[9px] uppercase tracking-widest text-(--text-muted)`}>
+					<span>{t("matches.player")}</span><span className="hidden @min-[63rem]:block">{t("liveGame.detectedParties")}</span><span>{t("liveGame.current")}</span><span>{t("liveGame.rr")}</span><span className="hidden @min-[51rem]:block">{t("liveGame.peak")}</span><span>{t("liveGame.kd")}</span><span>{t("liveGame.winRate")}</span><span className="hidden @min-[51rem]:block">{t("liveGame.acs")}</span><span className="hidden @min-[51rem]:block">{t("liveGame.dpr")}</span><span className="hidden @min-[63rem]:block">{t("liveGame.skins")}</span><span />
 				</div>
 				{teams.map(([teamId, players]) => {
 					const meta = teamMeta(teamId, t);
