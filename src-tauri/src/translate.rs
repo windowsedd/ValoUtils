@@ -305,13 +305,11 @@ pub async fn translate_text(
                 .iter()
                 .find(|e| e.provider == "google" && e.code == code)
                 .map(|e| e.english_name.as_str())
-                .unwrap_or("auto")
         };
-        let prompt = format!(
-            "Target language: {}\nSource language: {}\nChat text:\n{}",
-            name(&target),
-            name(&source),
-            text
+        let prompt = crate::ai::prompts::translate_request(
+            name(&target).unwrap_or(target.as_str()),
+            name(&source).filter(|_| source != "auto"),
+            text,
         );
         let translated = crate::ai::complete(crate::ai::AiRequest {
             system: crate::ai::prompts::TRANSLATE,

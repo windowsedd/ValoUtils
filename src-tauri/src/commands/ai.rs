@@ -49,9 +49,10 @@ pub async fn ai_match_analyze(args: Vec<Value>) -> Value {
         _ => "English",
     };
     let system = ai::prompts::MATCH_COACH.replace("{language}", language);
+    let prompt = ai::prompts::match_request(context);
     match ai::complete(AiRequest {
         system: &system,
-        prompt: context,
+        prompt: &prompt,
         max_tokens: 900,
         timeout: ai::REQUEST_TIMEOUT,
     })

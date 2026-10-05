@@ -1191,7 +1191,9 @@ async fn expand_ai_messages(messages: Vec<String>) -> Vec<String> {
                 let text = match crate::ai::complete(crate::ai::AiRequest {
                     system: crate::ai::prompts::BOT_LINE,
                     prompt: &prompt,
-                    max_tokens: 120,
+                    // 120 characters of Korean or Chinese can need more than
+                    // 120 tokens; the line is capped by characters afterwards.
+                    max_tokens: 200,
                     timeout: crate::ai::REQUEST_TIMEOUT,
                 })
                 .await
