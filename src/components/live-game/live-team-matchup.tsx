@@ -13,7 +13,7 @@ const MetricValue = ({ value, metric, side }: { value: number | null; metric: Me
 	value == null ? (
 		<span className="h-7 w-14 rounded bg-white/8 animate-pulse motion-reduce:animate-none" />
 	) : (
-		<span className={`min-w-14 px-2 py-1 text-center text-sm font-bold tabular-nums text-white ${side === "ally" ? "bg-cyan-600/80" : "bg-red-500/70"}`}>
+		<span className={`min-w-14 rounded-[6px] px-2 py-1 text-center text-sm font-bold tabular-nums text-white ${side === "ally" ? "bg-cyan-600/80" : "bg-red-500/70"}`}>
 			{formatMetric(metric, value)}
 		</span>
 	)
@@ -28,9 +28,9 @@ export const LiveTeamMatchup = ({ matchup, mode }: { matchup: TeamMatchup; mode:
 		{ field: "dpr", label: t("liveGame.averageDpr") },
 	];
 	return (
-		<div className="border-t border-white/6 px-4 py-3 bg-black/10">
+		<div className="border-t border-(--line) bg-(--background)/40 px-4 py-3">
 			<div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-				<div><p className="text-[10px] font-bold uppercase tracking-widest text-white">{t("liveGame.matchup")}</p><p className="text-[9px] uppercase tracking-wider text-gray-600">{t("liveGame.recentFive", { mode })}</p></div>
+				<div><p className="text-[10px] font-bold uppercase tracking-widest text-(--text-primary)">{t("liveGame.matchup")}</p><p className="text-[9px] uppercase tracking-wider text-gray-600">{t("liveGame.recentFive", { mode })}</p></div>
 				<p className="text-[10px] text-gray-500">
 					<span className="text-cyan-300">{t("liveGame.ally")}: {matchup.ally.players}</span>
 					<span className="mx-2 text-gray-700">/</span>
@@ -41,7 +41,7 @@ export const LiveTeamMatchup = ({ matchup, mode }: { matchup: TeamMatchup; mode:
 				{metrics.map(({ field, label }) => {
 					const ready = matchup.ally[field] != null && matchup.enemy[field] != null;
 					return (
-						<div key={field} className="min-w-0 flex items-center justify-center gap-2 rounded-lg border border-white/6 bg-white/2 px-2 py-2">
+						<div key={field} className="min-w-0 flex items-center justify-center gap-2 rounded-[10px] border border-(--line) bg-(--surface) px-2 py-2">
 							<MetricValue value={ready ? matchup.ally[field] : null} metric={field} side="ally" />
 							<span className="min-w-0 text-center text-[10px] font-semibold uppercase tracking-wider text-gray-400">{label}</span>
 							<MetricValue value={ready ? matchup.enemy[field] : null} metric={field} side="enemy" />

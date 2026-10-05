@@ -103,6 +103,20 @@ describe("Live Match signed-in player marker", () => {
     expect(table).toContain('error === "unavailable" ? t("liveGame.failedToLoad") : error');
   });
 
+  test("scrolls the summary and roster as one column beside the Events sidebar", () => {
+    // The roster used to be its own small scroll box under a floating Events
+    // panel; its sticky header covered expanded player details.
+    expect(table).not.toContain("overflow-y-auto");
+    expect(table).toContain("sticky top-0");
+    expect(liveGamePage).toContain("min-w-0 flex-1 overflow-y-auto");
+    expect(liveGamePage.indexOf("<LiveScoutTable")).toBeLessThan(liveGamePage.indexOf("<LiveEventLog"));
+  });
+
+  test("shows only the teams a match has in the summary", () => {
+    expect(table).toContain("const shownTeams = teamSummaries.slice(0, 2);");
+    expect(table).not.toContain("[0, 1].map(");
+  });
+
   test("shows the loading panel while a live match fetch replaces an idle snapshot", () => {
     expect(liveGamePage).toContain('loading && (!snapshot || snapshot.state === "idle")');
   });

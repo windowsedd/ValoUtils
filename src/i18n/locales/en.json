@@ -236,6 +236,7 @@
   },
   "career": {
     "title": "Career",
+    "subtitle": "Your competitive rank, act history and recent matches",
     "loading": "Loading career data...",
     "failedToLoad": "Failed to load career data",
     "loginRequired": "Riot Client login required",
@@ -404,8 +405,8 @@
     "cmdDodge": "Leave agent select",
     "noTeamRoom": "No team chat room detected",
     "noAllRoom": "No all-chat room detected",
-    "searchConversations": "Search conversations",
     "matchEnded": "Match ended. Showing the last match chat.",
+    "searchConversations": "Search conversations",
     "noConversations": "No conversations found",
     "markAsRead": "Mark as read",
     "openFriends": "Open friends",
@@ -687,6 +688,9 @@
     "customDirectRequiresRelay": "Direct sends a Dummy Bot whisper and requires the Riot relay.",
     "customDirectSent": "Dummy Bot sent you a direct message.",
     "customMessagePlaceholder": "gl hf",
+    "messageExpand": "Open full-screen editor",
+    "messageLength": "{{count}} / {{limit}} characters, before variables are filled in",
+    "messageDone": "Done",
     "variablesButton": "Variables",
     "variablesLabel": "Bot command variables",
     "variableGroup": {
@@ -824,7 +828,15 @@
     "failed": "The log could not be read.",
     "empty": "Nothing logged yet",
     "emptyHint": "Warnings and errors from this session will appear here.",
-    "truncated": "Only the most recent part of the log file is shown."
+    "truncated": "Only the most recent part of the log file is shown.",
+    "pdBudget": {
+      "endpoints_one": "{{count}} endpoint",
+      "endpoints_other": "{{count}} endpoints",
+      "endpoint": "Endpoint",
+      "requests": "Requests",
+      "rate": "{{rate}} per minute",
+      "waitedLongest": "waited longest"
+    }
   },
   "ai": {
     "fetchModels": "Fetch models",

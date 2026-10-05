@@ -46,17 +46,23 @@ const LiveGame = () => {
 				<LiveGameStatePanel kind="idle" />
 			)}
 			{!loginRequired && activeSnapshot && (
-				<LiveScoutTable
-					snapshot={activeSnapshot}
-					assets={assets}
-					recent={recent}
-					refreshing={refreshing}
-					refreshError={error ?? undefined}
-					onRefresh={refreshSnapshot}
-				/>
-			)}
-			{!loginRequired && activeSnapshot && (activeSnapshot.state === "pregame" || activeSnapshot.state === "coregame") && (
-				<LiveEventLog events={activeSnapshot.events ?? []} players={players} agents={assets.agents} />
+				// One scroll for the summary and roster; the Events sidebar keeps its
+				// own full-height column beside it instead of floating underneath.
+				<div className="flex min-h-0 flex-1">
+					<div className="min-w-0 flex-1 overflow-y-auto px-6 pt-5 pb-6">
+						<LiveScoutTable
+							snapshot={activeSnapshot}
+							assets={assets}
+							recent={recent}
+							refreshing={refreshing}
+							refreshError={error ?? undefined}
+							onRefresh={refreshSnapshot}
+						/>
+					</div>
+					{(activeSnapshot.state === "pregame" || activeSnapshot.state === "coregame") && (
+						<LiveEventLog events={activeSnapshot.events ?? []} players={players} agents={assets.agents} />
+					)}
+				</div>
 			)}
 		</div>
 	);

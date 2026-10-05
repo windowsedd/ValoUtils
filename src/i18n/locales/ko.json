@@ -235,6 +235,7 @@
   },
   "career": {
     "title": "전적",
+    "subtitle": "경쟁전 랭크, 액트 기록, 최근 매치",
     "loading": "전적 데이터 로딩 중...",
     "failedToLoad": "전적 데이터 로드 실패",
     "loginRequired": "Riot 클라이언트 로그인 필요",
@@ -403,8 +404,8 @@
     "cmdDodge": "요원 선택 나가기",
     "noTeamRoom": "팀 채팅방을 찾을 수 없습니다",
     "noAllRoom": "전체 채팅방을 찾을 수 없습니다",
-    "searchConversations": "대화 검색",
     "matchEnded": "매치가 끝났습니다. 지난 매치 채팅을 표시합니다.",
+    "searchConversations": "대화 검색",
     "noConversations": "대화를 찾을 수 없습니다",
     "markAsRead": "읽음으로 표시",
     "openFriends": "친구 목록 열기",
@@ -679,6 +680,9 @@
     "customDirectRequiresRelay": "개인 메시지는 Dummy Bot 귓속말로 전송되며 Riot 릴레이 연결이 필요합니다.",
     "customDirectSent": "Dummy Bot이 개인 메시지를 보냈습니다.",
     "customMessagePlaceholder": "gl hf",
+    "messageExpand": "전체 화면 편집기 열기",
+    "messageLength": "{{count}} / {{limit}}자 (변수 적용 전)",
+    "messageDone": "완료",
     "variablesButton": "변수",
     "variablesLabel": "봇 명령 변수",
     "variableGroup": {
@@ -816,7 +820,14 @@
     "failed": "로그를 읽을 수 없습니다.",
     "empty": "아직 기록된 로그가 없습니다",
     "emptyHint": "이번 세션의 경고와 오류가 여기에 표시됩니다.",
-    "truncated": "로그 파일의 최근 부분만 표시됩니다."
+    "truncated": "로그 파일의 최근 부분만 표시됩니다.",
+    "pdBudget": {
+      "endpoints_other": "엔드포인트 {{count}}개",
+      "endpoint": "엔드포인트",
+      "requests": "요청",
+      "rate": "분당 {{rate}}회",
+      "waitedLongest": "최장 대기"
+    }
   },
   "ai": {
     "fetchModels": "모델 가져오기",

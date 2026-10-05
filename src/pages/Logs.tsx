@@ -2,11 +2,12 @@ import { reportIpcError } from "@/util/ipc";
 import { invoke } from "@tauri-apps/api/core";
 import CustomButton from "@/components/button";
 import { PageHeader, pageBodyClass } from "@/components/section-card";
-import { filterLogEntries, formatLogEntry, formatLogSize, LOG_LEVELS, type LogEntry, type LogLevel } from "@/pages/log-entries";
+import { filterLogEntries, formatLogEntry, formatLogSize, LOG_LEVELS, parsePdBudget, pdBudgetHeadline, type LogEntry, type LogLevel, type PdBudgetDetails } from "@/pages/log-entries";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FaMagnifyingGlass } from "react-icons/fa6";
-import { LuCopy, LuFolderOpen, LuRotateCw, LuScrollText, LuTrash2 } from "react-icons/lu";
+import { LuChevronRight, LuCopy, LuFolderOpen, LuRotateCw, LuScrollText, LuTrash2 } from "react-icons/lu";
 import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 
 const REFRESH_MS = 5000;
 
@@ -21,6 +22,94 @@ const LEVEL_STYLE: Record<LogLevel, string> = {
 	INFO: "text-sky-400 border-sky-400/30 bg-sky-400/10",
 	DEBUG: "text-(--text-muted) border-(--line) bg-(--surface-hover)",
 	TRACE: "text-(--text-muted) border-(--line) bg-(--surface-hover)",
+};
+
+const entryKey = (entry: LogEntry) => `${entry.timestamp ?? ""}|${entry.target ?? ""}|${entry.message}`;
+
+/** The endpoint table under an expanded PD budget line. */
+const PdBudgetBreakdown = ({ details, t }: { details: PdBudgetDetails; t: TFunction }) => {
+	const busiest = Math.max(1, ...details.endpoints.map((row) => row.count));
+	const perMinute = details.seconds > 0 ? (details.requests * 60) / details.seconds : details.requests;
+	return (
+		<div className="mt-2 mb-1 overflow-hidden rounded-[10px] border border-(--line) bg-(--background)" data-log-details="pd-budget">
+			<div className="flex items-center justify-between gap-3 border-b border-(--line) px-3 py-1.5 text-[10px] font-medium tracking-[0.06em] text-(--text-muted) uppercase">
+				<span>{t("logs.pdBudget.endpoint")}</span>
+				<span className="flex items-center gap-3">
+					<span className="normal-case tracking-normal tabular-nums">
+						{t("logs.pdBudget.rate", { rate: perMinute.toFixed(perMinute < 10 ? 1 : 0) })}
+					</span>
+					<span>{t("logs.pdBudget.requests")}</span>
+				</span>
+			</div>
+			{details.endpoints.map((row) => (
+				<div key={row.endpoint} className="grid grid-cols-[minmax(0,1fr)_7rem_2.5rem] items-center gap-3 px-3 py-1.5">
+					<span className="flex min-w-0 items-center gap-2">
+						<code className="truncate font-mono text-[11px] text-(--text-primary)" title={row.endpoint}>{row.endpoint}</code>
+						{row.endpoint === details.longestEndpoint && details.longestWaitMs > 0 && (
+							<span className="shrink-0 rounded-full border border-(--signal-warn)/30 bg-(--signal-warn)/10 px-1.5 text-[10px] text-(--signal-warn)">
+								{t("logs.pdBudget.waitedLongest")} · {details.longestWaitMs}ms
+							</span>
+						)}
+					</span>
+					<span className="h-1.5 overflow-hidden rounded-full bg-(--control)" aria-hidden="true">
+						<span className="block h-full rounded-full bg-(--accent)" style={{ width: `${(row.count / busiest) * 100}%` }} />
+					</span>
+					<span className="text-right text-[11px] tabular-nums text-(--text-secondary)">{row.count}</span>
+				</div>
+			))}
+		</div>
+	);
+};
+
+/**
+ * One log line. A PD budget summary that carries an endpoint breakdown opens
+ * into a table; every other line stays a plain row.
+ */
+const LogRow = ({ entry, t }: { entry: LogEntry; t: TFunction }) => {
+	const [open, setOpen] = useState(false);
+	const budget = useMemo(() => parsePdBudget(entry.message), [entry.message]);
+	const expandable = !!budget && budget.endpoints.length > 0;
+	const message = expandable ? pdBudgetHeadline(budget) : entry.message;
+
+	return (
+		<div className="flex gap-3 px-3 py-1.5 hover:bg-(--surface-hover)">
+			<span className="shrink-0 w-[132px] text-[11px] tabular-nums text-(--text-muted)">
+				{entry.timestamp ?? ""}
+			</span>
+			<span
+				className={`shrink-0 h-fit rounded-[4px] border px-1.5 py-px text-[10px] font-medium ${LEVEL_STYLE[entry.level] ?? LEVEL_STYLE.INFO}`}
+			>
+				{entry.level}
+			</span>
+			<div className="min-w-0 flex-1">
+				{expandable ? (
+					<button
+						type="button"
+						aria-expanded={open}
+						onClick={() => setOpen((current) => !current)}
+						className="press-flat -mx-1 flex w-[calc(100%+0.5rem)] items-start gap-1.5 rounded-[6px] px-1 text-left outline-none focus-visible:shadow-[0_0_0_2px_var(--accent-soft)]"
+					>
+						<LuChevronRight
+							aria-hidden="true"
+							className={`mt-[5px] h-3 w-3 shrink-0 text-(--text-muted) transition-transform duration-150 motion-reduce:transition-none ${open ? "rotate-90" : ""}`}
+						/>
+						<pre className="min-w-0 flex-1 whitespace-pre-wrap break-words font-mono text-[11.5px] leading-relaxed text-(--text-primary)">
+							{message}
+						</pre>
+						<span className="mt-0.5 shrink-0 rounded-full border border-(--border) px-1.5 text-[10px] text-(--text-muted)">
+							{t("logs.pdBudget.endpoints", { count: budget.endpoints.length })}
+						</span>
+					</button>
+				) : (
+					<pre className="whitespace-pre-wrap break-words font-mono text-[11.5px] leading-relaxed text-(--text-primary)">
+						{message}
+					</pre>
+				)}
+				{expandable && open && <PdBudgetBreakdown details={budget} t={t} />}
+				{entry.target && <span className="text-[10px] text-(--text-muted)">{entry.target}</span>}
+			</div>
+		</div>
+	);
 };
 
 const Logs = () => {
@@ -80,6 +169,20 @@ const read = useCallback(() => {
 	// Newest first: the reason this page gets opened is always the last thing
 	// that happened, and it should not need a scroll to reach.
 	const visible = useMemo(() => filterLogEntries(entries, levels, search).reverse(), [entries, levels, search]);
+
+	// Keyed by content, counted from the oldest line, so an expanded row stays
+	// open on its own entry as new lines arrive above it.
+	const rowKeys = useMemo(() => {
+		const seen = new Map<string, number>();
+		const keys = Array.from<string>({ length: visible.length });
+		for (let index = visible.length - 1; index >= 0; index -= 1) {
+			const key = entryKey(visible[index]);
+			const occurrence = seen.get(key) ?? 0;
+			seen.set(key, occurrence + 1);
+			keys[index] = `${key}#${occurrence}`;
+		}
+		return keys;
+	}, [visible]);
 
 	const counts = useMemo(() => {
 		const tally = { ERROR: 0, WARN: 0 } as Record<string, number>;
@@ -182,22 +285,7 @@ const read = useCallback(() => {
 				{visible.length > 0 && (
 					<div className="panel divide-y divide-(--line)">
 						{visible.map((entry, index) => (
-							<div key={`${entry.timestamp ?? ""}-${index}`} className="flex gap-3 px-3 py-1.5 hover:bg-(--surface-hover)">
-								<span className="shrink-0 w-[132px] text-[11px] tabular-nums text-(--text-muted)">
-									{entry.timestamp ?? ""}
-								</span>
-								<span
-									className={`shrink-0 h-fit rounded-[4px] border px-1.5 py-px text-[10px] font-medium ${LEVEL_STYLE[entry.level] ?? LEVEL_STYLE.INFO}`}
-								>
-									{entry.level}
-								</span>
-								<div className="min-w-0 flex-1">
-									<pre className="whitespace-pre-wrap break-words font-mono text-[11.5px] leading-relaxed text-(--text-primary)">
-										{entry.message}
-									</pre>
-									{entry.target && <span className="text-[10px] text-(--text-muted)">{entry.target}</span>}
-								</div>
-							</div>
+							<LogRow key={rowKeys[index]} entry={entry} t={t} />
 						))}
 					</div>
 				)}

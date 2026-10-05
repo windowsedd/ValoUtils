@@ -6,6 +6,7 @@ import type { CompetitiveSeason } from "../../types/live-game";
 import { tierColor, tierName } from "../../util/valorant-ranks";
 import { seasonFallbackLabel, sortCompetitiveSeasons, tierRangeFromWins } from "./act-rank";
 import { ActRankTriangle } from "./act-rank-triangle";
+import { SelectMenu } from "../select-menu";
 import type { LiveGameAssets } from "./use-live-game-assets";
 
 type Props = {
@@ -21,9 +22,9 @@ type Props = {
 };
 
 const ActStat = ({ label, value }: { label: string; value: ReactNode }) => (
-	<div className="min-w-0">
-		<p className="text-[9px] uppercase tracking-widest text-(--text-muted)">{label}</p>
-		<p className="mt-0.5 truncate text-[13px] font-semibold tabular-nums text-(--text-primary)">{value}</p>
+	<div className="min-w-0 rounded-[10px] border border-(--line) bg-(--background)/40 px-3 py-2">
+		<dt className="text-[9px] uppercase tracking-widest text-(--text-muted)">{label}</dt>
+		<dd className="mt-0.5 truncate text-[13px] font-semibold tabular-nums text-(--text-primary)">{value}</dd>
 	</div>
 );
 
@@ -36,7 +37,7 @@ const SummaryStat = ({ label, value }: { label: string; value: ReactNode }) => (
 );
 
 const selectClass =
-	"h-8 max-w-44 rounded-[6px] border border-(--border) bg-(--control) px-2 text-[12px] text-(--text-primary) outline-none focus-visible:border-(--accent) focus-visible:shadow-[0_0_0_2px_var(--accent-soft)]";
+	"h-8 min-w-24 max-w-44 rounded-[6px] border border-(--border) bg-(--control) px-2 text-[12px] text-(--text-primary) outline-none focus-visible:border-(--accent) focus-visible:shadow-[0_0_0_2px_var(--accent-soft)]";
 const toggleClass =
 	"grid h-8 w-8 place-items-center rounded-[6px] border border-(--border) bg-(--control) text-(--text-muted) transition-colors hover:bg-(--surface-hover) hover:text-(--text-primary) focus-visible:outline-none focus-visible:border-(--accent) focus-visible:shadow-[0_0_0_2px_var(--accent-soft)]";
 
@@ -79,25 +80,20 @@ export const ActRankPanel = ({
 		selected.games > 0 ? `${((selected.wins / selected.games) * 100).toFixed(1)}%` : t("liveGame.unavailable");
 
 	return (
-		<section className="panel px-3 py-2.5">
+		<section className="panel @container px-3 py-2.5">
 			<header className={`flex items-center justify-between gap-3 ${expanded ? "border-b border-(--line) pb-2.5" : ""}`}>
 				<div className="min-w-0">
 					<h3 className="text-[12px] font-medium text-(--text-primary)">{t("liveGame.actRank")}</h3>
 					<p className="text-[9px] uppercase tracking-widest text-(--text-muted)">{labelFor(selected.seasonId)}</p>
 				</div>
 				<div className="flex shrink-0 items-center gap-2">
-					<select
-						aria-label={t("liveGame.selectAct")}
+					<SelectMenu
+						ariaLabel={t("liveGame.selectAct")}
 						value={selected.seasonId}
-						onChange={(event) => onSeasonChange(event.target.value)}
+						onChange={onSeasonChange}
 						className={selectClass}
-					>
-						{seasons.map((season) => (
-							<option key={season.seasonId} value={season.seasonId}>
-								{labelFor(season.seasonId)}
-							</option>
-						))}
-					</select>
+						options={seasons.map((season) => ({ value: season.seasonId, label: labelFor(season.seasonId) }))}
+					/>
 					<button
 						type="button"
 						onClick={() => setExpanded((current) => !current)}
@@ -138,12 +134,22 @@ export const ActRankPanel = ({
 				</div>
 			)}
 
+			{/*
+			 * Sized by the card, not the window: on Career the card sits beside a
+			 * summary column, so a viewport breakpoint left it stacked with the
+			 * stats below the fold. Wide enough, the triangle sits on the left and
+			 * the numbers fill the space to its right.
+			 */}
 			<div
 				id={bodyId}
 				hidden={!expanded}
-				className="mx-auto mt-3 grid w-full max-w-[48rem] grid-cols-2 gap-4 lg:grid-cols-[9rem_minmax(16rem,20rem)_10rem] lg:items-center lg:justify-center"
+				data-act-rank-body=""
+				className="mt-3 grid grid-cols-1 items-center gap-5 @lg:grid-cols-[minmax(12rem,16rem)_minmax(0,1fr)]"
 			>
-				<div className="order-2 col-span-2 grid grid-cols-2 gap-3 lg:order-1 lg:col-span-1 lg:grid-cols-1">
+				<div className="mx-auto w-full max-w-[16rem]">
+					<ActRankTriangle winsByTier={selected.winsByTier} wins={selected.wins} />
+				</div>
+				<dl className="grid grid-cols-2 gap-x-4 gap-y-3 @3xl:grid-cols-3">
 					<ActStat
 						label={t("liveGame.rank")}
 						value={
@@ -156,18 +162,13 @@ export const ActRankPanel = ({
 						label={t("liveGame.rankedRating")}
 						value={selected.tier > 0 ? `${selected.rankedRating} / 100` : t("liveGame.unavailable")}
 					/>
-				</div>
-				<div className="order-1 col-span-2 lg:order-2 lg:col-span-1">
-					<ActRankTriangle winsByTier={selected.winsByTier} wins={selected.wins} />
-				</div>
-				<div className="order-3 col-span-2 grid grid-cols-2 gap-3 lg:col-span-1 lg:grid-cols-1">
 					<ActStat label={t("liveGame.wins")} value={selected.wins} />
 					<ActStat label={t("liveGame.games")} value={selected.games} />
 					<ActStat label={t("liveGame.winRate")} value={winRate} />
 					<ActStat label={t("liveGame.peak")} value={rankText(peak)} />
 					<ActStat label={t("liveGame.lowest")} value={rankText(lowest)} />
 					<ActStat label={t("liveGame.finalRank")} value={rankText(selected.tier)} />
-				</div>
+				</dl>
 			</div>
 		</section>
 	);

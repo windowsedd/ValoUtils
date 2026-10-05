@@ -7,7 +7,7 @@ import { tierName } from "@/util/valorant-ranks";
 import { mapName } from "@/util/valorant-maps";
 import { queueLabel } from "@/util/valorant-queues";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { SectionCard, pageBodyClass } from "@/components/section-card";
+import { PageHeader, SectionCard, pageBodyClass } from "@/components/section-card";
 import { FriendProfile } from "@/components/friends/friend-profile";
 import {
 	FriendIdentity,
@@ -338,23 +338,22 @@ const applyFriends = (message: any) => {
 
 	return (
 		<div className="h-full flex flex-col animate-fade-in">
-			{/* Header */}
-			<div className="shrink-0 px-6 pt-5 pb-3 flex items-center justify-between gap-4">
-				<span className="text-sm text-gray-500 shrink-0">{t("friends.count", { count: total })}</span>
-				<div className="glass rounded-lg h-8 flex items-center gap-2 px-3 min-w-0 flex-1 max-w-xs">
-					<FaMagnifyingGlass className="text-gray-600 text-xs shrink-0" />
+			<PageHeader icon={<LuUsers className="text-lg" />} title={t("nav.friends")} subtitle={t("friends.count", { count: total })}>
+				<label className="flex h-8 w-56 min-w-0 items-center gap-2 rounded-[8px] border border-(--border) bg-(--control) px-2.5 focus-within:border-(--accent) focus-within:shadow-[0_0_0_2px_var(--accent-soft)]">
+					<FaMagnifyingGlass className="shrink-0 text-[11px] text-(--text-muted)" />
 					<input
 						value={search}
 						onChange={(e) => setSearch(e.target.value)}
 						placeholder={t("friends.search")}
-						className="min-w-0 flex-1 bg-transparent text-sm outline-none text-gray-200 placeholder:text-gray-600"
+						aria-label={t("friends.search")}
+						className="min-w-0 flex-1 bg-transparent text-[12px] text-(--text-primary) outline-none placeholder:text-(--text-muted)"
 					/>
-				</div>
-				<span className="flex items-center gap-1.5 text-xs shrink-0">
-					<span className={`w-1.5 h-1.5 rounded-full ${live ? "bg-green-400 animate-pulse" : "bg-gray-700"}`} />
-					<span className={live ? "text-gray-400" : "text-gray-600"}>{t("friends.live")}</span>
+				</label>
+				<span className="flex shrink-0 items-center gap-1.5 rounded-full border border-(--border) px-2.5 py-1 text-[11px]">
+					<span className={`h-1.5 w-1.5 rounded-full ${live ? "bg-(--signal-pos) animate-pulse" : "bg-(--text-muted)"}`} />
+					<span className={live ? "text-(--text-secondary)" : "text-(--text-muted)"}>{t("friends.live")}</span>
 				</span>
-			</div>
+			</PageHeader>
 
 			<div ref={listScrollRef} className={pageBodyClass}>
 				{loading && <div className="flex-1 flex items-center justify-center text-gray-500 text-sm">{t("friends.loading")}</div>}

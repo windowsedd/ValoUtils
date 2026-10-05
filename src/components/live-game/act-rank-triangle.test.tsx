@@ -39,3 +39,16 @@ describe("ActRankTriangle", () => {
 		}
 	});
 });
+
+describe("ActRankPanel layout", () => {
+	test("puts the triangle beside the stats based on the card's own width", async () => {
+		const { readFileSync } = await import("node:fs");
+		const { join } = await import("node:path");
+		const source = readFileSync(join(import.meta.dir, "act-rank-panel.tsx"), "utf8");
+		expect(source).toContain("panel @container");
+		expect(source).toContain("@lg:grid-cols-[minmax(12rem,16rem)_minmax(0,1fr)]");
+		// The triangle comes first, so it sits on the left once the card is wide enough.
+		expect(source.indexOf("<ActRankTriangle")).toBeLessThan(source.indexOf('<dl className="grid grid-cols-2'));
+		expect(source).not.toContain("<select");
+	});
+});

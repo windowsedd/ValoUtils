@@ -118,7 +118,7 @@ const SkinCard = ({ weapon, label, assets }: { weapon: WeaponSkin; label: string
 	const skin = key ? assets.skins.get(key) : null;
 	const name = skin ? localize(skin.name) : weapon?.skinId ? label : t("liveGame.unavailable");
 	return (
-		<div className="min-w-0 rounded-lg bg-black/20 border border-white/6 px-2 py-1.5">
+		<div className="min-w-0 rounded-[10px] border border-(--line) bg-(--surface) px-2 py-1.5">
 			<div className="h-7 flex items-center justify-center">
 				{skin?.icon ? <img src={skin.icon} alt={name} className="max-h-7 w-full object-contain" /> : <LuCrosshair aria-hidden="true" className="text-(--text-muted)" />}
 			</div>
@@ -170,7 +170,7 @@ const PlayerRow = ({ player, assets, stats, expanded, onToggle, teamLabel, recen
 		}
 	}, [defaultSeasonId, player.competitiveSeasons, selectedSeasonId]);
 	return (
-		<div className="border-b border-white/5 last:border-0" style={{ borderLeft: `3px solid ${rowAccentColor(player.party)}` }}>
+		<div className="border-b border-(--line) last:border-0" style={{ borderLeft: `3px solid ${rowAccentColor(player.party)}` }}>
 			<button
 				type="button"
 				onClick={onToggle}
@@ -215,8 +215,8 @@ const PlayerRow = ({ player, assets, stats, expanded, onToggle, teamLabel, recen
 				<FaChevronDown className={`justify-self-end text-gray-500 transition-transform motion-reduce:transition-none ${expanded ? "rotate-180" : ""}`} />
 			</button>
 			{expanded && (
-				<div id={detailsId} className="grid grid-cols-1 lg:grid-cols-[1fr_1.5fr] gap-2 px-3 pb-2 pt-2 bg-black/10">
-					<div className="rounded-lg border border-white/6 bg-white/2 p-2">
+				<div id={detailsId} className="grid grid-cols-1 lg:grid-cols-[1fr_1.5fr] gap-2.5 border-t border-(--line) bg-(--background)/50 px-3 pt-2.5 pb-3">
+					<div className="rounded-[10px] border border-(--line) bg-(--surface) p-2.5">
 						<p className="mb-1 text-[10px] text-gray-500">{teamLabel}{partyLabel ? ` · ${partyLabel}` : ""}</p>
 						{stats?.status === "ready" && stats.stats.streak?.kind && stats.stats.streak.matches > 0 && (
 							<p className={`mb-1 text-[10px] font-semibold uppercase tracking-wider ${stats.stats.streak.kind === "win" ? "text-emerald-300" : "text-red-300"}`}>
@@ -294,45 +294,143 @@ export const LiveScoutTable = ({ snapshot, assets, recent, refreshing, refreshEr
 	const enemyCount = snapshot.players.filter((player) => player.teamId === "Enemy").length;
 	const agentFallback = isPregame ? t("liveGame.hiddenAgent") : "";
 	const summaryId = `live-match-summary-${(snapshot.rosterKey ?? "roster").replace(/[^a-z0-9]/gi, "-")}`;
+	const stateLabel = t(`liveGame.state${snapshot.state === "coregame" ? "Coregame" : snapshot.state === "pregame" ? "Pregame" : "Party"}`);
+	const queue = queueLabel(snapshot.match?.queueId);
+	// Only teams the snapshot actually has; Deathmatch has no enemy team to average.
+	const shownTeams = teamSummaries.slice(0, 2);
 	return (
-		<div className="flex-1 min-h-0 px-6 pt-4 pb-5 flex flex-col gap-3 overflow-hidden">
-			<section className="glass rounded-2xl overflow-hidden shrink-0">
-				<div className="relative min-h-16 px-4 py-3 flex items-center gap-3 overflow-hidden">
-					{mapArt && <img src={mapArt} alt="" className="absolute inset-0 w-full h-full object-cover opacity-10" />}
-					<div className="relative min-w-0"><p className="text-[10px] uppercase tracking-widest text-gray-500">{t("liveGame.matchContext")}</p><p className="text-lg font-bold text-white truncate">{map || <span aria-label={t("liveGame.unavailable")}>—</span>}</p></div>
-					<span className="relative px-2 py-1 rounded-full bg-white/6 text-[10px] uppercase tracking-wider text-gray-300">{queueLabel(snapshot.match?.queueId) || t(`liveGame.state${snapshot.state === "coregame" ? "Coregame" : snapshot.state === "pregame" ? "Pregame" : "Party"}`)}</span>
-					<span className="relative px-2 py-1 rounded-[6px] bg-(--accent-soft) text-[10px] font-medium uppercase tracking-wider text-(--accent-selected)">● {t(`liveGame.state${snapshot.state === "coregame" ? "Coregame" : snapshot.state === "pregame" ? "Pregame" : "Party"}`)}</span>
-					{isPregame && (
-						<span className="relative px-2 py-1 rounded-full bg-white/6 text-[10px] font-semibold uppercase tracking-wider text-gray-200">
-							{t("liveGame.pregameRoster", { ally: allyCount, enemy: enemyCount, total: snapshot.players.length })}
-						</span>
-					)}
-					<div className="relative ml-auto flex items-center gap-2">
-						<button type="button" onClick={() => setSummaryExpanded((current) => !current)} aria-expanded={summaryExpanded} aria-controls={summaryId} aria-label={t(summaryExpanded ? "liveGame.collapseSummary" : "liveGame.expandSummary")} className="h-11 w-11 rounded-lg border border-white/10 text-gray-400 hover:text-white hover:bg-white/6 focus-visible:outline-none focus-visible:shadow-[0_0_0_2px_var(--accent-soft)] grid place-items-center transition-colors motion-reduce:transition-none"><FaChevronDown className={`transition-transform motion-reduce:transition-none ${summaryExpanded ? "rotate-180" : ""}`} /></button>
-						<button type="button" onClick={onRefresh} disabled={refreshing} aria-label={t(refreshing ? "liveGame.refreshing" : "liveGame.refresh")} className="h-11 w-11 rounded-lg border border-white/10 text-gray-400 hover:text-white hover:bg-white/6 disabled:opacity-40 focus-visible:outline-none focus-visible:shadow-[0_0_0_2px_var(--accent-soft)] grid place-items-center transition-colors motion-reduce:transition-none"><FaArrowRotateRight className={refreshing ? "animate-spin motion-reduce:animate-none" : ""} /></button>
+		<div className="flex flex-col gap-3.5">
+			<section className="overflow-hidden rounded-[12px] border border-(--border) bg-(--surface)" aria-label={t("liveGame.matchContext")}>
+				<div className="flex items-center gap-3.5 px-4 py-3">
+					<div className="relative h-14 w-24 shrink-0 overflow-hidden rounded-[10px] bg-(--control)">
+						{mapArt && <img src={mapArt} alt="" className="h-full w-full object-cover" />}
+					</div>
+					<div className="min-w-0 flex-1">
+						<p className="truncate text-[17px] leading-tight font-semibold text-(--text-primary)">
+							{map || <span aria-label={t("liveGame.unavailable")}>—</span>}
+						</p>
+						<div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+							<span className="flex items-center gap-1.5 rounded-full border border-(--accent-border) bg-(--accent-soft) px-2 py-0.5 text-[10px] font-medium text-(--accent-selected)">
+								<span className="h-1.5 w-1.5 rounded-full bg-(--accent-selected) animate-pulse motion-reduce:animate-none" aria-hidden="true" />
+								{stateLabel}
+							</span>
+							{queue && <span className="rounded-full border border-(--border) px-2 py-0.5 text-[10px] text-(--text-secondary)">{queue}</span>}
+							{isPregame && (
+								<span className="rounded-full border border-(--border) px-2 py-0.5 text-[10px] text-(--text-secondary)">
+									{t("liveGame.pregameRoster", { ally: allyCount, enemy: enemyCount, total: snapshot.players.length })}
+								</span>
+							)}
+						</div>
+					</div>
+					<div className="flex shrink-0 items-center gap-1.5">
+						{matchup && (
+							<button
+								type="button"
+								onClick={() => setSummaryExpanded((current) => !current)}
+								aria-expanded={summaryExpanded}
+								aria-controls={summaryId}
+								aria-label={t(summaryExpanded ? "liveGame.collapseSummary" : "liveGame.expandSummary")}
+								className={`flex h-8 items-center gap-1.5 rounded-[8px] border px-2.5 text-[11px] font-medium transition-colors motion-reduce:transition-none focus-visible:outline-none focus-visible:shadow-[0_0_0_2px_var(--accent-soft)] ${
+									summaryExpanded
+										? "border-(--accent-border) bg-(--accent-soft) text-(--accent-selected)"
+										: "border-(--border) text-(--text-secondary) hover:bg-(--surface-hover) hover:text-(--text-primary)"
+								}`}
+							>
+								{t("liveGame.matchup")}
+								<FaChevronDown className={`h-2.5 w-2.5 transition-transform motion-reduce:transition-none ${summaryExpanded ? "rotate-180" : ""}`} />
+							</button>
+						)}
+						<button
+							type="button"
+							onClick={onRefresh}
+							disabled={refreshing}
+							aria-label={t(refreshing ? "liveGame.refreshing" : "liveGame.refresh")}
+							title={t(refreshing ? "liveGame.refreshing" : "liveGame.refresh")}
+							className="press-tile grid h-8 w-8 place-items-center rounded-[8px] border border-(--border) text-(--text-secondary) transition-colors hover:bg-(--surface-hover) hover:text-(--text-primary) disabled:opacity-40 focus-visible:outline-none focus-visible:shadow-[0_0_0_2px_var(--accent-soft)] motion-reduce:transition-none"
+						>
+							<FaArrowRotateRight className={`h-3 w-3 ${refreshing ? "animate-spin motion-reduce:animate-none" : ""}`} />
+						</button>
 					</div>
 				</div>
-				{refreshError && <div role="status" className="px-4 py-2 border-t border-red-400/15 bg-red-400/5 text-xs text-red-300 flex items-center justify-between gap-3"><span className="truncate">{refreshError}</span><button type="button" onClick={onRefresh} className="shrink-0 underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300">{t("liveGame.retry")}</button></div>}
+
+				<dl className="flex flex-wrap border-t border-(--line)">
+					{shownTeams.map((team) => {
+						const meta = teamMeta(team.id, t);
+						const tier = team.averageTier != null ? Math.round(team.averageTier) : null;
+						return (
+							<div key={team.id} className="min-w-36 flex-1 border-r border-(--line) px-4 py-2">
+								<dt className="flex items-center gap-1.5 text-[10px] text-(--text-muted)">
+									<span className="h-1.5 w-1.5 rounded-full" style={{ background: meta.color }} aria-hidden="true" />
+									{meta.label} · {t("liveGame.teamAverage")}
+								</dt>
+								<dd className="mt-0.5 flex items-baseline gap-1.5">
+									<span className="text-[13px] font-semibold text-(--text-primary)" style={tier ? { color: tierColor(tier) } : undefined}>
+										{tier ? tierName(tier) : <span aria-label={t("liveGame.unavailable")}>—</span>}
+									</span>
+									<span className="text-[10px] text-(--text-muted)">{t("liveGame.ratedPlayers", { count: team.ratedPlayers ?? 0 })}</span>
+								</dd>
+							</div>
+						);
+					})}
+					<div className="min-w-28 flex-1 border-r border-(--line) px-4 py-2">
+						<dt className="text-[10px] text-(--text-muted)">{t("liveGame.detectedParties")}</dt>
+						<dd className="mt-0.5 text-[13px] font-semibold tabular-nums text-(--text-primary)">{parties}</dd>
+					</div>
+					<div className="min-w-28 flex-1 px-4 py-2">
+						<dt className="text-[10px] text-(--text-muted)">{t("liveGame.rosterSize")}</dt>
+						<dd className="mt-0.5 text-[13px] font-semibold tabular-nums text-(--text-primary)">{snapshot.players.length}</dd>
+					</div>
+				</dl>
+
+				{refreshError && (
+					<div role="status" className="flex items-center justify-between gap-3 border-t border-(--signal-neg)/20 bg-(--signal-neg)/8 px-4 py-2 text-[11px] text-(--signal-neg)">
+						<span className="truncate">{refreshError}</span>
+						<button type="button" onClick={onRefresh} className="shrink-0 underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--signal-neg)">{t("liveGame.retry")}</button>
+					</div>
+				)}
 				{isPregame && enemyCount === 0 && (
-					<div role="status" className="px-4 py-2 border-t border-amber-400/15 bg-amber-400/5 text-xs text-amber-200">
+					<div role="status" className="border-t border-(--signal-warn)/20 bg-(--signal-warn)/8 px-4 py-2 text-[11px] text-(--signal-warn)">
 						{t("liveGame.enemyRosterUnavailable")}
 					</div>
 				)}
-				<div id={summaryId} hidden={!summaryExpanded}>
-					<div className="grid grid-cols-2 lg:grid-cols-4 border-t border-white/6">
-						{[0, 1].map((index) => { const team = teamSummaries[index]; const meta = team ? teamMeta(team.id, t) : { label: t(index === 0 ? "liveGame.teamAlly" : "liveGame.teamEnemy"), color: index === 0 ? "#4ade80" : "#f87171" }; return <div key={team?.id ?? index} className="px-4 py-2.5 border-r border-b lg:border-b-0 border-white/6"><p className="text-[10px] uppercase tracking-wider" style={{ color: meta.color }}>{meta.label} · {t("liveGame.teamAverage")}</p><p className="text-sm font-semibold text-white">{team?.averageTier != null ? tierName(Math.round(team.averageTier)) : <span aria-label={t("liveGame.unavailable")}>—</span>}</p><p className="text-[10px] text-gray-600">{t("liveGame.ratedPlayers", { count: team?.ratedPlayers ?? 0 })}</p></div>; })}
-						<div className="px-4 py-2.5 border-r border-white/6"><p className="text-[10px] uppercase tracking-wider text-gray-500">{t("liveGame.detectedParties")}</p><p className="text-lg font-semibold tabular-nums">{parties}</p></div>
-						<div className="px-4 py-2.5"><p className="text-[10px] uppercase tracking-wider text-gray-500">{t("liveGame.rosterSize")}</p><p className="text-lg font-semibold tabular-nums">{snapshot.players.length}</p></div>
+				{matchup && (
+					<div id={summaryId} hidden={!summaryExpanded}>
+						<LiveTeamMatchup matchup={matchup} mode={recentMode} />
 					</div>
-					{matchup && <LiveTeamMatchup matchup={matchup} mode={recentMode} />}
-				</div>
+				)}
 			</section>
 
-			<section className="glass rounded-2xl overflow-y-auto min-h-0" aria-label={t("liveGame.players")}>
-				<div className="sticky top-0 z-10 grid grid-cols-[minmax(150px,1.5fr)_88px_44px_52px_56px_34px] md:grid-cols-[minmax(180px,300px)_110px_44px_140px_52px_56px_52px_52px_minmax(34px,1fr)] xl:grid-cols-[minmax(180px,300px)_76px_110px_44px_140px_52px_56px_52px_52px_100px_minmax(34px,1fr)] gap-2 px-3 py-2 bg-[#101218]/95 backdrop-blur border-b border-white/8 text-[9px] uppercase tracking-widest text-gray-600">
+			{/* No scroll box of its own: the page scrolls, and the header sticks to its top. */}
+			<section className="rounded-[12px] border border-(--border) bg-(--surface)" aria-label={t("liveGame.players")}>
+				<div className="sticky top-0 z-10 grid grid-cols-[minmax(150px,1.5fr)_88px_44px_52px_56px_34px] md:grid-cols-[minmax(180px,300px)_110px_44px_140px_52px_56px_52px_52px_minmax(34px,1fr)] xl:grid-cols-[minmax(180px,300px)_76px_110px_44px_140px_52px_56px_52px_52px_100px_minmax(34px,1fr)] gap-2 rounded-t-[12px] border-b border-(--line) bg-(--panel-raised) px-3 py-2 text-[9px] uppercase tracking-widest text-(--text-muted)">
 					<span>{t("matches.player")}</span><span className="hidden xl:block">{t("liveGame.detectedParties")}</span><span>{t("liveGame.current")}</span><span>{t("liveGame.rr")}</span><span className="hidden md:block">{t("liveGame.peak")}</span><span>{t("liveGame.kd")}</span><span>{t("liveGame.winRate")}</span><span className="hidden md:block">{t("liveGame.acs")}</span><span className="hidden md:block">{t("liveGame.dpr")}</span><span className="hidden xl:block">{t("liveGame.skins")}</span><span />
 				</div>
-				{teams.map(([teamId, players]) => { const meta = teamMeta(teamId, t); return <div key={teamId}><div className="px-3 py-2 flex items-center gap-2 bg-black/15 border-b border-white/5"><span className="w-2 h-2 rounded-full" style={{ background: meta.color }} /><h2 className="text-[10px] font-bold uppercase tracking-widest" style={{ color: meta.color }}>{meta.label}</h2><span className="ml-auto text-[10px] text-gray-600">{players.length}</span></div>{groupPlayersByParty(players).map((player) => <PlayerRow key={player.puuid} player={player} assets={assets} stats={recent[livePlayerStatsKey(player.puuid)]} expanded={expanded === player.puuid} onToggle={() => setExpanded((current) => current === player.puuid ? null : player.puuid)} teamLabel={meta.label} recentMode={recentMode} inMatch={inMatch} agentFallback={agentFallback} />)}</div>; })}
+				{teams.map(([teamId, players]) => {
+					const meta = teamMeta(teamId, t);
+					return (
+						<div key={teamId}>
+							<div className="flex items-center gap-2 border-b border-(--line) bg-(--background)/40 px-3 py-2">
+								<span className="h-2 w-2 rounded-full" style={{ background: meta.color }} />
+								<h2 className="text-[10px] font-bold uppercase tracking-widest" style={{ color: meta.color }}>{meta.label}</h2>
+								<span className="ml-auto text-[10px] tabular-nums text-(--text-muted)">{players.length}</span>
+							</div>
+							{groupPlayersByParty(players).map((player) => (
+								<PlayerRow
+									key={player.puuid}
+									player={player}
+									assets={assets}
+									stats={recent[livePlayerStatsKey(player.puuid)]}
+									expanded={expanded === player.puuid}
+									onToggle={() => setExpanded((current) => current === player.puuid ? null : player.puuid)}
+									teamLabel={meta.label}
+									recentMode={recentMode}
+									inMatch={inMatch}
+									agentFallback={agentFallback}
+								/>
+							))}
+						</div>
+					);
+				})}
 			</section>
 		</div>
 	);

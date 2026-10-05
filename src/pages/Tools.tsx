@@ -1,7 +1,7 @@
 import { reportIpcError } from "@/util/ipc";
 import { invoke } from "@tauri-apps/api/core";
 import { FriendProfile } from "@/components/friends/friend-profile";
-import { PageHeader } from "@/components/section-card";
+import { PageHeader, PageTabs } from "@/components/section-card";
 import Inventory from "@/pages/Inventory.tsx";
 import type { Friend } from "@/types/friends";
 import type { FriendProfileResponse } from "@/types/friend-profile";
@@ -9,7 +9,7 @@ import { acceptedFriendProfile } from "@/components/friends/friend-profile-state
 import { getTiers, type TierAsset } from "@/util/valorant-assets";
 import { useCallback,  useEffect, useState, type FormEvent, type ReactNode  } from "react";
 import { useTranslation } from "react-i18next";
-import { LuArrowLeft, LuBoxes, LuChevronRight, LuSearch, LuUserSearch, LuWrench } from "react-icons/lu";
+import { LuBoxes, LuLayoutGrid, LuChevronRight, LuSearch, LuUserSearch, LuWrench } from "react-icons/lu";
 import {
 	applyToolsProfileError,
 	applyToolsProfileSuccess,
@@ -157,23 +157,22 @@ const onResolved = useCallback((message: any) => {
 			<PageHeader
 				icon={openTool ? openTool.icon : <LuWrench className="text-lg" />}
 				title={openTool ? openTool.title : t("tools.title")}
-				subtitle={openTool ? undefined : t("tools.subtitle")}
-			>
-				{openTool && (
-					<button
-						type="button"
-						data-tools-back=""
-						onClick={() => setTool(null)}
-						className="flex h-8 items-center gap-1.5 rounded-[6px] border border-(--border) bg-(--control) px-3 text-[12px] font-medium text-(--text-primary) transition-colors hover:bg-(--surface-hover)"
-					>
-						<LuArrowLeft className="h-3 w-3" />
-						{t("tools.allTools")}
-					</button>
-				)}
-			</PageHeader>
+				subtitle={openTool ? openTool.description : t("tools.subtitle")}
+				tabs={
+					<PageTabs
+						label={t("tools.title")}
+						tabs={[
+							{ id: "all" as const, label: t("tools.allTools"), icon: <LuLayoutGrid /> },
+							...catalog.map((entry) => ({ id: entry.id, label: entry.title, icon: entry.icon })),
+						]}
+						value={tool ?? "all"}
+						onChange={(id) => setTool(id === "all" ? null : id)}
+					/>
+				}
+			/>
 
 			{!openTool && (
-				<div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 py-4">
+				<div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 pt-5 pb-6">
 					<div
 						data-tools-grid=""
 						className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(15rem,1fr))]"
@@ -184,7 +183,7 @@ const onResolved = useCallback((message: any) => {
 								type="button"
 								data-tool={entry.id}
 								onClick={() => setTool(entry.id)}
-								className="group flex flex-col items-start gap-2 rounded-[10px] border border-(--border) bg-(--surface) p-4 text-left transition-colors hover:border-(--accent-border) hover:bg-(--surface-hover) focus-visible:outline-none focus-visible:border-(--accent) focus-visible:shadow-[0_0_0_2px_var(--accent-soft)]"
+								className="group flex flex-col items-start gap-2 rounded-[12px] border border-(--border) bg-(--surface) p-4 text-left transition-colors hover:border-(--accent-border) hover:bg-(--surface-hover) focus-visible:outline-none focus-visible:border-(--accent) focus-visible:shadow-[0_0_0_2px_var(--accent-soft)]"
 							>
 								<span className="grid h-9 w-9 place-items-center rounded-[10px] border border-(--accent-border) bg-(--accent-soft) text-[17px] text-(--accent-selected)">
 									{entry.icon}
@@ -201,13 +200,13 @@ const onResolved = useCallback((message: any) => {
 			)}
 
 			{tool === "inventory" && (
-				<div data-tools-inventory="" className="flex min-h-0 flex-1 flex-col overflow-hidden px-6 pt-4">
+				<div data-tools-inventory="" className="flex min-h-0 flex-1 flex-col overflow-hidden px-6 pt-5">
 					<Inventory embedded />
 				</div>
 			)}
 
 			{tool === "lookup" && (
-			<div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden px-6 py-4">
+			<div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden px-6 pt-5 pb-6">
 				<form data-tools-search="" onSubmit={onSearch} className="flex shrink-0 items-center gap-2">
 					<label className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-[6px] border border-(--border) bg-(--control) px-2.5 focus-within:border-(--accent) focus-within:shadow-[0_0_0_2px_var(--accent-soft)]">
 						<LuSearch className="shrink-0 text-[13px] text-(--text-muted)" />

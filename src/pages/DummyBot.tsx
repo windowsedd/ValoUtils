@@ -1,4 +1,5 @@
 import { reportIpcError } from "@/util/ipc";
+import { SelectMenu } from "@/components/select-menu";
 import { invoke } from "@tauri-apps/api/core";
 import { PageHeader, SectionCard, SectionRow, pageBodyClass } from "@/components/section-card";
 import { useCallback,  useEffect, useRef, useState, type ReactNode  } from "react";
@@ -51,6 +52,11 @@ const Field = ({
 
 const DummyBot = () => {
 	const { t } = useTranslation();
+	const channelOptions = (action: CustomBotCommand["action"]) =>
+		channelsForCustomCommand(action).map((channel) => ({
+			value: channel,
+			label: channel === "direct" ? t("dummyBot.customTargetDirect") : channel,
+		}));
 	const [state, setState] = useState<FakePlayerState | null>(null);
 	const [launch, setLaunch] = useState<LaunchState | null>(null);
 	const [launchError, setLaunchError] = useState<string | null>(null);
@@ -433,17 +439,13 @@ const applyConfig = (message: any) => {
 					</p>
 				<div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
 					<Field label={t("dummyBot.customWhenLabel")}>
-						<select
+						<SelectMenu
 							value={draft.when}
-							onChange={(event) => selectWhen(event.target.value as CustomCommandWhen)}
+							onChange={selectWhen}
+							ariaLabel={t("dummyBot.customWhenLabel")}
 							className={fieldClass}
-						>
-							{CUSTOM_COMMAND_WHENS.map((when) => (
-								<option key={when} value={when}>
-									{t(`dummyBot.customWhen.${when}`)}
-								</option>
-							))}
-						</select>
+							options={CUSTOM_COMMAND_WHENS.map((when) => ({ value: when, label: t(`dummyBot.customWhen.${when}`) }))}
+						/>
 					</Field>
 
 					{isLifecycleWhen(draft.when) ? (
@@ -456,17 +458,13 @@ const applyConfig = (message: any) => {
 								</p>
 							</div>
 							<Field label={t("dummyBot.customTargetLabel")}>
-								<select
+								<SelectMenu
 									value={draft.channel}
-									onChange={(event) => setDraft((current) => ({ ...current, channel: event.target.value as CustomBotCommand["channel"] }))}
+									onChange={(channel) => setDraft((current) => ({ ...current, channel }))}
+									ariaLabel={t("dummyBot.customTargetLabel")}
 									className={fieldClass}
-								>
-									{channelsForCustomCommand("send").map((channel) => (
-										<option key={channel} value={channel}>
-											{channel === "direct" ? t("dummyBot.customTargetDirect") : channel}
-										</option>
-									))}
-								</select>
+									options={channelOptions("send")}
+								/>
 							</Field>
 						</>
 					) : (
@@ -480,27 +478,25 @@ const applyConfig = (message: any) => {
 								/>
 							</Field>
 							<Field label={t("dummyBot.customActionLabel")}>
-								<select
+								<SelectMenu
 									value={draft.action}
-									onChange={(event) => setDraft((current) => normalizeCustomBotCommand({ ...current, action: event.target.value as CustomBotCommand["action"] }))}
+									onChange={(action) => setDraft((current) => normalizeCustomBotCommand({ ...current, action }))}
+									ariaLabel={t("dummyBot.customActionLabel")}
 									className={fieldClass}
-								>
-									<option value="send">{t("dummyBot.customActionSend")}</option>
-									<option value="tran">{t("dummyBot.customActionTran")}</option>
-								</select>
+									options={[
+										{ value: "send", label: t("dummyBot.customActionSend") },
+										{ value: "tran", label: t("dummyBot.customActionTran") },
+									]}
+								/>
 							</Field>
 							<Field label={t("dummyBot.customTargetLabel")}>
-								<select
+								<SelectMenu
 									value={draft.channel}
-									onChange={(event) => setDraft((current) => ({ ...current, channel: event.target.value as CustomBotCommand["channel"] }))}
+									onChange={(channel) => setDraft((current) => ({ ...current, channel }))}
+									ariaLabel={t("dummyBot.customTargetLabel")}
 									className={fieldClass}
-								>
-									{channelsForCustomCommand(draft.action).map((channel) => (
-										<option key={channel} value={channel}>
-											{channel === "direct" ? t("dummyBot.customTargetDirect") : channel}
-										</option>
-									))}
-								</select>
+									options={channelOptions(draft.action)}
+								/>
 							</Field>
 						</>
 					)}

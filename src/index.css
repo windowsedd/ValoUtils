@@ -16,6 +16,8 @@
 	color-scheme: dark;
 
 	--background: #0f0f11;
+	/* Window ground behind the floating dock and the page sheet. */
+	--chrome: #09090b;
 	--sidebar: #101012;
 	--surface: #1d1d20;
 	--surface-hover: #252529;
@@ -175,6 +177,30 @@ h6 {
 	border-radius: 8px;
 	backdrop-filter: none;
 	box-shadow: none;
+}
+
+/*
+ * Page sheet
+ *
+ * Every page except Chat sits on a rounded sheet inset from the window. Legacy
+ * `panel` / `glass` blocks inside it pick up the sheet's larger card radius.
+ */
+.page-sheet .panel,
+.page-sheet .glass,
+.page-sheet .panel-raised,
+.page-sheet .glass-strong {
+	border-radius: 12px;
+}
+
+/* Underline tabs carry their own selected state; the global aria-selected
+   fill below is for list options and would paint them as chips. */
+.page-tab[aria-selected="true"],
+.page-tab[aria-selected="false"] {
+	background: transparent;
+}
+
+.page-tab[aria-selected="true"] {
+	color: var(--text-primary);
 }
 
 .readout {

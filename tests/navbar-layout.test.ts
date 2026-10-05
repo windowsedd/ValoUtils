@@ -20,10 +20,12 @@ describe("navbarLayout", () => {
     expect(navbarLayout.railStatus).toContain("shrink-0");
   });
 
-  test("uses airy direct-route spacing on 40px tiles", () => {
-    expect(navbarLayout.railRoutes).toContain("gap-2");
-    expect(navbarLayout.railButton).toContain("h-10");
-    expect(navbarLayout.railButton).toContain("w-10");
+  test("seats 38px route tiles inside a floating dock", () => {
+    expect(navbarLayout.railRoutes).toContain("gap-1.5");
+    expect(navbarLayout.railButton).toContain("h-[38px]");
+    expect(navbarLayout.railButton).toContain("w-[38px]");
+    expect(navbarLayout.dock).toContain("rounded-[16px]");
+    expect(navbarLayout.dock).toContain("bg-(--surface)");
   });
 
   test("marks the selected route with a solid accent tile, not a tick", () => {

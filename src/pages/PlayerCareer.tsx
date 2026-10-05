@@ -4,7 +4,7 @@ import { initialSeasonId } from "@/components/live-game/act-rank";
 import { ActRankPanel } from "@/components/live-game/act-rank-panel";
 import { LoginRequiredPanel } from "@/components/login-required-panel";
 import { RankShieldBadge } from "@/components/rank-shield-badge";
-import { PageHeader, SectionCard, pageBodyClass } from "@/components/section-card";
+import { PageHeader, PageSplit, pageBodyClass } from "@/components/section-card";
 import type { CompetitiveSeason } from "@/types/live-game";
 import { rateLimitedSeconds } from "@/util/rate-limit";
 import { getSeasonAssets, getTiers, type SeasonAsset, type TierAsset } from "@/util/valorant-assets";
@@ -131,70 +131,80 @@ const onResponse = (message: any) => {
 	const currentRR: number = latest?.RankedRatingAfterUpdate ?? 0;
 	const color = tierColor(currentTier);
 
+	const ready = !loading && !error && !loginRequired && data;
+
 	return (
 		<div className="flex h-full flex-col animate-fade-in">
-			<PageHeader icon={<LuTrophy className="text-lg" />} title={t("career.title")} />
+			<PageHeader
+				icon={<LuTrophy className="text-lg" />}
+				title={t("career.title")}
+				subtitle={ready ? t("career.subtitle") : undefined}
+			/>
 
-			<div className={pageBodyClass}>
-				{loading && (
-					<div className="flex flex-1 items-center justify-center text-sm text-gray-500">{t("career.loading")}</div>
-				)}
+			{!ready && (
+				<div className={pageBodyClass}>
+					{loading && (
+						<div className="flex flex-1 items-center justify-center text-[12px] text-(--text-muted)">{t("career.loading")}</div>
+					)}
 
-				{!loading && loginRequired && (
-					<LoginRequiredPanel
-						onRetry={() => setReloadKey((key) => key + 1)}
-						icon={<LuTrophy />}
-						title={t("career.loginRequired")}
-						description={t("career.loginRequiredDesc")}
-					/>
-				)}
-
-				{!loading && error && !loginRequired && (
-					<div className="glass rounded-lg px-4 py-3">
-						<p className="text-sm font-semibold text-red-300">{t("career.failedToLoad")}</p>
-						<p className="mt-0.5 text-xs text-gray-500">{error}</p>
-					</div>
-				)}
-
-				{!loading && !error && !loginRequired && data && (
-					<>
-						<SectionCard
-							title={t("career.currentRank")}
-							accent={currentTier > 0 ? color : "#6b7280"}
-							right={currentTier > 0 ? <span className="tabular-nums">{currentRR} RR</span> : null}
-						>
-							{currentTier === 0 ? (
-								<p className="px-3 py-2 text-2xl font-bold text-gray-400">{t("career.unranked")}</p>
-							) : (
-								<div className="flex items-center gap-5 px-3 py-1">
-									<RankBadge tier={currentTier} tiers={tiers} size={80} large />
-									<div className="min-w-0 flex-1">
-										<div className="mb-2.5 flex items-end gap-3">
-											<p className="text-3xl font-bold leading-none" style={{ color }}>{tierName(currentTier)}</p>
-											<p className="text-base leading-none text-gray-400">{currentRR} RR</p>
-											<RankShieldBadge tier={currentTier} remaining={data.rankShields} />
-										</div>
-										<div className="h-1.5 overflow-hidden rounded-full bg-white/10">
-											<div className="h-full rounded-full transition-all duration-700" style={{ width: `${currentRR}%`, background: color }} />
-										</div>
-										<p className="mt-1.5 text-xs text-gray-600">{t("career.rrToNext", { rr: currentRR })}</p>
-									</div>
-								</div>
-							)}
-						</SectionCard>
-
-						<ActRankPanel
-							defaultExpanded
-							competitiveSeasons={data.competitiveSeasons}
-							assets={{ seasons }}
-							selectedSeasonId={selectedSeasonId}
-							onSeasonChange={setSelectedSeasonId}
+					{!loading && loginRequired && (
+						<LoginRequiredPanel
+							onRetry={() => setReloadKey((key) => key + 1)}
+							icon={<LuTrophy />}
+							title={t("career.loginRequired")}
+							description={t("career.loginRequiredDesc")}
 						/>
+					)}
 
-						<FriendMatchHistory puuid={data.puuid} matches={matches} />
-					</>
-				)}
-			</div>
+					{!loading && error && !loginRequired && (
+						<div className="panel px-4 py-3">
+							<p className="text-[12px] font-semibold text-(--signal-neg)">{t("career.failedToLoad")}</p>
+							<p className="mt-0.5 text-[11px] text-(--text-muted)">{error}</p>
+						</div>
+					)}
+				</div>
+			)}
+
+			{ready && (
+				<PageSplit
+					aside={
+						<section
+							aria-label={t("career.currentRank")}
+							className="flex flex-col items-center gap-2 rounded-[12px] border border-(--border) bg-(--surface) px-4 pt-5 pb-4 text-center"
+						>
+							<span className="text-[10px] font-medium tracking-[0.08em] text-(--text-muted) uppercase">
+								{t("career.currentRank")}
+							</span>
+							{currentTier === 0 ? (
+								<p className="py-4 text-[20px] font-semibold text-(--text-secondary)">{t("career.unranked")}</p>
+							) : (
+								<>
+									<RankBadge tier={currentTier} tiers={tiers} size={88} large />
+									<p className="text-[20px] leading-tight font-semibold" style={{ color }}>{tierName(currentTier)}</p>
+									<div className="flex items-center gap-2">
+										<span className="tabular-nums text-[12px] text-(--text-secondary)">{currentRR} RR</span>
+										<RankShieldBadge tier={currentTier} remaining={data.rankShields} />
+									</div>
+									<div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-(--control)">
+										<div className="h-full rounded-full transition-all duration-700" style={{ width: `${currentRR}%`, background: color }} />
+									</div>
+									<p className="text-[11px] text-(--text-muted)">{t("career.rrToNext", { rr: currentRR })}</p>
+								</>
+							)}
+						</section>
+					}
+				>
+					<ActRankPanel
+						defaultExpanded
+						competitiveSeasons={data.competitiveSeasons}
+						assets={{ seasons }}
+						selectedSeasonId={selectedSeasonId}
+						onSeasonChange={setSelectedSeasonId}
+					/>
+
+					<FriendMatchHistory puuid={data.puuid} matches={matches} />
+				</PageSplit>
+			)}
 		</div>
 	);
 };

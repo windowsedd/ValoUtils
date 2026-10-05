@@ -5,7 +5,7 @@ import { useDynamicModal } from "@/components/dynamic-modal";
 import { navbarLayout } from "@/components/navbar-layout";
 import { ParsedSettingsViewer } from "@/components/parsed-settings-viewer";
 import { useCallback,  useEffect, useRef, useState  } from "react";
-import { LuCheck, LuChevronDown, LuEye, LuSmartphone, LuUser, LuUserX } from "react-icons/lu";
+import { LuChevronDown, LuEye, LuSmartphone, LuTriangleAlert, LuUser, LuUserX } from "react-icons/lu";
 import { useTranslation } from "react-i18next";
 
 type Status = "loading" | "offline" | "online";
@@ -192,7 +192,7 @@ const RiotStatusBar = ({ compact = false }: RiotStatusBarProps) => {
 						<span className="grid h-7 w-7 place-items-center rounded-full bg-(--control) text-[15px]" aria-hidden="true">
 							{info.status === "online" ? <LuUser /> : <LuUserX />}
 						</span>
-						<span className={`absolute bottom-1.5 right-1.5 h-2.5 w-2.5 rounded-full border-2 border-(--sidebar) ${dot[info.status]}`} aria-hidden="true" />
+						<span className={`absolute bottom-1.5 right-1.5 h-2.5 w-2.5 rounded-full border-2 border-(--surface) ${dot[info.status]}`} aria-hidden="true" />
 						{/* Suppressed while the menu is open — it is anchored to the same
 						    corner and would sit on top of the menu's footer text. */}
 						{!menuOpen && (
@@ -213,11 +213,23 @@ const RiotStatusBar = ({ compact = false }: RiotStatusBarProps) => {
 
 			{menuOpen && (
 				<div className={compact ? navbarLayout.statusMenuCompact : navbarLayout.statusMenu} role="menu">
-					<div className="px-2.5 py-2">
-						<p className="truncate text-[12px] font-semibold text-(--text-primary)">{accountLabel}</p>
-						<p className={`mt-0.5 text-[11px] ${presence ? presenceColor[presence.mode] : "text-(--text-muted)"}`}>
-							{presenceLabel}
-						</p>
+					<div className="flex items-center gap-2.5 px-2 pt-1.5 pb-2.5">
+						<span className="relative grid h-9 w-9 shrink-0 place-items-center rounded-full bg-(--control) text-[16px] text-(--text-secondary)" aria-hidden="true">
+							{info.status === "online" ? <LuUser /> : <LuUserX />}
+							<span className={`absolute -right-0.5 -bottom-0.5 h-3 w-3 rounded-full border-2 border-(--surface) ${dot[info.status]}`} />
+						</span>
+						<div className="min-w-0">
+							<p className={`truncate text-[13px] font-semibold ${info.status === "online" ? "text-(--text-primary)" : "text-(--text-secondary)"}`}>
+								{accountLabel}
+							</p>
+							{/* The saved presence mode only describes you while you're signed in;
+							    under "Riot Client offline" it would read as a contradiction. */}
+							{info.status === "online" && (
+								<p className={`mt-0.5 flex items-center gap-1 text-[11px] ${presence ? presenceColor[presence.mode] : "text-(--text-muted)"}`}>
+									{presenceLabel}
+								</p>
+							)}
+						</div>
 					</div>
 
 					{info.status === "online" && (
@@ -225,7 +237,7 @@ const RiotStatusBar = ({ compact = false }: RiotStatusBarProps) => {
 							size="sm"
 							showStatusColor={false}
 							modalOnError={false}
-							className="!h-8 !min-w-0 w-full !justify-start gap-2 !rounded-[6px] !bg-transparent px-2.5 text-[12px] !text-(--text-secondary) hover:!bg-(--surface-hover)"
+							className="!h-8 !min-w-0 w-full !justify-start gap-2 !rounded-[8px] !border-0 !bg-transparent px-2 text-[12px] !text-(--text-secondary) hover:!bg-(--surface-hover) hover:!text-(--text-primary)"
 							onClickLoading={viewSettings}
 						>
 							<LuEye className="text-(--accent-selected)" />
@@ -233,33 +245,43 @@ const RiotStatusBar = ({ compact = false }: RiotStatusBarProps) => {
 						</CustomButton>
 					)}
 
-					<div className="mt-1 border-t border-(--line) pt-1">
-						<p className="px-2.5 py-1 text-[10px] uppercase tracking-widest text-(--text-muted)">{t("riotStatus.presenceControl")}</p>
-						{(["online", "offline", "mobile"] as PresenceMode[]).map((mode) => (
-							<button
-								key={mode}
-								type="button"
-								role="menuitemradio"
-								aria-checked={presence?.mode === mode}
-								disabled={!presence || presence.activeConnections < 1}
-								onClick={() => setMode(mode)}
-								className="flex w-full items-center gap-2 rounded-[6px] px-2.5 py-1.5 text-left text-[12px] text-(--text-secondary) hover:bg-(--surface-hover) hover:text-(--text-primary) disabled:cursor-not-allowed disabled:opacity-40"
-							>
-								<span className={presenceColor[mode]}>{presenceIcon[mode]}</span>
-								<span className="flex-1">{t(`riotStatus.presence.${mode}`)}</span>
-								{presence?.mode === mode && <LuCheck className="text-(--accent-selected)" />}
-							</button>
-						))}
+					<div className="mt-1 border-t border-(--line) px-1 pt-2.5 pb-1">
+						<p className="px-1 pb-2 text-[10px] font-medium tracking-[0.08em] text-(--text-muted) uppercase">{t("riotStatus.presenceControl")}</p>
+						<div className="grid grid-cols-3 gap-1.5" role="group" aria-label={t("riotStatus.presenceControl")}>
+							{(["online", "offline", "mobile"] as PresenceMode[]).map((mode) => {
+								const selected = presence?.mode === mode;
+								return (
+									<button
+										key={mode}
+										type="button"
+										role="menuitemradio"
+										aria-checked={selected}
+										disabled={!presence || presence.activeConnections < 1}
+										onClick={() => setMode(mode)}
+										className={`flex flex-col items-center gap-1 rounded-[10px] border px-1 py-2 text-[11px] transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${
+											selected
+												? "border-(--accent-border) bg-(--accent-soft) text-(--text-primary)"
+												: "border-(--border) text-(--text-secondary) enabled:hover:bg-(--surface-hover) enabled:hover:text-(--text-primary)"
+										}`}
+									>
+										<span className={`text-[15px] ${presenceColor[mode]}`}>{presenceIcon[mode]}</span>
+										<span>{t(`riotStatus.presence.${mode}`)}</span>
+									</button>
+								);
+							})}
+						</div>
 					</div>
 
 					{(!presence || presence.activeConnections < 1) && (
-						<p className={`${navbarLayout.statusMessage} text-(--signal-warn)`}>
-							{t("riotStatus.relayRequired")}
+						<p className={`${navbarLayout.statusMessage} border-(--signal-warn)/25 bg-(--signal-warn)/8 text-(--signal-warn)`}>
+							<LuTriangleAlert className="mt-px shrink-0" aria-hidden="true" />
+							<span>{t("riotStatus.relayRequired")}</span>
 						</p>
 					)}
 					{presence?.lastWarning && (
-						<p className={`${navbarLayout.statusMessage} text-(--signal-neg)`}>
-							{presence.lastWarning}
+						<p className={`${navbarLayout.statusMessage} border-(--signal-neg)/25 bg-(--signal-neg)/8 text-(--signal-neg)`}>
+							<LuTriangleAlert className="mt-px shrink-0" aria-hidden="true" />
+							<span>{presence.lastWarning}</span>
 						</p>
 					)}
 				</div>

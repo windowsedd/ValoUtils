@@ -49,4 +49,22 @@ describe("Router command rail layout", () => {
     expect(markup).toContain('aria-label="nav.fake-player"');
     expect(markup).not.toContain('aria-label="nav.more"');
   });
+
+  test("puts every page, Chat included, on the inset sheet", () => {
+    const render = (ids: string[]) =>
+      renderToStaticMarkup(
+        <RouterProvider routes={ids.map(route)}>
+          <Router />
+        </RouterProvider>,
+      );
+
+    const profiles = render(["profiles", "chat"]);
+    expect(profiles).toContain('data-page-frame="sheet"');
+    expect(profiles).toContain("page-sheet");
+
+    const chat = render(["chat", "profiles"]);
+    expect(chat).toContain('data-page-frame="sheet"');
+    expect(chat).toContain("page-sheet");
+    expect(chat).toContain("chat page");
+  });
 });

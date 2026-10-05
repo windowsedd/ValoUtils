@@ -307,12 +307,14 @@ not strike the PD budget. Name and rank enrichment spends the PD budget on the
 current party members before the rest of the roster. Solo queue keeps roster order.
 
 Snapshots also include `events` with stable IDs and `observedAt` Unix milliseconds.
-The collapsible Events panel in the bottom-right of Live Game shows these with
+The Events sidebar on the right of Live Game shows these with agent icons and
 localized agent names, respects hidden player names, and retains the original
 timestamps across refreshes and the transition into the same core game. Events
 are scoped to the current match and collected in memory while the app runs.
-The panel reserves space below the scrollable roster, both expanded and collapsed,
-so it never covers player details toggles.
+It is a full-height column beside the roster (never overlaying it), so it cannot
+cover player details toggles. Collapsed, it is a narrow strip that still shows
+the count; the collapsed choice is remembered per viewer in localStorage. The
+match summary and roster scroll as one column, with the roster header sticky.
 The Events UI also filters incoming entries and their count against the current
 allied roster (including yourself), excluding enemies and unknown players even
 in older snapshots. In core game it uses your Red/Blue team rather than assuming

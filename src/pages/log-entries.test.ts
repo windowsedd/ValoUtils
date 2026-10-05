@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { filterLogEntries, formatLogEntry, formatLogSize, type LogEntry } from "@/pages/log-entries";
+import { filterLogEntries, formatLogEntry, formatLogSize, parsePdBudget, pdBudgetHeadline, type LogEntry } from "@/pages/log-entries";
 
 const entry = (level: LogEntry["level"], message: string, target = "valoutils::commands::live"): LogEntry => ({
   timestamp: "2026-09-08 12:34:56",
@@ -68,5 +68,34 @@ describe("formatLogSize", () => {
   it("does not render a negative or unreadable size", () => {
     expect(formatLogSize(-1)).toBe("0 KB");
     expect(formatLogSize(Number.NaN)).toBe("0 KB");
+  });
+});
+
+describe("parsePdBudget", () => {
+  it("reads the endpoint breakdown and the longest-waiting endpoint", () => {
+    const details = parsePdBudget(
+      "PD budget: 10 requests in 223s, longest wait 340ms (/mmr/v1/players/<id>); /mmr/v1/players/<id> x6, /match-details/v1/matches/<id> x3, /name-service/v2/players x1",
+    );
+
+    expect(details).toEqual({
+      requests: 10,
+      seconds: 223,
+      longestWaitMs: 340,
+      longestEndpoint: "/mmr/v1/players/<id>",
+      endpoints: [
+        { endpoint: "/mmr/v1/players/<id>", count: 6 },
+        { endpoint: "/match-details/v1/matches/<id>", count: 3 },
+        { endpoint: "/name-service/v2/players", count: 1 },
+      ],
+    });
+    expect(pdBudgetHeadline(details!)).toBe("PD budget: 10 requests in 223s, longest wait 340ms");
+  });
+
+  it("accepts lines from builds that logged no breakdown", () => {
+    expect(parsePdBudget("PD budget: 34 requests in 60s, longest wait 180ms")?.endpoints).toEqual([]);
+  });
+
+  it("ignores other messages", () => {
+    expect(parsePdBudget("Riot throttled /mmr/v1/players/<id> (strike 1)")).toBeNull();
   });
 });

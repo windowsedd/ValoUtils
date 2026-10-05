@@ -111,6 +111,30 @@ describe("LiveEventLog", () => {
     expect(events[0]).toBe(event);
   });
 
+  test("opens as a full-height sidebar with the count in its header", () => {
+    const markup = renderToStaticMarkup(<LiveEventLog events={[event]} players={[player]} agents={agents} />);
+    expect(markup).toContain('data-live-events="expanded"');
+    expect(markup).toContain("w-72");
+    expect(markup).not.toContain("self-end");
+  });
+
+  test("starts collapsed to a strip when the viewer collapsed it last time", () => {
+    const previous = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+    Object.defineProperty(globalThis, "localStorage", {
+      configurable: true,
+      value: { getItem: () => "1", setItem: () => {} },
+    });
+    try {
+      const markup = renderToStaticMarkup(<LiveEventLog events={[event]} players={[player]} agents={agents} />);
+      expect(markup).toContain('data-live-events="collapsed"');
+      expect(markup).toContain('aria-expanded="false"');
+      expect(eventCount(markup)).toBe("1");
+    } finally {
+      if (previous) Object.defineProperty(globalThis, "localStorage", previous);
+      else Reflect.deleteProperty(globalThis, "localStorage");
+    }
+  });
+
   test("has a useful empty state before any locks are seen", () => {
     const markup = renderToStaticMarkup(<LiveEventLog events={[]} players={[]} agents={agents} />);
     expect(markup).toContain("Agent locks will appear here.");

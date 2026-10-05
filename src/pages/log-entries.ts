@@ -43,3 +43,41 @@ export const formatLogSize = (bytes: number) => {
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 };
+
+export type PdBudgetDetails = {
+  requests: number;
+  seconds: number;
+  longestWaitMs: number;
+  /** The endpoint that waited longest, when the line names one. */
+  longestEndpoint: string | null;
+  /** Busiest first, as the backend writes them. Empty on lines from older builds. */
+  endpoints: { endpoint: string; count: number }[];
+};
+
+const PD_BUDGET =
+  /^PD budget: (\d+) requests in (\d+)s, longest wait (\d+)ms(?: \(([^)]+)\))?(?:; (.+))?$/;
+
+/**
+ * Reads the rate gate's window summary back into numbers, so the Logs page can
+ * show the per-endpoint breakdown as a table instead of one long line.
+ */
+export const parsePdBudget = (message: string): PdBudgetDetails | null => {
+  const match = PD_BUDGET.exec(message.trim());
+  if (!match) return null;
+  const endpoints = (match[5] ?? "")
+    .split(", ")
+    .map((part) => /^(.+) x(\d+)$/.exec(part))
+    .filter((part): part is RegExpExecArray => part !== null)
+    .map((part) => ({ endpoint: part[1], count: Number(part[2]) }));
+  return {
+    requests: Number(match[1]),
+    seconds: Number(match[2]),
+    longestWaitMs: Number(match[3]),
+    longestEndpoint: match[4] ?? null,
+    endpoints,
+  };
+};
+
+/** The headline of a PD budget line, without the endpoint list. */
+export const pdBudgetHeadline = (details: PdBudgetDetails) =>
+  `PD budget: ${details.requests} requests in ${details.seconds}s, longest wait ${details.longestWaitMs}ms`;

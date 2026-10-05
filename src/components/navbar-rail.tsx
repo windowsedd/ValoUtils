@@ -106,13 +106,14 @@ export const NavbarRail = ({
   statusControl,
 }: NavbarRailProps) => (
   <aside className={navbarLayout.rail} data-command-rail="compact">
+    <div className={navbarLayout.dock} data-rail-dock="">
     <div className={navbarLayout.railMark} aria-label="ValoUtils">
       <img
         src={valoUtilsIcon}
         alt=""
         aria-hidden="true"
         data-brand-mark="valoutils-icon"
-        className="h-10 w-10 object-contain"
+        className="h-8 w-8 object-contain"
       />
     </div>
 
@@ -150,5 +151,6 @@ export const NavbarRail = ({
     </nav>
 
     <div className={navbarLayout.railStatus}>{statusControl}</div>
+    </div>
   </aside>
 );

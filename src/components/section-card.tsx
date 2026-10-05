@@ -18,6 +18,7 @@ import { LuChevronDown } from "react-icons/lu";
  * weapon, and mounting every skin row of every closed card is work no one sees.
  */
 export const SectionCard = ({
+	id,
 	title,
 	accent = "#8064e9",
 	count,
@@ -27,6 +28,7 @@ export const SectionCard = ({
 	collapsible = false,
 	defaultOpen = true,
 }: {
+	id?: string;
 	title: string;
 	accent?: string;
 	count?: number;
@@ -41,7 +43,7 @@ export const SectionCard = ({
 	const label = (
 		<div className="flex min-w-0 items-center gap-2">
 			<span aria-hidden="true" className="h-3 w-0.5 shrink-0 rounded-full" style={{ background: accent }} />
-			<h2 className="truncate text-[12px] font-medium text-(--text-primary)">
+			<h2 className="truncate text-[12px] font-semibold text-(--text-primary)">
 				{title}
 			</h2>
 		</div>
@@ -61,27 +63,27 @@ export const SectionCard = ({
 	);
 	// The hairline belongs to the seam between header and body, so a closed card
 	// must not keep it — it would read as a rule under nothing.
-	const rule = shown ? "border-b border-(--line)" : "";
+	const rule = shown ? "rounded-t-[12px] border-b border-(--line)" : "rounded-[12px]";
 
 	return (
-		<section className={`panel ${className}`}>
+		<section id={id} className={`scroll-mt-5 rounded-[12px] border border-(--border) bg-(--surface) ${className}`}>
 			{collapsible ? (
 				<button
 					type="button"
 					onClick={() => setOpen((current) => !current)}
 					aria-expanded={open}
-					className={`flex w-full items-center justify-between gap-3 px-3 py-2 text-left transition-colors duration-150 hover:bg-(--surface-hover) motion-reduce:transition-none ${rule}`}
+					className={`flex w-full items-center justify-between gap-3 px-4 py-2.5 text-left transition-colors duration-150 hover:bg-(--surface-hover) motion-reduce:transition-none ${rule}`}
 				>
 					{label}
 					{meta}
 				</button>
 			) : (
-				<header className={`flex items-center justify-between gap-3 px-3 py-2 ${rule}`}>
+				<header className={`flex items-center justify-between gap-3 px-4 py-2.5 ${rule}`}>
 					{label}
 					{meta}
 				</header>
 			)}
-			{shown && <div className="flex flex-col px-1.5 py-1.5">{children}</div>}
+			{shown && <div className="flex flex-col p-2">{children}</div>}
 		</section>
 	);
 };
@@ -104,7 +106,7 @@ export const SectionRow = ({
 
 	return (
 		<div
-			className={`readout gap-3 rounded-[6px] px-2.5 py-2 transition-colors duration-150 ${
+			className={`readout gap-3 rounded-[8px] px-3 py-2 transition-colors duration-150 ${
 				muted ? "hover:bg-(--surface-hover)" : "hover:bg-(--surface-hover)"
 			} ${className}`}
 		>
@@ -126,24 +128,95 @@ export const SectionRow = ({
  * header hairline.
  */
 export const pageBodyClass =
-	"flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-6 pt-4 pb-6";
+	"flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto px-6 pt-5 pb-6";
 
 /**
- * Page header used above the section stack: an accent icon, the page name, and
- * an optional muted subtitle, with actions pushed to the right.
+ * Page header at the top of the sheet: an accent icon tile, the page name with
+ * an optional muted subtitle beneath it, actions on the right, and optional
+ * underline tabs riding the bottom hairline.
  */
 export const PageHeader = ({
 	icon,
 	title,
 	subtitle,
+	tabs,
 	children,
-}: { icon: ReactNode; title: string; subtitle?: string; children?: ReactNode }) => (
-	<div className="shrink-0 flex items-center justify-between gap-4 border-b border-(--line) px-6 py-3">
-		<div className="flex min-w-0 items-baseline gap-2.5">
-			<span className="self-center text-(--text-secondary) [&_svg]:text-(--text-secondary)">{icon}</span>
-			<h1 className="truncate text-[13px] font-semibold text-(--text-primary)">{title}</h1>
-			{subtitle && <span className="truncate text-[11px] text-(--text-muted)">{subtitle}</span>}
+}: {
+	icon: ReactNode;
+	title: string;
+	subtitle?: string;
+	tabs?: ReactNode;
+	children?: ReactNode;
+}) => (
+	<header className="shrink-0 border-b border-(--line)">
+		<div className={`flex items-center justify-between gap-4 px-6 pt-4 ${tabs ? "pb-2" : "pb-3.5"}`}>
+			<div className="flex min-w-0 items-center gap-3">
+				<span
+					aria-hidden="true"
+					className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] border border-(--accent-border) bg-(--accent-soft) text-(--accent-selected) [&_svg]:text-[16px]"
+				>
+					{icon}
+				</span>
+				<div className="min-w-0">
+					<h1 className="truncate text-[16px] leading-tight font-semibold text-(--text-primary)">{title}</h1>
+					{subtitle && <p className="mt-0.5 truncate text-[11px] text-(--text-muted)">{subtitle}</p>}
+				</div>
+			</div>
+			{children && <div className="flex shrink-0 items-center gap-2.5">{children}</div>}
 		</div>
-		{children && <div className="flex shrink-0 items-center gap-3">{children}</div>}
+		{tabs}
+	</header>
+);
+
+/**
+ * Underline tabs for the PageHeader `tabs` slot. The active tab is marked by
+ * an accent rule sitting on the header hairline.
+ */
+export const PageTabs = <T extends string>({
+	tabs,
+	value,
+	onChange,
+	label,
+}: {
+	tabs: { id: T; label: string; icon?: ReactNode }[];
+	value: T | null;
+	onChange: (id: T) => void;
+	label: string;
+}) => (
+	<div role="tablist" aria-label={label} className="command-rail-scroll flex gap-5 overflow-x-auto px-6">
+		{tabs.map((tab) => {
+			const active = tab.id === value;
+			return (
+				<button
+					key={tab.id}
+					type="button"
+					role="tab"
+					aria-selected={active}
+					data-page-tab={tab.id}
+					onClick={() => onChange(tab.id)}
+					className={`page-tab press-flat relative flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap text-[12px] font-medium outline-none transition-colors duration-150 after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:rounded-full focus-visible:text-(--text-primary) ${
+						active
+							? "text-(--text-primary) after:bg-(--accent)"
+							: "text-(--text-muted) after:bg-transparent hover:text-(--text-secondary)"
+					}`}
+				>
+					{tab.icon && <span className="text-[13px] [&_svg]:block">{tab.icon}</span>}
+					{tab.label}
+				</button>
+			);
+		})}
+	</div>
+);
+
+/**
+ * Two-pane page body: a fixed summary column on the left and a scrolling main
+ * column. Use under PageHeader in place of a single pageBodyClass body.
+ */
+export const PageSplit = ({ aside, children }: { aside: ReactNode; children: ReactNode }) => (
+	<div className="flex min-h-0 flex-1 overflow-hidden" data-page-split="">
+		<aside className="flex w-[17rem] shrink-0 flex-col gap-3.5 overflow-y-auto border-r border-(--line) px-5 pt-5 pb-6">
+			{aside}
+		</aside>
+		<div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3.5 overflow-y-auto px-6 pt-5 pb-6">{children}</div>
 	</div>
 );

@@ -235,6 +235,7 @@
   },
   "career": {
     "title": "戰績",
+    "subtitle": "你的競技排位、賽季紀錄與近期對戰",
     "loading": "載入戰績資料中...",
     "failedToLoad": "無法載入戰績資料",
     "loginRequired": "需要登入 Riot 用戶端",
@@ -403,8 +404,8 @@
     "cmdDodge": "離開選角",
     "noTeamRoom": "未偵測到團隊聊天室",
     "noAllRoom": "未偵測到全體聊天室",
-    "searchConversations": "搜尋對話",
     "matchEnded": "對戰已結束，正在顯示上一場對戰的聊天。",
+    "searchConversations": "搜尋對話",
     "noConversations": "找不到對話",
     "markAsRead": "標為已讀",
     "openFriends": "開啟好友列表",
@@ -679,6 +680,9 @@
     "customDirectRequiresRelay": "私訊會由 Dummy Bot 傳送密語，且需要 Riot 轉送連線。",
     "customDirectSent": "Dummy Bot 已傳送私訊給你。",
     "customMessagePlaceholder": "gl hf",
+    "messageExpand": "開啟全螢幕編輯器",
+    "messageLength": "{{count}} / {{limit}} 個字元（變數填入前）",
+    "messageDone": "完成",
     "variablesButton": "變數",
     "variablesLabel": "Bot 指令變數",
     "variableGroup": {
@@ -816,7 +820,14 @@
     "failed": "無法讀取日誌。",
     "empty": "尚未有任何日誌",
     "emptyHint": "本次工作階段的警告與錯誤會顯示在這裡。",
-    "truncated": "僅顯示日誌檔案最近的部分。"
+    "truncated": "僅顯示日誌檔案最近的部分。",
+    "pdBudget": {
+      "endpoints_other": "{{count}} 個端點",
+      "endpoint": "端點",
+      "requests": "請求",
+      "rate": "每分鐘 {{rate}} 次",
+      "waitedLongest": "等待最久"
+    }
   },
   "ai": {
     "fetchModels": "取得模型",

@@ -3,13 +3,13 @@ import { AiModelPicker } from "@/components/ai-model-picker";
 import { type AiProvider, type AiSettings, type AiReply } from "@/util/ai";
 import { reportIpcError } from "@/util/ipc";
 import { invoke } from "@tauri-apps/api/core";
-import { useCallback,  useEffect, useState  } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { gooeyToast as toast } from "goey-toast";
 import { useTranslation } from "react-i18next";
 import { FaGlobe, FaRocket, FaCode, FaChartBar, FaLanguage, FaKey, FaArrowUpRightFromSquare, FaCopy, FaCheck, FaEye, FaEyeSlash, FaBook, FaComments, FaGaugeHigh, FaListOl } from "react-icons/fa6";
 import { LuBot, LuMonitor, LuScrollText, LuSettings } from "react-icons/lu";
 import { DisplaySetting } from "@/components/display-setting";
-import { PageHeader, SectionCard, pageBodyClass } from "@/components/section-card";
+import { PageHeader, PageTabs, SectionCard, pageBodyClass } from "@/components/section-card";
 import { useConfiguredRoutes } from "@/components/router";
 import SwaggerPage from "@/pages/SwaggerPage";
 import { normalizeHiddenTabs, setTabHidden } from "@/util/navigation-tabs";
@@ -20,6 +20,19 @@ import {
 	switchTranslationProvider,
 	type TranslationProvider,
 } from "@/util/translation-languages";
+
+const SETTINGS_SECTIONS = [
+	["general", "settings.sectionGeneral"],
+	["translation", "settings.sectionTranslation"],
+	["ai", "ai.section"],
+	["app", "settings.sectionApp"],
+	["riot-api", "settings.sectionRiotApi"],
+	["navigation", "settings.sectionNavigation"],
+	["analytics", "settings.sectionAnalytics"],
+	["developer", "settings.sectionDeveloper"],
+] as const;
+
+type SettingsSection = (typeof SETTINGS_SECTIONS)[number][0];
 
 const LANGUAGES = [
 	{ code: "en", label: "EN", name: "English" },
@@ -322,15 +335,49 @@ const applyClientInfo = (msg: any) => {
         } finally { setCertImporting(false); }
     };
 
+	const bodyRef = useRef<HTMLDivElement>(null);
+	const [activeSection, setActiveSection] = useState<SettingsSection>("general");
+
+	// The tab follows the last section whose top has scrolled past the body's top
+	// edge; at the very bottom the last section wins even if it is short.
+	const syncActiveSection = () => {
+		const body = bodyRef.current;
+		if (!body) return;
+		const atBottom = body.scrollTop + body.clientHeight >= body.scrollHeight - 4;
+		const edge = body.getBoundingClientRect().top + 32;
+		let current: SettingsSection = SETTINGS_SECTIONS[0][0];
+		for (const [id] of SETTINGS_SECTIONS) {
+			const section = document.getElementById(`settings-${id}`);
+			if (section && (atBottom || section.getBoundingClientRect().top <= edge)) current = id;
+		}
+		setActiveSection(current);
+	};
+
+	const jumpToSection = (id: SettingsSection) => {
+		setActiveSection(id);
+		document.getElementById(`settings-${id}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+	};
+
 	if (view === "api-reference") return <SwaggerPage onBack={() => setView("settings")} />;
 
 	return (
 		<div className="h-full flex flex-col animate-fade-in">
-			<PageHeader icon={<LuSettings className="text-lg" />} title={t("settings.title")} />
+			<PageHeader
+				icon={<LuSettings className="text-lg" />}
+				title={t("settings.title")}
+				tabs={
+					<PageTabs
+						label={t("settings.title")}
+						tabs={SETTINGS_SECTIONS.map(([id, key]) => ({ id, label: t(key) }))}
+						value={activeSection}
+						onChange={jumpToSection}
+					/>
+				}
+			/>
 
-			<div className={pageBodyClass}>
+			<div ref={bodyRef} onScroll={syncActiveSection} className={pageBodyClass}>
 
-			<SectionCard title={t("settings.sectionGeneral")} accent="#ff4655">
+			<SectionCard id="settings-general" title={t("settings.sectionGeneral")} accent="#ff4655">
 					<div className="flex flex-col px-1">
 				{/* Language */}
 				<SettingRow
@@ -359,7 +406,7 @@ const applyClientInfo = (msg: any) => {
 					</div>
 				</SectionCard>
 
-				<SectionCard title={t("settings.sectionTranslation")} accent="#8064e9">
+				<SectionCard id="settings-translation" title={t("settings.sectionTranslation")} accent="#8064e9">
 					<div className="flex flex-col px-1">
 				<SettingRow
 					icon={<FaLanguage />}
@@ -446,7 +493,7 @@ const applyClientInfo = (msg: any) => {
 					</div>
 				</SectionCard>
 
-				<SectionCard title={t("ai.section")} accent="#8064e9">
+				<SectionCard id="settings-ai" title={t("ai.section")} accent="#8064e9">
                     <div className="flex flex-col px-1">
                         <SettingRow icon={<LuBot />} label={t("ai.provider")} description="" right={
                             <select aria-label={t("ai.provider")} value={appConfig.aiProvider} className="h-7 max-w-56 rounded-[6px] border border-(--border) bg-(--control) px-2 text-[12px] text-(--text-primary)" onChange={event => {
@@ -479,7 +526,7 @@ const applyClientInfo = (msg: any) => {
                     </div>
                 </SectionCard>
 
-                <SectionCard title={t("settings.sectionApp")} accent="#a78bfa">
+                <SectionCard id="settings-app" title={t("settings.sectionApp")} accent="#a78bfa">
 					<div className="flex flex-col px-1">
 				<SettingRow
 					icon={<LuMonitor />}
@@ -532,7 +579,7 @@ const applyClientInfo = (msg: any) => {
 					</div>
 				</SectionCard>
 
-				<SectionCard title={t("settings.sectionRiotApi")} accent="#38bdf8">
+				<SectionCard id="settings-riot-api" title={t("settings.sectionRiotApi")} accent="#38bdf8">
 					<div className="flex flex-col px-1">
 						<SettingRow
 							icon={<FaGaugeHigh />}
@@ -590,7 +637,7 @@ const applyClientInfo = (msg: any) => {
 					</div>
 				</SectionCard>
 
-				<SectionCard title={t("settings.sectionNavigation")} accent="#8064e9">
+				<SectionCard id="settings-navigation" title={t("settings.sectionNavigation")} accent="#8064e9">
 					<div className="flex flex-col px-1">
 						{configurableRoutes.map((route) => (
 							<SettingRow
@@ -620,7 +667,7 @@ const applyClientInfo = (msg: any) => {
 					</div>
 				</SectionCard>
 
-				<SectionCard title={t("settings.sectionAnalytics")} accent="#4ade80">
+				<SectionCard id="settings-analytics" title={t("settings.sectionAnalytics")} accent="#4ade80">
 					<div className="flex flex-col px-1">
 				<SettingRow
 					icon={<FaChartBar />}
@@ -633,7 +680,7 @@ const applyClientInfo = (msg: any) => {
 					</div>
 				</SectionCard>
 
-				<SectionCard title={t("settings.sectionDeveloper")} accent="#6b7280">
+				<SectionCard id="settings-developer" title={t("settings.sectionDeveloper")} accent="#6b7280">
 					<div className="flex flex-col px-1">
 				<SettingRow icon={<LuBot />} label="Presence masking" description="Allow Bot commands to rewrite your Riot presence." right={<Toggle checked={appConfig.presenceEnabled} onChange={v => setPresence(v ? "enable" : "disable")} />} />
 				<SettingRow icon={<LuBot />} label="Lobby / MUC forwarding" description="Forward lobby presence while masking is active." right={<Toggle checked={appConfig.presenceMucEnabled} onChange={v => setPresence("muc", v)} />} />

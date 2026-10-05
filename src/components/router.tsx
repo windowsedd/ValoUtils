@@ -134,9 +134,17 @@ const Router = () => {
 		invoke("analytics_track", { args: ["tab_change", JSON.stringify({ tab: routeId })] }).catch(reportIpcError);
 	};
 
+	// Every page, Chat included, sits on a rounded sheet inset from the window,
+	// so its edges line up with the floating dock beside it.
+	const page = (
+		<RouteErrorBoundary key={selectedId} label={selectedId}>
+			{body}
+		</RouteErrorBoundary>
+	);
+
 	return (
 		<div
-			className="flex h-full min-h-0 w-full overflow-hidden"
+			className="flex h-full min-h-0 w-full overflow-hidden bg-(--chrome)"
 			data-router-layout="command-rail"
 		>
 			<NavbarRail
@@ -148,10 +156,10 @@ const Router = () => {
 				onSelect={selectRoute}
 				statusControl={<RiotStatusBar compact />}
 			/>
-			<main className="min-w-0 flex-1 overflow-y-auto">
-				<RouteErrorBoundary key={selectedId} label={selectedId}>
-					{body}
-				</RouteErrorBoundary>
+			<main className="min-w-0 flex-1 py-2.5 pr-2.5 pl-2" data-page-frame="sheet">
+				<div className="page-sheet h-full overflow-hidden rounded-[16px] border border-(--border) bg-(--background)">
+					<div className="h-full overflow-y-auto">{page}</div>
+				</div>
 			</main>
 		</div>
 	);

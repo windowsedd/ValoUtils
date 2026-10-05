@@ -17,7 +17,7 @@ describe("Career Act Rank", () => {
     expect(career).toContain("initialSeasonId");
   });
 
-  test("keeps rank details in the Current Rank card but removes them from the page header", () => {
+  test("keeps rank details in the Current Rank summary column but removes them from the page header", () => {
     const headerStart = career.indexOf("<PageHeader");
     const contentStart = career.indexOf("pageBodyClass", headerStart);
     const header = career.slice(headerStart, contentStart);
@@ -28,7 +28,7 @@ describe("Career Act Rank", () => {
     expect(header).not.toContain("tierName(currentTier)");
     expect(header).not.toContain("currentTier > 0");
 
-    const currentRank = career.slice(career.indexOf('title={t("career.currentRank")}'));
+    const currentRank = career.slice(career.indexOf('aria-label={t("career.currentRank")}'));
     expect(currentRank).toContain("<RankBadge");
     expect(currentRank).toContain("tierName(currentTier)");
     expect(currentRank).toContain("{currentRR} RR");
@@ -58,7 +58,7 @@ describe("page body spacing", () => {
   test("keeps a gap under the page header on every tab", () => {
     const sectionCard = readFileSync(join(root, "src/components/section-card.tsx"), "utf8");
     expect(sectionCard).toContain("pageBodyClass =");
-    expect(sectionCard).toContain("pt-4");
+    expect(sectionCard).toContain("pt-5");
     const pages = [
       "SettingsProfiles.tsx",
       "PlayerCareer.tsx",
@@ -76,9 +76,7 @@ describe("page body spacing", () => {
     }
     expect(readFileSync(join(root, "src/pages/Chat.tsx"), "utf8")).toContain("pt-4");
     expect(readFileSync(join(root, "src/pages/Inventory.tsx"), "utf8")).toContain("pt-4");
-    expect(readFileSync(join(root, "src/pages/Tools.tsx"), "utf8")).toContain("pt-4");
-    expect(
-      readFileSync(join(root, "src/components/live-game/live-scout-table.tsx"), "utf8"),
-    ).toContain("pt-4");
+    expect(readFileSync(join(root, "src/pages/Tools.tsx"), "utf8")).toContain("pt-5");
+    expect(readFileSync(join(root, "src/pages/LiveGame.tsx"), "utf8")).toContain("pt-5");
   });
 });
