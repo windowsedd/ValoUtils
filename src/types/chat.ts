@@ -18,6 +18,8 @@ export type ChatConversation = {
   messageHistory: boolean | null;
   muted: boolean;
   supportsHistory: boolean;
+  /** Team/All room of a match that has ended, kept read-only until the next one. */
+  ended?: boolean;
 };
 
 /** Match state when a party/team/all message arrived (from our own presence). */

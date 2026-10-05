@@ -125,7 +125,7 @@ Rust command conventions:
 | `open_url` | `open_url` | Open URL in system browser |
 | `alert:info` | *(event only)* | Push: show toast in frontend |
 
-Chat GUI exposes Friends, Party, Team and All channels. Game relay incoming group messages use the existing `chat:message` stream and buffered transcript in `chat_get`; outgoing bot commands are excluded. GUI group replies use a single native relay connection with server-confirmed membership and wait up to 10 seconds for the matching server echo or rejection. Independent XMPP writes cannot report GUI send success. Routes are removed on leave, kick, disconnect or relay reset; pregame and coregame rooms remain distinct. Room aliases and optimistic echoes are reconciled; relay shutdown clears captured chat session state.
+Chat GUI exposes Friends, Party, Team and All channels. Game relay incoming group messages use the existing `chat:message` stream and buffered transcript in `chat_get`; outgoing bot commands are excluded. GUI group replies use a single native relay connection with server-confirmed membership and wait up to 10 seconds for the matching server echo or rejection. Independent XMPP writes cannot report GUI send success. Routes are removed on leave, kick, disconnect or relay reset; pregame and coregame rooms remain distinct. Room aliases and optimistic echoes are reconciled; relay shutdown clears captured chat session state. After a match ends, `chat_get` keeps that match's Team/All rooms and up to 200 lines (marked `ended`, composer read-only) until the next match, an account change, or `chat_disconnect`.
 
 ## Data Flow
 

@@ -1,5 +1,5 @@
-use serde_json::Value;
 use serde_json::json;
+use serde_json::Value;
 use tauri::AppHandle;
 
 #[tauri::command]
@@ -28,18 +28,8 @@ pub async fn fake_player_send(args: Vec<Value>, app: AppHandle) -> Result<Value,
         return Ok(json!({ "success": false, "error": "Message is empty." }));
     }
     crate::fake_player::record_message(&body, true);
-    let ascii_preview = crate::riot::ascii_art::is_ascii_command(&body)
-        .then(|| crate::riot::ascii_art::parse_ascii_command(&body))
-        .and_then(|parsed| match parsed {
-            // No room to post to here, so show what would be sent.
-            Ok(command) if command.channel.is_none() => Some(command.payload),
-            Err(error) => Some(error.to_string()),
-            Ok(_) => None,
-        });
-    let reply = if let Some(preview) = ascii_preview {
-        preview
-    } else if body.starts_with('.') {
-        match super::riot_chat::run_composer_command(&body, "", &app, true).await {
+    let reply = if body.starts_with('.') {
+        match super::riot_chat::run_composer_command(&body, &app, true).await {
             Ok(reply) => reply,
             Err(error) => error,
         }

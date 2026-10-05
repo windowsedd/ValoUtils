@@ -435,7 +435,7 @@ pub enum ComposerCommand {
     Custom(chat_command::CustomBotCommand),
     /// `.dodge` — leave agent select.
     Dodge,
-    /// `.ascii` — render block text and post it to a group room.
+    /// `.ascii` — block text, posted only when a channel is named.
     Ascii(String),
     /// `.ai` — post an AI-written line to a group room.
     Ai(String),
@@ -500,11 +500,7 @@ pub async fn chat_command(args: Vec<Value>, app: AppHandle) -> Result<Value, ()>
     if input.trim().is_empty() {
         return Ok(json!({ "success": false, "error": "Command is empty." }));
     }
-    // The conversation the composer had selected. Only the channel it names is
-    // used; see [`AsciiSource`].
-    let selected_cid = args.get(1).and_then(Value::as_str).unwrap_or_default();
-
-    Ok(match run_composer_command(&input, selected_cid, &app, false).await {
+    Ok(match run_composer_command(&input, &app, false).await {
         Ok(reply) => json!({ "success": true, "reply": reply }),
         Err(error) => json!({ "success": false, "error": error }),
     })
@@ -516,7 +512,6 @@ pub async fn chat_command(args: Vec<Value>, app: AppHandle) -> Result<Value, ()>
 /// whispering through the game relay.
 pub(crate) async fn run_composer_command(
     input: &str,
-    selected_cid: &str,
     app: &AppHandle,
     in_bot_chat: bool,
 ) -> Result<String, String> {
@@ -548,12 +543,16 @@ pub(crate) async fn run_composer_command(
             }
         }
         ComposerCommand::Dodge => execute_dodge(Some(&app)).await,
-        ComposerCommand::Ascii(line) => {
-            let source = ascii_source_from_selected_cid(selected_cid);
-            execute_ascii_command(&line, source.as_ref(), Some(&app))
-                .await
-                .map(|(channel, _)| format_ascii_reply(channel))
-        }
+        ComposerCommand::Ascii(line) => match ascii_art::parse_ascii_command(&line) {
+            Ok(parsed) => match parsed.channel {
+                Some(channel) => post_ascii_art(channel, parsed.payload, Some(&app))
+                    .await
+                    .map(|_| format_ascii_reply(channel)),
+                // Private by default, like `.ai`: the art is shown only here.
+                None => Ok(parsed.payload),
+            },
+            Err(error) => Err(error),
+        },
         ComposerCommand::Ai(line) if ai_posts_to_room(&line) => {
             execute_ai_command(&line, Some(&app))
                 .await
@@ -631,8 +630,9 @@ enum DodgeResult {
 
 fn dodge_api_error(error: RiotError) -> RiotError {
     match error {
-        RiotError::Other(message) if is_not_in_game_error(&message) =>
-            RiotError::InvalidCommand("Not in agent select.".into()),
+        RiotError::Other(message) if is_not_in_game_error(&message) => {
+            RiotError::InvalidCommand("Not in agent select.".into())
+        }
         RiotError::Other(_) => RiotError::InvalidCommand("Could not leave agent select.".into()),
         error => error,
     }
@@ -647,82 +647,13 @@ fn is_not_in_game_error(error: &str) -> bool {
 // .ascii
 // ---------------------------------------------------------------------------
 
-/// Where a `.ascii` line without an explicit destination came from.
-///
-/// The two variants differ in how far the caller is trusted, not in what they
-/// mean. The poller reports a room it actually read a message out of, so that
-/// room can be used directly. The composer reports whatever CID the frontend
-/// had selected, so only the *channel* it names is taken and the room itself is
-/// re-resolved - an arbitrary CID can never become a destination.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum AsciiSource {
-    Observed { channel: ChatChannel, cid: String },
-    Selected(ChatChannel),
-}
-
-/// Reads the channel out of a CID supplied by the frontend.
-///
-/// Friend conversations have no channel, which is what makes a destination-free
-/// `.ascii` in a direct message an error rather than a guess.
-pub(crate) fn ascii_source_from_selected_cid(cid: &str) -> Option<AsciiSource> {
-    ChatChannel::EVERY
-        .into_iter()
-        .find(|channel| channel.matches_cid(cid))
-        .map(AsciiSource::Selected)
-}
-
-/// Raised when nothing names a room: a whisper, or a friend conversation in the
-/// composer. Worded to suit both, since neither can infer a group channel.
-fn ascii_group_channel_required() -> RiotError {
-    RiotError::InvalidCommand(
-        "Name a channel: .ascii {party|team|all} <text>, e.g. .ascii team gg.".into(),
-    )
-}
-
-/// Chooses the command's channel before any room lookup occurs.
-///
-/// An explicit destination intentionally drops an observed CID so the later
-/// lookup cannot reuse the room where the command was typed. A destination-
-/// free observed command keeps its exact live room, including pregame.
-fn resolve_ascii_destination(
-    explicit: Option<ChatChannel>,
-    source: Option<&AsciiSource>,
-) -> Result<(ChatChannel, Option<String>), RiotError> {
-    match explicit {
-        Some(channel) => Ok((channel, None)),
-        None => match source {
-            Some(AsciiSource::Observed { channel, cid }) => Ok((*channel, Some(cid.to_string()))),
-            Some(AsciiSource::Selected(channel)) => Ok((*channel, None)),
-            None => Err(ascii_group_channel_required()),
-        },
-    }
-}
-
 pub(crate) fn format_ascii_reply(channel: ChatChannel) -> String {
     format!("Sent ASCII art to {channel}.")
-}
-
-/// Parses a `.ascii` line and resolves the room, without sending anything.
-///
-/// Split from delivery because the two callers send differently: the composer
-/// and the poller post through the shared chat path, while the Dummy Bot
-/// whisper path already holds the live relay connection and writes the stanza
-/// on it directly.
-async fn prepare_ascii_command(
-    line: &str,
-    source: Option<&AsciiSource>,
-    app: Option<&AppHandle>,
-) -> Result<(RiotChatClient, ChatChannel, InternalPreparedTranslation), RiotError> {
-    let parsed = ascii_art::parse_ascii_command(line)?;
-
-    let (channel, pinned_live_cid) = resolve_ascii_destination(parsed.channel, source)?;
-    prepare_group_post(channel, pinned_live_cid, parsed.payload, app).await
 }
 
 /// Resolves the room for a verbatim group post (`.ascii`, `.ai`) without sending.
 async fn prepare_group_post(
     channel: ChatChannel,
-    pinned_live_cid: Option<String>,
     payload: String,
     app: Option<&AppHandle>,
 ) -> Result<(RiotChatClient, ChatChannel, InternalPreparedTranslation), RiotError> {
@@ -742,28 +673,21 @@ async fn prepare_group_post(
         language_input: "none".into(),
         message: payload,
     };
-    let prepared = prepare_translation_command(
-        &client,
-        &request,
-        &config,
-        app,
-        pinned_live_cid.as_deref(),
-        pinned_live_cid.is_none(),
-    )
-    .await?;
+    let prepared = prepare_translation_command(&client, &request, &config, app, None, true).await?;
     Ok((client, channel, prepared))
 }
 
-/// Renders a `.ascii` line and posts the artwork as one message.
+/// Posts rendered `.ascii` artwork to the room the command named.
 ///
-/// Returns the rendered payload alongside the channel so the poller can record
-/// it as an echo; nothing is sent if parsing, rendering or routing fails.
-async fn execute_ascii_command(
-    line: &str,
-    source: Option<&AsciiSource>,
+/// A `.ascii` without a channel never gets here: like `.ai`, it is private by
+/// default and its artwork goes back to the player instead. Returns the posted
+/// body so the poller can record it as an echo.
+async fn post_ascii_art(
+    channel: ChatChannel,
+    payload: String,
     app: Option<&AppHandle>,
-) -> Result<(ChatChannel, String), RiotError> {
-    let (client, channel, prepared) = prepare_ascii_command(line, source, app).await?;
+) -> Result<String, RiotError> {
+    let (client, channel, prepared) = prepare_group_post(channel, payload, app).await?;
     deliver_translated_line(
         &client,
         channel,
@@ -774,19 +698,19 @@ async fn execute_ascii_command(
     )
     .await?;
 
-    Ok((channel, prepared.body))
+    Ok(prepared.body)
 }
 
-/// Prepares a `.ascii` line whispered to the Dummy Bot.
+/// Prepares rendered `.ascii` artwork for the relay to post.
 ///
-/// A whisper is not a group room, so there is nothing to infer a destination
-/// from: the command has to name one. The relay writes the returned stanza on
-/// its own connection, the same way it handles a whispered `.send`.
+/// The relay writes the returned stanza on its own connection, the same way it
+/// handles a whispered `.send`.
 pub(crate) async fn prepare_ascii_for_bot(
-    line: &str,
+    channel: ChatChannel,
+    payload: String,
     app: Option<&AppHandle>,
 ) -> Result<PreparedTranslation, RiotError> {
-    let (_, channel, prepared) = prepare_ascii_command(line, None, app).await?;
+    let (_, channel, prepared) = prepare_group_post(channel, payload, app).await?;
     Ok(PreparedTranslation {
         live_cid: prepared.live_cid,
         body: prepared.body,
@@ -824,7 +748,7 @@ async fn prepare_ai_command(
         ));
     };
     let text = ai_chat_line(crate::ai::prompts::BOT_LINE, &prompt, 200).await?;
-    prepare_group_post(channel, None, text, app).await
+    prepare_group_post(channel, text, app).await
 }
 
 /// Whether a `.ai` line names a room to post to. Anything else is private.
@@ -1173,7 +1097,8 @@ fn agent_select_room_for(
     observed_pregame: Option<String>,
 ) -> Option<String> {
     let team_side = matches!(channel, ChatChannel::Team | ChatChannel::Pregame);
-    let in_agent_select = session_loop_state.is_some_and(|state| state.eq_ignore_ascii_case("PREGAME"));
+    let in_agent_select =
+        session_loop_state.is_some_and(|state| state.eq_ignore_ascii_case("PREGAME"));
     (team_side && in_agent_select)
         .then_some(observed_pregame)
         .flatten()
@@ -1556,7 +1481,7 @@ enum OwnMessage {
     Custom(chat_command::CustomBotCommand),
     /// `.dodge` — leave agent select.
     Dodge,
-    /// `.ascii` — render block text and post it to a group room.
+    /// `.ascii` — block text, posted only when a channel is named.
     Ascii(String),
     /// `.ai` / `.ask` — AI line, posted only when a channel is named.
     Ai(String),
@@ -1684,7 +1609,10 @@ async fn poll_once(
     // The chat poller already resolves these local rooms. Reuse that state to
     // wake Live Game after a match without polling the remote game API in play.
     let presence = crate::presence_proxy::presence_match_state();
-    for transition in memory.live_phase.observe(local_phase_observation(&memory.cids, presence)) {
+    for transition in memory
+        .live_phase
+        .observe(local_phase_observation(&memory.cids, presence))
+    {
         let phase = match transition {
             LifecycleTransition::PregameStarted { .. } => "pregame",
             LifecycleTransition::MatchStarted { .. } => "coregame",
@@ -1765,7 +1693,9 @@ fn local_phase_observation(
     presence: crate::riot::chat_lifecycle::PresenceMatchState,
 ) -> PhaseObservation {
     let cid_for = |channel: ChatChannel, marker: &str| {
-        cids.get(&channel).filter(|cid| cid.contains(marker)).cloned()
+        cids.get(&channel)
+            .filter(|cid| cid.contains(marker))
+            .cloned()
     };
     let in_menus = presence
         .session_loop_state
@@ -2008,16 +1938,22 @@ async fn dispatch(
                 dispatch_translation_command(app, client, &command, memory).await;
             }
             OwnMessage::Ascii(line) => {
-                // The room this was read out of is the destination when the
-                // command named none - including the pregame team room.
-                let source = AsciiSource::Observed {
-                    channel: message.channel,
-                    cid: message.cid.clone(),
+                let outcome = match ascii_art::parse_ascii_command(&line) {
+                    Ok(parsed) => match parsed.channel {
+                        Some(channel) => post_ascii_art(channel, parsed.payload, Some(app))
+                            .await
+                            .map(|payload| {
+                                memory.echoes.remember(&payload);
+                                format_ascii_reply(channel)
+                            }),
+                        // Private by default, like `.ai`: a Dummy Bot DM.
+                        None => deliver_proactive_direct(&parsed.payload),
+                    },
+                    Err(error) => Err(error),
                 };
-                match execute_ascii_command(&line, Some(&source), Some(app)).await {
-                    Ok((channel, payload)) => {
-                        memory.echoes.remember(&payload);
-                        let _ = app.emit(EVENT_COMMAND, format_ascii_reply(channel));
+                match outcome {
+                    Ok(reply) => {
+                        let _ = app.emit(EVENT_COMMAND, reply);
                     }
                     Err(error) => {
                         let _ = app.emit(EVENT_ERROR, error.to_string());
@@ -2331,7 +2267,9 @@ mod tests {
         );
         assert_eq!(
             tracker.observe(local_phase_observation(&rooms, Default::default())),
-            vec![LifecycleTransition::PregameStarted { pregame_id: "match-a".into() }]
+            vec![LifecycleTransition::PregameStarted {
+                pregame_id: "match-a".into()
+            }]
         );
         rooms.remove(&ChatChannel::Pregame);
         rooms.insert(
@@ -2340,14 +2278,22 @@ mod tests {
         );
         assert_eq!(
             tracker.observe(local_phase_observation(&rooms, Default::default())),
-            vec![LifecycleTransition::MatchStarted { match_id: "match-a".into() }]
+            vec![LifecycleTransition::MatchStarted {
+                match_id: "match-a".into()
+            }]
         );
         rooms.clear();
-        assert!(tracker.observe(local_phase_observation(&rooms, Default::default())).is_empty());
-        assert!(tracker.observe(local_phase_observation(&rooms, Default::default())).is_empty());
+        assert!(tracker
+            .observe(local_phase_observation(&rooms, Default::default()))
+            .is_empty());
+        assert!(tracker
+            .observe(local_phase_observation(&rooms, Default::default()))
+            .is_empty());
         assert_eq!(
             tracker.observe(local_phase_observation(&rooms, Default::default())),
-            vec![LifecycleTransition::MatchEnded { match_id: "match-a".into() }]
+            vec![LifecycleTransition::MatchEnded {
+                match_id: "match-a".into()
+            }]
         );
     }
 
@@ -2366,7 +2312,10 @@ mod tests {
                 enemy_score: Some(11),
             },
         );
-        assert_eq!(scored.match_id.as_deref(), Some("match-a-blue@ares-coregame.ap1.pvp.net"));
+        assert_eq!(
+            scored.match_id.as_deref(),
+            Some("match-a-blue@ares-coregame.ap1.pvp.net")
+        );
         assert_eq!(scored.presence.ally_score, None);
 
         let menus = local_phase_observation(
@@ -2696,10 +2645,22 @@ mod tests {
             room
         );
         // Outside agent select, or for party/all, normal resolution applies.
-        assert_eq!(agent_select_room_for(ChatChannel::Team, Some("INGAME"), room.clone()), None);
-        assert_eq!(agent_select_room_for(ChatChannel::Team, None, room.clone()), None);
-        assert_eq!(agent_select_room_for(ChatChannel::All, Some("PREGAME"), room.clone()), None);
-        assert_eq!(agent_select_room_for(ChatChannel::Team, Some("PREGAME"), None), None);
+        assert_eq!(
+            agent_select_room_for(ChatChannel::Team, Some("INGAME"), room.clone()),
+            None
+        );
+        assert_eq!(
+            agent_select_room_for(ChatChannel::Team, None, room.clone()),
+            None
+        );
+        assert_eq!(
+            agent_select_room_for(ChatChannel::All, Some("PREGAME"), room.clone()),
+            None
+        );
+        assert_eq!(
+            agent_select_room_for(ChatChannel::Team, Some("PREGAME"), None),
+            None
+        );
         assert!(ChatChannel::Team.matches_cid(room.as_deref().unwrap()));
     }
 
@@ -2896,8 +2857,10 @@ mod tests {
             "Riot Client is not running."
         );
         assert_eq!(
-            dodge_api_error(RiotError::Other(r#"{"status":500,"path":"/pregame/v1/matches/abc/quit"}"#.into()))
-                .to_string(),
+            dodge_api_error(RiotError::Other(
+                r#"{"status":500,"path":"/pregame/v1/matches/abc/quit"}"#.into()
+            ))
+            .to_string(),
             "Could not leave agent select."
         );
     }
@@ -3082,35 +3045,7 @@ mod tests {
     }
 
     #[test]
-    fn a_selected_group_conversation_supplies_only_its_channel() {
-        for (cid, expected) in [
-            (PARTY_CID, ChatChannel::Party),
-            (TEAM_CID, ChatChannel::Team),
-            (ALL_CID, ChatChannel::All),
-            (PREGAME_CID, ChatChannel::Pregame),
-        ] {
-            assert_eq!(
-                ascii_source_from_selected_cid(cid),
-                Some(AsciiSource::Selected(expected)),
-                "{cid}"
-            );
-        }
-    }
-
-    #[test]
-    fn a_direct_conversation_is_not_an_ascii_destination() {
-        assert_eq!(ascii_source_from_selected_cid(FRIEND_CID), None);
-        assert_eq!(ascii_source_from_selected_cid(""), None);
-        // With no source - a friend conversation, or a whisper to the bot - a
-        // destination-free command has nowhere to go and says so rather than
-        // picking a room.
-        let error = ascii_group_channel_required().to_string();
-        assert!(error.contains("party|team|all"), "{error}");
-        assert!(error.contains(".ascii"), "{error}");
-    }
-
-    #[test]
-    fn an_in_game_ascii_command_keeps_its_observed_room() {
+    fn an_in_game_ascii_command_is_classified() {
         let mut echoes = PendingEchoes::default();
         let commands = Vec::new();
         assert_eq!(
@@ -3124,15 +3059,6 @@ mod tests {
         assert_eq!(
             plan_own_message(".asciify gg", &commands, &mut echoes),
             OwnMessage::Ignore
-        );
-
-        let source = AsciiSource::Observed {
-            channel: ChatChannel::Pregame,
-            cid: PREGAME_CID.into(),
-        };
-        assert_eq!(
-            resolve_ascii_destination(None, Some(&source)).unwrap(),
-            (ChatChannel::Pregame, Some(PREGAME_CID.to_string()))
         );
     }
 
@@ -3168,29 +3094,6 @@ mod tests {
             format_ascii_reply(ChatChannel::Party),
             "Sent ASCII art to Party."
         );
-    }
-
-    #[test]
-    fn an_explicit_destination_overrides_the_source_room() {
-        let source = AsciiSource::Observed {
-            channel: ChatChannel::Pregame,
-            cid: PREGAME_CID.into(),
-        };
-
-        assert_eq!(
-            resolve_ascii_destination(Some(ChatChannel::All), Some(&source)).unwrap(),
-            (ChatChannel::All, None)
-        );
-        assert_eq!(
-            resolve_ascii_destination(None, Some(&source)).unwrap(),
-            (ChatChannel::Pregame, Some(PREGAME_CID.to_string()))
-        );
-        assert_eq!(
-            resolve_ascii_destination(None, Some(&AsciiSource::Selected(ChatChannel::Party)))
-                .unwrap(),
-            (ChatChannel::Party, None)
-        );
-        assert!(resolve_ascii_destination(None, None).is_err());
     }
 
     #[test]

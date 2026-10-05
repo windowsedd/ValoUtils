@@ -21,13 +21,13 @@
 //! the chat limit). The bold face is tried first - one line, or two split at a
 //! space - and the compact face takes over for longer text, up to three lines.
 //!
-//! That separator started as an ordinary space, on the theory that the game
-//! collapses newlines and a space at least hands it a legal wrap point. In
-//! practice the wrap landed in the wrong place - the pane does not break at 26
-//! columns - and the glyph rows stacked on top of each other, so the separator
-//! is a real newline now. If VALORANT does collapse it after all, put the space
-//! back: it is one constant, and every length here counts the separator as one
-//! character either way.
+//! The separator is an ordinary space, which hands the game a legal wrap point
+//! between rows. A real newline was tried and is worse: the in-game chat draws
+//! a message only up to its first line break, so just the blank border row
+//! showed. An earlier space-separated build had rows stacking out of line, but
+//! that used the compact face's half-blocks, which may not share the width of
+//! `█` and `░` in VALORANT's fallback font. It is one constant either way, and
+//! every length here counts the separator as one character.
 //!
 //! [`MAX_COLUMNS`] is the one number here that is a judgement call rather than
 //! arithmetic. See its comment before changing anything else.
@@ -44,7 +44,7 @@ use crate::riot::models::ChatChannel;
 pub const MAX_COLUMNS: usize = 26;
 /// What sits between two visual rows. Exactly one character wide by
 /// construction: every payload length below assumes that.
-pub const ROW_SEPARATOR: char = '\n';
+pub const ROW_SEPARATOR: char = ' ';
 /// Rows in the tallest panel. Thirteen 26-column rows plus twelve separators is
 /// exactly 350 characters, VALORANT's chat message limit.
 pub const MAX_ROWS: usize = 13;
@@ -306,7 +306,11 @@ fn plan_lines(words: &[&str], face: Face) -> Option<Vec<String>> {
                 start = end;
             }
             if lines.iter().all(|line| face.fits(line)) {
-                let widest = lines.iter().map(|line| line.chars().count()).max().unwrap_or(0);
+                let widest = lines
+                    .iter()
+                    .map(|line| line.chars().count())
+                    .max()
+                    .unwrap_or(0);
                 if best.as_ref().is_none_or(|(current, _)| widest < *current) {
                     best = Some((widest, lines));
                 }
@@ -689,17 +693,16 @@ mod tests {
     }
 
     #[test]
-    fn visual_rows_are_separated_by_one_line_break() {
+    fn visual_rows_are_separated_by_one_space() {
         let payload = parse_ascii_command(".ascii gg").unwrap().payload;
         let rows: Vec<&str> = payload.split(ROW_SEPARATOR).collect();
 
         assert_eq!(rows.len(), 7);
         assert!(rows.iter().all(|row| row.chars().count() == MAX_COLUMNS));
         assert_eq!(payload.chars().count(), MAX_COLUMNS * 7 + 6);
-        // A bare newline and nothing else: a CR would draw as a stray
-        // glyph, and a leftover space would add a sixth row to the split.
-        assert!(!payload.contains('\r'));
-        assert!(!payload.contains(' '));
+        // No line breaks at all: the in-game chat stops drawing a message
+        // at its first one.
+        assert!(!payload.contains(['\r', '\n']));
     }
 
     #[test]

@@ -159,7 +159,12 @@ const Chat = () => {
 			all: "chat.noAllRoom",
 		}[channel],
 	);
-	const disabledReason = controller.loginRequired ? t("chat.loginRequiredDesc") : noRoomLabel;
+	const matchEnded = !isFriends && controller.selectedConversation?.ended === true;
+	const disabledReason = controller.loginRequired
+		? t("chat.loginRequiredDesc")
+		: matchEnded
+			? t("chat.matchEnded")
+			: noRoomLabel;
 	const placeholder = t(
 		{
 			friends: "chat.placeholder",
@@ -337,7 +342,7 @@ const Chat = () => {
 						/>
 						<ChatComposer
 							draft={showBot ? bot.draft : controller.draft}
-							disabled={showBot ? false : !controller.selectedCid}
+							disabled={showBot ? false : !controller.selectedCid || matchEnded}
 							disabledReason={disabledReason}
 							sending={showBot ? bot.sending : controller.sending}
 							sendError={showBot ? bot.error : controller.sendError}

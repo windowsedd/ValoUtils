@@ -11,6 +11,12 @@ export default defineConfig({
     tsconfigPaths: true,
   },
   plugins: [react()],
+  // dist/ is pruned by scripts/clean-dist.ts instead: emptying it here deletes
+  // and recreates public/ folders at once, which fails with EPERM on exFAT when
+  // another program still has the old folder open.
+  build: {
+    emptyOutDir: false,
+  },
   // Tauri expects a fixed port, fails if that port is not available.
   clearScreen: false,
   server: {

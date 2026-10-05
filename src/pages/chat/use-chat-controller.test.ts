@@ -33,8 +33,8 @@ describe("useChatController IPC lifecycle", () => {
     expect(source).toContain('requestHistory(response.cid, response.type === "chat")');
   });
 
-  test("commands carry the selected conversation so .ascii knows the room", () => {
-    expect(source).toContain('args: [text, selectedCid]');
+  test("commands go to their executor instead of the room", () => {
+    expect(source).toContain('invoke<CommandResponse>("chat_command", { args: [text] })');
     // The raw command still never reaches the room.
     expect(source).toContain("if (isComposerCommand(text)) {");
     expect(source).not.toContain('window.Main.send("chat:send", requestId, selectedCid, text);\n    if (isComposerCommand');

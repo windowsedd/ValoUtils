@@ -265,6 +265,18 @@ async fn client_to_remote(
                         }
                         log::warn!("Live chat command queue is full; forwarding original stanza");
                     }
+                    // `.ascii` typed in a group room never reaches it either:
+                    // the art is a Dummy Bot DM unless the line names a room.
+                    if let Some(body) = outgoing_ascii_command(stanza) {
+                        let remote_write = remote_write.clone();
+                        tauri::async_runtime::spawn(async move {
+                            let reply = ascii_command_on_connection(&body, &remote_write).await;
+                            if let Err(error) = crate::presence_proxy::send_bot_direct(&reply) {
+                                log::warn!("ASCII command reply could not be delivered: {error:?}");
+                            }
+                        });
+                        continue;
+                    }
                     // `.ai` / `.ask` typed in a group room never reach it: the
                     // answer is a Dummy Bot DM unless `.ai` names a room.
                     if let Some(body) = outgoing_ai_command(stanza) {
@@ -313,7 +325,7 @@ async fn client_to_remote(
                                         Err(error) => error.to_string(),
                                     }
                                 } else if command == BotCommand::Ascii {
-                                    ascii_bot_command_on_connection(&body, &remote_write).await
+                                    ascii_command_on_connection(&body, &remote_write).await
                                 } else if command == BotCommand::Ai || command == BotCommand::Ask {
                                     ai_command_on_connection(&body, &remote_write).await
                                 } else if command == BotCommand::Dodge {
@@ -481,19 +493,28 @@ async fn translate_bot_command_on_connection(
     prepared.reply
 }
 
-/// Runs a `.ascii` whispered to the Dummy Bot.
+/// Runs `.ascii` from a whisper or a group room.
 ///
-/// Mirrors [`translate_bot_command_on_connection`]: resolve and render first,
-/// then write the artwork on this connection so it leaves as an ordinary game
-/// message. Nothing is written when the command is invalid or names no room.
-async fn ascii_bot_command_on_connection(
+/// Like `.ai`, the artwork is private by default: without a channel it is
+/// returned for a DM. With one it mirrors [`translate_bot_command_on_connection`]:
+/// render and resolve first, then write the artwork on this connection so it
+/// leaves as an ordinary game message. Nothing is written when it is invalid.
+async fn ascii_command_on_connection(
     command: &str,
     remote_write: &Arc<AsyncMutex<WriteHalf<RemoteTls>>>,
 ) -> String {
+    let parsed = match crate::riot::ascii_art::parse_ascii_command(command) {
+        Ok(parsed) => parsed,
+        Err(error) => return error.to_string(),
+    };
+    let Some(channel) = parsed.channel else {
+        return parsed.payload;
+    };
     let prepared = match tokio::time::timeout(
         LIVE_TRANSLATION_TIMEOUT,
         crate::commands::riot_chat::prepare_ascii_for_bot(
-            command,
+            channel,
+            parsed.payload,
             crate::presence_proxy::app_handle(),
         ),
     )
@@ -706,6 +727,11 @@ fn outgoing_ai_command(stanza: &str) -> Option<String> {
     .then_some(body)
 }
 
+fn outgoing_ascii_command(stanza: &str) -> Option<String> {
+    let (_, _, body) = outgoing_live_groupchat(stanza)?;
+    crate::riot::ascii_art::is_ascii_command(&body).then_some(body)
+}
+
 fn outgoing_dodge_command(stanza: &str) -> bool {
     outgoing_live_groupchat(stanza)
         .is_some_and(|(_, _, body)| crate::riot::chat_command::is_dodge_command(&body))
@@ -860,6 +886,30 @@ mod tests {
         assert_eq!(
             outgoing_translation_command(
                 r#"<message to="friend@ap1.pvp.net" type="chat"><body>.send party french hello</body></message>"#
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn intercepts_dot_ascii_from_live_group_chat() {
+        for (room, body) in [
+            ("party@ares-parties.ap", ".ascii hei"),
+            ("match-blue@ares-coregame.ap1.pvp.net", ".ascii party hei"),
+            ("match-blue@ares-pregame.ap1.pvp.net", ".ASCII gg"),
+        ] {
+            let stanza =
+                format!(r#"<message to="{room}" type="groupchat"><body>{body}</body></message>"#);
+            assert_eq!(
+                outgoing_ascii_command(&stanza).as_deref(),
+                Some(body),
+                "{room}"
+            );
+        }
+
+        assert_eq!(
+            outgoing_ascii_command(
+                r#"<message to="party@ares-parties.ap" type="groupchat"><body>.asciify gg</body></message>"#
             ),
             None
         );

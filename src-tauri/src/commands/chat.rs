@@ -421,6 +421,112 @@ fn merge_room_conversations(
     merge_normalized_conversations([metadata, rooms])
 }
 
+/// Team/All rooms and lines from the most recent match. Riot drops a match's
+/// MUCs as soon as it ends, so this keeps that chat readable until the next
+/// match (or a chat disconnect) replaces it.
+#[derive(Default)]
+struct LastMatchChat {
+    owner: String,
+    team: String,
+    all: String,
+    messages: Vec<Value>,
+}
+
+const LAST_MATCH_MESSAGE_LIMIT: usize = 200;
+
+static LAST_MATCH_CHAT: std::sync::Mutex<LastMatchChat> = std::sync::Mutex::new(LastMatchChat {
+    owner: String::new(),
+    team: String::new(),
+    all: String::new(),
+    messages: Vec::new(),
+});
+
+impl LastMatchChat {
+    /// Live rooms win and are remembered; with none live, the remembered
+    /// rooms stand in. Returns `(team, all, ended)`.
+    fn rooms(&mut self, owner: &str, team: &str, all: &str) -> (String, String, bool) {
+        if self.owner != owner {
+            *self = Self {
+                owner: owner.to_string(),
+                ..Self::default()
+            };
+        }
+        if team.is_empty() && all.is_empty() {
+            return (self.team.clone(), self.all.clone(), true);
+        }
+        let same_match = same_room_cid(team, &self.team) || same_room_cid(all, &self.all);
+        if !same_match {
+            *self = Self {
+                owner: owner.to_string(),
+                ..Self::default()
+            };
+        }
+        if !team.is_empty() {
+            self.team = team.to_string();
+        }
+        if !all.is_empty() {
+            self.all = all.to_string();
+        }
+        (team.to_string(), all.to_string(), false)
+    }
+
+    /// Remembers the match rooms' lines, and returns them alongside `messages`
+    /// once the match has ended.
+    fn messages(&mut self, messages: Vec<Value>, ended: bool) -> Vec<Value> {
+        let in_match = |message: &Value| {
+            let cid = message
+                .get("conversationId")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            same_room_cid(cid, &self.team) || same_room_cid(cid, &self.all)
+        };
+        let fresh: Vec<Value> = messages.iter().filter(|m| in_match(m)).cloned().collect();
+        let mut kept = unique_messages(
+            std::mem::take(&mut self.messages)
+                .into_iter()
+                .chain(fresh)
+                .collect(),
+        );
+        if kept.len() > LAST_MATCH_MESSAGE_LIMIT {
+            kept.drain(..kept.len() - LAST_MATCH_MESSAGE_LIMIT);
+        }
+        self.messages = kept;
+        if ended {
+            unique_messages(
+                messages
+                    .into_iter()
+                    .chain(self.messages.iter().cloned())
+                    .collect(),
+            )
+        } else {
+            messages
+        }
+    }
+}
+
+fn clear_last_match_chat() {
+    if let Ok(mut last) = LAST_MATCH_CHAT.lock() {
+        *last = LastMatchChat::default();
+    }
+}
+
+/// Marks the remembered Team/All rooms so the UI shows them read-only.
+fn mark_ended_rooms(mut conversations: Vec<Value>, team: &str, all: &str) -> Vec<Value> {
+    for conversation in &mut conversations {
+        let cid = conversation
+            .get("cid")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        if same_room_cid(&cid, team) || same_room_cid(&cid, all) {
+            if let Some(object) = conversation.as_object_mut() {
+                object.insert("ended".into(), json!(true));
+            }
+        }
+    }
+    conversations
+}
+
 fn confirmed_party_room(joined_room: &str) -> String {
     joined_room.to_string()
 }
@@ -1416,12 +1522,17 @@ pub async fn chat_get(app: AppHandle, riot: State<'_, RiotState>) -> Result<Valu
                 }),
             &conversation_metadata,
         );
+        let mut last_match = LAST_MATCH_CHAT.lock().unwrap_or_else(|e| e.into_inner());
+        let (match_team_final, match_all_final, match_ended) =
+            last_match.rooms(&own_puuid, &match_team_final, &match_all_final);
         let messages = unique_messages(attach_messages_to_rooms(
             messages,
             &final_party_room,
             &match_team_final,
             &match_all_final,
         ));
+        let messages = last_match.messages(messages, match_ended);
+        drop(last_match);
 
         let conversation_metadata = merge_room_conversations(
             conversation_metadata,
@@ -1429,6 +1540,11 @@ pub async fn chat_get(app: AppHandle, riot: State<'_, RiotState>) -> Result<Valu
             &match_team_final,
             &match_all_final,
         );
+        let conversation_metadata = if match_ended {
+            mark_ended_rooms(conversation_metadata, &match_team_final, &match_all_final)
+        } else {
+            conversation_metadata
+        };
 
         Ok(json!({
             "success": true,
@@ -1702,6 +1818,7 @@ async fn mark_conversation_read(
 
 #[tauri::command]
 pub async fn chat_disconnect() -> Result<(), ()> {
+    clear_last_match_chat();
     xmpp::disconnect_match_xmpp_chat().await;
     Ok(())
 }
@@ -1718,6 +1835,58 @@ fn chrono_iso_now() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const TEAM: &str = "m1-blue@ares-coregame.ap.pvp.net";
+    const ALL: &str = "m1-all@ares-coregame.ap.pvp.net";
+
+    fn room_line(cid: &str, id: &str) -> Value {
+        json!({ "id": id, "conversationId": cid, "body": id, "sender": "p", "timestamp": "1" })
+    }
+
+    #[test]
+    fn last_match_chat_survives_the_match_ending() {
+        let mut last = LastMatchChat::default();
+        assert_eq!(
+            last.rooms("me", TEAM, ALL),
+            (TEAM.into(), ALL.into(), false)
+        );
+        let live = last.messages(vec![room_line(TEAM, "a"), room_line(ALL, "b")], false);
+        assert_eq!(live.len(), 2);
+
+        assert_eq!(last.rooms("me", "", ""), (TEAM.into(), ALL.into(), true));
+        let ended = last.messages(vec![room_line("dm@pvp.net", "c")], true);
+        let ids: Vec<_> = ended.iter().map(|m| m["id"].as_str().unwrap()).collect();
+        assert_eq!(ids, ["c", "a", "b"]);
+    }
+
+    #[test]
+    fn last_match_chat_resets_for_a_new_match_or_account() {
+        let mut last = LastMatchChat::default();
+        last.rooms("me", TEAM, ALL);
+        last.messages(vec![room_line(TEAM, "a")], false);
+
+        last.rooms("me", "m2-red@ares-pregame.ap.pvp.net", "");
+        assert!(last.messages(Vec::new(), true).is_empty());
+
+        last.rooms("me", TEAM, ALL);
+        last.messages(vec![room_line(TEAM, "a")], false);
+        assert_eq!(
+            last.rooms("other", "", ""),
+            (String::new(), String::new(), true)
+        );
+    }
+
+    #[test]
+    fn last_match_chat_caps_retained_lines() {
+        let mut last = LastMatchChat::default();
+        last.rooms("me", TEAM, ALL);
+        let lines = (0..LAST_MATCH_MESSAGE_LIMIT + 5)
+            .map(|i| room_line(TEAM, &i.to_string()))
+            .collect();
+        last.messages(lines, false);
+        assert_eq!(last.messages.len(), LAST_MATCH_MESSAGE_LIMIT);
+        assert_eq!(last.messages[0]["id"], "5");
+    }
 
     fn chat_presence_snapshot(
         state: xmpp::presence::PresenceSyncState,

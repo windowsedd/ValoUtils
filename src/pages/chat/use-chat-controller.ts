@@ -270,10 +270,7 @@ const sendMessage = useCallback(() => {
       const pending = { cid: selectedCid, command: text, id: nextRequestId("command") };
       dispatch({ type: "setDraft", cid: selectedCid, draft: "" });
       dispatch({ type: "commandStarted", cid: selectedCid, id: pending.id, command: text });
-      // The selected conversation goes along so a command with no destination
-      // of its own (.ascii) knows which room the player is looking at. The
-      // backend reads only the channel out of it.
-      invoke<CommandResponse>("chat_command", { args: [text, selectedCid] }).then(response => onCommand(response, pending)).catch(error => onCommand({ success: false, error: String(error) }, pending));
+      invoke<CommandResponse>("chat_command", { args: [text] }).then(response => onCommand(response, pending)).catch(error => onCommand({ success: false, error: String(error) }, pending));
       return;
     }
     const requestId = nextRequestId("send");
