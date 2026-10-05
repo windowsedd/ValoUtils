@@ -18,6 +18,7 @@
 //! Which pacing applies is the user's choice, from Settings; the cooldowns are
 //! not, since those answer a refusal Riot has already made.
 
+use std::collections::BTreeMap;
 use std::sync::{OnceLock, RwLock};
 use std::time::{Duration, Instant};
 use tokio::sync::Mutex as AsyncMutex;
@@ -63,26 +64,31 @@ pub struct Pacing {
     burst: u32,
 }
 
+// Riot has refused at roughly 165 requests in 45 seconds, during a cold
+// 12-player scout that was also re-reading ranks and histories every poll.
+// Those repeats are gone; Balanced and Safe also sit well under that rate.
+
 /// For a machine Riot has never complained to: quick pages, less headroom.
+/// 240 a minute sustained.
 const PACING_FAST: Pacing = Pacing {
     spacing: Duration::from_millis(120),
     sustained: Duration::from_millis(250),
     burst: 30,
 };
 
-/// The default, and what the app shipped with before this was a choice.
+/// The default. 100 a minute sustained.
 const PACING_BALANCED: Pacing = Pacing {
-    spacing: Duration::from_millis(200),
-    sustained: Duration::from_millis(400),
-    burst: 20,
+    spacing: Duration::from_millis(250),
+    sustained: Duration::from_millis(600),
+    burst: 15,
 };
 
-/// For someone who keeps getting throttled anyway - roughly half the rate, and
-/// a burst small enough that one busy page cannot spend the whole allowance.
+/// For someone who keeps getting throttled anyway: 60 a minute, and a burst
+/// small enough that one busy page cannot spend the whole allowance.
 const PACING_SAFE: Pacing = Pacing {
     spacing: Duration::from_millis(400),
-    sustained: Duration::from_millis(900),
-    burst: 10,
+    sustained: Duration::from_millis(1000),
+    burst: 8,
 };
 
 /// Reads the `riotRequestPacing` config value. Anything unrecognised - a key
@@ -166,11 +172,18 @@ fn error_path(error: &str) -> Option<String> {
         .split('"')
         .next()
         .filter(|path| !path.is_empty())?;
+    Some(redact_path(path))
+}
+
+/// A request path with its ids replaced and its query dropped, so the same
+/// endpoint groups together and no PUUID or match id reaches the log file.
+fn redact_path(path: &str) -> String {
+    let path = path.split('?').next().unwrap_or(path);
     let redacted: Vec<&str> = path
         .split('/')
         .map(|segment| if looks_like_id(segment) { "<id>" } else { segment })
         .collect();
-    Some(redacted.join("/"))
+    redacted.join("/")
 }
 
 fn looks_like_id(segment: &str) -> bool {
@@ -210,6 +223,10 @@ struct RateGate {
     window_started: Option<Instant>,
     window_requests: u32,
     window_longest_wait: Duration,
+    /// The endpoint that waited longest this window.
+    window_longest_endpoint: String,
+    /// Requests this window per redacted endpoint.
+    window_endpoints: BTreeMap<String, u32>,
 }
 
 impl RateGate {
@@ -279,7 +296,7 @@ impl RateGate {
 
     /// When the next request may start: no sooner than the spacing floor, and
     /// no sooner than the sustained ceiling allows once the burst is spent.
-    fn reserve_at(&mut self, now: Instant, pacing: Pacing) -> Instant {
+    fn reserve_at(&mut self, now: Instant, pacing: Pacing, endpoint: &str) -> Instant {
         if self.cooldown_until.is_some_and(|until| now >= until) {
             self.cooldown_until = None;
             self.recovery_until = Some(now + PD_RECOVERY_WINDOW);
@@ -303,31 +320,59 @@ impl RateGate {
         let scheduled = spaced.max(sustained).max(now);
         self.next_allowed = Some(scheduled + pacing.spacing);
         self.theoretical_arrival = Some(arrival + pacing.sustained);
-        self.account_for(scheduled.duration_since(now), now);
+        self.account_for(scheduled.duration_since(now), now, endpoint);
         scheduled
     }
 
     /// Counts a scheduled request, reporting the window once it closes. The
     /// longest wait says how hard the ceiling is shaping: near zero means the
     /// budget is untouched, seconds mean requests are queueing behind it.
-    fn account_for(&mut self, wait: Duration, now: Instant) {
+    ///
+    /// The window is reported by the first request after it closes, not on a
+    /// timer, so while the app is quiet a window can span several minutes.
+    fn account_for(&mut self, wait: Duration, now: Instant, endpoint: &str) {
         let started = *self.window_started.get_or_insert(now);
+        let endpoint = redact_path(endpoint);
         self.window_requests += 1;
-        self.window_longest_wait = self.window_longest_wait.max(wait);
+        if wait >= self.window_longest_wait {
+            self.window_longest_wait = wait;
+            self.window_longest_endpoint = endpoint.clone();
+        }
+        *self.window_endpoints.entry(endpoint).or_default() += 1;
 
         let elapsed = now.duration_since(started);
         if elapsed < PD_LOG_WINDOW {
             return;
         }
-        log::info!(
-            "PD budget: {} requests in {}s, longest wait {}ms",
-            self.window_requests,
-            elapsed.as_secs(),
-            self.window_longest_wait.as_millis()
-        );
+        log::info!("{}", self.window_summary(elapsed));
         self.window_started = Some(now);
         self.window_requests = 0;
         self.window_longest_wait = Duration::ZERO;
+        self.window_longest_endpoint.clear();
+        self.window_endpoints.clear();
+    }
+
+    /// One line naming the volume, the worst wait and what was asked for,
+    /// busiest endpoint first.
+    fn window_summary(&self, elapsed: Duration) -> String {
+        let mut endpoints: Vec<(&String, &u32)> = self.window_endpoints.iter().collect();
+        endpoints.sort_by(|a, b| b.1.cmp(a.1).then_with(|| a.0.cmp(b.0)));
+        let breakdown = endpoints
+            .iter()
+            .map(|(endpoint, count)| format!("{endpoint} x{count}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let longest = if self.window_longest_wait.is_zero() || self.window_longest_endpoint.is_empty() {
+            String::new()
+        } else {
+            format!(" ({})", self.window_longest_endpoint)
+        };
+        format!(
+            "PD budget: {} requests in {}s, longest wait {}ms{longest}; {breakdown}",
+            self.window_requests,
+            elapsed.as_secs(),
+            self.window_longest_wait.as_millis()
+        )
     }
 }
 
@@ -342,13 +387,15 @@ fn gate() -> &'static AsyncMutex<RateGate> {
 /// down. Failing fast matters more than queueing here: a poller that waits out
 /// a ten-minute cooldown delivers a stale answer ten minutes late, where an
 /// immediate refusal lets the caller fall back to its cache and say so.
-pub async fn acquire() -> Result<(), String> {
-    acquire_on(gate()).await
+///
+/// `endpoint` is the request path, kept only for the budget's log summary.
+pub async fn acquire(endpoint: &str) -> Result<(), String> {
+    acquire_on(gate(), endpoint).await
 }
 
 /// The body of [`acquire`], against a caller-supplied gate so that tests can
 /// exercise the pacing without sharing the process-wide one.
-async fn acquire_on(gate: &AsyncMutex<RateGate>) -> Result<(), String> {
+async fn acquire_on(gate: &AsyncMutex<RateGate>, endpoint: &str) -> Result<(), String> {
     let pacing = current_pacing();
     let scheduled = {
         let mut locked = gate.lock().await;
@@ -356,7 +403,7 @@ async fn acquire_on(gate: &AsyncMutex<RateGate>) -> Result<(), String> {
         if locked.is_cooling_down_at(now) {
             return Err(LOCAL_COOLDOWN_ERROR.to_string());
         }
-        locked.reserve_at(now, pacing)
+        locked.reserve_at(now, pacing, endpoint)
     };
 
     // The lock is not held across the wait: other callers must be able to
@@ -524,6 +571,28 @@ mod tests {
     }
 
     #[test]
+    fn the_budget_summary_names_endpoints_without_ids() {
+        let mut gate = RateGate::default();
+        let now = Instant::now();
+        let puuid = "1d4e93f0-8a5b-4c21-9f6e-0b7a5c3d2e14";
+        gate.account_for(Duration::ZERO, now, &format!("/mmr/v1/players/{puuid}"));
+        gate.account_for(
+            Duration::from_millis(340),
+            now,
+            &format!("/match-history/v1/history/{puuid}?startIndex=0&endIndex=20"),
+        );
+        gate.account_for(Duration::from_millis(200), now, "/mmr/v1/players/0b7a5c3d2e141d4e93f08a5b4c219f6e");
+
+        let line = gate.window_summary(Duration::from_secs(223));
+        assert_eq!(
+            line,
+            "PD budget: 3 requests in 223s, longest wait 340ms (/match-history/v1/history/<id>); /mmr/v1/players/<id> x2, /match-history/v1/history/<id> x1"
+        );
+        assert!(!line.contains(puuid));
+        assert!(!line.contains("startIndex"));
+    }
+
+    #[test]
     fn a_logged_endpoint_path_carries_no_player_ids() {
         let error = r#"{"status":429,"path":"/mmr/v1/players/1d4e93f0-8a5b-4c21-9f6e-0b7a5c3d2e14","message":"x"}"#;
         assert_eq!(error_path(error).as_deref(), Some("/mmr/v1/players/<id>"));
@@ -546,12 +615,12 @@ mod tests {
         let now = Instant::now();
         let mut gate = RateGate::default();
 
-        gate.account_for(Duration::from_millis(10), now);
-        gate.account_for(Duration::from_millis(900), now + Duration::from_secs(30));
+        gate.account_for(Duration::from_millis(10), now, "/test");
+        gate.account_for(Duration::from_millis(900), now + Duration::from_secs(30), "/test");
         assert_eq!(gate.window_requests, 2);
         assert_eq!(gate.window_longest_wait, Duration::from_millis(900));
 
-        gate.account_for(Duration::ZERO, now + PD_LOG_WINDOW);
+        gate.account_for(Duration::ZERO, now + PD_LOG_WINDOW, "/test");
         assert_eq!(gate.window_requests, 0);
         assert_eq!(gate.window_longest_wait, Duration::ZERO);
         assert_eq!(gate.window_started, Some(now + PD_LOG_WINDOW));
@@ -673,7 +742,7 @@ mod tests {
         // that just refused them.
         let resumed = now + Duration::from_secs(61);
         let scheduled: Vec<Duration> = (0..5)
-            .map(|_| gate.reserve_at(resumed, PACING_BALANCED).duration_since(resumed))
+            .map(|_| gate.reserve_at(resumed, PACING_BALANCED, "/test").duration_since(resumed))
             .collect();
         assert_eq!(scheduled[0], Duration::ZERO);
         assert_eq!(scheduled[1], PACING_BALANCED.sustained);
@@ -682,9 +751,9 @@ mod tests {
         // Once the window closes the burst is available again, so an ordinary
         // page does not pay for a throttle that has long since passed.
         let recovered = resumed + PD_RECOVERY_WINDOW;
-        assert_eq!(gate.reserve_at(recovered, PACING_BALANCED), recovered);
+        assert_eq!(gate.reserve_at(recovered, PACING_BALANCED, "/test"), recovered);
         assert_eq!(
-            gate.reserve_at(recovered, PACING_BALANCED)
+            gate.reserve_at(recovered, PACING_BALANCED, "/test")
                 .duration_since(recovered),
             PACING_BALANCED.spacing
         );
@@ -696,7 +765,7 @@ mod tests {
         let now = Instant::now();
         let mut gate = RateGate::default();
         let scheduled: Vec<Duration> = (0..60)
-            .map(|_| gate.reserve_at(now, PACING_BALANCED).duration_since(now))
+            .map(|_| gate.reserve_at(now, PACING_BALANCED, "/test").duration_since(now))
             .collect();
 
         // The burst runs at the spacing floor, so the roster fills promptly.
@@ -713,12 +782,12 @@ mod tests {
         let now = Instant::now();
         let mut gate = RateGate::default();
         for _ in 0..40 {
-            gate.reserve_at(now, PACING_BALANCED);
+            gate.reserve_at(now, PACING_BALANCED, "/test");
         }
         gate.mark_rate_limited(now, None);
 
         let resumed = now + Duration::from_secs(61);
-        assert_eq!(gate.reserve_at(resumed, PACING_BALANCED), resumed);
+        assert_eq!(gate.reserve_at(resumed, PACING_BALANCED, "/test"), resumed);
     }
 
     #[test]
@@ -764,7 +833,7 @@ mod tests {
         let gate = AsyncMutex::new(RateGate::default());
         let started = Instant::now();
 
-        let (first, second) = tokio::join!(acquire_on(&gate), acquire_on(&gate));
+        let (first, second) = tokio::join!(acquire_on(&gate, "/test"), acquire_on(&gate, "/test"));
 
         assert!(first.is_ok());
         assert!(second.is_ok());
@@ -779,7 +848,7 @@ mod tests {
         note_failure_on(&gate, r#"{"status":429}"#).await;
 
         assert_eq!(
-            acquire_on(&gate).await,
+            acquire_on(&gate, "/test").await,
             Err(LOCAL_COOLDOWN_ERROR.to_string())
         );
     }
@@ -813,11 +882,11 @@ mod tests {
         let mut fast = RateGate::default();
         let mut safe = RateGate::default();
         for _ in 0..5 {
-            fast.reserve_at(now, PACING_FAST);
-            safe.reserve_at(now, PACING_SAFE);
+            fast.reserve_at(now, PACING_FAST, "/test");
+            safe.reserve_at(now, PACING_SAFE, "/test");
         }
 
-        assert!(safe.reserve_at(now, PACING_SAFE) > fast.reserve_at(now, PACING_FAST));
+        assert!(safe.reserve_at(now, PACING_SAFE, "/test") > fast.reserve_at(now, PACING_FAST, "/test"));
     }
 
     #[tokio::test]
@@ -825,7 +894,7 @@ mod tests {
         let gate = AsyncMutex::new(RateGate::default());
         note_failure_on(&gate, r#"{"status":404,"message":"no such match"}"#).await;
 
-        assert!(acquire_on(&gate).await.is_ok());
+        assert!(acquire_on(&gate, "/test").await.is_ok());
     }
 
     #[test]
@@ -858,7 +927,7 @@ mod tests {
         let glz = AsyncMutex::new(GlzGate::default());
         note_glz_failure_on(&glz, r#"{"status":429,"path":"/pregame/v1/players/<id>"}"#).await;
 
-        assert!(acquire_on(&pd).await.is_ok());
+        assert!(acquire_on(&pd, "/test").await.is_ok());
         assert_eq!(
             acquire_glz_on(&glz).await,
             Err(GLZ_LOCAL_COOLDOWN_ERROR.to_string())
@@ -872,7 +941,7 @@ mod tests {
         note_failure_on(&pd, r#"{"status":429,"path":"/mmr/v1/players/<id>"}"#).await;
 
         assert_eq!(
-            acquire_on(&pd).await,
+            acquire_on(&pd, "/test").await,
             Err(LOCAL_COOLDOWN_ERROR.to_string())
         );
         assert!(acquire_glz_on(&glz).await.is_ok());

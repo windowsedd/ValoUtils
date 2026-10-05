@@ -232,10 +232,25 @@ struct CachedEnrichment {
     mmr: Option<Value>,
     inserted_at: Instant,
     complete: bool,
+    /// When `mmr` was last fetched. Ranks keep their own clock: a player whose
+    /// name Riot will not give (hidden names are common in Deathmatch) never
+    /// becomes `complete`, and tying the rank to that re-read their MMR on
+    /// every poll for the whole match.
+    mmr_at: Option<Instant>,
 }
 
 fn enrichment_is_fresh(inserted_at: Instant, complete: bool, now: Instant) -> bool {
     complete && now.duration_since(inserted_at) < ENRICHMENT_TTL
+}
+
+/// Whether a cached rank can be served without asking Riot again.
+fn mmr_is_fresh(entry: Option<&CachedEnrichment>, now: Instant) -> bool {
+    entry.is_some_and(|entry| {
+        entry.mmr.is_some()
+            && entry
+                .mmr_at
+                .is_some_and(|fetched| now.duration_since(fetched) < ENRICHMENT_TTL)
+    })
 }
 
 fn enrichment_is_complete(game_name: &str, mmr: Option<&Value>) -> bool {
@@ -1410,7 +1425,7 @@ async fn enrich_players(
                     .map(|entry| (entry.game_name.clone(), entry.tag_line.clone()))
             })
             .unwrap_or_default();
-        let refreshed_mmr = if fetch_mmr {
+        let refreshed_mmr = if fetch_mmr && !mmr_is_fresh(previous.as_ref(), now) {
             let mmr_result = run_live_pd(pd_cache, api.get_mmr(&puuid)).await;
             if mmr_result
                 .as_ref()
@@ -1434,12 +1449,18 @@ async fn enrich_players(
                 now,
             );
             let complete = enrichment_is_complete(&name.0, mmr.as_ref());
+            let mmr_at = if refreshed_mmr.is_some() {
+                Some(now)
+            } else {
+                previous.as_ref().and_then(|entry| entry.mmr_at)
+            };
             let entry = CachedEnrichment {
                 game_name: name.0,
                 tag_line: name.1,
                 mmr,
                 inserted_at,
                 complete,
+                mmr_at,
             };
             cache
                 .enrichment
@@ -1767,6 +1788,9 @@ pub async fn live_game_fetch(
 
     let result = async {
         let detected = detect_state(&api, &api.puuid, &cache).await?;
+        if let Some(match_id) = detected.match_id.as_deref() {
+            party_history_cache.begin_match(match_id);
+        }
 
         if detected.state == LiveState::Idle {
             let payload = json!({
@@ -2801,6 +2825,7 @@ mod tests {
                 mmr: None,
                 inserted_at: Instant::now(),
                 complete: false,
+                mmr_at: None,
             },
         )]);
 
@@ -2849,6 +2874,29 @@ mod tests {
     }
 
     #[test]
+    fn a_cached_rank_is_reused_while_the_name_is_still_missing() {
+        let now = Instant::now();
+        let entry = |mmr: Option<Value>, mmr_at: Option<Instant>| CachedEnrichment {
+            game_name: String::new(),
+            tag_line: String::new(),
+            mmr,
+            inserted_at: now,
+            complete: false,
+            mmr_at,
+        };
+        // Hidden name, rank already read: the entry is incomplete, but the
+        // rank must not be fetched again on the next poll.
+        let hidden = entry(Some(json!({})), Some(now));
+        assert!(!hidden.complete);
+        assert!(mmr_is_fresh(Some(&hidden), now + Duration::from_secs(60)));
+        // It is refreshed once it ages out, or when it was never read.
+        assert!(!mmr_is_fresh(Some(&hidden), now + ENRICHMENT_TTL));
+        assert!(!mmr_is_fresh(Some(&entry(None, Some(now))), now));
+        assert!(!mmr_is_fresh(Some(&entry(Some(json!({})), None)), now));
+        assert!(!mmr_is_fresh(None, now));
+    }
+
+    #[test]
     fn names_already_on_file_are_not_asked_for_again() {
         let mut enrichments = HashMap::new();
         enrichments.insert(
@@ -2859,6 +2907,7 @@ mod tests {
                 mmr: None,
                 inserted_at: Instant::now(),
                 complete: false,
+                mmr_at: None,
             },
         );
         let refresh = vec!["known".to_string(), "missing".to_string()];

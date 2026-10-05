@@ -287,7 +287,7 @@ impl RiotApiClient {
         // asked for it. glz is a separate host: it is not paced, but a refusal
         // there holds GLZ only. It must not strike the PD budget.
         if matches!(target, Target::Pd) {
-            rate_gate::acquire().await?;
+            rate_gate::acquire(path).await?;
         } else {
             rate_gate::acquire_glz().await?;
         }

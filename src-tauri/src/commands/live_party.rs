@@ -8,10 +8,12 @@ use std::time::{Duration, Instant};
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 
-/// Match history used to infer parties does not change during a live match.
-/// Holding it for three minutes keeps a 10-player roster from re-asking the
-/// same history documents every half minute.
-const HISTORY_TTL: Duration = Duration::from_secs(3 * 60);
+/// Match history does not change during a live match: the game in progress only
+/// appears once it ends. Histories are therefore kept for the whole match and
+/// dropped by [`LivePartyHistoryCache::begin_match`] when a new one starts; this
+/// TTL only bounds a match that never reports its end. Three minutes used to
+/// re-read all ten histories several times per game.
+const HISTORY_TTL: Duration = Duration::from_secs(60 * 60);
 const MATCH_TTL: Duration = Duration::from_secs(6 * 60 * 60);
 const MAX_HISTORY_CACHE_ENTRIES: usize = 512;
 const MAX_MATCH_CACHE_ENTRIES: usize = 512;
@@ -63,6 +65,8 @@ pub(crate) struct LivePartyHistoryCache {
     history_documents: Arc<Mutex<HashMap<String, Timed<Value>>>>,
     matches: Arc<Mutex<HashMap<String, Timed<Value>>>>,
     permits: Arc<Semaphore>,
+    /// The live match the cached histories were read for.
+    live_match: Arc<Mutex<String>>,
 }
 
 impl Default for LivePartyHistoryCache {
@@ -72,11 +76,30 @@ impl Default for LivePartyHistoryCache {
             history_documents: Arc::new(Mutex::new(HashMap::new())),
             matches: Arc::new(Mutex::new(HashMap::new())),
             permits: Arc::new(Semaphore::new(3)),
+            live_match: Arc::new(Mutex::new(String::new())),
         }
     }
 }
 
 impl LivePartyHistoryCache {
+    /// Marks the live match the cached histories belong to. A different match
+    /// means everyone may have finished a game since, so histories are dropped;
+    /// the same match keeps them however many polls ask. Match details never
+    /// change and are kept either way.
+    pub(super) fn begin_match(&self, match_id: &str) {
+        let match_id = match_id.trim().to_ascii_lowercase();
+        if match_id.is_empty() {
+            return;
+        }
+        let mut current = self.live_match.lock().unwrap();
+        if *current == match_id {
+            return;
+        }
+        *current = match_id;
+        self.histories.lock().unwrap().clear();
+        self.history_documents.lock().unwrap().clear();
+    }
+
     fn get_history_document_at(&self, puuid: &str, now: Instant) -> Option<Value> {
         let key = puuid.to_ascii_lowercase();
         let mut documents = self.history_documents.lock().unwrap();
@@ -1034,26 +1057,43 @@ mod tests {
     }
 
     #[test]
-    fn cache_history_entries_expire_after_three_minutes() {
+    fn cache_history_entries_last_the_whole_match() {
         let cache = LivePartyHistoryCache::default();
         let now = Instant::now();
+        cache.begin_match("match-1");
         cache.put_history_at("p1", vec!["match-a".into()], now);
         cache.put_history_document_at("p1", json!({ "History": [] }), now);
 
-        assert_eq!(
-            cache.get_history_at("P1", now + Duration::from_secs(179)),
-            Some(vec!["match-a".to_string()])
-        );
-        assert!(cache
-            .get_history_document_at("p1", now + Duration::from_secs(179))
-            .is_some());
-        assert_eq!(
-            cache.get_history_at("p1", now + Duration::from_secs(181)),
-            None
-        );
-        assert!(cache
-            .get_history_document_at("p1", now + Duration::from_secs(181))
-            .is_none());
+        // A long match polls for half an hour; the histories cannot have changed.
+        let late = now + Duration::from_secs(45 * 60);
+        cache.begin_match("MATCH-1");
+        assert_eq!(cache.get_history_at("P1", late), Some(vec!["match-a".to_string()]));
+        assert!(cache.get_history_document_at("p1", late).is_some());
+
+        // The TTL only bounds a match that never reports its end.
+        let stale = now + HISTORY_TTL + Duration::from_secs(1);
+        assert_eq!(cache.get_history_at("p1", stale), None);
+        assert!(cache.get_history_document_at("p1", stale).is_none());
+    }
+
+    #[test]
+    fn a_new_match_drops_histories_but_keeps_match_details() {
+        let cache = LivePartyHistoryCache::default();
+        let now = Instant::now();
+        cache.begin_match("match-1");
+        cache.put_history_at("p1", vec!["match-a".into()], now);
+        cache.put_history_document_at("p1", json!({ "History": [] }), now);
+        cache.put_match_at("match-a", json!({ "matchInfo": {} }), now);
+
+        cache.begin_match("match-2");
+        assert_eq!(cache.get_history_at("p1", now), None);
+        assert!(cache.get_history_document_at("p1", now).is_none());
+        assert!(cache.get_match_at("match-a", now).is_some());
+
+        // An empty id is no evidence of a new match.
+        cache.put_history_at("p1", vec!["match-b".into()], now);
+        cache.begin_match("  ");
+        assert!(cache.get_history_at("p1", now).is_some());
     }
 
     #[test]
