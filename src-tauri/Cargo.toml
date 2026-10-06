@@ -3,8 +3,8 @@ name = "valoutils"
 version = "1.0.13"
 description = "A app that provides extra tools for Valorant"
 authors = ["windowsedd"]
-license = ""
-repository = ""
+license = "MIT"
+repository = "https://github.com/windowsedd/ValoUtils"
 edition = "2021"
 rust-version = "1.88"
 
