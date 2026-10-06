@@ -29,8 +29,8 @@ describe("Live Match signed-in player marker", () => {
   }
 
   test("desktop grids cap the player column and keep spare width at the right edge", () => {
-    expect(table.match(/md:grid-cols-\[minmax\(180px,300px\)/g)?.length).toBe(2);
-    expect(table.match(/minmax\(34px,1fr\)\]/g)?.length).toBe(4);
+    expect(table.match(/@min-\[\d+rem\]:grid-cols-\[minmax\(180px,300px\)/g)?.length).toBe(2);
+    expect(table.match(/minmax\(34px,1fr\)\]/g)?.length).toBe(2);
   });
 
   test("shows damage per round next to ACS on live player stats", () => {
