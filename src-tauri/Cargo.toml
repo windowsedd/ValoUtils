@@ -12,7 +12,8 @@ rust-version = "1.88"
 
 [lib]
 name = "app_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
+# Windows-only: the staticlib/cdylib outputs are only needed for mobile builds.
+crate-type = ["rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2.6.3", features = [] }
@@ -51,3 +52,11 @@ windows-sys = { version = "0.61", features = ["Win32_Storage_FileSystem"] }
 [dev-dependencies]
 sha2 = "0.10"
 rcgen = { version = "0.14", features = ["x509-parser"] }
+
+# Faster dev builds: keep line numbers for backtraces in our code, skip
+# debug info for dependencies (smaller PDBs, quicker links).
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
