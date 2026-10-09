@@ -279,7 +279,9 @@
     "noMatches": "경쟁전 매치를 찾을 수 없습니다",
     "promoted": "승급",
     "demoted": "강등",
-    "rrToNext": "{{rr}} / 100 RR (다음 단계까지)"
+    "rrToNext": "{{rr}} / 100 RR (다음 단계까지)",
+    "accountLevel": "계정 레벨",
+    "accountXp": "다음 레벨까지 {{xp}} / {{total}} XP"
   },
   "liveGame": {
     "title": "라이브 게임",

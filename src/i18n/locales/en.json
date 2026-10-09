@@ -281,7 +281,9 @@
     "noMatches": "No competitive matches found",
     "promoted": "Promoted",
     "demoted": "Demoted",
-    "rrToNext": "{{rr}} / 100 RR to next tier"
+    "rrToNext": "{{rr}} / 100 RR to next tier",
+    "accountLevel": "Account Level",
+    "accountXp": "{{xp}} / {{total}} XP to next level"
   },
   "liveGame": {
     "title": "Live Game",

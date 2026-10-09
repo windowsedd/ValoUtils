@@ -279,7 +279,9 @@
 		"noMatches": "找不到競技對戰記錄",
 		"promoted": "晉級",
 		"demoted": "降級",
-		"rrToNext": "{{rr}} / 100 RR（距下一段位）"
+		"rrToNext": "{{rr}} / 100 RR（距下一段位）",
+		"accountLevel": "帳號等級",
+		"accountXp": "{{xp}} / {{total}} XP（距下一等級）"
 	},
 	"liveGame": {
 		"title": "即時對戰",

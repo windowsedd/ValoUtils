@@ -210,6 +210,7 @@ Both tokens come from `riot::client::get_tokens()` / the `tokens:get` IPC channe
 | `/personalization/v2/players/<puuid>/playerloadout` | GET/PUT | Cosmetic loadout |
 | `/restrictions/v3/penalties` | GET | Account penalties |
 | `/contracts/v1/contracts/<puuid>` | GET | Battle pass / contract XP |
+| `/account-xp/v1/players/<puuid>` | GET | Account level + XP (Career; optional, failure hides it) |
 | `/name-service/v2/players` | PUT | Resolve PUUIDs → names (note the hyphen; `/nameservice/...` 503s) |
 
 **Game (`glz-<region>-1.a.pvp.net`)**

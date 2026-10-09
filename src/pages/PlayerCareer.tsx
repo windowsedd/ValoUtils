@@ -18,13 +18,18 @@ import { normalizeCareerMatches } from "./player-career-history";
 
 type CareerData = {
 	puuid: string;
+	riotId: string | null;
 	mmr: any;
 	competitiveUpdates: any;
 	matchHistory: any;
 	currentSeasonId: string | null;
 	competitiveSeasons: CompetitiveSeason[];
 	rankShields: 0 | 1 | 2 | null;
+	accountLevel: { level: number; xp: number } | null;
 };
+
+// Every account level costs the same amount of XP.
+const XP_PER_LEVEL = 5000;
 
 const RankBadge = ({
 	tier,
@@ -97,12 +102,14 @@ const onResponse = (message: any) => {
 			setError(null);
 			setData({
 				puuid: response.puuid,
+				riotId: response.riotId ?? null,
 				mmr: response.mmr,
 				competitiveUpdates: response.competitiveUpdates,
 				matchHistory: response.matchHistory,
 				currentSeasonId: response.currentSeasonId ?? null,
 				competitiveSeasons: response.competitiveSeasons ?? [],
 				rankShields: response.rankShields ?? null,
+				accountLevel: response.accountLevel ?? null,
 			});
 			setLoading(false);
 		};
@@ -139,7 +146,7 @@ const onResponse = (message: any) => {
 			<PageHeader
 				icon={<LuTrophy className="text-lg" />}
 				title={t("career.title")}
-				subtitle={ready ? t("career.subtitle") : undefined}
+				subtitle={ready ? data.riotId ?? t("career.subtitle") : undefined}
 			/>
 
 			{!ready && (
@@ -192,6 +199,30 @@ const onResponse = (message: any) => {
 									</div>
 									<p className="text-[11px] text-(--text-muted)">{t("career.rrToNext", { rr: currentRR })}</p>
 								</>
+							)}
+							{data.accountLevel && (
+								<div className="mt-2 w-full border-t border-(--border) pt-3">
+									<div className="flex items-baseline justify-between">
+										<span className="text-[10px] font-medium tracking-[0.08em] text-(--text-muted) uppercase">
+											{t("career.accountLevel")}
+										</span>
+										<span className="tabular-nums text-[14px] font-semibold text-(--text-primary)">
+											{data.accountLevel.level}
+										</span>
+									</div>
+									<div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-(--control)">
+										<div
+											className="h-full rounded-full bg-(--text-secondary)"
+											style={{ width: `${Math.min(100, (data.accountLevel.xp / XP_PER_LEVEL) * 100)}%` }}
+										/>
+									</div>
+									<p className="mt-1 text-left text-[11px] tabular-nums text-(--text-muted)">
+										{t("career.accountXp", {
+											xp: data.accountLevel.xp.toLocaleString(),
+											total: XP_PER_LEVEL.toLocaleString(),
+										})}
+									</p>
+								</div>
 							)}
 						</section>
 						<CareerAccountStatus puuid={data.puuid} />

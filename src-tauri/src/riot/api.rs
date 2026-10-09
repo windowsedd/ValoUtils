@@ -452,6 +452,17 @@ impl RiotApiClient {
         .await
     }
 
+    /// Account level progress: `Progress.Level` and `Progress.XP` within it.
+    pub async fn get_account_xp(&self, puuid: &str) -> Result<Value, String> {
+        self.request(
+            Target::Pd,
+            reqwest::Method::GET,
+            &format!("/account-xp/v1/players/{puuid}"),
+            None,
+        )
+        .await
+    }
+
     pub async fn get_penalties(&self) -> Result<Value, String> {
         self.request(
             Target::Pd,

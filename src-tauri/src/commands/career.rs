@@ -73,6 +73,34 @@ fn career_act_rank(mmr: &Value) -> (Option<String>, Vec<Value>) {
     extract_competitive_seasons(Some(mmr))
 }
 
+/// Account level is optional: a failed or malformed account-xp reply hides it
+/// rather than blocking rank and history.
+fn career_account_level(account_xp: &Value) -> Option<Value> {
+    let level = account_xp.pointer("/Progress/Level")?.as_u64()?;
+    let xp = account_xp
+        .pointer("/Progress/XP")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    Some(json!({"level": level, "xp": xp}))
+}
+
+/// The signed-in player's Riot ID from a name-service reply, when it has one.
+fn career_riot_id(names: &Value, puuid: &str) -> Option<String> {
+    let entry = names.as_array()?.iter().find(|entry| {
+        entry
+            .get("Subject")
+            .and_then(Value::as_str)
+            .is_some_and(|subject| subject.eq_ignore_ascii_case(puuid))
+    })?;
+    let name = entry.get("GameName").and_then(Value::as_str)?.trim();
+    let tag = entry.get("TagLine").and_then(Value::as_str).unwrap_or("").trim();
+    match (name.is_empty(), tag.is_empty()) {
+        (true, _) => None,
+        (false, true) => Some(name.to_string()),
+        (false, false) => Some(format!("{name}#{tag}")),
+    }
+}
+
 fn career_rank_shields(mmr: &Value, competitive_updates: &Value) -> Option<u8> {
     let (current_tier, _, _, _) = extract_rank(Some(mmr));
     let current_season_id = mmr
@@ -88,28 +116,40 @@ pub async fn career_get(riot: State<'_, RiotState>) -> Result<Value, ()> {
     let result = api::with_api(&riot, |api| async move {
         let puuid = api.puuid.clone();
         let (history_start, history_end) = career_match_history_indices();
-        let (mmr, competitive_updates, match_history) = tokio::try_join!(
-            api.get_mmr(&puuid),
-            api.get_competitive_history(&puuid, 0, 15),
-            api.get_match_history(&puuid, history_start, history_end),
-        )?;
-        Ok((puuid, mmr, competitive_updates, match_history))
+        let names_request = [puuid.clone()];
+        let (career, account_xp, names) = tokio::join!(
+            async {
+                tokio::try_join!(
+                    api.get_mmr(&puuid),
+                    api.get_competitive_history(&puuid, 0, 15),
+                    api.get_match_history(&puuid, history_start, history_end),
+                )
+            },
+            api.get_account_xp(&puuid),
+            api.get_names(&names_request),
+        );
+        let (mmr, competitive_updates, match_history) = career?;
+        let riot_id = names.ok().and_then(|names| career_riot_id(&names, &puuid));
+        Ok((puuid, riot_id, mmr, competitive_updates, match_history, account_xp.ok()))
     })
     .await;
 
     Ok(match result {
-        Ok((puuid, mmr, competitive_updates, match_history)) => {
+        Ok((puuid, riot_id, mmr, competitive_updates, match_history, account_xp)) => {
             let (current_season_id, competitive_seasons) = career_act_rank(&mmr);
             let rank_shields = career_rank_shields(&mmr, &competitive_updates);
+            let account_level = account_xp.as_ref().and_then(career_account_level);
             json!({
                 "success": true,
                 "puuid": puuid,
+                "riotId": riot_id,
                 "mmr": mmr,
                 "competitiveUpdates": competitive_updates,
                 "matchHistory": match_history,
                 "currentSeasonId": current_season_id,
                 "competitiveSeasons": competitive_seasons,
                 "rankShields": rank_shields,
+                "accountLevel": account_level,
             })
         }
         Err(e) if e.is_login_required() => {
@@ -150,6 +190,24 @@ mod tests {
             "Penalties",
         );
         assert_eq!(failure["success"], false);
+    }
+
+    #[test]
+    fn reads_account_level_progress() {
+        let level = career_account_level(&json!({"Progress": {"Level": 142, "XP": 2300}}));
+        assert_eq!(level, Some(json!({"level": 142, "xp": 2300})));
+        assert_eq!(career_account_level(&json!({})), None);
+    }
+
+    #[test]
+    fn reads_the_players_riot_id() {
+        let names = json!([
+            {"Subject": "other", "GameName": "Someone", "TagLine": "1"},
+            {"Subject": "main", "GameName": "Player", "TagLine": "NA1"}
+        ]);
+        assert_eq!(career_riot_id(&names, "main").as_deref(), Some("Player#NA1"));
+        assert_eq!(career_riot_id(&names, "missing"), None);
+        assert_eq!(career_riot_id(&json!([{"Subject": "main", "GameName": ""}]), "main"), None);
     }
 
     #[test]
