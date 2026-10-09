@@ -22,6 +22,10 @@
 		"unavailable": "無法取得牌位護盾狀態"
 	},
 	"common": {
+		"configServerDown": "用戶端設定伺服器已停止。",
+		"configWake": "啟動設定伺服器",
+		"configWaking": "正在啟動伺服器…",
+		"configWakeFailed": "無法啟動用戶端設定伺服器。",
 		"actionFailed": "操作失敗，請再試一次。",
 		"close": "關閉",
 		"cancel": "取消",
@@ -904,7 +908,6 @@
 		"modelsHint": "選擇端點支援的聊天模型，或手動輸入模型 ID。",
 		"modelsCredentials": "請先輸入 API 金鑰，或本機端點的基礎 URL。",
 		"noModels": "找不到模型，仍可手動輸入模型 ID。",
-
 		"label": "AI",
 		"section": "AI",
 		"provider": "供應商",

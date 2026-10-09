@@ -1,4 +1,5 @@
 import { reportIpcError } from "@/util/ipc";
+import { ClientConfigWakeButton } from "./client-config-wake-button";
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback,  useEffect, useRef, useState, type ReactNode  } from "react";
 import { LuPlay } from "react-icons/lu";
@@ -52,6 +53,7 @@ export const LoginRequiredPanel = ({
 }: LoginRequiredPanelProps) => {
 	const { t } = useTranslation();
 	const [clientRunning, setClientRunning] = useState<boolean | null>(null);
+	const [configRunning, setConfigRunning] = useState<boolean | null>(null);
 	/** Which button is in flight, so only that one shows the pending label. */
 	const [launching, setLaunching] = useState<LaunchMode | null>(null);
 	const [error, setError] = useState<string | null>(null);
@@ -75,6 +77,7 @@ const applyStatus = (message: any) => {
 			try {
 				const data = message;
 				if (!data?.success) return;
+				setConfigRunning(typeof data.running === "boolean" ? data.running : null);
 				const running = Boolean(data.riotClientRunning);
 				setClientRunning((previous) => {
 					// A client just appeared — the session may already be usable.
@@ -128,6 +131,8 @@ const applyStatus = (message: any) => {
 				{icon && <span className="mb-1 text-3xl text-(--text-muted)">{icon}</span>}
 				<p className="text-[13px] font-semibold text-(--text-primary)">{title}</p>
 				<p className="text-[12px] leading-5 text-(--text-muted)">{description}</p>
+				<ClientConfigWakeButton running={configRunning} disabled={launching !== null} from="loginRequired"
+					onReady={() => { setConfigRunning(true); retry.current?.(); }} />
 
 				<div className="mt-3 flex flex-wrap items-center justify-center gap-2">
 					<button

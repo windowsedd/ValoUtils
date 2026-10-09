@@ -22,6 +22,10 @@
     "unavailable": "Shield status unavailable"
   },
   "common": {
+    "configServerDown": "Client config server is down.",
+    "configWake": "Wake config server",
+    "configWaking": "Starting server…",
+    "configWakeFailed": "Could not start the client config server.",
     "actionFailed": "Action failed. Please try again.",
     "close": "Close",
     "cancel": "Cancel",
@@ -914,7 +918,6 @@
     "modelsHint": "Choose a chat model supported by your endpoint, or enter a model ID manually.",
     "modelsCredentials": "Enter an API key, or a base URL for a local endpoint, first.",
     "noModels": "No models found. You can still enter a model ID manually.",
-
     "label": "AI",
     "section": "AI",
     "provider": "Provider",

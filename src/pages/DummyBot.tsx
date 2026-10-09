@@ -1,5 +1,6 @@
 import { reportIpcError } from "@/util/ipc";
 import { SelectMenu } from "@/components/select-menu";
+import { ClientConfigWakeButton } from "@/components/client-config-wake-button";
 import { invoke } from "@tauri-apps/api/core";
 import { PageHeader, SectionCard, SectionRow, pageBodyClass } from "@/components/section-card";
 import { useCallback,  useEffect, useRef, useState, type ReactNode  } from "react";
@@ -257,6 +258,10 @@ const applyConfig = (message: any) => {
 						{launch?.url ?? "http://127.0.0.1:8000"}
 					</span>
 				</SectionRow>
+				{launch?.running === false && <SectionRow leader={false}>
+					<ClientConfigWakeButton running={launch?.running ?? null} disabled={launchBusy} from="dummyBot"
+						onReady={() => setLaunch(current => current ? { ...current, running: true } : current)} />
+				</SectionRow>}
 				<SectionRow leader={false}>
 					<div className="min-w-0 flex-1">
 						<p className="text-[12px] text-(--text-primary)">{t("dummyBot.launchWithRelay")}</p>

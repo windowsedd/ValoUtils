@@ -327,6 +327,13 @@ analysis. Results stay in Matches state by match ID; Regenerate makes a new call
 
 ### Chat certificate identities
 
+Bot and the shared login recovery panel show Wake config server when
+`client_config_status` cannot reach `http://127.0.0.1:8000/__valoutils/health`.
+`client_config_start` starts the relay and verifies the local config server,
+recovering stale server tasks without restarting or signing out Riot Client.
+Start, stop and launch commands share the launch lock. A port conflict or
+certificate failure remains an error; only a healthy server reports success.
+
 The local chat relay's TLS identity is selectable (config key `presenceCert`, default `deceive`). Built-in identities live in `src-tauri/src/chat_certs.rs`; each has a host, a PFX download URL, and its own cache file `%APPDATA%\ValoUtils\<host>.pfx` (legacy `localhostCert.pfx` is migrated into the deceive slot). `presence:status-set "cert" <id>` switches and restarts the relay; `presence_cert_import` opens a native picker and installs a PFX for an identity. The selected host drives the `chat.host`/`chat.affinities` rewrite in `client_config.rs` and the SAN/loopback validation — the host must resolve only to `127.0.0.1` (DNS-only A record, no AAAA), so a hostname serving the PFX publicly (e.g. behind Cloudflare) cannot also be the chat host.
 
 ### Match timelines

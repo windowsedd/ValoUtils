@@ -102,10 +102,13 @@ fn command_result(result: Result<Value, String>) -> Result<Value, ()> {
 
 #[tauri::command]
 pub async fn client_config_status() -> Result<Value, ()> {
+    let running = client_config::verify_ready(client_config::DEFAULT_PORT)
+        .await
+        .is_ok();
     let presence = presence_proxy::controller().snapshot();
     Ok(json!({
         "success": true,
-        "running": client_config::is_running(),
+        "running": running,
         "port": client_config::DEFAULT_PORT,
         "url": format!("http://127.0.0.1:{}", client_config::DEFAULT_PORT),
         "riotClientRunning": riot_client_running(),
@@ -120,6 +123,28 @@ pub async fn client_config_status() -> Result<Value, ()> {
         "certHost": presence.cert_host,
         "lastWarning": presence.last_warning,
     }))
+}
+
+async fn start_config_and_relay() -> Result<u16, String> {
+    let relay_was_running = presence_proxy::controller().snapshot().relay_running;
+    let relay_port = presence_proxy::start().await?;
+    if let Err(error) = client_config::start_verified(client_config::DEFAULT_PORT).await {
+        if !relay_was_running {
+            presence_proxy::stop().await;
+        }
+        return Err(error);
+    }
+    Ok(relay_port)
+}
+
+/// Wake the local services without launching or restarting the Riot Client.
+#[tauri::command]
+pub async fn client_config_start() -> Result<Value, ()> {
+    let _launch_guard = launch_lock().lock().await;
+    if let Err(error) = start_config_and_relay().await {
+        return command_result(Err(error));
+    }
+    client_config_status().await
 }
 
 /// Starts the local config server (if needed) and launches the Riot Client
@@ -143,16 +168,7 @@ pub async fn riot_launch_with_config(args: Vec<Value>) -> Result<Value, ()> {
 
         // The config response needs the relay port, so bring the relay up before
         // the client can make its first config request.
-        let relay_port = presence_proxy::start().await?;
-        if let Err(error) = client_config::start(client_config::DEFAULT_PORT).await {
-            presence_proxy::stop().await;
-            return Err(error);
-        }
-        if let Err(error) = client_config::verify_ready(client_config::DEFAULT_PORT).await {
-            client_config::stop();
-            presence_proxy::stop().await;
-            return Err(error);
-        }
+        let relay_port = start_config_and_relay().await?;
 
         let config_url = format!("http://127.0.0.1:{}", client_config::DEFAULT_PORT);
         let args = launch_args(&product, &patchline, Some(&config_url));
@@ -200,6 +216,7 @@ pub async fn riot_launch_normal(args: Vec<Value>) -> Result<Value, ()> {
 
 #[tauri::command]
 pub async fn client_config_stop() -> Result<Value, ()> {
+    let _launch_guard = launch_lock().lock().await;
     client_config::stop();
     presence_proxy::stop().await;
     Ok(json!({ "success": true, "running": false, "relayRunning": false }))

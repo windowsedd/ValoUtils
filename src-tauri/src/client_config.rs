@@ -115,6 +115,26 @@ pub async fn start(port: u16) -> Result<(), String> {
     Ok(())
 }
 
+/// Recover a stale server task and report success only once HTTP is ready.
+pub async fn start_verified(port: u16) -> Result<(), String> {
+    if is_running() {
+        if verify_ready(port).await.is_ok() {
+            return Ok(());
+        }
+        let previous = server().lock().unwrap().take();
+        if let Some(previous) = previous {
+            previous.abort();
+            let _ = previous.await;
+        }
+    }
+    start(port).await?;
+    if let Err(error) = verify_ready(port).await {
+        stop();
+        return Err(error);
+    }
+    Ok(())
+}
+
 pub fn stop() {
     if let Some(handle) = server().lock().unwrap().take() {
         handle.abort();
@@ -312,6 +332,27 @@ mod tests {
     use super::*;
 
     #[tokio::test]
+    async fn waking_config_server_verifies_health_and_can_restart_after_stop() {
+        let reservation = tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+            .await
+            .unwrap();
+        let port = reservation.local_addr().unwrap().port();
+        drop(reservation);
+        start_verified(port).await.unwrap();
+        verify_ready(port).await.unwrap();
+        start_verified(port).await.unwrap();
+        stop();
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        // A finished task must not prevent a stopped server from waking again.
+        *server().lock().unwrap() = Some(tauri::async_runtime::spawn(async {}));
+        assert!(is_running());
+        assert!(verify_ready(port).await.is_err());
+        start_verified(port).await.unwrap();
+        verify_ready(port).await.unwrap();
+        stop();
+    }
+
+    #[tokio::test]
     async fn health_endpoint_reports_ready() {
         let listener = tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
             .await
@@ -361,8 +402,8 @@ mod tests {
             "chat.port":5223,
             "chat.affinities":{"eu1":"eu2.chat.si.riotgames.com"}
         }"#;
-        let result = patch_config_json(input, 43123, None, crate::chat_certs::VALOUTILS.host)
-            .unwrap();
+        let result =
+            patch_config_json(input, 43123, None, crate::chat_certs::VALOUTILS.host).unwrap();
 
         assert_eq!(result.json["chat.host"], crate::chat_certs::VALOUTILS.host);
         assert_eq!(

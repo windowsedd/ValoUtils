@@ -244,6 +244,7 @@ pub fn run() {
             commands::riot_launch::riot_launch_normal,
             commands::riot_launch::riot_launch_with_config,
             commands::riot_launch::client_config_status,
+            commands::riot_launch::client_config_start,
             commands::riot_launch::client_config_stop,
             commands::presence::presence_status_get,
             commands::presence::presence_status_set,

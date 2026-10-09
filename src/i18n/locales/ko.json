@@ -22,6 +22,10 @@
     "unavailable": "랭크 보호막 상태를 확인할 수 없음"
   },
   "common": {
+    "configServerDown": "클라이언트 설정 서버가 중지되었습니다.",
+    "configWake": "설정 서버 시작",
+    "configWaking": "서버 시작 중…",
+    "configWakeFailed": "클라이언트 설정 서버를 시작하지 못했습니다.",
     "actionFailed": "작업에 실패했습니다. 다시 시도해 주세요.",
     "close": "닫기",
     "cancel": "취소",
@@ -904,7 +908,6 @@
     "modelsHint": "엔드포인트에서 지원하는 채팅 모델을 선택하거나 모델 ID를 직접 입력하세요.",
     "modelsCredentials": "먼저 API 키 또는 로컬 엔드포인트의 기본 URL을 입력하세요.",
     "noModels": "모델을 찾을 수 없습니다. 모델 ID를 직접 입력할 수 있습니다.",
-
     "label": "AI",
     "section": "AI",
     "provider": "제공업체",
