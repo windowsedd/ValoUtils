@@ -164,6 +164,7 @@ pub fn run() {
             app.manage(commands::live::LiveStatsCache::default());
             app.manage(commands::live_party::LivePartyHistoryCache::default());
             app.manage(commands::matches::MatchCache::default());
+            app.manage(commands::matches::MatchTimelineCache::default());
             commands::chat::ensure_chat_forwarders(app.handle());
             {
                 let handle = app.handle().clone();
@@ -250,6 +251,7 @@ pub fn run() {
             commands::matches::match_list,
             commands::matches::match_details,
             commands::matches::match_summaries,
+            commands::matches::match_timeline,
             commands::chat::chat_get,
             match_chat_history::chat_saved_history_clear,
             commands::chat::chat_history,

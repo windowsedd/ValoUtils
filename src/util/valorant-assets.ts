@@ -33,7 +33,9 @@ export const localize = (value: Localized | undefined | null): string => {
   return value[code] ?? value["en-US"] ?? Object.values(value)[0] ?? "";
 };
 
-export type AgentAsset = { name: Localized; icon: string };
+export type AbilityAsset = { name: Localized; icon: string | null };
+/** `abilities` is keyed by lowercased slot: "ability1", "ability2", "grenade", "ultimate". */
+export type AgentAsset = { name: Localized; icon: string; abilities?: Record<string, AbilityAsset> };
 export type SkinAsset = { name: Localized; icon: string };
 export type TierAsset = {
   name: Localized;
@@ -42,7 +44,21 @@ export type TierAsset = {
   color: string;
 };
 export type CardAsset = { name: Localized; icon: string };
-export type MapAsset = { name: Localized; listViewIcon: string | null; splash: string | null };
+/** Projects game coordinates onto `minimap`; see `minimapPoint`. */
+export type MinimapAsset = {
+  image: string;
+  xMultiplier: number;
+  yMultiplier: number;
+  xScalarToAdd: number;
+  yScalarToAdd: number;
+};
+export type MapAsset = {
+  name: Localized;
+  listViewIcon: string | null;
+  splash: string | null;
+  minimap?: MinimapAsset | null;
+};
+export type WeaponAsset = { name: Localized; killIcon: string | null };
 export type SeasonAsset = { label: string; startMillis: number; endMillis: number };
 export type EventAsset = { startMillis: number; endMillis: number };
 export type BundleAsset = { name: Localized; icon: string | null; verticalPromo: string | null };
@@ -69,9 +85,18 @@ export const getAgents = (): Promise<Map<string, AgentAsset>> => {
       .then((json) => {
         const map = new Map<string, AgentAsset>();
         for (const a of json?.data ?? []) {
+          const abilities: Record<string, AbilityAsset> = {};
+          for (const ability of a.abilities ?? []) {
+            if (typeof ability?.slot !== "string") continue;
+            abilities[ability.slot.toLowerCase()] = {
+              name: ability.displayName,
+              icon: ability.displayIcon ?? null,
+            };
+          }
           map.set((a.uuid as string).toLowerCase(), {
             name: a.displayName,
             icon: a.displayIconSmall ?? a.displayIcon,
+            abilities,
           });
         }
         return map;
@@ -124,6 +149,7 @@ export const getMaps = (): Promise<Map<string, MapAsset>> => {
             // match list; `splash` is the full-bleed art.
             listViewIcon: m.listViewIcon ?? m.splash ?? null,
             splash: m.splash ?? m.listViewIcon ?? null,
+            minimap: minimapOf(m),
           };
           map.set(url.toLowerCase(), asset);
           const leaf = url.split("/").filter(Boolean).pop();
@@ -134,6 +160,44 @@ export const getMaps = (): Promise<Map<string, MapAsset>> => {
       .catch(() => new Map<string, MapAsset>());
   }
   return mapsPromise;
+};
+
+/** The minimap and its projection, or null for maps without one (The Range). */
+const minimapOf = (m: any): MinimapAsset | null => {
+  const numbers = [m.xMultiplier, m.yMultiplier, m.xScalarToAdd, m.yScalarToAdd];
+  if (!m.displayIcon || !numbers.every((n) => typeof n === "number" && Number.isFinite(n))) return null;
+  if (m.xMultiplier === 0 || m.yMultiplier === 0) return null;
+  return {
+    image: m.displayIcon,
+    xMultiplier: m.xMultiplier,
+    yMultiplier: m.yMultiplier,
+    xScalarToAdd: m.xScalarToAdd,
+    yScalarToAdd: m.yScalarToAdd,
+  };
+};
+
+// --- Weapons -----------------------------------------------------------------
+let weaponsPromise: Promise<Map<string, WeaponAsset>> | null = null;
+
+/** Weapon names and kill-feed icons, keyed by lowercased weapon uuid. */
+export const getWeapons = (): Promise<Map<string, WeaponAsset>> => {
+  if (!weaponsPromise) {
+    weaponsPromise = cachedFetch(`${API}/weapons?language=all`)
+      .then((r) => r.json())
+      .then((json) => {
+        const map = new Map<string, WeaponAsset>();
+        for (const w of json?.data ?? []) {
+          if (typeof w?.uuid !== "string") continue;
+          map.set(w.uuid.toLowerCase(), {
+            name: w.displayName,
+            killIcon: w.killStreamIcon ?? w.displayIcon ?? null,
+          });
+        }
+        return map;
+      })
+      .catch(() => new Map<string, WeaponAsset>());
+  }
+  return weaponsPromise;
 };
 
 // --- Competitive tiers (rank icons, tracker.gg style) ------------------------

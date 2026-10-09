@@ -121,6 +121,7 @@ Rust command conventions:
 | `ai:test` | `ai_test` | Test the selected AI provider |
 | `ai:models` | `ai_models` | Fetch models for the selected provider and credentials |
 | `ai:match-analyze` | `ai_match_analyze` | Analyze anonymized match stats |
+| `match_timeline` | `match_timeline` | Round winners, kills, spike events, and player positions for a finished match |
 | `update:check` | `update_check` | Trigger update check |
 | `display:get` / `display:set` | `display_get/set` | List connected displays and save the display used on the next launch |
 | `open_url` | `open_url` | Open URL in system browser |
@@ -326,6 +327,22 @@ analysis. Results stay in Matches state by match ID; Regenerate makes a new call
 ### Chat certificate identities
 
 The local chat relay's TLS identity is selectable (config key `presenceCert`, default `deceive`). Built-in identities live in `src-tauri/src/chat_certs.rs`; each has a host, a PFX download URL, and its own cache file `%APPDATA%\ValoUtils\<host>.pfx` (legacy `localhostCert.pfx` is migrated into the deceive slot). `presence:status-set "cert" <id>` switches and restarts the relay; `presence_cert_import` opens a native picker and installs a PFX for an identity. The selected host drives the `chat.host`/`chat.affinities` rewrite in `client_config.rs` and the SAN/loopback validation — the host must resolve only to `127.0.0.1` (DNS-only A record, no AAAA), so a hostname serving the PFX publicly (e.g. behind Cloudflare) cannot also be the chat host.
+
+### Match timelines
+
+The finished-match scoreboard has a collapsible Rounds & kills panel in
+`src/components/match-timeline.tsx`. `match_timeline` returns round winners,
+ordered kills, plant/defuse events and player positions. Scoreboard fetches
+also fill a 40-match backend timeline cache, avoiding another PD request when
+the panel opens. The minimap uses the map asset's projection with swapped game
+axes. Selecting a kill shows positions at that moment and hides the spike until
+its plant time; the default round view shows all death locations and the plant.
+Elapsed round time accepts m:ss (1:39 is 99 seconds), with a seek slider and
+Play/Pause at 1x, 2x or 4x. Event selection uses recorded kill, plant or defuse
+snapshots; replay linearly animates shared players between consecutive snapshots
+and labels that movement as estimated rather than a recorded trajectory.
+It stops at the final recorded event and resets when the round changes.
+Before the first snapshot, no player positions are shown.
 
 ### Add a new profile action button
 

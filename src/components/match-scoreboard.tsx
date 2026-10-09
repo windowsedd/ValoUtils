@@ -20,6 +20,7 @@ import { formatDpr } from "./match-dpr";
 import { isMatchPlayerHighlighted } from "./match-player-highlight";
 import { matchPlayerSubtitle } from "./match-player-subtitle";
 import { scoreboardPlayerInteraction } from "./match-scoreboard-selection";
+import { MatchTimelinePanel } from "./match-timeline";
 
 /** CDN lookups every match view needs. Each getter memoises at module scope. */
 export type MatchAssets = {
@@ -291,6 +292,16 @@ export const MatchScoreboard = ({
 					/>
 				))}
 			</div>
+
+			{details.rounds > 0 && (
+				<MatchTimelinePanel
+					matchId={details.matchId}
+					mapId={details.mapId}
+					players={details.players}
+					assets={assets}
+					highlightPuuid={highlightPuuid}
+				/>
+			)}
 
 			<div className="flex flex-wrap gap-x-6 gap-y-1 border-t border-(--line) px-2 pt-1 text-[10px] text-(--text-muted)">
 				<span>

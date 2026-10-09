@@ -1319,16 +1319,57 @@ mod ai_sanitizer_tests {
             200
         );
     }
+
+    #[test]
+    fn strips_links_and_citations() {
+        assert_eq!(
+            sanitize_ai_line(
+                "Act 5 ends on October 14, 2026 [source](https://wiki.playvalorant.com/en-us/Season_2026:_Act_5). \
+                 For the session ended error, restart the Riot Client or check for a suspension \
+                 [source](https://support.riotgames.com/en-us/valorant/performance/error-codes-and-solutions-in-valorant)."
+            ),
+            "Act 5 ends on October 14, 2026. For the session ended error, restart the Riot Client or check for a suspension."
+        );
+        assert_eq!(
+            sanitize_ai_line("Play Viper ([wiki.playvalorant.com](https://wiki.playvalorant.com/Viper)) on Breeze[1]."),
+            "Play Viper on Breeze."
+        );
+        assert_eq!(
+            sanitize_ai_line("Read the [patch notes](https://playvalorant.com/news) (https://x.com/a)."),
+            "Read the patch notes."
+        );
+        assert_eq!(sanitize_ai_line("[1] [Ally 2] is [ahead]"), "[Ally 2] is [ahead]");
+    }
 }
 
 fn sanitize_ai_line(text: &str) -> String {
     clean_ai_line(text, 200)
 }
 
-/// One chat-safe line: whitespace collapsed, wrapping quotes dropped, capped.
+/// One chat-safe line: links and citations removed, whitespace collapsed,
+/// wrapping quotes dropped, capped.
 pub(crate) fn clean_ai_line(text: &str, max_chars: usize) -> String {
-    text.split_whitespace()
-        .collect::<Vec<_>>()
+    let text = strip_markdown_links(text);
+    let mut words: Vec<String> = Vec::new();
+    for word in text.split_whitespace() {
+        let start = word.len() - word.trim_start_matches(['(', '<']).len();
+        let core = word[start..].trim_end_matches([')', '>', '.', ',', ';', ':', '!', '?']);
+        if !is_url(core) {
+            words.push(word.to_string());
+            continue;
+        }
+        // Chat cannot open a bare URL; keep only the sentence punctuation after it.
+        let trailing: String = word[start + core.len()..]
+            .chars()
+            .filter(|c| !matches!(c, ')' | '>'))
+            .collect();
+        match words.last_mut() {
+            Some(last) => last.push_str(&trailing),
+            None if !trailing.is_empty() => words.push(trailing),
+            None => {}
+        }
+    }
+    words
         .join(" ")
         .trim_matches(['\"', '\'', '`'])
         .trim()
@@ -1336,6 +1377,77 @@ pub(crate) fn clean_ai_line(text: &str, max_chars: usize) -> String {
         .take(max_chars)
         .collect()
 }
+
+/// Replaces `[label](url)` with its label, and drops citation links such as
+/// `[source](url)` or `([example.com](url))` and footnotes such as `[1]`.
+fn strip_markdown_links(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(open) = rest.find('[') {
+        out.push_str(&rest[..open]);
+        let after = &rest[open + 1..];
+        let Some(close) = after.find(['[', ']']).filter(|&i| after[i..].starts_with(']')) else {
+            out.push('[');
+            rest = after;
+            continue;
+        };
+        let label = &after[..close];
+        let tail = &after[close + 1..];
+        let link = tail
+            .strip_prefix('(')
+            .and_then(|target| target.find(')').map(|end| (&target[..end], &target[end + 1..])))
+            .filter(|(target, _)| is_url(target.trim()));
+        match link {
+            Some((_, next)) if !is_citation_label(label) => {
+                out.push_str(label);
+                rest = next;
+                continue;
+            }
+            Some((_, next)) => rest = next,
+            None if is_footnote(label) => rest = tail,
+            None => {
+                out.push('[');
+                rest = after;
+                continue;
+            }
+        }
+        // A dropped citation leaves no gap before punctuation or empty "()".
+        out.truncate(out.trim_end().len());
+        if out.ends_with('(') && rest.starts_with(')') {
+            out.pop();
+            rest = &rest[1..];
+            out.truncate(out.trim_end().len());
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+fn is_url(text: &str) -> bool {
+    let text = text.to_ascii_lowercase();
+    ["http://", "https://", "www."]
+        .iter()
+        .any(|prefix| text.starts_with(prefix))
+}
+
+fn is_footnote(label: &str) -> bool {
+    label.chars().any(|c| c.is_ascii_digit())
+        && label.chars().all(|c| c.is_ascii_digit() || matches!(c, ',' | ' ' | '-'))
+}
+
+fn is_citation_label(label: &str) -> bool {
+    let label = label.trim().to_lowercase();
+    label.is_empty()
+        || is_footnote(&label)
+        || is_url(&label)
+        || matches!(
+            label.as_str(),
+            "source" | "sources" | "link" | "ref" | "reference" | "citation" | "here" | "wiki"
+        )
+        // A bare domain such as `wiki.playvalorant.com`.
+        || (!label.contains(char::is_whitespace) && label.trim_end_matches('.').contains('.'))
+}
+
 async fn expand_ai_messages(messages: Vec<String>) -> Vec<String> {
     let mut expanded = Vec::with_capacity(messages.len());
     for mut message in messages {

@@ -82,3 +82,51 @@ export type MatchDetailsResponse =
   | { success: true; match: MatchDetails; cached: boolean }
   | { success: false; matchId?: string; error: string }
   | (RateLimitedFailure & { matchId?: string });
+
+/** A point in game units; project it with `minimapPoint` before drawing. */
+export type GamePoint = { x: number; y: number };
+
+/** Where one player stood at a kill, plant or defuse. `view` is in radians. */
+export type TimelinePosition = GamePoint & { subject: string; view: number };
+
+export type TimelineKill = {
+  /** Milliseconds since the round started. */
+  time: number;
+  killer: string;
+  victim: string;
+  assistants: string[];
+  /** "Weapon" | "Ability" | "Bomb" | "Melee" | "Fall", as Riot reports it. */
+  damageType: string;
+  /** Lowercased weapon uuid, or an ability slot such as "ultimate". */
+  damageItem: string;
+  secondary: boolean;
+  victimLocation: GamePoint | null;
+  positions: TimelinePosition[];
+};
+
+export type TimelineSpikeEvent = {
+  time: number;
+  player: string;
+  location: GamePoint | null;
+  positions: TimelinePosition[];
+};
+
+export type TimelineRound = {
+  round: number;
+  winningTeam: string;
+  /** e.g. "Eliminated", "Bomb detonated", "Bomb defused", "Round timer expired". */
+  result: string;
+  resultCode: string;
+  plantSite: string;
+  plant: TimelineSpikeEvent | null;
+  defuse: TimelineSpikeEvent | null;
+  kills: TimelineKill[];
+};
+
+/** Every subject in a timeline is lowercased. */
+export type MatchTimeline = { matchId: string; rounds: TimelineRound[] };
+
+export type MatchTimelineResponse =
+  | { success: true; matchId: string; timeline: MatchTimeline }
+  | { success: false; matchId?: string; error: string }
+  | (RateLimitedFailure & { matchId?: string });

@@ -2,7 +2,7 @@ use crate::riot::error::RiotError;
 use crate::riot::api::{self, RiotApiClient};
 use crate::riot::client::RiotState;
 use serde_json::{json, Value};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::Mutex;
 use tauri::State;
 
@@ -25,6 +25,36 @@ pub struct MatchCache(Mutex<HashMap<String, Value>>);
 
 fn cache_key(puuid: &str, match_id: &str) -> String {
     format!("{puuid}:{match_id}")
+}
+
+/// Round-by-round timelines (kills, spike events, player positions), keyed by
+/// lowercased match id. They are filled whenever a match document is fetched
+/// for its scoreboard, so opening a match's rounds usually costs no request.
+/// A timeline is far larger than a scoreboard, so only the most recent
+/// [`TIMELINE_CACHE_LIMIT`] are kept.
+#[derive(Default)]
+pub struct MatchTimelineCache(Mutex<(HashMap<String, Value>, VecDeque<String>)>);
+
+const TIMELINE_CACHE_LIMIT: usize = 40;
+
+impl MatchTimelineCache {
+    fn get(&self, match_id: &str) -> Option<Value> {
+        self.0.lock().unwrap().0.get(&match_id.to_ascii_lowercase()).cloned()
+    }
+
+    fn insert(&self, match_id: &str, timeline: Value) {
+        let key = match_id.to_ascii_lowercase();
+        let mut guard = self.0.lock().unwrap();
+        let (entries, order) = &mut *guard;
+        if entries.insert(key.clone(), timeline).is_none() {
+            order.push_back(key);
+        }
+        while order.len() > TIMELINE_CACHE_LIMIT {
+            if let Some(oldest) = order.pop_front() {
+                entries.remove(&oldest);
+            }
+        }
+    }
 }
 
 fn arg(args: &[Value], index: usize) -> Option<String> {
@@ -307,6 +337,136 @@ fn reduce_match(
     })
 }
 
+/// `{x, y}` in game units, or `None` when Riot left the location out.
+fn location(value: Option<&Value>) -> Option<Value> {
+    let value = value?;
+    let x = value.get("x").and_then(Value::as_f64)?;
+    let y = value.get("y").and_then(Value::as_f64)?;
+    Some(json!({ "x": x, "y": y }))
+}
+
+fn lower_id(value: Option<&Value>) -> String {
+    value
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_lowercase()
+}
+
+/// Where every player stood at one moment (a kill, the plant or the defuse).
+fn positions(value: Option<&Value>) -> Vec<Value> {
+    value
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|entry| {
+            let subject = lower_id(entry.get("subject"));
+            let point = location(entry.get("location"))?;
+            (!subject.is_empty()).then(|| {
+                json!({
+                    "subject": subject,
+                    "x": point["x"],
+                    "y": point["y"],
+                    "view": entry.get("viewRadians").and_then(Value::as_f64).unwrap_or(0.0),
+                })
+            })
+        })
+        .collect()
+}
+
+/// A spike plant or defuse, or `None` when it did not happen this round.
+fn spike_event(round: &Value, time_key: &str, player_key: &str, at: &str, players_key: &str) -> Option<Value> {
+    let player = lower_id(round.get(player_key));
+    if player.is_empty() {
+        return None;
+    }
+    Some(json!({
+        "time": round.get(time_key).and_then(Value::as_u64).unwrap_or(0),
+        "player": player,
+        "location": location(round.get(at)),
+        "positions": positions(round.get(players_key)),
+    }))
+}
+
+/// Reduces a match document to what the Rounds view draws: per round, the
+/// winner, how it ended, the spike plant/defuse, and every kill in order with
+/// the weapon and where each player stood at that moment. Subjects are
+/// lowercased; coordinates stay in game units for the frontend to project.
+fn reduce_timeline(details: &Value) -> Value {
+    let rounds: Vec<Value> = details
+        .get("roundResults")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .enumerate()
+        .map(|(index, round)| {
+            let mut kills: Vec<Value> = Vec::new();
+            for stat in round
+                .get("playerStats")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+            {
+                let subject = lower_id(stat.get("subject"));
+                for kill in stat.get("kills").and_then(Value::as_array).into_iter().flatten() {
+                    let killer = Some(lower_id(kill.get("killer")))
+                        .filter(|id| !id.is_empty())
+                        .unwrap_or_else(|| subject.clone());
+                    let damage = kill.get("finishingDamage");
+                    let text = |key: &str| {
+                        damage
+                            .and_then(|damage| damage.get(key))
+                            .and_then(Value::as_str)
+                            .unwrap_or_default()
+                    };
+                    kills.push(json!({
+                        "time": kill_time_millis(kill).unwrap_or(0),
+                        "killer": killer,
+                        "victim": lower_id(kill.get("victim")),
+                        "assistants": kill
+                            .get("assistants")
+                            .and_then(Value::as_array)
+                            .into_iter()
+                            .flatten()
+                            .map(|id| lower_id(Some(id)))
+                            .filter(|id| !id.is_empty())
+                            .collect::<Vec<_>>(),
+                        "damageType": text("damageType"),
+                        "damageItem": text("damageItem").to_ascii_lowercase(),
+                        "secondary": damage
+                            .and_then(|damage| damage.get("isSecondaryFireMode"))
+                            .and_then(Value::as_bool)
+                            .unwrap_or(false),
+                        "victimLocation": location(kill.get("victimLocation")),
+                        "positions": positions(kill.get("playerLocations")),
+                    }));
+                }
+            }
+            kills.sort_by_key(|kill| kill["time"].as_u64().unwrap_or(0));
+            let text = |key: &str| round.get(key).and_then(Value::as_str).unwrap_or_default();
+            json!({
+                "round": round.get("roundNum").and_then(Value::as_u64).unwrap_or(index as u64),
+                "winningTeam": text("winningTeam"),
+                "result": text("roundResult"),
+                "resultCode": text("roundResultCode"),
+                "plantSite": text("plantSite"),
+                "plant": spike_event(round, "plantRoundTime", "bombPlanter", "plantLocation", "plantPlayerLocations"),
+                "defuse": spike_event(round, "defuseRoundTime", "bombDefuser", "defuseLocation", "defusePlayerLocations"),
+                "kills": kills,
+            })
+        })
+        .collect();
+
+    json!({
+        "matchId": details
+            .get("matchInfo")
+            .and_then(|info| info.get("matchId"))
+            .and_then(Value::as_str)
+            .unwrap_or_default(),
+        "rounds": rounds,
+    })
+}
+
 #[tauri::command]
 pub async fn match_list(args: Vec<Value>, riot: State<'_, RiotState>) -> Result<Value, ()> {
     let start = arg_u32(&args, 0).unwrap_or(0);
@@ -372,6 +532,7 @@ pub async fn match_summaries(
     app: tauri::AppHandle,
     riot: State<'_, RiotState>,
     cache: State<'_, MatchCache>,
+    timelines: State<'_, MatchTimelineCache>,
 ) -> Result<Value, ()> {
     use tauri::Emitter;
 
@@ -424,6 +585,7 @@ pub async fn match_summaries(
                     .unwrap_or_default();
                 let names = resolve_missing_names(&api, &players).await;
                 let reduced = reduce_match(&details, &names, &api.puuid);
+                timelines.insert(&match_id, reduce_timeline(&details));
                 cache
                     .0
                     .lock()
@@ -448,6 +610,7 @@ pub async fn match_details(
     args: Vec<Value>,
     riot: State<'_, RiotState>,
     cache: State<'_, MatchCache>,
+    timelines: State<'_, MatchTimelineCache>,
 ) -> Result<Value, ()> {
     let Some(match_id) = arg(&args, 0).filter(|s| !s.trim().is_empty()) else {
         return Ok(json!({ "success": false, "error": "No match id" }));
@@ -474,7 +637,7 @@ pub async fn match_details(
         return Ok(json!({ "success": true, "match": hit, "cached": true }));
     }
 
-    let result: Result<Value, RiotError> = async {
+    let result: Result<(Value, Value), RiotError> = async {
         let match_id = match_id.clone();
         api::with_api(&riot, move |api| {
             let match_id = match_id.clone();
@@ -486,7 +649,7 @@ pub async fn match_details(
                     .cloned()
                     .unwrap_or_default();
                 let names = resolve_missing_names(&api, &players).await;
-                Ok(reduce_match(&details, &names, &api.puuid))
+                Ok((reduce_match(&details, &names, &api.puuid), reduce_timeline(&details)))
             }
         })
         .await
@@ -494,13 +657,54 @@ pub async fn match_details(
     .await;
 
     Ok(match result {
-        Ok(reduced) => {
+        Ok((reduced, timeline)) => {
+            timelines.insert(&match_id, timeline);
             cache
                 .0
                 .lock()
                 .unwrap()
                 .insert(cache_key(&own_puuid, &match_id), reduced.clone());
             json!({ "success": true, "match": reduced, "cached": false })
+        }
+        Err(e) => match super::rate_limited_reply(&e.to_string()).await {
+            Some(mut reply) => {
+                reply["matchId"] = json!(match_id);
+                reply
+            }
+            None => json!({ "success": false, "matchId": match_id, "error": e }),
+        },
+    })
+}
+
+/// The Rounds view for one match. Served from [`MatchTimelineCache`] when the
+/// scoreboard fetch already filled it; otherwise the match document is fetched
+/// again, since only the reduced scoreboard is kept.
+#[tauri::command]
+pub async fn match_timeline(
+    args: Vec<Value>,
+    riot: State<'_, RiotState>,
+    timelines: State<'_, MatchTimelineCache>,
+) -> Result<Value, ()> {
+    let Some(match_id) = arg(&args, 0).filter(|s| !s.trim().is_empty()) else {
+        return Ok(json!({ "success": false, "error": "No match id" }));
+    };
+    if let Some(timeline) = timelines.get(&match_id) {
+        return Ok(json!({ "success": true, "matchId": match_id, "timeline": timeline }));
+    }
+
+    let result: Result<Value, RiotError> = {
+        let match_id = match_id.clone();
+        api::with_api(&riot, move |api| {
+            let match_id = match_id.clone();
+            async move { Ok(reduce_timeline(&api.get_match_details(&match_id).await?)) }
+        })
+        .await
+    };
+
+    Ok(match result {
+        Ok(timeline) => {
+            timelines.insert(&match_id, timeline.clone());
+            json!({ "success": true, "matchId": match_id, "timeline": timeline })
         }
         Err(e) => match super::rate_limited_reply(&e.to_string()).await {
             Some(mut reply) => {
@@ -605,6 +809,77 @@ mod tests {
         assert_eq!(player["damage"], 3010);
         assert_eq!(player["dpr"], 150);
         assert_eq!(player["adr"], 150);
+    }
+
+    #[test]
+    fn timeline_orders_kills_and_keeps_positions_and_spike_events() {
+        let details = json!({
+            "matchInfo": { "matchId": "comp-tl" },
+            "roundResults": [{
+                "roundNum": 0,
+                "winningTeam": "Blue",
+                "roundResult": "Bomb defused",
+                "roundResultCode": "Defuse",
+                "plantSite": "A",
+                "plantRoundTime": 50000,
+                "bombPlanter": "Player-2",
+                "plantLocation": { "x": 10, "y": 20 },
+                "plantPlayerLocations": [{ "subject": "Player-2", "viewRadians": 1.5, "location": { "x": 10, "y": 20 } }],
+                "defuseRoundTime": 0,
+                "bombDefuser": "",
+                "playerStats": [
+                    {
+                        "subject": "Player-1",
+                        "kills": [{
+                            "roundTime": 70000,
+                            "victim": "Player-2",
+                            "victimLocation": { "x": 1, "y": 2 },
+                            "assistants": ["Player-3"],
+                            "playerLocations": [
+                                { "subject": "Player-1", "viewRadians": 0.5, "location": { "x": 5, "y": 6 } },
+                                { "subject": "Player-3", "location": {} }
+                            ],
+                            "finishingDamage": { "damageType": "Weapon", "damageItem": "EE8E8D15-496B-07AC-E5F6-8FAE5D4C7B1A", "isSecondaryFireMode": true }
+                        }]
+                    },
+                    {
+                        "subject": "Player-2",
+                        "kills": [{ "killer": "Player-2", "roundTime": 30000, "victim": "Player-3" }]
+                    }
+                ]
+            }]
+        });
+
+        let timeline = reduce_timeline(&details);
+        assert_eq!(timeline["matchId"], "comp-tl");
+        let round = &timeline["rounds"][0];
+        assert_eq!(round["winningTeam"], "Blue");
+        assert_eq!(round["plant"]["player"], "player-2");
+        assert_eq!(round["plant"]["location"], json!({ "x": 10.0, "y": 20.0 }));
+        assert!(round["defuse"].is_null());
+
+        let kills = round["kills"].as_array().unwrap();
+        assert_eq!(kills[0]["victim"], "player-3");
+        assert_eq!(kills[0]["victimLocation"], Value::Null);
+        let kill = &kills[1];
+        assert_eq!(kill["killer"], "player-1");
+        assert_eq!(kill["assistants"], json!(["player-3"]));
+        assert_eq!(kill["damageItem"], "ee8e8d15-496b-07ac-e5f6-8fae5d4c7b1a");
+        assert_eq!(kill["secondary"], true);
+        assert_eq!(
+            kill["positions"],
+            json!([{ "subject": "player-1", "x": 5.0, "y": 6.0, "view": 0.5 }])
+        );
+    }
+
+    #[test]
+    fn timeline_cache_keeps_only_the_newest_matches() {
+        let cache = MatchTimelineCache::default();
+        for index in 0..=TIMELINE_CACHE_LIMIT {
+            cache.insert(&format!("Match-{index}"), json!(index));
+        }
+        assert!(cache.get("match-0").is_none());
+        assert_eq!(cache.get("MATCH-1"), Some(json!(1)));
     }
 
     #[test]
