@@ -38,7 +38,9 @@ impl ChatRound {
         };
         Some(Self {
             phase,
-            round: ally_score.zip(enemy_score).map(|(ally, enemy)| ally + enemy + 1),
+            round: ally_score
+                .zip(enemy_score)
+                .map(|(ally, enemy)| ally + enemy + 1),
             ally_score,
             enemy_score,
         })
@@ -51,6 +53,9 @@ impl ChatRound {
 
 #[derive(Clone, serde::Serialize)]
 pub struct ChatMessage {
+    /// Account of the socket that observed this line; never sent to the frontend.
+    #[serde(skip)]
+    pub owner_puuid: String,
     pub id: String,
     #[serde(rename = "conversationId")]
     pub conversation_id: String,
@@ -527,6 +532,7 @@ fn handle_incoming_stanza(
         };
         let is_self = sender_nick == own_puuid;
         let message = ChatMessage {
+            owner_puuid: own_puuid.to_string(),
             id,
             conversation_id: room,
             sender: sender_nick.clone(),
@@ -632,6 +638,12 @@ mod tests {
         assert_eq!(messages.lock().unwrap().len(), 1);
         let published = receiver.try_recv().unwrap();
         assert_eq!(published.id, "m-1");
+        assert_eq!(published.owner_puuid, "self");
+        assert_eq!(published.sender, "friend");
+        assert!(serde_json::to_value(&published)
+            .unwrap()
+            .get("owner_puuid")
+            .is_none());
         assert_eq!(published.conversation_id, "room@ares-parties.ap");
         assert_eq!(published.scope, "party");
         assert!(matches!(
@@ -659,6 +671,7 @@ mod tests {
 
         let published = receiver.try_recv().unwrap();
         assert!(published.is_self);
+        assert_eq!(published.owner_puuid, "self");
         assert_eq!(published.sender_name, "Player#1234");
         assert_eq!(published.scope, "match");
     }
@@ -712,7 +725,10 @@ mod chat_round_tests {
     #[test]
     fn agent_select_has_no_round_and_menus_has_no_stamp() {
         let round = ChatRound::from_presence(&state("PREGAME", Some(0), Some(0))).unwrap();
-        assert_eq!((round.phase, round.round, round.ally_score), ("pregame", None, None));
+        assert_eq!(
+            (round.phase, round.round, round.ally_score),
+            ("pregame", None, None)
+        );
         assert_eq!(ChatRound::from_presence(&state("MENUS", None, None)), None);
     }
 }

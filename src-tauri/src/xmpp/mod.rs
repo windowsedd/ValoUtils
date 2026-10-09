@@ -554,6 +554,7 @@ async fn push_own_message(state_guard: &mut Inner, room: &str, message: &str, sc
     if let Some(handle) = handle {
         let mut buf = handle.messages.lock().unwrap();
         buf.push_back(ChatMessage {
+            owner_puuid: state_guard.own_puuid.clone(),
             id: format!("{room}:{}:{}", state_guard.own_puuid, chrono_millis()),
             conversation_id: room.to_string(),
             sender: state_guard.own_puuid.clone(),

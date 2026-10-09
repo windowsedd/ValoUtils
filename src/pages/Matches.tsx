@@ -22,10 +22,13 @@ import { LuChevronDown, LuHistory } from "react-icons/lu";
 
 const PAGE_SIZE = 20;
 
+// Use the panel width: the app rail and page padding can leave much less room
+// than a viewport breakpoint implies. Headers and cells share these thresholds.
 const matchListGrid =
-	"grid w-full items-center gap-x-3 px-3 " +
+	"grid w-full min-w-0 items-center gap-x-2 px-3 " +
 	"grid-cols-[6.75rem_3.5rem_minmax(0,1fr)_0.75rem] " +
-	"md:grid-cols-[6.75rem_3.5rem_minmax(8rem,1fr)_1.75rem_5.5rem_3rem_3rem_2rem_3.25rem_9.5rem_0.75rem]";
+	"@min-[40rem]:grid-cols-[6.75rem_3.5rem_minmax(0,1fr)_1.75rem_5.5rem_9.5rem_0.75rem] " +
+	"@min-[54rem]:grid-cols-[6.75rem_3.5rem_minmax(0,1fr)_1.75rem_5.5rem_3rem_3rem_2rem_3.25rem_9.5rem_0.75rem]";
 
 const MatchListHeader = () => {
 	const { t } = useTranslation();
@@ -36,21 +39,21 @@ const MatchListHeader = () => {
 		>
 			<span>{t("matches.mode")}</span>
 			<span className="col-span-2">{t("matches.map")}</span>
-			<span className="hidden md:block" title={t("matches.agent")} />
-			<span className="hidden text-right md:block">{t("matches.kda")}</span>
-			<span className="hidden text-right md:block" title={t("matches.acs")}>
+			<span className="hidden @min-[40rem]:block" title={t("matches.agent")} />
+			<span className="hidden text-right @min-[40rem]:block">{t("matches.kda")}</span>
+			<span className="hidden text-right @min-[54rem]:block" title={t("matches.acs")}>
 				{t("matches.acs")}
 			</span>
-			<span className="hidden text-right md:block" title={t("matches.dpr")}>
+			<span className="hidden text-right @min-[54rem]:block" title={t("matches.dpr")}>
 				{t("matches.dpr")}
 			</span>
-			<span className="hidden text-right md:block" title={t("matches.firstBloods")}>
+			<span className="hidden text-right @min-[54rem]:block" title={t("matches.firstBloods")}>
 				{t("matches.fb")}
 			</span>
-			<span className="hidden text-right md:block" title={t("matches.headshot")}>
+			<span className="hidden text-right @min-[54rem]:block" title={t("matches.headshot")}>
 				{t("matches.hs")}
 			</span>
-			<span className="hidden text-right md:block">{t("matches.started")}</span>
+			<span className="hidden text-right @min-[40rem]:block">{t("matches.started")}</span>
 			<span />
 		</div>
 	);
@@ -127,11 +130,11 @@ const MatchCard = ({
 							{/*
 							 * The word is the only non-colour cue for the result, but it is
 							 * also the widest thing competing with the map name. Kept from
-							 * lg up where the row has room; below that the score colour and
+							 * the full statistics layout where the panel has room; below that the score colour and
 							 * the row's left stripe carry it.
 							 */}
 							<span
-								className="hidden text-[10px] font-semibold uppercase lg:inline"
+								className="hidden text-[10px] font-semibold uppercase @min-[54rem]:inline"
 								style={{ color: resultAccent }}
 							>
 								{won === true ? t("matches.victory") : won === false ? t("matches.defeat") : "—"}
@@ -149,39 +152,39 @@ const MatchCard = ({
 						src={agent.icon}
 						alt={localize(agent.name)}
 						title={localize(agent.name)}
-						className="hidden h-7 w-7 rounded md:block"
+						className="hidden h-7 w-7 rounded @min-[40rem]:block"
 					/>
 				) : (
-					<span className="hidden h-7 w-7 md:block" />
+					<span className="hidden h-7 w-7 @min-[40rem]:block" />
 				)}
 				{self ? (
 					<>
-						<span className="hidden text-right text-[11px] tabular-nums text-(--text-primary) md:block">
+						<span className="hidden text-right text-[11px] tabular-nums text-(--text-primary) @min-[40rem]:block">
 							{self.kills} / {self.deaths} / {self.assists}
 						</span>
-						<span className="hidden text-right text-[11px] tabular-nums text-(--text-muted) md:block" title={t("matches.acs")}>
+						<span className="hidden text-right text-[11px] tabular-nums text-(--text-muted) @min-[54rem]:block" title={t("matches.acs")}>
 							{self.acs}
 						</span>
-						<span className="hidden text-right text-[11px] tabular-nums text-(--text-muted) md:block" title={t("matches.dpr")}>
+						<span className="hidden text-right text-[11px] tabular-nums text-(--text-muted) @min-[54rem]:block" title={t("matches.dpr")}>
 							{formatDpr(self)}
 						</span>
-						<span className="hidden text-right text-[11px] tabular-nums text-(--text-muted) md:block" title={t("matches.firstBloods")}>
+						<span className="hidden text-right text-[11px] tabular-nums text-(--text-muted) @min-[54rem]:block" title={t("matches.firstBloods")}>
 							{self.firstBloods ?? 0}
 						</span>
-						<span className="hidden text-right text-[11px] tabular-nums text-(--text-muted) md:block" title={t("matches.headshot")}>
+						<span className="hidden text-right text-[11px] tabular-nums text-(--text-muted) @min-[54rem]:block" title={t("matches.headshot")}>
 							{self.headshotPercent.toFixed(0)}%
 						</span>
 					</>
 				) : (
 					<>
-						<span className="hidden md:block" />
-						<span className="hidden md:block" />
-						<span className="hidden md:block" />
-						<span className="hidden md:block" />
-						<span className="hidden md:block" />
+						<span className="hidden @min-[40rem]:block" />
+						<span className="hidden @min-[54rem]:block" />
+						<span className="hidden @min-[54rem]:block" />
+						<span className="hidden @min-[54rem]:block" />
+						<span className="hidden @min-[54rem]:block" />
 					</>
 				)}
-				<span className="hidden truncate text-right text-[11px] tabular-nums text-(--text-muted) md:block">
+				<span title={formatDateTime(entry.startMillis)} className="hidden truncate text-right text-[11px] tabular-nums text-(--text-muted) @min-[40rem]:block">
 					{formatDateTime(entry.startMillis)}
 				</span>
 				<LuChevronDown className={`justify-self-end text-[11px] text-(--text-muted) transition-transform ${expanded ? "rotate-180" : ""}`} />
@@ -288,7 +291,7 @@ const applyResponse = (message: any) => {
 				)}
 
 				{!loading && !error && !loginRequired && (
-					<SectionCard title={t("matches.recentMatches")} count={entries.length}>
+					<SectionCard title={t("matches.recentMatches")} count={entries.length} className="@container min-w-0">
 						{entries.length === 0 ? (
 							<div className="flex flex-col items-center justify-center gap-2 py-10 text-(--text-muted)">
 								<LuHistory className="text-4xl opacity-30" />

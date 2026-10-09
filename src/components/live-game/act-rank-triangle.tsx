@@ -19,11 +19,15 @@ const asPoints = (points: readonly (readonly [number, number])[]) =>
 	points.map(([x, y]) => `${x},${y}`).join(" ");
 const safeSvgId = (prefix: string, id: string) =>
 	`${prefix}-${id.replace(/[^a-zA-Z0-9_-]/g, "")}`;
+// Let Vite track and bundle these assets instead of relying on root-relative
+// public paths being available in the installed WebView.
+const rankAsset = (name: string) => new URL(`../../../public/mmr/${name}.png`, import.meta.url).href;
 
 export const ActRankTriangle = ({ winsByTier, wins }: Props) => {
 	const reactId = useId();
 	const tiles = buildActRankTiles(winsByTier, wins);
 	const border = borderIndexForWins(wins);
+	const borderUrl = rankAsset(`border${border}`);
 	const borderMaskId = safeSvgId("act-rank-border-mask", reactId);
 	const framePoints = frameInnerTrianglePoints();
 	const contentPoints = innerTrianglePoints();
@@ -35,7 +39,7 @@ export const ActRankTriangle = ({ winsByTier, wins }: Props) => {
 			aria-hidden="true"
 		>
 			<img
-				src={`/mmr/border${border}.png`}
+				src={borderUrl}
 				alt=""
 				className="pointer-events-none absolute inset-0 z-0 h-full w-full object-contain"
 			/>
@@ -57,7 +61,7 @@ export const ActRankTriangle = ({ winsByTier, wins }: Props) => {
 				return (
 					<img
 						key={`${tile.tier}-${index}`}
-						src={`/mmr/${tile.tier}_${tile.orientation}.png`}
+							src={rankAsset(`${tile.tier}_${tile.orientation}`)}
 						alt=""
 						data-rank-cell=""
 						className="absolute z-[2] object-fill"
@@ -83,7 +87,7 @@ export const ActRankTriangle = ({ winsByTier, wins }: Props) => {
 					</mask>
 				</defs>
 				<image
-					href={`/mmr/border${border}.png`}
+					href={borderUrl}
 					width={ACT_RANK_CANVAS_SIZE}
 					height={ACT_RANK_CANVAS_SIZE}
 					mask={`url(#${borderMaskId})`}

@@ -50,6 +50,7 @@ const CERT_OPTIONS: { id: AppConfig["presenceCert"]; host: string }[] = [
 
 type AppConfig = AiSettings & {
 	autoUpdate: boolean;
+	saveMatchChatHistory: boolean;
 	openDevTools: boolean;
 	presenceEnabled: boolean;
 	presenceMode: "online" | "offline" | "mobile";
@@ -154,11 +155,13 @@ const Settings = () => {
 	const [certImporting, setCertImporting] = useState(false);
 	const [startupEnabled, setStartupEnabled] = useState<boolean | null>(null);
 	const [startupSaving, setStartupSaving] = useState(false);
+	const [historySaving, setHistorySaving] = useState(false);
 	const [view, setView] = useState<"settings" | "api-reference">("settings");
 	const [appConfig, setAppConfig] = useState<AppConfig>({
 		aiProvider: "none",
         aiProviders: {},
 		autoUpdate: true,
+		saveMatchChatHistory: false,
 		openDevTools: false,
 		presenceEnabled: true,
 		presenceMode: "offline",
@@ -528,6 +531,29 @@ const applyClientInfo = (msg: any) => {
 
                 <SectionCard id="settings-app" title={t("settings.sectionApp")} accent="#a78bfa">
 					<div className="flex flex-col px-1">
+				<SettingRow icon={<FaComments />} label={t("settings.saveMatchChatHistory")} description={t("settings.saveMatchChatHistoryDesc")}
+					right={<Toggle label={t("settings.saveMatchChatHistory")} checked={appConfig.saveMatchChatHistory} disabled={historySaving}
+						onChange={async enabled => {
+							setHistorySaving(true);
+							try {
+								const reply = await invoke<{success: boolean; error?: string}>("config_set", {args: ["saveMatchChatHistory", enabled]});
+								if (!reply.success) throw new Error(reply.error || t("chat.historyFailed"));
+								setAppConfig(current => ({...current, saveMatchChatHistory: enabled}));
+								window.dispatchEvent(new CustomEvent("valoutils:config-changed", {detail: {key: "saveMatchChatHistory", value: enabled}}));
+								invoke("analytics_track", {args: ["chat:history-save", JSON.stringify({enabled})]}).catch(reportIpcError);
+							} catch (error) { reportIpcError(error); }
+							finally { setHistorySaving(false); }
+						}} />} />
+				<SettingRow icon={<FaComments />} label={t("settings.clearMatchChatHistory")} description={t("settings.clearMatchChatHistoryDesc")}
+					right={<CustomButton onClickLoading={async () => {
+						const reply = await invoke<{success: boolean; error?: string}>("chat_saved_history_clear");
+						// Clear also stops capture, even if deleting the file failed.
+						const config = await invoke<Partial<AppConfig>>("config_get_all");
+						setAppConfig(current => ({...current, saveMatchChatHistory: config.saveMatchChatHistory === true}));
+						if (!reply.success) throw reply.error || t("chat.historyFailed");
+						invoke("analytics_track", {args: ["chat:history-clear"]}).catch(reportIpcError);
+						toast.success(t("settings.matchChatHistoryCleared"));
+					}}>{t("settings.clearMatchChatHistory")}</CustomButton>} />
 				<SettingRow
 					icon={<LuMonitor />}
 					label={t("settings.openOnDisplay")}

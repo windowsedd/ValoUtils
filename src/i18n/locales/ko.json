@@ -237,6 +237,32 @@
     "xpPerDay": "완료까지 하루 {{xp}} XP"
   },
   "career": {
+    "accountStatus": "계정 상태",
+    "penalties": "제재",
+    "penalty": "계정 제재",
+    "interventions": "플레이어 조치",
+    "statusLoading": "계정 상태 확인 중…",
+    "statusUnavailable": "이 항목을 확인할 수 없습니다. 새로고침하여 다시 시도하세요.",
+    "statusAccountChanged": "로그인 계정이 변경되었습니다. 전적 페이지를 다시 여세요.",
+    "noPenalties": "라이엇이 보고한 제재가 없습니다.",
+    "noInterventions": "라이엇이 보고한 조치가 없습니다.",
+    "noActiveInterventions": "이 항목에 현재 적용된 조치가 없습니다.",
+    "nextInterventions": "다음 조치: {{names}}",
+    "statusExpires": "만료: {{date}}",
+    "statusExpired": "만료됨: {{date}}",
+    "statusGamesRemaining_other": "{{count}}게임 남음",
+    "penaltyEffects": {
+      "GameBanEffect": "게임 이용 제한",
+      "QueueDelayEffect": "대기열 지연",
+      "QueueRestrictionEffect": "대기열 제한",
+      "RankedRatingPenaltyEffect": "경쟁전 점수 차감",
+      "RiotRestrictionEffect": "라이엇 이용 제한",
+      "RMSNotifyEffect": "계정 알림",
+      "WarningEffect": "경고",
+      "XPMultiplierEffect": "XP 배율",
+      "PremierRestrictionEffect": "프리미어 제한",
+      "DelayedPenaltyEffect": "지연된 제재"
+    },
     "title": "전적",
     "subtitle": "경쟁전 랭크, 액트 기록, 최근 매치",
     "loading": "전적 데이터 로딩 중...",
@@ -276,6 +302,7 @@
     "me": "나",
     "current": "현재",
     "peak": "통산 최고",
+    "actPeak": "액트 최고",
     "hidden": "숨겨진 플레이어",
     "vandal": "밴달",
     "phantom": "팬텀",
@@ -341,6 +368,10 @@
     "rr": "RR"
   },
   "chat": {
+    "savedMatchHistory": "매치 기록",
+    "currentChat": "현재 채팅",
+    "noSavedMatches": "저장된 매치가 없습니다. 설정 → 애플리케이션에서 매치 채팅 기록 저장을 켜세요.",
+    "savedReadOnly": "저장된 매치 채팅 · 읽기 전용",
     "title": "채팅",
     "subtitle": "최근 채팅 메시지를 확인하고 번역합니다.",
     "loading": "채팅을 불러오는 중...",
@@ -427,6 +458,11 @@
     "available": "사용 가능"
   },
   "settings": {
+    "saveMatchChatHistory": "매치 채팅 기록 저장",
+    "saveMatchChatHistoryDesc": "수집한 팀 및 전체 채팅을 계정별로 로컬 JSON 파일에 저장합니다. 기본값은 꺼짐이며, 끄더라도 기존 기록은 유지됩니다.",
+    "clearMatchChatHistory": "매치 채팅 기록 삭제",
+    "clearMatchChatHistoryDesc": "이 기기의 모든 계정에 저장된 매치 채팅을 삭제하고 저장을 끕니다.",
+    "matchChatHistoryCleared": "매치 채팅 기록을 삭제했습니다. 저장이 꺼졌습니다.",
     "translationLanguages": "번역 언어",
     "translationLanguagesDesc": "자동 감지 또는 원문 언어와 번역할 대상 언어를 선택합니다",
     "translationFrom": "원문 언어",

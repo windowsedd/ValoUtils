@@ -5,6 +5,7 @@ mod ai;
 mod api_docs;
 mod aptabase;
 mod chat_certs;
+mod match_chat_history;
 mod client_config;
 mod commands;
 mod fake_player;
@@ -71,6 +72,7 @@ pub fn run() {
             config_defaults.insert("presenceMucEnabled".into(), json!(true));
             config_defaults.insert("presenceCert".into(), json!("deceive"));
             config_defaults.insert("autoUpdate".into(), json!(true));
+            config_defaults.insert("saveMatchChatHistory".into(), json!(false));
             config_defaults.insert("translatorProvider".into(), json!("google"));
             config_defaults.insert("translatorSourceLanguage".into(), json!("auto"));
             config_defaults.insert("translatorTargetLanguage".into(), json!("en"));
@@ -162,6 +164,7 @@ pub fn run() {
             app.manage(commands::live::LiveStatsCache::default());
             app.manage(commands::live_party::LivePartyHistoryCache::default());
             app.manage(commands::matches::MatchCache::default());
+            commands::chat::ensure_chat_forwarders(app.handle());
             {
                 let handle = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
@@ -223,6 +226,7 @@ pub fn run() {
             commands::profiles::settings_profile_share,
             commands::profiles::share_get_data,
             commands::career::career_get,
+            commands::career::career_account_status,
             commands::battlepass::battlepass_get,
             commands::store::store_get,
             commands::store::store_cached,
@@ -247,6 +251,7 @@ pub fn run() {
             commands::matches::match_details,
             commands::matches::match_summaries,
             commands::chat::chat_get,
+            match_chat_history::chat_saved_history_clear,
             commands::chat::chat_history,
             commands::chat::chat_translate,
             commands::chat::chat_send,

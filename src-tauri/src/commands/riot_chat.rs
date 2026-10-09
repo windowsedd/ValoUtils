@@ -1565,6 +1565,13 @@ async fn poll_once(
 ) -> Result<(), RiotError> {
     let client = resolve_client(client_slot).await?;
 
+    let history_owner =
+        if app.state::<ConfigStore>().get("saveMatchChatHistory") == Some(json!(true)) {
+            client.local_puuid().await.ok()
+        } else {
+            None
+        };
+
     if memory.local_puuid.is_none() {
         memory.local_puuid = client.local_puuid().await.ok();
     }
@@ -1598,6 +1605,40 @@ async fn poll_once(
         };
 
         // First sight of this room: swallow its backlog.
+        if let Some(history_owner) = history_owner.as_deref() {
+            // Use this client's account, including after a lockfile/account change.
+            if let Ok(owner) = client.local_puuid().await {
+                if owner != history_owner {
+                    return Err(RiotError::LoginRequired);
+                }
+                let captured: Vec<Value> = messages
+                    .iter()
+                    .map(|message| {
+                        frontend_chat_message_json(
+                            &message.cid,
+                            &message.key,
+                            &message.sender_puuid,
+                            &if message.sender_tag.is_empty() {
+                                message.sender_name.clone()
+                            } else {
+                                format!("{}#{}", message.sender_name, message.sender_tag)
+                            },
+                            &message.body,
+                            &message.timestamp,
+                            message.channel,
+                            message.is_from(&owner),
+                        )
+                    })
+                    .collect();
+                if let Err(error) = crate::match_chat_history::capture(
+                    &owner,
+                    &captured,
+                    &app.state::<ConfigStore>(),
+                ) {
+                    log::warn!("{error}");
+                }
+            }
+        }
         let priming = memory.primed.observe(&cid);
 
         for message in messages {

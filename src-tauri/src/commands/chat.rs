@@ -7,7 +7,7 @@ use crate::xmpp;
 use base64::Engine;
 use serde_json::{json, Map, Value};
 use std::collections::{HashMap, HashSet};
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 static CHAT_FORWARDER_STARTED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
@@ -28,7 +28,7 @@ fn presence_event_payload(
     serde_json::to_value(snapshot)
 }
 
-fn ensure_chat_forwarders(app: &AppHandle) {
+pub(crate) fn ensure_chat_forwarders(app: &AppHandle) {
     if !mark_chat_forwarder_started(&CHAT_FORWARDER_STARTED) {
         return;
     }
@@ -39,6 +39,19 @@ fn ensure_chat_forwarders(app: &AppHandle) {
             match receiver.recv().await {
                 Ok(message) => {
                     if let Ok(payload) = serde_json::to_value(&message) {
+                        if message_app
+                            .state::<ConfigStore>()
+                            .get("saveMatchChatHistory")
+                            == Some(json!(true))
+                        {
+                            if let Err(error) = crate::match_chat_history::capture(
+                                &message.owner_puuid,
+                                std::slice::from_ref(&payload),
+                                &message_app.state::<ConfigStore>(),
+                            ) {
+                                log::warn!("{error}");
+                            }
+                        }
                         let _ = message_app.emit("chat:message", payload);
                     }
                 }
@@ -1360,6 +1373,12 @@ pub async fn chat_get(app: AppHandle, riot: State<'_, RiotState>) -> Result<Valu
     ensure_chat_forwarders(&app);
     let result: Result<Value, RiotError> = async {
         xmpp::ensure_connected(&riot).await?;
+        let tokens = crate::riot::client::get_tokens(&riot, true).await?;
+        let own_puuid = tokens
+            .get("subject")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string();
         let live_presence = xmpp::presence_snapshot();
         let base_payload = riot_client::get_chat_messages(&riot, None).await?;
         let conversations_payload = riot_client::get_chat_conversations(&riot).await.ok();
@@ -1382,13 +1401,6 @@ pub async fn chat_get(app: AppHandle, riot: State<'_, RiotState>) -> Result<Valu
             scopes.conversations.clone(),
         ]);
         let match_player_ids = get_current_match_player_ids(&riot).await;
-        let tokens = crate::riot::client::get_tokens(&riot, false).await.ok();
-        let own_puuid = tokens
-            .as_ref()
-            .and_then(|t| t.get("subject"))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string();
 
         if scopes
             .rooms
@@ -1445,6 +1457,7 @@ pub async fn chat_get(app: AppHandle, riot: State<'_, RiotState>) -> Result<Valu
         let xmpp_messages: Vec<Value> = xmpp::get_xmpp_messages()
             .await
             .into_iter()
+            .filter(|message| message.owner_puuid == own_puuid)
             .map(|m| serde_json::to_value(m).unwrap())
             .collect();
 
@@ -1522,6 +1535,11 @@ pub async fn chat_get(app: AppHandle, riot: State<'_, RiotState>) -> Result<Valu
                 }),
             &conversation_metadata,
         );
+        // Switching accounts need not change Riot's lockfile. Discard a mixed batch.
+        let current_tokens = crate::riot::client::get_tokens(&riot, true).await?;
+        if current_tokens.get("subject").and_then(Value::as_str) != Some(own_puuid.as_str()) {
+            return Err(RiotError::LoginRequired);
+        }
         let mut last_match = LAST_MATCH_CHAT.lock().unwrap_or_else(|e| e.into_inner());
         let (match_team_final, match_all_final, match_ended) =
             last_match.rooms(&own_puuid, &match_team_final, &match_all_final);
@@ -1533,6 +1551,16 @@ pub async fn chat_get(app: AppHandle, riot: State<'_, RiotState>) -> Result<Valu
         ));
         let messages = last_match.messages(messages, match_ended);
         drop(last_match);
+
+        // Ended rooms are only an in-memory fallback. Do not re-save them after Clear history.
+        let (saved_matches, saved_history_error) = match crate::match_chat_history::capture(
+            &own_puuid,
+            if match_ended { &[] } else { &messages },
+            &app.state::<ConfigStore>(),
+        ) {
+            Ok(matches) => (matches, None),
+            Err(error) => (Vec::new(), Some(error)),
+        };
 
         let conversation_metadata = merge_room_conversations(
             conversation_metadata,
@@ -1548,6 +1576,9 @@ pub async fn chat_get(app: AppHandle, riot: State<'_, RiotState>) -> Result<Valu
 
         Ok(json!({
             "success": true,
+            "ownerPuuid": own_puuid,
+            "savedMatches": saved_matches,
+            "savedHistoryError": saved_history_error,
             "messages": messages,
             "rooms": {
                 "party": final_party_room,

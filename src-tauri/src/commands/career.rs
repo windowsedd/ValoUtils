@@ -5,6 +5,66 @@ use crate::riot::client::RiotState;
 use serde_json::{json, Value};
 use tauri::State;
 
+fn account_status_result(
+    result: Result<(String, Value), crate::riot::error::RiotError>,
+    expected: &str,
+    collection: &str,
+) -> Value {
+    match result {
+        Ok((owner, data)) => {
+            if !owner.eq_ignore_ascii_case(expected)
+                || data
+                    .get("Subject")
+                    .and_then(Value::as_str)
+                    .is_some_and(|subject| !subject.eq_ignore_ascii_case(expected))
+            {
+                return json!({"success": false, "code": "accountChanged"});
+            }
+            if !data.get(collection).is_some_and(Value::is_array) {
+                return json!({"success": false, "code": "unavailable"});
+            }
+            json!({"success": true, "data": data})
+        }
+        Err(error) => json!({"success": false, "code": error.code()}),
+    }
+}
+
+#[tauri::command]
+pub async fn career_account_status(
+    args: Vec<Value>,
+    riot: State<'_, RiotState>,
+) -> Result<Value, ()> {
+    let Some(expected) = args
+        .first()
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+    else {
+        return Ok(json!({"success": false, "code": "unavailable"}));
+    };
+    // Independent requests retain independent auth retries and failure states.
+    let (penalties, interventions) = tokio::join!(
+        bounded_account_check(api::with_api(&riot, |api| async move {
+            let data = api.get_penalties().await?;
+            Ok((api.puuid, data))
+        })),
+        bounded_account_check(api::with_api(&riot, |api| async move {
+            let data = api.get_player_interventions().await?;
+            Ok((api.puuid, data))
+        })),
+    );
+    Ok(json!({"success": true,
+        "penalties": account_status_result(penalties, expected, "Penalties"),
+        "interventions": account_status_result(interventions, expected, "InterventionsByCategory")}))
+}
+
+async fn bounded_account_check(
+    request: impl std::future::Future<Output = Result<(String, Value), crate::riot::error::RiotError>>,
+) -> Result<(String, Value), crate::riot::error::RiotError> {
+    tokio::time::timeout(std::time::Duration::from_secs(20), request)
+        .await
+        .unwrap_or(Err(crate::riot::error::RiotError::Timeout))
+}
+
 fn career_match_history_indices() -> (u32, u32) {
     (0, 25)
 }
@@ -66,6 +126,31 @@ pub async fn career_get(riot: State<'_, RiotState>) -> Result<Value, ()> {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn account_checks_reject_other_accounts_and_missing_collections() {
+        let mismatch = account_status_result(
+            Ok(("alt".into(), json!({"Subject":"alt", "Penalties":[]}))),
+            "main",
+            "Penalties",
+        );
+        assert_eq!(mismatch["success"], false);
+        assert_eq!(mismatch["code"], "accountChanged");
+        let empty = account_status_result(
+            Ok(("main".into(), json!({"Subject":"main", "Penalties":[]}))),
+            "main",
+            "Penalties",
+        );
+        assert_eq!(empty["success"], true);
+        let missing = account_status_result(Ok(("main".into(), json!({}))), "main", "Penalties");
+        assert_eq!(missing["success"], false);
+        let failure = account_status_result(
+            Err(crate::riot::error::RiotError::LoginRequired),
+            "main",
+            "Penalties",
+        );
+        assert_eq!(failure["success"], false);
+    }
 
     #[test]
     fn limits_career_history_to_riot_page_size() {

@@ -1,6 +1,7 @@
 import type { ChatChannel } from "@/types/chat";
 import type { ChatRoomMember, ComposerCommandHint } from "./chat-model";
 import { PlayerCardAvatar } from "./player-card-avatar";
+import type { ReactNode } from "react";
 
 export type ChatRoomMemberView = ChatRoomMember & {
 	displayName: string;
@@ -59,6 +60,7 @@ export const ChatChannelContext = ({
 	commands,
 	labels,
 	onPickCommand,
+	history,
 }: {
 	channel: Exclude<ChatChannel, "friends">;
 	title: string;
@@ -67,6 +69,7 @@ export const ChatChannelContext = ({
 	commands: ComposerCommandHint[];
 	labels: RoomLabels;
 	onPickCommand: (command: ComposerCommandHint) => void;
+	history?: ReactNode;
 }) => {
 	const allies = members.filter((member) => member.side === "ally");
 	const enemies = members.filter((member) => member.side === "enemy");
@@ -96,6 +99,7 @@ export const ChatChannelContext = ({
 				</div>
 			</div>
 
+			{history}
 			<section aria-label={labels.members} className="flex min-h-0 flex-1 flex-col">
 				<h3 className="flex items-center justify-between px-4 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-(--text-muted)">
 					<span>{labels.members}</span>

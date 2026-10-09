@@ -75,7 +75,8 @@ export const ActRankPanel = ({
 	}
 
 	const { lowest, peak } = tierRangeFromWins(selected.winsByTier);
-	const rankText = (tier: number) => (tier > 0 ? tierName(tier) : t("liveGame.unavailable"));
+	const ranked = selected.tier >= 3;
+	const rankText = (tier: number) => (tier >= 3 ? tierName(tier) : t("career.unranked"));
 	const winRate =
 		selected.games > 0 ? `${((selected.wins / selected.games) * 100).toFixed(1)}%` : t("liveGame.unavailable");
 
@@ -125,7 +126,7 @@ export const ActRankPanel = ({
 							{rankText(selected.tier)}
 						</span>
 					</span>
-					{selected.tier > 0 && (
+					{ranked && (
 						<SummaryStat label={t("liveGame.rankedRating")} value={`${selected.rankedRating} / 100`} />
 					)}
 					<SummaryStat label={t("liveGame.wins")} value={selected.wins} />
@@ -160,13 +161,13 @@ export const ActRankPanel = ({
 					/>
 					<ActStat
 						label={t("liveGame.rankedRating")}
-						value={selected.tier > 0 ? `${selected.rankedRating} / 100` : t("liveGame.unavailable")}
+						value={ranked ? `${selected.rankedRating} / 100` : "—"}
 					/>
 					<ActStat label={t("liveGame.wins")} value={selected.wins} />
 					<ActStat label={t("liveGame.games")} value={selected.games} />
 					<ActStat label={t("liveGame.winRate")} value={winRate} />
-					<ActStat label={t("liveGame.peak")} value={rankText(peak)} />
-					<ActStat label={t("liveGame.lowest")} value={rankText(lowest)} />
+					<ActStat label={t("liveGame.actPeak")} value={peak >= 3 ? tierName(peak) : "—"} />
+					<ActStat label={t("liveGame.lowest")} value={lowest >= 3 ? tierName(lowest) : "—"} />
 					<ActStat label={t("liveGame.finalRank")} value={rankText(selected.tier)} />
 				</dl>
 			</div>

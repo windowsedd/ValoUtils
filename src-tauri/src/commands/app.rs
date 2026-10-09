@@ -97,6 +97,7 @@ pub fn config_get_all(store: State<ConfigStore>) -> Value {
     let get_or = |key: &str, default: Value| store.get(key).unwrap_or(default);
     json!({
         "autoUpdate": get_or("autoUpdate", json!(true)),
+        "saveMatchChatHistory": get_or("saveMatchChatHistory", json!(false)),
         "openDevTools": get_or("openDevTools", json!(false)),
         // Every key the frontend reads has to be listed here — this is an
         // allowlist, not a passthrough of the whole store.
@@ -127,6 +128,15 @@ pub fn config_set(args: Vec<Value>, store: State<ConfigStore>) -> Value {
         return json!({ "success": false });
     };
     let value = args.get(1).cloned().unwrap_or(Value::Null);
+    if key == "saveMatchChatHistory" {
+        if !value.is_boolean() {
+            return json!({"success": false, "error": "Expected a boolean."});
+        }
+        return match store.try_set(&key, value) {
+            Ok(()) => json!({"success": true, "key": key}),
+            Err(error) => json!({"success": false, "error": error}),
+        };
+    }
     // The gate holds its pacing in a static, below the API client and out of
     // reach of Tauri state, so a change has to be handed to it here.
     if key == "riotRequestPacing" {

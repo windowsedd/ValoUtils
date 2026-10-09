@@ -55,6 +55,7 @@ impl LiveChatLine {
             .into_iter()
             .find(|channel| channel.matches_cid(&self.cid))?;
         Some(crate::xmpp::client::ChatMessage {
+            owner_puuid: own_puuid.to_string(),
             id: self.id.clone(),
             conversation_id: self.cid.clone(),
             sender: self.sender.clone(),

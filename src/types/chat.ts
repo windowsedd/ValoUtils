@@ -86,9 +86,18 @@ export type ChatResponse =
       conversations: ChatConversation[];
       friends: ChatFriend[];
       fetchedAt: string;
+      ownerPuuid?: string;
+      savedMatches?: SavedChatMatch[];
+      savedHistoryError?: string | null;
     }
   | { success: false; code: "loginRequired" }
   | { success: false; error: string };
+
+export type SavedChatMatch = {
+  matchUuid: string;
+  updatedAt: number;
+  messages: ChatMessage[];
+};
 
 export type ChatHistoryResponse =
   | { success: true; requestId: string; cid: string; messages: ChatMessage[] }

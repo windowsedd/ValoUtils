@@ -237,6 +237,47 @@ Riot chat is XMPP over raw TLS to `<affinity>.chat.si.riotgames.com:5223`, with 
 
 ## Common Tasks
 
+### Career account status
+
+Career shows Account status below Current Rank. `career_account_status` takes the
+Career account PUUID and independently requests `/restrictions/v3/penalties` and
+`/restrictions/v1/activeFutureInterventions` through the shared authenticated PD
+client, rate budget and auth retry. Each request has a 20-second timeout; status
+errors never block rank or history. Responses from a different account are
+rejected. Empty collections differ from failures or malformed responses. The
+panel shows reported penalty types, reasons, expiry and remaining games, plus
+active interventions and next intervention names by behavior category. It does
+not infer dates for next interventions. Refresh rechecks both endpoints. Nothing
+is saved locally. The schemas come from the user's linked Valdocs documentation
+and its `valorant-api-types/src/endpoints/pvp` source.
+
+Matches uses container width for its shared header/row grid: compact under 40rem,
+agent/KDA/date from 40rem, and all summary statistics from 54rem. This accounts
+for the app rail and page padding; viewport breakpoints clipped the date column.
+
+Act Rank resolves border and crystal images with module-relative `new URL` so
+Vite includes them as bundled assets. Acts below tier 3 show Unranked; RR and
+win-based peak/lowest show a dash when they do not apply. The peak is labelled
+Act peak because it belongs to the selected act, not the player's lifetime.
+
+### Saved match chat history
+
+Settings → Application → Save match chat history is opt-in (`saveMatchChatHistory`,
+default false). Captured core-game Team/All messages are saved to
+`%APPDATA%\ValoUtils\match-chat-history.json`, grouped by account PUUID then
+`matchUuid` (the UUID in the room CID, without `-blue`, `-red` or `-all`).
+The existing REST poller and relay/XMPP forwarder capture while the app runs,
+including when Chat is closed. Relay/XMPP messages carry their source session's
+account internally; REST batches validate the owner before and after fetching to
+discard an account-switch batch. This stores captured chat only; Riot cannot
+retrieve old match chat that the app never observed. Private, party and pregame
+chat are excluded. Raw API fields are not saved. Writes replace a temporary JSON
+file and surface errors without overwriting unreadable history.
+The Team/All sidebar picker opens saved matches read-only and lists only the
+signed-in account's history. Disabling saves keeps existing history. Clear match
+chat history deletes all accounts' saved chats on this device and disables saving
+so polling cannot restore its backlog. No cloud sync or new dependencies.
+
 ### AI providers
 
 Settings → AI selects Anthropic, OpenAI, Google Gemini, or an OpenAI-compatible

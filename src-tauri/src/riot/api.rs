@@ -451,6 +451,26 @@ impl RiotApiClient {
         )
         .await
     }
+
+    pub async fn get_penalties(&self) -> Result<Value, String> {
+        self.request(
+            Target::Pd,
+            reqwest::Method::GET,
+            "/restrictions/v3/penalties",
+            None,
+        )
+        .await
+    }
+
+    pub async fn get_player_interventions(&self) -> Result<Value, String> {
+        self.request(
+            Target::Pd,
+            reqwest::Method::GET,
+            "/restrictions/v1/activeFutureInterventions",
+            None,
+        )
+        .await
+    }
     pub async fn get_competitive_history(
         &self,
         puuid: &str,

@@ -4,6 +4,7 @@ import { initialSeasonId } from "@/components/live-game/act-rank";
 import { ActRankPanel } from "@/components/live-game/act-rank-panel";
 import { LoginRequiredPanel } from "@/components/login-required-panel";
 import { RankShieldBadge } from "@/components/rank-shield-badge";
+import { CareerAccountStatus } from "@/components/career-account-status";
 import { PageHeader, PageSplit, pageBodyClass } from "@/components/section-card";
 import type { CompetitiveSeason } from "@/types/live-game";
 import { rateLimitedSeconds } from "@/util/rate-limit";
@@ -168,6 +169,7 @@ const onResponse = (message: any) => {
 			{ready && (
 				<PageSplit
 					aside={
+						<>
 						<section
 							aria-label={t("career.currentRank")}
 							className="flex flex-col items-center gap-2 rounded-[12px] border border-(--border) bg-(--surface) px-4 pt-5 pb-4 text-center"
@@ -192,6 +194,8 @@ const onResponse = (message: any) => {
 								</>
 							)}
 						</section>
+						<CareerAccountStatus puuid={data.puuid} />
+						</>
 					}
 				>
 					<ActRankPanel

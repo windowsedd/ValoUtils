@@ -48,6 +48,16 @@ impl Store {
             serde_json::to_string(&*data).unwrap_or_default(),
         );
     }
+
+    pub fn try_set(&self, key: &str, value: Value) -> Result<(), String> {
+        let mut data = self.data.lock().unwrap();
+        let mut next = data.clone();
+        next.insert(key.to_string(), value);
+        let bytes = serde_json::to_vec(&next).map_err(|e| e.to_string())?;
+        fs::write(&self.path, bytes).map_err(|e| format!("Cannot save settings: {e}"))?;
+        *data = next;
+        Ok(())
+    }
 }
 
 /// Tauri's managed state is keyed by type, so the app's two JSON stores

@@ -237,6 +237,32 @@
 		"xpPerDay": "每日需 {{xp}} XP 完成"
 	},
 	"career": {
+		"accountStatus": "帳號狀態",
+		"penalties": "懲罰",
+		"penalty": "帳號懲罰",
+		"interventions": "玩家處置",
+		"statusLoading": "正在檢查帳號狀態…",
+		"statusUnavailable": "目前無法檢查此項目，請重新整理再試。",
+		"statusAccountChanged": "登入的帳號已變更，請重新開啟戰績頁面。",
+		"noPenalties": "Riot 未回報任何懲罰。",
+		"noInterventions": "Riot 未回報任何處置。",
+		"noActiveInterventions": "此類別目前沒有生效中的處置。",
+		"nextInterventions": "下一階段處置名稱：{{names}}",
+		"statusExpires": "到期時間：{{date}}",
+		"statusExpired": "已到期：{{date}}",
+		"statusGamesRemaining_other": "剩餘 {{count}} 場",
+		"penaltyEffects": {
+			"GameBanEffect": "遊戲封鎖",
+			"QueueDelayEffect": "排隊延遲",
+			"QueueRestrictionEffect": "排隊限制",
+			"RankedRatingPenaltyEffect": "牌位分數懲罰",
+			"RiotRestrictionEffect": "Riot 使用限制",
+			"RMSNotifyEffect": "帳號通知",
+			"WarningEffect": "警告",
+			"XPMultiplierEffect": "經驗值倍率",
+			"PremierRestrictionEffect": "超級聯賽限制",
+			"DelayedPenaltyEffect": "延後生效的懲罰"
+		},
 		"title": "戰績",
 		"subtitle": "你的競技排位、賽季紀錄與近期對戰",
 		"loading": "載入戰績資料中...",
@@ -276,6 +302,7 @@
 		"me": "我",
 		"current": "目前",
 		"peak": "生涯最高",
+		"actPeak": "章節最高",
 		"hidden": "隱藏玩家",
 		"vandal": "Vandal",
 		"phantom": "Phantom",
@@ -341,6 +368,10 @@
 		"rr": "RR"
 	},
 	"chat": {
+		"savedMatchHistory": "對戰紀錄",
+		"currentChat": "目前聊天",
+		"noSavedMatches": "尚無已儲存的對戰。請在設定 → 應用程式開啟儲存對戰聊天紀錄。",
+		"savedReadOnly": "已儲存的對戰聊天 · 唯讀",
 		"title": "聊天",
 		"subtitle": "查看最近的聊天訊息並翻譯內容。",
 		"loading": "正在載入聊天...",
@@ -427,6 +458,11 @@
 		"available": "可使用"
 	},
 	"settings": {
+		"saveMatchChatHistory": "儲存對戰聊天紀錄",
+		"saveMatchChatHistoryDesc": "將擷取到的隊伍及全體聊天，以 JSON 儲存在本機，並依帳號分開保存。預設關閉；關閉後仍保留既有紀錄。",
+		"clearMatchChatHistory": "清除對戰聊天紀錄",
+		"clearMatchChatHistoryDesc": "刪除此裝置所有帳號已儲存的對戰聊天，並關閉儲存功能。",
+		"matchChatHistoryCleared": "已清除對戰聊天紀錄，儲存功能已關閉。",
 		"translationLanguages": "翻譯語言",
 		"translationLanguagesDesc": "選擇自動偵測或指定來源語言，以及翻譯後的目標語言",
 		"translationFrom": "來源語言",
