@@ -14,6 +14,7 @@ describe("ActRankTriangle", () => {
 		expect(urls.length).toBeGreaterThan(0);
 		for (const url of urls) {
 			expect(url.startsWith("file:")).toBe(true);
+			expect(new URL(url).pathname).toContain("/src/assets/mmr/");
 			expect(existsSync(new URL(url))).toBe(true);
 		}
 	});

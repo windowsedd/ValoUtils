@@ -19,9 +19,8 @@ const asPoints = (points: readonly (readonly [number, number])[]) =>
 	points.map(([x, y]) => `${x},${y}`).join(" ");
 const safeSvgId = (prefix: string, id: string) =>
 	`${prefix}-${id.replace(/[^a-zA-Z0-9_-]/g, "")}`;
-// Let Vite track and bundle these assets instead of relying on root-relative
-// public paths being available in the installed WebView.
-const rankAsset = (name: string) => new URL(`../../../public/mmr/${name}.png`, import.meta.url).href;
+// Module assets are bundled by Vite in both dev and production.
+const rankAsset = (name: string) => new URL(`../../assets/mmr/${name}.png`, import.meta.url).href;
 
 export const ActRankTriangle = ({ winsByTier, wins }: Props) => {
 	const reactId = useId();

@@ -275,12 +275,12 @@ describe("act selection", () => {
 test("all valid tier orientations and borders have supplied assets", () => {
   for (let tier = 3; tier <= 27; tier++) {
     for (const orientation of ["up", "down"]) {
-      expect(existsSync(join(process.cwd(), "public", "mmr", `${tier}_${orientation}.png`))).toBe(
+      expect(existsSync(join(process.cwd(), "src", "assets", "mmr", `${tier}_${orientation}.png`))).toBe(
         true,
       );
     }
   }
   for (let border = 0; border <= 5; border++) {
-    expect(existsSync(join(process.cwd(), "public", "mmr", `border${border}.png`))).toBe(true);
+    expect(existsSync(join(process.cwd(), "src", "assets", "mmr", `border${border}.png`))).toBe(true);
   }
 });

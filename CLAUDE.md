@@ -256,7 +256,8 @@ Matches uses container width for its shared header/row grid: compact under 40rem
 agent/KDA/date from 40rem, and all summary statistics from 54rem. This accounts
 for the app rail and page padding; viewport breakpoints clipped the date column.
 
-Act Rank resolves border and crystal images with module-relative `new URL` so
+Act Rank keeps border and crystal images in `src/assets/mmr` and resolves them
+with module-relative `new URL` so
 Vite includes them as bundled assets. Acts below tier 3 show Unranked; RR and
 win-based peak/lowest show a dash when they do not apply. The peak is labelled
 Act peak because it belongs to the selected act, not the player's lifetime.
