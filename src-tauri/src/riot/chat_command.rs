@@ -361,16 +361,31 @@ pub fn parse_history_translate_command(
     })
 }
 
-pub fn is_skippable_history_line(body: &str) -> bool {
+/// A built-in `.` command (`.send`, `.tran`, `.dodge`, `.ai`, `.ask`, `.ascii`).
+///
+/// Typed in a group room these never run: commands only work when whispered
+/// to the Dummy Bot or typed in the Chat composer.
+pub fn is_builtin_command(body: &str) -> bool {
     let body = body.trim();
-    body.is_empty()
-        || is_translation_command(body)
+    is_translation_command(body)
         || is_history_translate_command(body)
         || is_dodge_command(body)
         || is_ai_command(body)
         || is_ask_command(body)
         || crate::riot::ascii_art::is_ascii_command(body)
-        || body.starts_with('$')
+}
+
+/// Bot DM sent when a command is typed in a group room instead of whispered.
+pub fn group_command_hint(body: &str) -> String {
+    format!(
+        "Commands only run when you whisper them to me, not in party, pregame, team or all chat. Not sent: {}",
+        body.trim()
+    )
+}
+
+pub fn is_skippable_history_line(body: &str) -> bool {
+    let body = body.trim();
+    body.is_empty() || is_builtin_command(body) || body.starts_with('$')
 }
 
 fn parse_history_count(raw: &str) -> Option<usize> {

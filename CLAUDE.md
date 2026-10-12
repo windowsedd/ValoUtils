@@ -307,9 +307,12 @@ three AI blocks per message run concurrently before translation. Failed blocks
 become `N/A`. The editor provides a separate AI block insert button.
 `.ai` and `.ask` are private by default: the answer goes only to the player (a
 composer system line, or a Dummy Bot DM/whisper). `.ai party|team|all <prompt>`
-is the only form that posts, to the named room. The relay swallows `.ai`/`.ask`
-typed in party/team/all chat so the raw line never reaches the room; without the
-relay, the REST poller sees it after it was sent and still answers by bot DM.
+is the only form that posts, to the named room.
+Commands run only when whispered to the Dummy Bot or typed in the Chat composer.
+Built-in commands (`.send`, `.tran`, `.dodge`, `.ai`, `.ask`, `.ascii`) and dotted
+custom triggers typed in party/pregame/team/all chat never run: the relay swallows
+the line and the bot whispers a reminder. The REST poller ignores the player's own
+lines, so without the relay such a line is posted as ordinary chat.
 In agent select or a live match, `.ask` also sends a fenced `<live_game>` block
 (`bot_template::ask_game_context`): map, mode, phase, and per player agent, rank,
 RR, peak, level and cached recent form, labelled `You` / `Ally N` / `Enemy N`.

@@ -19,13 +19,6 @@ use crate::presence_proxy::xml::{
 use crate::presence_proxy::{BotDirectMessage, MaskingState};
 
 const LIVE_TRANSLATION_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
-const LIVE_TRANSLATION_QUEUE_CAPACITY: usize = 8;
-
-struct LiveTranslationJob {
-    command: String,
-    pinned_live_cid: Option<String>,
-    original: Vec<u8>,
-}
 
 struct RelayRuntime {
     handle: tauri::async_runtime::JoinHandle<()>,
@@ -194,11 +187,6 @@ async fn client_to_remote(
     let mut outbound = crate::presence_proxy::subscribe_outbound();
     let mut bot_direct = crate::presence_proxy::subscribe_bot_direct();
     let mut reply_sequence = 0u64;
-    let (translation_tx, translation_rx) = mpsc::channel(LIVE_TRANSLATION_QUEUE_CAPACITY);
-    tauri::async_runtime::spawn(live_translation_worker(
-        translation_rx,
-        remote_write.clone(),
-    ));
 
     loop {
         tokio::select! {
@@ -244,66 +232,13 @@ async fn client_to_remote(
                         continue;
                     };
                     crate::presence_proxy::record_live_chat(stanza);
-                    if let Some(outgoing) = outgoing_translation_command(stanza) {
-                        let target_channel = outgoing
-                            .body
-                            .split_whitespace()
-                            .nth(1)
-                            .and_then(crate::riot::models::ChatChannel::parse);
-                        let pinned_live_cid = target_channel
-                            .is_some_and(|target| {
-                                translation_target_matches_source(target, outgoing.source_channel)
-                            })
-                            .then_some(outgoing.source_cid);
-                        let job = LiveTranslationJob {
-                            command: outgoing.body,
-                            pinned_live_cid,
-                            original: frame.clone(),
-                        };
-                        if translation_tx.try_send(job).is_ok() {
-                            continue;
+                    // Commands typed in a group room never reach it and never
+                    // run: they only work when whispered to the Dummy Bot.
+                    if let Some(body) = outgoing_group_command(stanza) {
+                        let hint = crate::riot::chat_command::group_command_hint(&body);
+                        if let Err(error) = crate::presence_proxy::send_bot_direct(&hint) {
+                            log::warn!("Group command hint could not be delivered: {error:?}");
                         }
-                        log::warn!("Live chat command queue is full; forwarding original stanza");
-                    }
-                    // `.ascii` typed in a group room never reaches it either:
-                    // the art is a Dummy Bot DM unless the line names a room.
-                    if let Some(body) = outgoing_ascii_command(stanza) {
-                        let remote_write = remote_write.clone();
-                        tauri::async_runtime::spawn(async move {
-                            let reply = ascii_command_on_connection(&body, &remote_write).await;
-                            if let Err(error) = crate::presence_proxy::send_bot_direct(&reply) {
-                                log::warn!("ASCII command reply could not be delivered: {error:?}");
-                            }
-                        });
-                        continue;
-                    }
-                    // `.ai` / `.ask` typed in a group room never reach it: the
-                    // answer is a Dummy Bot DM unless `.ai` names a room.
-                    if let Some(body) = outgoing_ai_command(stanza) {
-                        let remote_write = remote_write.clone();
-                        tauri::async_runtime::spawn(async move {
-                            let reply = ai_command_on_connection(&body, &remote_write).await;
-                            if let Err(error) = crate::presence_proxy::send_bot_direct(&reply) {
-                                log::warn!("AI command reply could not be delivered: {error:?}");
-                            }
-                        });
-                        continue;
-                    }
-                    if outgoing_dodge_command(stanza) {
-                        tauri::async_runtime::spawn(async {
-                            match tokio::time::timeout(
-                                LIVE_TRANSLATION_TIMEOUT,
-                                crate::commands::riot_chat::execute_dodge(
-                                    crate::presence_proxy::app_handle(),
-                                ),
-                            )
-                            .await
-                            {
-                                Ok(Ok(_)) => {}
-                                Ok(Err(error)) => log::warn!("Dodge command failed: {error}"),
-                                Err(_) => log::warn!("Dodge command timed out"),
-                            }
-                        });
                         continue;
                     }
                     if stanza.to_ascii_lowercase().contains(crate::fake_player::PUUID) {
@@ -481,12 +416,7 @@ async fn translate_bot_command_on_connection(
     };
 
     let stanza = crate::presence_proxy::game_groupchat_stanza(&prepared.live_cid, &prepared.body);
-    crate::commands::riot_chat::record_live_translation_echo(&prepared.live_cid, &prepared.body);
     if let Err(error) = write_frame(remote_write, stanza.as_bytes()).await {
-        crate::commands::riot_chat::discard_live_translation_echo(
-            &prepared.live_cid,
-            &prepared.body,
-        );
         return format!("Could not send translated message: {error}");
     }
 
@@ -526,12 +456,7 @@ async fn ascii_command_on_connection(
     };
 
     let stanza = crate::presence_proxy::game_groupchat_stanza(&prepared.live_cid, &prepared.body);
-    crate::commands::riot_chat::record_live_translation_echo(&prepared.live_cid, &prepared.body);
     if let Err(error) = write_frame(remote_write, stanza.as_bytes()).await {
-        crate::commands::riot_chat::discard_live_translation_echo(
-            &prepared.live_cid,
-            &prepared.body,
-        );
         return format!("Could not send ASCII art: {error}");
     }
 
@@ -562,12 +487,7 @@ async fn ai_command_on_connection(
     };
 
     let stanza = crate::presence_proxy::game_groupchat_stanza(&prepared.live_cid, &prepared.body);
-    crate::commands::riot_chat::record_live_translation_echo(&prepared.live_cid, &prepared.body);
     if let Err(error) = write_frame(remote_write, stanza.as_bytes()).await {
-        crate::commands::riot_chat::discard_live_translation_echo(
-            &prepared.live_cid,
-            &prepared.body,
-        );
         return format!("Could not send AI message: {error}");
     }
 
@@ -670,34 +590,8 @@ fn should_send_welcome(roster_inserted: bool, valorant_ready: bool, welcome_sent
     roster_inserted && valorant_ready && !welcome_sent
 }
 
-#[derive(Debug, PartialEq, Eq)]
-struct OutgoingTranslationCommand {
-    body: String,
-    source_channel: crate::riot::models::ChatChannel,
-    source_cid: String,
-}
-
-fn translation_target_matches_source(
-    target: crate::riot::models::ChatChannel,
-    source: crate::riot::models::ChatChannel,
-) -> bool {
-    target == source
-        || matches!(
-            (target, source),
-            (
-                crate::riot::models::ChatChannel::Team,
-                crate::riot::models::ChatChannel::Pregame
-            ) | (
-                crate::riot::models::ChatChannel::Pregame,
-                crate::riot::models::ChatChannel::Team
-            )
-        )
-}
-
-fn outgoing_live_groupchat(
-    stanza: &str,
-) -> Option<(crate::riot::models::ChatChannel, String, String)> {
-    let (channel, cid, _) = crate::presence_proxy::xml::group_muc_target(stanza)?;
+fn outgoing_live_groupchat(stanza: &str) -> Option<String> {
+    let (channel, _, _) = crate::presence_proxy::xml::group_muc_target(stanza)?;
     if !matches!(
         channel,
         crate::riot::models::ChatChannel::Party
@@ -707,79 +601,20 @@ fn outgoing_live_groupchat(
     ) {
         return None;
     }
-    let line = crate::presence_proxy::xml::parse_groupchat_line(stanza)?;
-    Some((channel, cid, line.body))
+    Some(crate::presence_proxy::xml::parse_groupchat_line(stanza)?.body)
 }
 
-fn outgoing_translation_command(stanza: &str) -> Option<OutgoingTranslationCommand> {
-    let (channel, cid, body) = outgoing_live_groupchat(stanza)?;
-    crate::riot::chat_command::is_translation_command(&body).then_some(OutgoingTranslationCommand {
-        body,
-        source_channel: channel,
-        source_cid: cid,
-    })
-}
-
-fn outgoing_ai_command(stanza: &str) -> Option<String> {
-    let (_, _, body) = outgoing_live_groupchat(stanza)?;
-    (crate::riot::chat_command::is_ai_command(&body)
-        || crate::riot::chat_command::is_ask_command(&body))
+/// A command line typed into a party, pregame, team or all room: a built-in
+/// `.` command or a dotted custom trigger. Bare trigger words such as `gg`
+/// stay ordinary chat.
+fn outgoing_group_command(stanza: &str) -> Option<String> {
+    let body = outgoing_live_groupchat(stanza)?;
+    (crate::riot::chat_command::is_builtin_command(&body)
+        || crate::commands::riot_chat::is_dotted_custom_trigger(
+            &body,
+            crate::presence_proxy::app_handle(),
+        ))
     .then_some(body)
-}
-
-fn outgoing_ascii_command(stanza: &str) -> Option<String> {
-    let (_, _, body) = outgoing_live_groupchat(stanza)?;
-    crate::riot::ascii_art::is_ascii_command(&body).then_some(body)
-}
-
-fn outgoing_dodge_command(stanza: &str) -> bool {
-    outgoing_live_groupchat(stanza)
-        .is_some_and(|(_, _, body)| crate::riot::chat_command::is_dodge_command(&body))
-}
-
-async fn live_translation_worker(
-    mut jobs: mpsc::Receiver<LiveTranslationJob>,
-    remote_write: Arc<AsyncMutex<WriteHalf<RemoteTls>>>,
-) {
-    while let Some(job) = jobs.recv().await {
-        let result = tokio::time::timeout(
-            LIVE_TRANSLATION_TIMEOUT,
-            crate::commands::riot_chat::prepare_typed_translation(
-                &job.command,
-                crate::presence_proxy::app_handle(),
-                job.pinned_live_cid.as_deref(),
-            ),
-        )
-        .await;
-        match result {
-            Ok(Ok(prepared)) => {
-                let translated = crate::presence_proxy::game_groupchat_stanza(
-                    &prepared.live_cid,
-                    &prepared.body,
-                );
-                crate::commands::riot_chat::record_live_translation_echo(
-                    &prepared.live_cid,
-                    &prepared.body,
-                );
-                if let Err(error) = write_frame(&remote_write, translated.as_bytes()).await {
-                    crate::commands::riot_chat::discard_live_translation_echo(
-                        &prepared.live_cid,
-                        &prepared.body,
-                    );
-                    log::warn!("Live chat translation delivery failed: {error}");
-                    let _ = write_frame(&remote_write, &job.original).await;
-                }
-            }
-            Ok(Err(error)) => {
-                log::warn!("Live chat command failed: {error}");
-                let _ = write_frame(&remote_write, &job.original).await;
-            }
-            Err(_) => {
-                log::warn!("Live chat command timed out");
-                let _ = write_frame(&remote_write, &job.original).await;
-            }
-        }
-    }
 }
 
 pub async fn stop() {
@@ -842,112 +677,51 @@ mod tests {
     }
 
     #[test]
-    fn intercepts_dot_send_from_live_party_team_pregame_and_all_chat() {
-        for (room, command) in [
-            ("party@ares-parties.ap", ".send party french hello"),
-            (
-                "match-blue@ares-coregame.ap1.pvp.net",
-                ".send team french hello",
-            ),
-            (
-                "match-all@ares-coregame.ap1.pvp.net",
-                ".send all french hello",
-            ),
-            (
-                "match-blue@ares-pregame.ap1.pvp.net",
-                ".send team french hello",
-            ),
-        ] {
-            let stanza = format!(
-                r#"<message to="{room}" type="groupchat"><body>{command}</body></message>"#
-            );
-            assert_eq!(
-                outgoing_translation_command(&stanza)
-                    .as_ref()
-                    .map(|outgoing| outgoing.body.as_str()),
-                Some(command),
-                "{room}"
-            );
-        }
-
-        assert_eq!(
-            outgoing_translation_command(
-                r#"<message to="party@ares-parties.ap" type="groupchat"><body>hello</body></message>"#
-            ),
-            None
-        );
-        assert_eq!(
-            outgoing_translation_command(
-                r#"<message to="room@conference.example" type="groupchat"><body>.send all french hello</body></message>"#
-            ),
-            None,
-            "only Riot party/pregame/team/all MUCs may consume commands"
-        );
-        assert_eq!(
-            outgoing_translation_command(
-                r#"<message to="friend@ap1.pvp.net" type="chat"><body>.send party french hello</body></message>"#
-            ),
-            None
-        );
-    }
-
-    #[test]
-    fn intercepts_dot_ascii_from_live_group_chat() {
-        for (room, body) in [
-            ("party@ares-parties.ap", ".ascii hei"),
-            ("match-blue@ares-coregame.ap1.pvp.net", ".ascii party hei"),
-            ("match-blue@ares-pregame.ap1.pvp.net", ".ASCII gg"),
-        ] {
-            let stanza =
-                format!(r#"<message to="{room}" type="groupchat"><body>{body}</body></message>"#);
-            assert_eq!(
-                outgoing_ascii_command(&stanza).as_deref(),
-                Some(body),
-                "{room}"
-            );
-        }
-
-        assert_eq!(
-            outgoing_ascii_command(
-                r#"<message to="party@ares-parties.ap" type="groupchat"><body>.asciify gg</body></message>"#
-            ),
-            None
-        );
-    }
-
-    #[test]
-    fn intercepts_dot_dodge_from_live_party_team_pregame_and_all_chat() {
+    fn swallows_every_builtin_command_typed_in_live_group_chat() {
         for room in [
             "party@ares-parties.ap",
             "match-blue@ares-coregame.ap1.pvp.net",
             "match-all@ares-coregame.ap1.pvp.net",
             "match-blue@ares-pregame.ap1.pvp.net",
         ] {
-            let stanza =
-                format!(r#"<message to="{room}" type="groupchat"><body>.dodge</body></message>"#);
-            assert!(outgoing_dodge_command(&stanza), "{room}");
+            for body in [
+                ".send team french hello",
+                ".tran [5]",
+                ".dodge",
+                ".ai team gl",
+                ".ask comp?",
+                ".ASCII gg",
+            ] {
+                let stanza = format!(
+                    r#"<message to="{room}" type="groupchat"><body>{body}</body></message>"#
+                );
+                assert_eq!(
+                    outgoing_group_command(&stanza).as_deref(),
+                    Some(body),
+                    "{room}"
+                );
+            }
         }
 
-        assert!(!outgoing_dodge_command(
-            r#"<message to="party@ares-parties.ap" type="groupchat"><body>hello</body></message>"#
-        ));
-        assert!(
-            !outgoing_dodge_command(
+        for body in ["hello", "gg", ".asciify gg", "$online"] {
+            let stanza = format!(
+                r#"<message to="party@ares-parties.ap" type="groupchat"><body>{body}</body></message>"#
+            );
+            assert_eq!(outgoing_group_command(&stanza), None, "{body}");
+        }
+        assert_eq!(
+            outgoing_group_command(
                 r#"<message to="room@conference.example" type="groupchat"><body>.dodge</body></message>"#
             ),
-            "only Riot party/pregame/team/all MUCs may consume commands"
+            None,
+            "only Riot party/pregame/team/all MUCs are checked"
         );
-        assert!(!outgoing_dodge_command(
-            r#"<message to="friend@ap1.pvp.net" type="chat"><body>.dodge</body></message>"#
-        ));
-    }
-
-    #[test]
-    fn a_team_command_can_pin_the_pregame_source_room() {
-        assert!(translation_target_matches_source(
-            crate::riot::models::ChatChannel::Team,
-            crate::riot::models::ChatChannel::Pregame,
-        ));
+        assert_eq!(
+            outgoing_group_command(
+                r#"<message to="friend@ap1.pvp.net" type="chat"><body>.dodge</body></message>"#
+            ),
+            None
+        );
     }
 
     #[test]

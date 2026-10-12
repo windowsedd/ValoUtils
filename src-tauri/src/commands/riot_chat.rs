@@ -565,6 +565,13 @@ pub(crate) async fn run_composer_command(
     outcome.map_err(|error| error.to_string())
 }
 
+/// Whether `body` starts with a saved custom trigger spelled with a leading
+/// `.`, such as `.scout`. Bare trigger words stay ordinary chat in a room.
+pub(crate) fn is_dotted_custom_trigger(body: &str, app: Option<&AppHandle>) -> bool {
+    body.trim().starts_with('.')
+        && chat_command::find_custom_command(body, &load_custom_commands(app)).is_some()
+}
+
 fn load_custom_commands(app: Option<&AppHandle>) -> Vec<chat_command::CustomBotCommand> {
     let Some(app) = app else {
         return Vec::new();
@@ -1350,8 +1357,6 @@ struct PollMemory {
     /// Last resolved CID per channel, used to notice a session change.
     cids: HashMap<ChatChannel, String>,
     local_puuid: Option<String>,
-    /// Lines this app posted itself, so they cannot be read back as commands.
-    echoes: PendingEchoes,
     lifecycle: LifecycleTracker,
     live_phase: LifecycleTracker,
     prepared_match_ends: Vec<PreparedMatchEnd>,
@@ -1366,166 +1371,6 @@ struct PreparedMatchEnd {
     /// end should land in is a property of the saved command, not of whatever
     /// the client happens to be doing three polls after the match ends.
     destination: chat_command::LifecycleDestination,
-}
-
-/// Bodies the bot has just posted, kept only until they come back around.
-///
-/// A custom trigger matches on the first word of a line and needs no prefix, so
-/// a bare `gg` is a command. The translation the bot posts is itself a line of
-/// chat from the local player, which means a trigger whose translation happens
-/// to start with the trigger word would re-fire forever. Entries are consumed
-/// on first match rather than merely remembered, so typing the same trigger
-/// twice still works the second time.
-#[derive(Default)]
-struct PendingEchoes {
-    bodies: VecDeque<String>,
-}
-
-impl PendingEchoes {
-    /// Far more than the handful of lines that can be in flight at once, and
-    /// small enough that the linear scan below stays free.
-    const CAPACITY: usize = 32;
-
-    fn remember(&mut self, body: &str) {
-        self.bodies.push_back(normalize_echo(body));
-        while self.bodies.len() > Self::CAPACITY {
-            self.bodies.pop_front();
-        }
-    }
-
-    /// Consumes a matching entry. `true` means this line was our own output.
-    fn consume(&mut self, body: &str) -> bool {
-        let wanted = normalize_echo(body);
-        let Some(index) = self.bodies.iter().position(|entry| entry == &wanted) else {
-            return false;
-        };
-        self.bodies.remove(index);
-        true
-    }
-}
-
-const LIVE_TRANSLATION_ECHO_TTL: std::time::Duration = std::time::Duration::from_secs(30);
-
-fn live_translation_echoes(
-) -> &'static std::sync::Mutex<VecDeque<(String, String, std::time::Instant)>> {
-    static ECHOES: std::sync::OnceLock<
-        std::sync::Mutex<VecDeque<(String, String, std::time::Instant)>>,
-    > = std::sync::OnceLock::new();
-    ECHOES.get_or_init(|| std::sync::Mutex::new(VecDeque::new()))
-}
-
-fn live_echo_cid_key(cid: &str) -> String {
-    if ChatChannel::Party.matches_cid(cid) {
-        crate::riot::models::party_xmpp_jid(cid).to_ascii_lowercase()
-    } else {
-        cid.to_ascii_lowercase()
-    }
-}
-
-fn prune_live_translation_echoes(echoes: &mut VecDeque<(String, String, std::time::Instant)>) {
-    while echoes
-        .front()
-        .is_some_and(|(_, _, created)| created.elapsed() >= LIVE_TRANSLATION_ECHO_TTL)
-    {
-        echoes.pop_front();
-    }
-}
-
-pub(crate) fn record_live_translation_echo(cid: &str, body: &str) {
-    if let Ok(mut echoes) = live_translation_echoes().lock() {
-        prune_live_translation_echoes(&mut echoes);
-        echoes.push_back((
-            live_echo_cid_key(cid),
-            normalize_echo(body),
-            std::time::Instant::now(),
-        ));
-        while echoes.len() > PendingEchoes::CAPACITY {
-            echoes.pop_front();
-        }
-    }
-}
-
-pub(crate) fn discard_live_translation_echo(cid: &str, body: &str) {
-    if let Ok(mut echoes) = live_translation_echoes().lock() {
-        prune_live_translation_echoes(&mut echoes);
-        let wanted = (live_echo_cid_key(cid), normalize_echo(body));
-        if let Some(index) = echoes.iter().position(|(entry_cid, entry_body, _)| {
-            (entry_cid, entry_body) == (&wanted.0, &wanted.1)
-        }) {
-            echoes.remove(index);
-        }
-    }
-}
-
-fn consume_live_translation_echo(cid: &str, body: &str) -> bool {
-    let wanted = (live_echo_cid_key(cid), normalize_echo(body));
-    live_translation_echoes().lock().is_ok_and(|mut echoes| {
-        prune_live_translation_echoes(&mut echoes);
-        let Some(index) = echoes.iter().position(|(entry_cid, entry_body, _)| {
-            (entry_cid, entry_body) == (&wanted.0, &wanted.1)
-        }) else {
-            return false;
-        };
-        echoes.remove(index);
-        true
-    })
-}
-
-fn normalize_echo(body: &str) -> String {
-    body.trim().to_lowercase()
-}
-
-/// What a line typed by the local player means.
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum OwnMessage {
-    /// Ordinary chat, or our own echo. Nothing to do.
-    Ignore,
-    /// A command to run, already expanded to its `.send` form.
-    Translate(String),
-    /// A saved `Send` command whose message may still contain templates.
-    Custom(chat_command::CustomBotCommand),
-    /// `.dodge` — leave agent select.
-    Dodge,
-    /// `.ascii` — block text, posted only when a channel is named.
-    Ascii(String),
-    /// `.ai` / `.ask` — AI line, posted only when a channel is named.
-    Ai(String),
-}
-
-/// Classifies a line from the local player.
-///
-/// Kept separate from [`dispatch`] so the decision can be tested without a Riot
-/// Client: everything below this point needs a live session, everything here is
-/// pure apart from the echo bookkeeping.
-fn plan_own_message(
-    body: &str,
-    commands: &[chat_command::CustomBotCommand],
-    echoes: &mut PendingEchoes,
-) -> OwnMessage {
-    if echoes.consume(body) {
-        return OwnMessage::Ignore;
-    }
-    if chat_command::is_translation_command(body) {
-        return OwnMessage::Translate(body.to_string());
-    }
-    if chat_command::is_dodge_command(body) {
-        return OwnMessage::Dodge;
-    }
-    if ascii_art::is_ascii_command(body) {
-        return OwnMessage::Ascii(body.to_string());
-    }
-    if chat_command::is_ai_command(body) || chat_command::is_ask_command(body) {
-        return OwnMessage::Ai(body.to_string());
-    }
-    // A custom trigger expands to a full command. Triggers whose action is
-    // `tran` expand to `.tran ...`, which produces a text summary with nowhere
-    // to show it in-game, so those stay a UI-only feature and fall through.
-    match chat_command::find_custom_command(body, commands) {
-        Some(command) if command.action.trim().eq_ignore_ascii_case("send") => {
-            OwnMessage::Custom(command)
-        }
-        _ => OwnMessage::Ignore,
-    }
 }
 
 async fn poll_loop(
@@ -1648,7 +1493,7 @@ async fn poll_once(
             if priming {
                 continue;
             }
-            dispatch(app, &client, &message, memory).await;
+            dispatch(app, &message, memory).await;
         }
     }
 
@@ -1949,143 +1794,19 @@ async fn resolve_client(
 }
 
 /// Decides what a newly-seen message means.
-///
-/// Messages from the local player are ignored unless they are a `.send`
-/// or `.dodge` command or a custom trigger. What keeps a translated reply from
-/// being translated again is the echo list: the body the bot posts is recorded
-/// on the way out and consumed when the poller reads it back.
-async fn dispatch(
-    app: &AppHandle,
-    client: &RiotChatClient,
-    message: &ChatMessage,
-    memory: &mut PollMemory,
-) {
+async fn dispatch(app: &AppHandle, message: &ChatMessage, memory: &mut PollMemory) {
     let is_own = memory
         .local_puuid
         .as_deref()
         .is_some_and(|puuid| message.is_from(puuid));
 
+    // Your own lines never run commands here: commands typed in a room only
+    // work when whispered to the Dummy Bot (the relay swallows them).
     if is_own {
-        if consume_live_translation_echo(&message.cid, &message.body) {
-            return;
-        }
-        let commands = load_custom_commands(Some(app));
-        match plan_own_message(&message.body, &commands, &mut memory.echoes) {
-            OwnMessage::Ignore => return,
-            OwnMessage::Dodge => match execute_dodge(Some(app)).await {
-                Ok(reply) => {
-                    let _ = app.emit(EVENT_COMMAND, reply);
-                }
-                Err(error) => {
-                    let _ = app.emit(EVENT_ERROR, error.to_string());
-                }
-            },
-            OwnMessage::Translate(command) => {
-                dispatch_translation_command(app, client, &command, memory).await;
-            }
-            OwnMessage::Ascii(line) => {
-                let outcome = match ascii_art::parse_ascii_command(&line) {
-                    Ok(parsed) => match parsed.channel {
-                        Some(channel) => post_ascii_art(channel, parsed.payload, Some(app))
-                            .await
-                            .map(|payload| {
-                                memory.echoes.remember(&payload);
-                                format_ascii_reply(channel)
-                            }),
-                        // Private by default, like `.ai`: a Dummy Bot DM.
-                        None => deliver_proactive_direct(&parsed.payload),
-                    },
-                    Err(error) => Err(error),
-                };
-                match outcome {
-                    Ok(reply) => {
-                        let _ = app.emit(EVENT_COMMAND, reply);
-                    }
-                    Err(error) => {
-                        let _ = app.emit(EVENT_ERROR, error.to_string());
-                    }
-                }
-            }
-            OwnMessage::Ai(line) if ai_posts_to_room(&line) => {
-                match execute_ai_command(&line, Some(app)).await {
-                    Ok((channel, payload)) => {
-                        memory.echoes.remember(&payload);
-                        let _ = app.emit(EVENT_COMMAND, format_ai_reply(channel));
-                    }
-                    Err(error) => {
-                        let _ = app.emit(EVENT_ERROR, error.to_string());
-                    }
-                }
-            }
-            OwnMessage::Ai(line) => {
-                let outcome = match ai_command_reply(&line).await {
-                    Ok(answer) => deliver_proactive_direct(&answer),
-                    Err(error) => Err(error),
-                };
-                match outcome {
-                    Ok(reply) => {
-                        let _ = app.emit(EVENT_COMMAND, reply);
-                    }
-                    Err(error) => {
-                        let _ = app.emit(EVENT_ERROR, error.to_string());
-                    }
-                }
-            }
-            OwnMessage::Custom(command) => {
-                match resolve_matched_custom_command(&command, Some(app)).await {
-                    Ok(Some(ResolvedCustomCommand::Group(command))) => {
-                        dispatch_translation_command(app, client, &command, memory).await;
-                    }
-                    Ok(Some(ResolvedCustomCommand::Direct(body))) => {
-                        match deliver_proactive_direct(&body) {
-                            Ok(reply) => {
-                                let _ = app.emit(EVENT_COMMAND, reply);
-                            }
-                            Err(error) => {
-                                let _ = app.emit(EVENT_ERROR, error.to_string());
-                            }
-                        }
-                    }
-                    Ok(Some(ResolvedCustomCommand::History(_))) | Ok(None) => {
-                        let _ = app.emit(EVENT_ERROR, "Saved custom command is invalid.");
-                    }
-                    Err(error) => {
-                        let _ = app.emit(EVENT_ERROR, error.to_string());
-                    }
-                }
-            }
-        }
         return;
     }
 
     emit_polled_chat_message(app, message, false);
-}
-
-async fn dispatch_translation_command(
-    app: &AppHandle,
-    client: &RiotChatClient,
-    command: &str,
-    memory: &mut PollMemory,
-) {
-    let config = translator_config(app);
-    match chat_command::parse_translation_command_with_fallback(
-        command,
-        &config.provider,
-        Some(config.target_language.as_str()),
-    ) {
-        Ok(parsed) => match run_translation_command(client, &parsed, &config, Some(app)).await {
-            Ok(outcome) => {
-                memory.echoes.remember(&outcome.translated);
-                let _ = app.emit(EVENT_COMMAND, outcome);
-            }
-            Err(error) => {
-                let _ = app.emit(EVENT_ERROR, error.to_string());
-            }
-        },
-        Err(error) => {
-            let _ = app.emit(EVENT_ERROR, error.to_string());
-        }
-    }
 }
 
 fn frontend_chat_message_json(
@@ -2458,50 +2179,6 @@ mod tests {
     }
 
     #[test]
-    fn a_bare_trigger_typed_in_game_is_a_command() {
-        let mut echoes = PendingEchoes::default();
-        let commands = custom_commands();
-
-        assert_eq!(
-            plan_own_message("gg", &commands, &mut echoes),
-            OwnMessage::Custom(commands[0].clone())
-        );
-        // The dotted spelling keeps working.
-        assert_eq!(
-            plan_own_message(".gg", &commands, &mut echoes),
-            OwnMessage::Custom(commands[0].clone())
-        );
-        // As does a literal command.
-        assert_eq!(
-            plan_own_message(".send all french push a", &commands, &mut echoes),
-            OwnMessage::Translate(".send all french push a".into())
-        );
-        assert_eq!(
-            plan_own_message(".dodge", &commands, &mut echoes),
-            OwnMessage::Dodge
-        );
-    }
-
-    #[test]
-    fn in_game_custom_send_keeps_its_template_until_execution() {
-        let mut echoes = PendingEchoes::default();
-        let command = chat_command::CustomBotCommand {
-            when: chat_command::CustomCommandWhen::Command,
-            trigger: "scout".into(),
-            action: "send".into(),
-            channel: "team".into(),
-            language: "none".into(),
-            message: "Enemy KDA: {{enemy_team_kda}}".into(),
-            count: 0,
-        };
-
-        assert_eq!(
-            plan_own_message("scout", &[command.clone()], &mut echoes),
-            OwnMessage::Custom(command)
-        );
-    }
-
-    #[test]
     fn polled_messages_are_shaped_for_the_chat_ui() {
         let payload = frontend_chat_message_json(
             "blue@ares-coregame.ap",
@@ -2534,112 +2211,6 @@ mod tests {
         );
         assert_eq!(party["scope"], "party");
         assert_eq!(party["isSelf"], true);
-    }
-
-    #[test]
-    fn ordinary_chat_and_retired_syntax_stay_ordinary_chat() {
-        let mut echoes = PendingEchoes::default();
-        let commands = custom_commands();
-
-        for body in [
-            "nice one",
-            "ggwp",
-            "TR/send/team/french/hello",
-            // `tran` triggers have nowhere to print their summary in-game.
-            "last",
-        ] {
-            assert_eq!(
-                plan_own_message(body, &commands, &mut echoes),
-                OwnMessage::Ignore,
-                "{body}"
-            );
-        }
-    }
-
-    #[test]
-    fn the_bots_own_output_cannot_retrigger_a_bare_command() {
-        let mut echoes = PendingEchoes::default();
-        // A trigger whose translation starts with the trigger word is the loop
-        // case: without the echo list this line would fire `gg` forever.
-        let commands = vec![chat_command::CustomBotCommand {
-            when: chat_command::CustomCommandWhen::Command,
-            trigger: "gg".into(),
-            action: "send".into(),
-            channel: "team".into(),
-            language: "french".into(),
-            message: "gg wp".into(),
-            count: 0,
-        }];
-
-        assert!(matches!(
-            plan_own_message("gg", &commands, &mut echoes),
-            OwnMessage::Custom(_)
-        ));
-        echoes.remember("gg wp");
-
-        assert_eq!(
-            plan_own_message("gg wp", &commands, &mut echoes),
-            OwnMessage::Ignore,
-            "the bot must not read its own line back as a command"
-        );
-    }
-
-    #[test]
-    fn an_echo_is_consumed_once_so_the_same_trigger_works_again() {
-        let mut echoes = PendingEchoes::default();
-        let commands = custom_commands();
-
-        echoes.remember("gg");
-        assert_eq!(
-            plan_own_message("gg", &commands, &mut echoes),
-            OwnMessage::Ignore
-        );
-        assert!(
-            matches!(
-                plan_own_message("gg", &commands, &mut echoes),
-                OwnMessage::Custom(_)
-            ),
-            "a single echo must not mute the trigger for the rest of the session"
-        );
-    }
-
-    #[test]
-    fn a_live_relay_echo_cannot_execute_the_same_command_twice() {
-        let cid = "relay-all@ares-coregame.ap1.pvp.net";
-        let body = ".send all french relay-echo-unique";
-
-        record_live_translation_echo(cid, body);
-        assert!(!consume_live_translation_echo(
-            "different-all@ares-coregame.ap1.pvp.net",
-            body
-        ));
-        assert!(consume_live_translation_echo(cid, body));
-        assert!(!consume_live_translation_echo(cid, body));
-
-        record_live_translation_echo("party-1@ares-parties.ap", body);
-        assert!(consume_live_translation_echo(
-            "party-1@ares-parties.ap1.pvp.net",
-            body
-        ));
-    }
-
-    #[test]
-    fn echo_matching_ignores_case_and_surrounding_space() {
-        let mut echoes = PendingEchoes::default();
-        echoes.remember("  Bonne Chance  ");
-        assert!(echoes.consume("bonne chance"));
-    }
-
-    #[test]
-    fn the_echo_list_stays_bounded() {
-        let mut echoes = PendingEchoes::default();
-        for index in 0..(PendingEchoes::CAPACITY + 5) {
-            echoes.remember(&format!("line-{index}"));
-        }
-
-        assert_eq!(echoes.bodies.len(), PendingEchoes::CAPACITY);
-        assert!(!echoes.consume("line-0"), "oldest entries are evicted");
-        assert!(echoes.consume("line-36"));
     }
 
     #[test]
@@ -2717,12 +2288,6 @@ mod tests {
         assert!(!ai_posts_to_room(".ai hype us up"));
         assert!(!ai_posts_to_room(".ask team comp?"));
         assert!(!ai_posts_to_room(".ai team"));
-        let commands = Vec::new();
-        let mut echoes = PendingEchoes::default();
-        assert_eq!(
-            plan_own_message(".ask how to play Viper", &commands, &mut echoes),
-            OwnMessage::Ai(".ask how to play Viper".into())
-        );
     }
 
     #[test]
@@ -3087,42 +2652,6 @@ mod tests {
         assert_eq!(
             classify_composer_command(".ascii gg", &commands),
             ComposerCommand::Ascii(".ascii gg".into())
-        );
-    }
-
-    #[test]
-    fn an_in_game_ascii_command_is_classified() {
-        let mut echoes = PendingEchoes::default();
-        let commands = Vec::new();
-        assert_eq!(
-            plan_own_message(".ascii gg", &commands, &mut echoes),
-            OwnMessage::Ascii(".ascii gg".into())
-        );
-        assert_eq!(
-            plan_own_message(".ascii team gg", &commands, &mut echoes),
-            OwnMessage::Ascii(".ascii team gg".into())
-        );
-        assert_eq!(
-            plan_own_message(".asciify gg", &commands, &mut echoes),
-            OwnMessage::Ignore
-        );
-    }
-
-    #[test]
-    fn a_sent_artwork_is_recognized_as_our_own_echo() {
-        let payload = ascii_art::parse_ascii_command(".ascii gg").unwrap().payload;
-        let mut echoes = PendingEchoes::default();
-        echoes.remember(&payload);
-        let commands = Vec::new();
-        assert_eq!(
-            plan_own_message(&payload, &commands, &mut echoes),
-            OwnMessage::Ignore
-        );
-        // Without the echo record the artwork is still inert: it never starts
-        // with a dot, so it cannot classify as a command.
-        assert_eq!(
-            plan_own_message(&payload, &commands, &mut echoes),
-            OwnMessage::Ignore
         );
     }
 
