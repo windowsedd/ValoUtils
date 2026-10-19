@@ -47,9 +47,24 @@ const SKIP_RESPONSE_HEADERS: [&str; 4] = [
     "content-encoding",
 ];
 
-fn server() -> &'static Mutex<Option<tauri::async_runtime::JoinHandle<()>>> {
-    static SERVER: OnceLock<Mutex<Option<tauri::async_runtime::JoinHandle<()>>>> = OnceLock::new();
-    SERVER.get_or_init(|| Mutex::new(None))
+struct Server {
+    port: u16,
+    task: Option<tauri::async_runtime::JoinHandle<()>>,
+}
+
+fn server() -> &'static Mutex<Server> {
+    static SERVER: OnceLock<Mutex<Server>> = OnceLock::new();
+    SERVER.get_or_init(|| {
+        Mutex::new(Server {
+            port: DEFAULT_PORT,
+            task: None,
+        })
+    })
+}
+
+/// Keep the selected port after stopping so a wake can restore Riot's URL.
+pub fn port() -> u16 {
+    server().lock().unwrap().port
 }
 
 fn upstream_client() -> &'static reqwest::Client {
@@ -62,7 +77,7 @@ fn upstream_client() -> &'static reqwest::Client {
 }
 
 pub fn is_running() -> bool {
-    server().lock().unwrap().is_some()
+    server().lock().unwrap().task.is_some()
 }
 
 fn app() -> Router {
@@ -91,7 +106,8 @@ pub async fn verify_ready(port: u16) -> Result<(), String> {
     Ok(())
 }
 
-/// Binds 127.0.0.1:`port` and serves until `stop`. Idempotent: a second call
+/// Prefer `port`, falling back to an OS-assigned free loopback port if occupied.
+/// Idempotent: a second call
 /// while already running is a no-op rather than an error, so the launch button
 /// can call it unconditionally.
 pub async fn start(port: u16) -> Result<(), String> {
@@ -99,9 +115,20 @@ pub async fn start(port: u16) -> Result<(), String> {
         return Ok(());
     }
 
-    let listener = tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, port))
-        .await
-        .map_err(|e| format!("Could not bind 127.0.0.1:{port}: {e}"))?;
+    let listener = match tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, port)).await {
+        Ok(listener) => listener,
+        Err(error) if error.kind() == std::io::ErrorKind::AddrInUse => {
+            log::info!("client config port {port} is occupied; choosing a free port");
+            tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+                .await
+                .map_err(|e| format!("Could not bind a free client-config port: {e}"))?
+        }
+        Err(error) => return Err(format!("Could not bind 127.0.0.1:{port}: {error}")),
+    };
+    let port = listener
+        .local_addr()
+        .map_err(|e| format!("Could not read client-config port: {e}"))?
+        .port();
 
     let app = app();
     let handle = tauri::async_runtime::spawn(async move {
@@ -110,34 +137,37 @@ pub async fn start(port: u16) -> Result<(), String> {
         }
     });
 
-    *server().lock().unwrap() = Some(handle);
+    *server().lock().unwrap() = Server {
+        port,
+        task: Some(handle),
+    };
     log::info!("client config server listening on http://127.0.0.1:{port}");
     Ok(())
 }
 
 /// Recover a stale server task and report success only once HTTP is ready.
-pub async fn start_verified(port: u16) -> Result<(), String> {
+pub async fn start_verified(mut preferred_port: u16) -> Result<(), String> {
     if is_running() {
-        if verify_ready(port).await.is_ok() {
+        preferred_port = port();
+        if verify_ready(preferred_port).await.is_ok() {
             return Ok(());
         }
-        let previous = server().lock().unwrap().take();
-        if let Some(previous) = previous {
-            previous.abort();
-            let _ = previous.await;
-        }
+        stop().await;
     }
-    start(port).await?;
-    if let Err(error) = verify_ready(port).await {
-        stop();
+    start(preferred_port).await?;
+    if let Err(error) = verify_ready(port()).await {
+        stop().await;
         return Err(error);
     }
     Ok(())
 }
 
-pub fn stop() {
-    if let Some(handle) = server().lock().unwrap().take() {
+pub async fn stop() {
+    let previous = server().lock().unwrap().task.take();
+    if let Some(handle) = previous {
         handle.abort();
+        // Release the socket before a subsequent wake tries to reuse it.
+        let _ = handle.await;
     }
 }
 
@@ -341,15 +371,31 @@ mod tests {
         start_verified(port).await.unwrap();
         verify_ready(port).await.unwrap();
         start_verified(port).await.unwrap();
-        stop();
-        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        stop().await;
         // A finished task must not prevent a stopped server from waking again.
-        *server().lock().unwrap() = Some(tauri::async_runtime::spawn(async {}));
+        server().lock().unwrap().task = Some(tauri::async_runtime::spawn(async {}));
         assert!(is_running());
         assert!(verify_ready(port).await.is_err());
         start_verified(port).await.unwrap();
         verify_ready(port).await.unwrap();
-        stop();
+        stop().await;
+
+        let occupied = tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+            .await
+            .unwrap();
+        let occupied_port = occupied.local_addr().unwrap().port();
+        start_verified(occupied_port).await.unwrap();
+        let selected = super::port();
+        assert_ne!(selected, 0);
+        assert_ne!(selected, occupied_port);
+        verify_ready(selected).await.unwrap();
+        start_verified(occupied_port).await.unwrap();
+        assert_eq!(super::port(), selected);
+        stop().await;
+        start_verified(super::port()).await.unwrap();
+        assert_eq!(super::port(), selected);
+        verify_ready(selected).await.unwrap();
+        stop().await;
     }
 
     #[tokio::test]

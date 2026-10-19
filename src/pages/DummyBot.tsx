@@ -81,7 +81,13 @@ const DummyBot = () => {
 
 	const launched = useCallback((message: any) => {
 			setLaunchBusy(false);
-			try { const result = message; setLaunchError(result.success ? null : result.error); }
+			try {
+				const result = message;
+				setLaunchError(result.success ? null : result.error);
+				if (result.success && result.configUrl) {
+					setLaunch(current => current ? { ...current, running: true, url: result.configUrl } : current);
+				}
+			}
 			catch { setLaunchError(t("dummyBot.launchFailed")); }
 		}, [t]);
 
@@ -255,12 +261,12 @@ const applyConfig = (message: any) => {
 				<SectionRow>
 					<span className="text-[12px] text-(--text-secondary)">{t("dummyBot.endpoint")}</span>
 					<span className="truncate font-mono text-[11px] text-(--text-muted)">
-						{launch?.url ?? "http://127.0.0.1:8000"}
+						{launch?.url ?? "—"}
 					</span>
 				</SectionRow>
 				{launch?.running === false && <SectionRow leader={false}>
 					<ClientConfigWakeButton running={launch?.running ?? null} disabled={launchBusy} from="dummyBot"
-						onReady={() => setLaunch(current => current ? { ...current, running: true } : current)} />
+						onReady={status => setLaunch(current => current ? { ...current, running: true, url: status.url ?? current.url } : current)} />
 				</SectionRow>}
 				<SectionRow leader={false}>
 					<div className="min-w-0 flex-1">
@@ -272,7 +278,7 @@ const applyConfig = (message: any) => {
 						<p className="mt-0.5 text-[11px] leading-4 text-(--text-muted)">
 							{launch?.riotClientRunning === true
 								? t("dummyBot.launchBlocked")
-								: `--client-config-url=${launch?.url ?? "http://127.0.0.1:8000"}`}
+								: launch?.url ? `--client-config-url=${launch.url}` : "—"}
 						</p>
 					</div>
 					<div className="flex shrink-0 items-center gap-2">

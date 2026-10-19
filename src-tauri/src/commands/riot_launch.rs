@@ -102,15 +102,14 @@ fn command_result(result: Result<Value, String>) -> Result<Value, ()> {
 
 #[tauri::command]
 pub async fn client_config_status() -> Result<Value, ()> {
-    let running = client_config::verify_ready(client_config::DEFAULT_PORT)
-        .await
-        .is_ok();
+    let port = client_config::port();
+    let running = client_config::is_running() && client_config::verify_ready(port).await.is_ok();
     let presence = presence_proxy::controller().snapshot();
     Ok(json!({
         "success": true,
         "running": running,
-        "port": client_config::DEFAULT_PORT,
-        "url": format!("http://127.0.0.1:{}", client_config::DEFAULT_PORT),
+        "port": port,
+        "url": format!("http://127.0.0.1:{port}"),
         "riotClientRunning": riot_client_running(),
         "relayRunning": presence.relay_running,
         "relayPort": presence.relay_port,
@@ -128,13 +127,22 @@ pub async fn client_config_status() -> Result<Value, ()> {
 async fn start_config_and_relay() -> Result<u16, String> {
     let relay_was_running = presence_proxy::controller().snapshot().relay_running;
     let relay_port = presence_proxy::start().await?;
-    if let Err(error) = client_config::start_verified(client_config::DEFAULT_PORT).await {
+    if let Err(error) = client_config::start_verified(client_config::port()).await {
         if !relay_was_running {
             presence_proxy::stop().await;
         }
         return Err(error);
     }
     Ok(relay_port)
+}
+
+/// Background startup shares the command lock so early Launch clicks are safe.
+pub async fn autostart() {
+    let _launch_guard = launch_lock().lock().await;
+    if let Err(error) = start_config_and_relay().await {
+        log::warn!("Could not automatically start the client-config server: {error}");
+        presence_proxy::controller().set_warning(Some(error));
+    }
 }
 
 /// Wake the local services without launching or restarting the Riot Client.
@@ -151,7 +159,7 @@ pub async fn client_config_start() -> Result<Value, ()> {
 /// pointed at it:
 ///
 /// ```text
-/// RiotClientServices.exe --client-config-url="http://127.0.0.1:8000"
+/// RiotClientServices.exe --client-config-url="http://127.0.0.1:<selected-port>"
 ///   --launch-product=valorant --launch-patchline=live
 /// ```
 #[tauri::command]
@@ -170,10 +178,10 @@ pub async fn riot_launch_with_config(args: Vec<Value>) -> Result<Value, ()> {
         // the client can make its first config request.
         let relay_port = start_config_and_relay().await?;
 
-        let config_url = format!("http://127.0.0.1:{}", client_config::DEFAULT_PORT);
+        let config_url = format!("http://127.0.0.1:{}", client_config::port());
         let args = launch_args(&product, &patchline, Some(&config_url));
         if let Err(error) = spawn_riot(&exe, &args) {
-            client_config::stop();
+            client_config::stop().await;
             presence_proxy::stop().await;
             return Err(error);
         }
@@ -217,7 +225,7 @@ pub async fn riot_launch_normal(args: Vec<Value>) -> Result<Value, ()> {
 #[tauri::command]
 pub async fn client_config_stop() -> Result<Value, ()> {
     let _launch_guard = launch_lock().lock().await;
-    client_config::stop();
+    client_config::stop().await;
     presence_proxy::stop().await;
     Ok(json!({ "success": true, "running": false, "relayRunning": false }))
 }

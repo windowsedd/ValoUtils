@@ -8,7 +8,7 @@ export const ClientConfigWakeButton = ({ running, disabled = false, from, onRead
 	running: boolean | null;
 	disabled?: boolean;
 	from: string;
-	onReady: () => void;
+	onReady: (status: { url?: string }) => void;
 }) => {
 	const { t } = useTranslation();
 	const [busy, setBusy] = useState(false);
@@ -19,8 +19,8 @@ export const ClientConfigWakeButton = ({ running, disabled = false, from, onRead
 		setError(null);
 		invoke("analytics_track", { args: ["client_config:wake", JSON.stringify({ from })] }).catch(reportIpcError);
 		try {
-			const result = await invoke<{ success: boolean; running?: boolean; error?: string }>("client_config_start");
-			if (result.success && result.running) onReady();
+			const result = await invoke<{ success: boolean; running?: boolean; url?: string; error?: string }>("client_config_start");
+			if (result.success && result.running) onReady(result);
 			else setError(result.error || t("common.configWakeFailed"));
 		} catch {
 			setError(t("common.configWakeFailed"));

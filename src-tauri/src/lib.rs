@@ -165,6 +165,7 @@ pub fn run() {
             app.manage(commands::live_party::LivePartyHistoryCache::default());
             app.manage(commands::matches::MatchCache::default());
             app.manage(commands::matches::MatchTimelineCache::default());
+            tauri::async_runtime::spawn(commands::riot_launch::autostart());
             commands::chat::ensure_chat_forwarders(app.handle());
             {
                 let handle = app.handle().clone();
