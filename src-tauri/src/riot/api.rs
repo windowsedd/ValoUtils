@@ -422,6 +422,17 @@ impl RiotApiClient {
         )
         .await
     }
+    pub async fn get_bloomline(&self, agent_id: Option<&str>) -> Result<Value, String> {
+        let mut path = format!(
+            "/bloomline/v0/players/{}",
+            client::urlencoding_encode(&self.puuid)
+        );
+        if let Some(agent_id) = agent_id {
+            path.push_str(&format!("/bonsai/{}", client::urlencoding_encode(agent_id)));
+        }
+        self.request(Target::Pd, reqwest::Method::GET, &path, None)
+            .await
+    }
     pub async fn get_entitlements(&self, puuid: &str, item_type_id: &str) -> Result<Value, String> {
         self.request(
             Target::Pd,
@@ -544,6 +555,42 @@ impl RiotApiClient {
             Target::Glz,
             reqwest::Method::GET,
             &format!("/parties/v1/parties/{party_id}"),
+            None,
+        )
+        .await
+    }
+    pub async fn party_join_by_code(&self, code: &str) -> Result<Value, String> {
+        self.request(
+            Target::Glz,
+            reqwest::Method::POST,
+            &format!(
+                "/parties/v1/players/joinbycode/{}",
+                client::urlencoding_encode(code)
+            ),
+            None,
+        )
+        .await
+    }
+    pub async fn party_leave(&self) -> Result<Value, String> {
+        self.request(
+            Target::Glz,
+            reqwest::Method::DELETE,
+            &format!(
+                "/parties/v1/players/{}",
+                client::urlencoding_encode(&self.puuid)
+            ),
+            None,
+        )
+        .await
+    }
+    pub async fn party_create_code(&self, party_id: &str) -> Result<Value, String> {
+        self.request(
+            Target::Glz,
+            reqwest::Method::POST,
+            &format!(
+                "/parties/v1/parties/{}/invitecode",
+                client::urlencoding_encode(party_id)
+            ),
             None,
         )
         .await

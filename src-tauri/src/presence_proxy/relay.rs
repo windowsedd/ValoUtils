@@ -263,6 +263,14 @@ async fn client_to_remote(
                                     ascii_command_on_connection(&body, &remote_write).await
                                 } else if command == BotCommand::Ai || command == BotCommand::Ask {
                                     ai_command_on_connection(&body, &remote_write).await
+                                } else if command == BotCommand::Party {
+                                    match crate::commands::riot_chat::execute_party_command(
+                                        &body,
+                                        crate::presence_proxy::app_handle(),
+                                    ).await {
+                                        Ok(reply) => reply,
+                                        Err(error) => error.to_string(),
+                                    }
                                 } else if command == BotCommand::Dodge {
                                     match crate::commands::riot_chat::execute_dodge(
                                         crate::presence_proxy::app_handle(),
@@ -605,12 +613,12 @@ fn outgoing_live_groupchat(stanza: &str) -> Option<String> {
 }
 
 /// A command line typed into a party, pregame, team or all room: a built-in
-/// `.` command or a dotted custom trigger. Bare trigger words such as `gg`
+/// `.` or `/` command or a prefixed custom trigger. Bare trigger words such as `gg`
 /// stay ordinary chat.
 fn outgoing_group_command(stanza: &str) -> Option<String> {
     let body = outgoing_live_groupchat(stanza)?;
     (crate::riot::chat_command::is_builtin_command(&body)
-        || crate::commands::riot_chat::is_dotted_custom_trigger(
+        || crate::commands::riot_chat::is_prefixed_custom_trigger(
             &body,
             crate::presence_proxy::app_handle(),
         ))
@@ -691,6 +699,15 @@ mod tests {
                 ".ai team gl",
                 ".ask comp?",
                 ".ASCII gg",
+                "/send team none hello",
+                "/tran 2",
+                "/dodge",
+                "/ascii gg",
+                "/ai hello",
+                "/ask hello",
+                ".party join TUE693",
+                "/party leave",
+                "/code create",
             ] {
                 let stanza = format!(
                     r#"<message to="{room}" type="groupchat"><body>{body}</body></message>"#

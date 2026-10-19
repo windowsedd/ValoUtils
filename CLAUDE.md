@@ -113,7 +113,8 @@ Rust command conventions:
 | `store:get` | `store_get` | Storefront (daily, bundle, Night Market, accessories) + wallet; also saved per account in `cache.json` |
 | `store:cached` | `store_cached` | Last saved storefront for the signed-in account (no PD request), shown while `store_get` loads |
 | `battlepass:get` | `battlepass_get` | Act battle pass XP/level + owned premium contract ids |
-| `chat:command` | `chat_command` | Runs a `.`-prefixed command typed in the Chat composer; the raw line is never posted |
+| `bloomline:get` | `bloomline_get` | Read agent progression; optional agent UUID and expected account load equipped stat counters |
+| `chat:command` | `chat_command` | Runs a `.`- or `/`-prefixed command typed in the Chat composer; the raw line is never posted |
 | `live-game:fetch` / `live-game:dump` | `live_game_fetch/dump` | Live match state (polled ~5s) |
 | `chat:get/send/translate/friend-action/disconnect` | `chat_*` | Chat (REST + XMPP) |
 | `clipboard:get/set` | `clipboard_get/set` | Clipboard access |
@@ -239,6 +240,23 @@ Riot chat is XMPP over raw TLS to `<affinity>.chat.si.riotgames.com:5223`, with 
 
 ## Common Tasks
 
+### Bloomline agent progression
+
+Bloomline is a read-only page in the main rail (also hideable in Settings).
+`bloomline_get` takes `args: []` for all agents, or `[agentUuid, accountPuuid]`
+for one agent's equipped counters. It uses the shared authenticated PD client,
+rate gate and auth retry with a 20-second timeout. The parser uses the
+`windowsedd-valorant-api` 0.2.0 response types, normalizes compact uppercase
+agent IDs, rejects mismatched owners and malformed collections, and omits empty
+stat slots. Missing values stay unknown; zero remains zero. The page loads agent
+names/portraits through the existing asset cache, fetches only selected-agent
+stats, and ignores superseded replies. An uncached local account check after
+each PD read rejects account switches; detected switches clear the old roster.
+Refresh clears old account data. Riot
+does not supply level thresholds or stat names in these responses, so the UI
+shows levels/points and numbered stat slots with their IDs; no percentage or
+stat meaning is inferred. No mutations, polling, extra login, or local storage.
+
 ### Career account status
 
 Career shows Account status below Current Rank. `career_account_status` takes the
@@ -309,6 +327,14 @@ become `N/A`. The editor provides a separate AI block insert button.
 composer system line, or a Dummy Bot DM/whisper). `.ai party|team|all <prompt>`
 is the only form that posts, to the named room.
 Commands run only when whispered to the Dummy Bot or typed in the Chat composer.
+Chat commands accept `.` or `/`, including saved custom triggers (both prefixes
+resolve to the same trigger). Autocomplete preserves the typed prefix. Presence
+commands keep their `$` prefix. `.party join <code>` (also quoted, e.g.
+`/party join "TUE693"`) joins by invite code; `.party leave` removes only the
+signed-in player; `.code create` generates the current party's invite code and
+returns it privately. These use the shared authenticated GLZ client and auth
+retry, and report Riot errors. Party/code commands are reserved custom triggers
+and, like other built-ins, are swallowed in in-game group chat without running.
 Built-in commands (`.send`, `.tran`, `.dodge`, `.ai`, `.ask`, `.ascii`) and dotted
 custom triggers typed in party/pregame/team/all chat never run: the relay swallows
 the line and the bot whispers a reminder. The REST poller ignores the player's own

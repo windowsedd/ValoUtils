@@ -14,7 +14,7 @@ pub async fn fake_player_state() -> Result<Value, ()> {
 }
 
 /// Talks to the Dummy Bot from inside the app, without the game: the line runs
-/// exactly as a whisper would (`$` presence commands, `.` chat commands) and
+/// exactly as a whisper would (`$` presence commands, `.` or `/` chat commands) and
 /// both sides land in the bot transcript the Dummy Bot page and Chat share.
 #[tauri::command]
 pub async fn fake_player_send(args: Vec<Value>, app: AppHandle) -> Result<Value, ()> {
@@ -28,7 +28,7 @@ pub async fn fake_player_send(args: Vec<Value>, app: AppHandle) -> Result<Value,
         return Ok(json!({ "success": false, "error": "Message is empty." }));
     }
     crate::fake_player::record_message(&body, true);
-    let reply = if body.starts_with('.') {
+    let reply = if crate::riot::chat_command::has_command_prefix(&body) {
         match super::riot_chat::run_composer_command(&body, &app, true).await {
             Ok(reply) => reply,
             Err(error) => error,

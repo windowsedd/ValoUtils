@@ -54,6 +54,9 @@ pub fn normalize_custom_trigger(raw: &str) -> String {
     if trimmed.is_empty() {
         return String::new();
     }
+    if let Some(trigger) = trimmed.strip_prefix('/') {
+        return format!(".{trigger}");
+    }
     if trimmed.starts_with('.') || trimmed.starts_with('$') {
         trimmed
     } else {
@@ -69,6 +72,8 @@ pub fn is_reserved_custom_trigger(raw: &str) -> bool {
             | ".translate"
             | ".dodge"
             | ".ascii"
+            | ".party"
+            | ".code"
             | "$online"
             | "$offline"
             | "$mobile"
@@ -225,31 +230,86 @@ pub struct TranslationCommand {
 /// parsing. Local-player messages are otherwise ignored entirely, so this is
 /// the single door through which they re-enter the pipeline.
 pub fn is_translation_command(input: &str) -> bool {
-    is_dot_command(input, ".send")
+    command_rest(input, "send").is_some()
 }
 
 pub fn is_dodge_command(input: &str) -> bool {
-    is_dot_command(input, ".dodge")
+    command_rest(input, "dodge").is_some()
 }
 
 /// `.ai [party|team|all] <prompt>` — post one AI-written line to a group room.
 pub fn is_ai_command(input: &str) -> bool {
-    is_dot_command(input, ".ai")
+    command_rest(input, "ai").is_some()
 }
 
 /// `.ask <question>` — an AI answer for the local player only.
 pub fn is_ask_command(input: &str) -> bool {
-    is_dot_command(input, ".ask")
+    command_rest(input, "ask").is_some()
 }
 
-fn dot_command_rest<'a>(input: &'a str, command: &str) -> Option<&'a str> {
-    is_dot_command(input, command).then(|| input.trim_start()[command.len()..].trim())
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PartyCommand {
+    Join(String),
+    Leave,
+    CreateCode,
+}
+
+pub fn is_party_command(input: &str) -> bool {
+    command_rest(input, "party").is_some() || command_rest(input, "code").is_some()
+}
+
+pub fn parse_party_command(input: &str) -> Result<PartyCommand, RiotError> {
+    if let Some(rest) = command_rest(input, "code") {
+        return if rest.eq_ignore_ascii_case("create") {
+            Ok(PartyCommand::CreateCode)
+        } else {
+            Err(RiotError::InvalidCommand(
+                "Usage: .code create or /code create.".into(),
+            ))
+        };
+    }
+    if let Some(rest) = command_rest(input, "party") {
+        if rest.eq_ignore_ascii_case("leave") {
+            return Ok(PartyCommand::Leave);
+        }
+        let (action, code) = split_first_token(rest);
+        let code = code.trim();
+        let code = code
+            .strip_prefix('"')
+            .and_then(|value| value.strip_suffix('"'))
+            .unwrap_or(code);
+        if action.eq_ignore_ascii_case("join")
+            && !code.is_empty()
+            && code.len() <= 64
+            && code.bytes().all(|byte| byte.is_ascii_alphanumeric())
+        {
+            return Ok(PartyCommand::Join(code.to_ascii_uppercase()));
+        }
+    }
+    Err(RiotError::InvalidCommand(
+        "Usage: .party join <code> or .party leave (also /party). Example: /party join TUE693."
+            .into(),
+    ))
+}
+
+pub(crate) fn has_command_prefix(input: &str) -> bool {
+    input.trim_start().starts_with(['.', '/'])
+}
+
+pub(crate) fn command_rest<'a>(input: &'a str, command: &str) -> Option<&'a str> {
+    let input = input.trim_start().strip_prefix(['.', '/'])?;
+    let head = input.get(..command.len())?;
+    if !head.eq_ignore_ascii_case(command) {
+        return None;
+    }
+    let rest = &input[command.len()..];
+    (rest.is_empty() || rest.starts_with(char::is_whitespace)).then(|| rest.trim())
 }
 
 /// Splits `.ai` into an optional leading destination and the prompt. As with
 /// `.ascii`, the three channel names are always a destination, never prompt text.
 pub fn parse_ai_command(input: &str) -> Result<(Option<ChatChannel>, String), RiotError> {
-    let rest = dot_command_rest(input, ".ai")
+    let rest = command_rest(input, "ai")
         .ok_or_else(|| RiotError::InvalidCommand("Commands must start with .ai.".into()))?;
     let (first, remainder) = rest.split_once(char::is_whitespace).unwrap_or((rest, ""));
     let channel = match first.to_ascii_lowercase().as_str() {
@@ -258,7 +318,11 @@ pub fn parse_ai_command(input: &str) -> Result<(Option<ChatChannel>, String), Ri
         "all" => Some(ChatChannel::All),
         _ => None,
     };
-    let prompt = if channel.is_some() { remainder.trim() } else { rest };
+    let prompt = if channel.is_some() {
+        remainder.trim()
+    } else {
+        rest
+    };
     if prompt.is_empty() {
         return Err(RiotError::InvalidCommand(
             "Usage: .ai {party|team|all} <prompt>, e.g. .ai team hype us up.".into(),
@@ -268,7 +332,7 @@ pub fn parse_ai_command(input: &str) -> Result<(Option<ChatChannel>, String), Ri
 }
 
 pub fn parse_ask_command(input: &str) -> Result<String, RiotError> {
-    match dot_command_rest(input, ".ask") {
+    match command_rest(input, "ask") {
         Some(question) if !question.is_empty() => Ok(question.to_string()),
         _ => Err(RiotError::InvalidCommand(
             "Usage: .ask <question>, e.g. .ask how do I counter Raze?".into(),
@@ -276,38 +340,12 @@ pub fn parse_ask_command(input: &str) -> Result<String, RiotError> {
     }
 }
 
-fn is_dot_command(input: &str, command: &str) -> bool {
-    let trimmed = input.trim_start();
-    let Some(head) = trimmed.get(..command.len()) else {
-        return false;
-    };
-    head.eq_ignore_ascii_case(command)
-        && trimmed
-            .as_bytes()
-            .get(command.len())
-            .map(|byte| byte.is_ascii_whitespace())
-            .unwrap_or(true)
-}
-
 pub fn is_history_translate_command(input: &str) -> bool {
     history_translate_rest(input).is_some()
 }
 
 fn history_translate_rest(input: &str) -> Option<&str> {
-    let trimmed = input.trim_start();
-    for prefix in [".translate", ".tran"] {
-        let Some(head) = trimmed.get(..prefix.len()) else {
-            continue;
-        };
-        if !head.eq_ignore_ascii_case(prefix) {
-            continue;
-        }
-        let rest = &trimmed[prefix.len()..];
-        if rest.is_empty() || rest.starts_with(|c: char| c.is_whitespace()) {
-            return Some(rest.trim());
-        }
-    }
-    None
+    command_rest(input, "translate").or_else(|| command_rest(input, "tran"))
 }
 
 pub fn parse_history_translate_command(
@@ -361,7 +399,7 @@ pub fn parse_history_translate_command(
     })
 }
 
-/// A built-in `.` command (`.send`, `.tran`, `.dodge`, `.ai`, `.ask`, `.ascii`).
+/// A built-in `.` or `/` command, including party and invite-code commands.
 ///
 /// Typed in a group room these never run: commands only work when whispered
 /// to the Dummy Bot or typed in the Chat composer.
@@ -372,6 +410,7 @@ pub fn is_builtin_command(body: &str) -> bool {
         || is_dodge_command(body)
         || is_ai_command(body)
         || is_ask_command(body)
+        || is_party_command(body)
         || crate::riot::ascii_art::is_ascii_command(body)
 }
 
@@ -429,7 +468,7 @@ pub fn parse_translation_command_with_fallback(
     default_language: Option<&str>,
 ) -> Result<TranslationCommand, RiotError> {
     let trimmed = input.trim_start();
-    if !is_dot_command(trimmed, ".send") {
+    if !is_translation_command(trimmed) {
         return Err(RiotError::InvalidCommand(
             "Commands must start with .send.".into(),
         ));
@@ -559,6 +598,121 @@ mod tests {
 
     fn parse(input: &str) -> Result<TranslationCommand, RiotError> {
         parse_translation_command(input, "google")
+    }
+
+    #[test]
+    fn slash_prefix_supports_builtins_and_preserves_arguments() {
+        for input in [
+            "/send team none hello /world",
+            "/tran 2",
+            "/translate team 2",
+            "/dodge",
+            "/ai hello",
+            "/ask hello",
+            "/ascii gg",
+        ] {
+            assert!(is_builtin_command(input), "{input}");
+            assert!(is_skippable_history_line(input), "{input}");
+        }
+        assert_eq!(
+            parse("  /SEND team none hello /world").unwrap().message,
+            "hello /world"
+        );
+        assert_eq!(
+            parse_history_translate_command("/TRAN 2", "google", Some("en"))
+                .unwrap()
+                .count,
+            2
+        );
+        assert_eq!(
+            parse_ai_command("/AI team hello /world").unwrap().1,
+            "hello /world"
+        );
+        assert_eq!(
+            parse_ask_command("/ASK hello /world").unwrap(),
+            "hello /world"
+        );
+        assert_eq!(
+            crate::riot::ascii_art::parse_ascii_command("/ASCII gg")
+                .unwrap()
+                .text,
+            "GG"
+        );
+        for input in [
+            "/sendfriend hi",
+            "/translatex",
+            "/asciify gg",
+            "/asker",
+            "//dodge",
+            "/🙂",
+        ] {
+            assert!(!is_builtin_command(input), "{input}");
+        }
+    }
+
+    #[test]
+    fn slash_custom_triggers_alias_dotted_and_bare_triggers() {
+        let commands = [custom(
+            CustomCommandWhen::Command,
+            ".gg",
+            "send",
+            "team",
+            "good game",
+        )];
+        assert!(find_custom_command("/GG", &commands).is_some());
+        assert_eq!(normalize_custom_trigger(" /GG "), ".gg");
+        assert!(is_reserved_custom_trigger("/send"));
+        let commands = [custom(
+            CustomCommandWhen::Command,
+            "/gg",
+            "send",
+            "team",
+            "good game",
+        )];
+        assert!(find_custom_command(".gg", &commands).is_some());
+    }
+
+    #[test]
+    fn party_commands_validate_actions_and_invite_codes() {
+        for input in [
+            ".party join TUE693",
+            "/party join tue693",
+            "  /PARTY JOIN \"TUE693\"  ",
+        ] {
+            assert_eq!(
+                parse_party_command(input).unwrap(),
+                PartyCommand::Join("TUE693".into())
+            );
+        }
+        assert_eq!(
+            parse_party_command("/party leave").unwrap(),
+            PartyCommand::Leave
+        );
+        assert_eq!(
+            parse_party_command(".CODE CREATE").unwrap(),
+            PartyCommand::CreateCode
+        );
+        for input in [
+            "/party",
+            "/party join",
+            "/party join \"\"",
+            "/party join ../x",
+            "/party join a b",
+            "/party join \"TUE693",
+            "/party leave extra",
+            "/party kick",
+            "/code",
+            "/code create extra",
+            "/code delete",
+            "party leave",
+        ] {
+            assert!(parse_party_command(input).is_err(), "{input}");
+        }
+        for trigger in ["party", ".party", "/party", "code", ".code", "/code"] {
+            assert!(is_reserved_custom_trigger(trigger), "{trigger}");
+        }
+        assert!(!is_builtin_command("/partytime"));
+        assert!(!is_builtin_command("/codec"));
     }
 
     fn custom(
@@ -713,9 +867,12 @@ mod tests {
 
     #[test]
     fn auto_uses_the_settings_language_without_eating_the_message() {
-        let command =
-            parse_translation_command_with_fallback(".send team auto gl hf", "google", Some("zh-TW"))
-                .unwrap();
+        let command = parse_translation_command_with_fallback(
+            ".send team auto gl hf",
+            "google",
+            Some("zh-TW"),
+        )
+        .unwrap();
         assert_eq!(command.channel, ChatChannel::Team);
         assert_eq!(command.language, "zh-TW");
         assert_eq!(command.language_input, "auto");
@@ -1132,15 +1289,23 @@ mod tests {
 
     #[test]
     fn ai_and_ask_commands_parse_their_destination_and_text() {
-        assert!(is_ai_command(".AI team gg") && !is_ai_command(".ascii gg") && !is_ai_command(".aim"));
+        assert!(
+            is_ai_command(".AI team gg") && !is_ai_command(".ascii gg") && !is_ai_command(".aim")
+        );
         assert!(is_ask_command(".ask why") && !is_ask_command(".ascii why"));
         assert_eq!(
             parse_ai_command(".ai team hype us up").unwrap(),
             (Some(ChatChannel::Team), "hype us up".into())
         );
-        assert_eq!(parse_ai_command(".ai say gg").unwrap(), (None, "say gg".into()));
+        assert_eq!(
+            parse_ai_command(".ai say gg").unwrap(),
+            (None, "say gg".into())
+        );
         assert!(parse_ai_command(".ai team").is_err());
-        assert_eq!(parse_ask_command(".ask  counter Raze? ").unwrap(), "counter Raze?");
+        assert_eq!(
+            parse_ask_command(".ask  counter Raze? ").unwrap(),
+            "counter Raze?"
+        );
         assert!(parse_ask_command(".ask").is_err());
         assert!(is_skippable_history_line(".ai all gg") && is_skippable_history_line(".ask hi"));
     }

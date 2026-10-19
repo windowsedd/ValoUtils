@@ -441,6 +441,8 @@ pub enum ComposerCommand {
     Ai(String),
     /// `.ask` — an AI answer shown only to the player.
     Ask(String),
+    /// Join/leave a party or create its invite code; replies stay private.
+    Party(String),
     Unknown,
 }
 
@@ -450,7 +452,7 @@ pub enum ComposerCommand {
 /// composer is where the player writes ordinary messages, and matching `gg`
 /// would make it impossible to ever say "gg".
 ///
-/// The leading `.` is required *here* rather than trusted from the caller,
+/// A leading `.` or `/` is required *here* rather than trusted from the caller,
 /// because [`chat_command::expand_custom_command`] deliberately normalises a
 /// bare trigger into a dotted one for the in-game path - so without this guard
 /// every trigger word would still be swallowed.
@@ -459,13 +461,16 @@ pub fn classify_composer_command(
     commands: &[chat_command::CustomBotCommand],
 ) -> ComposerCommand {
     let trimmed = input.trim();
-    if !trimmed.starts_with('.') {
+    if !chat_command::has_command_prefix(trimmed) {
         return ComposerCommand::Unknown;
     }
     if let Some(command) = chat_command::find_custom_command(trimmed, commands) {
         if command.action.trim().eq_ignore_ascii_case("send") {
             return ComposerCommand::Custom(command);
         }
+    }
+    if chat_command::is_party_command(trimmed) {
+        return ComposerCommand::Party(trimmed.to_string());
     }
     let expanded = chat_command::expand_custom_command(trimmed, commands)
         .unwrap_or_else(|| trimmed.to_string());
@@ -506,7 +511,7 @@ pub async fn chat_command(args: Vec<Value>, app: AppHandle) -> Result<Value, ()>
     })
 }
 
-/// Executes a `.` command the way the Chat composer does and returns the text
+/// Executes a `.` or `/` command the way the Chat composer does and returns the text
 /// to show the player. Shared with the in-app Dummy Bot chat, where
 /// `in_bot_chat` makes a Direct custom command answer in that thread instead of
 /// whispering through the game relay.
@@ -543,6 +548,7 @@ pub(crate) async fn run_composer_command(
             }
         }
         ComposerCommand::Dodge => execute_dodge(Some(&app)).await,
+        ComposerCommand::Party(line) => execute_party_command(&line, Some(&app)).await,
         ComposerCommand::Ascii(line) => match ascii_art::parse_ascii_command(&line) {
             Ok(parsed) => match parsed.channel {
                 Some(channel) => post_ascii_art(channel, parsed.payload, Some(&app))
@@ -566,9 +572,9 @@ pub(crate) async fn run_composer_command(
 }
 
 /// Whether `body` starts with a saved custom trigger spelled with a leading
-/// `.`, such as `.scout`. Bare trigger words stay ordinary chat in a room.
-pub(crate) fn is_dotted_custom_trigger(body: &str, app: Option<&AppHandle>) -> bool {
-    body.trim().starts_with('.')
+/// `.` or `/`. Bare trigger words stay ordinary chat in a room.
+pub(crate) fn is_prefixed_custom_trigger(body: &str, app: Option<&AppHandle>) -> bool {
+    chat_command::has_command_prefix(body)
         && chat_command::find_custom_command(body, &load_custom_commands(app)).is_some()
 }
 
@@ -583,6 +589,48 @@ fn load_custom_commands(app: Option<&AppHandle>) -> Vec<chat_command::CustomBotC
         .get("botCustomCommands")
         .and_then(|value| serde_json::from_value(value).ok())
         .unwrap_or_default()
+}
+
+pub async fn execute_party_command(
+    input: &str,
+    app: Option<&AppHandle>,
+) -> Result<String, RiotError> {
+    let command = chat_command::parse_party_command(input)?;
+    let app = app.ok_or(RiotError::RiotClientNotRunning)?;
+    let riot = app
+        .try_state::<crate::riot::client::RiotState>()
+        .ok_or(RiotError::RiotClientNotRunning)?;
+    crate::riot::api::with_api(&riot, |api| {
+        let command = command.clone();
+        async move {
+            match command {
+                chat_command::PartyCommand::Join(code) => {
+                    api.party_join_by_code(&code).await?;
+                    Ok(format!("Joined party {code}."))
+                }
+                chat_command::PartyCommand::Leave => {
+                    api.party_leave().await?;
+                    Ok("Left the party.".into())
+                }
+                chat_command::PartyCommand::CreateCode => {
+                    let player = api.party_get_by_player(&api.puuid).await?;
+                    let party_id = player
+                        .get("CurrentPartyID")
+                        .and_then(Value::as_str)
+                        .filter(|value| !value.trim().is_empty())
+                        .ok_or_else(|| "You are not in a party.".to_string())?;
+                    let party = api.party_create_code(party_id).await?;
+                    let code = party
+                        .get("InviteCode")
+                        .and_then(Value::as_str)
+                        .filter(|value| !value.trim().is_empty())
+                        .ok_or_else(|| "Riot did not return a party invite code.".to_string())?;
+                    Ok(format!("Party invite code: {code}"))
+                }
+            }
+        }
+    })
+    .await
 }
 
 /// Leaves the current pre-game lobby via GLZ `POST /pregame/v1/matches/{id}/quit`.
@@ -2248,6 +2296,64 @@ mod tests {
             classify_composer_command(".aim", &commands),
             ComposerCommand::Unknown
         );
+    }
+
+    #[test]
+    fn the_composer_routes_slash_commands_like_dot_commands() {
+        let commands = custom_commands();
+        for input in [
+            "/send team none hello",
+            "/tran 2",
+            "/translate team 2",
+            "/ascii gg",
+            "/ai hello",
+            "/ask hello",
+        ] {
+            assert!(
+                !matches!(
+                    classify_composer_command(input, &commands),
+                    ComposerCommand::Unknown
+                ),
+                "{input}"
+            );
+        }
+        assert_eq!(
+            classify_composer_command("/dodge", &commands),
+            ComposerCommand::Dodge
+        );
+        assert!(matches!(
+            classify_composer_command("/gg", &commands),
+            ComposerCommand::Custom(_)
+        ));
+        assert!(matches!(
+            classify_composer_command("/last", &commands),
+            ComposerCommand::History(_)
+        ));
+        assert_eq!(
+            classify_composer_command("/unknown", &commands),
+            ComposerCommand::Unknown
+        );
+    }
+
+    #[test]
+    fn party_commands_are_routed_with_both_prefixes() {
+        for input in [
+            ".party join TUE693",
+            "/party join \"TUE693\"",
+            ".party leave",
+            "/party leave",
+            ".code create",
+            "/code create",
+        ] {
+            assert!(
+                !matches!(
+                    classify_composer_command(input, &[]),
+                    ComposerCommand::Unknown
+                ),
+                "{input}"
+            );
+            assert!(chat_command::is_builtin_command(input), "{input}");
+        }
     }
 
     #[test]

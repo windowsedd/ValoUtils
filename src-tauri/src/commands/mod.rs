@@ -32,6 +32,7 @@ pub(crate) async fn rate_limited_reply(error: &str) -> Option<Value> {
 pub mod ai;
 pub mod app;
 pub mod battlepass;
+pub mod bloomline;
 pub(crate) mod bot_template;
 pub mod career;
 pub mod chat;

@@ -15,6 +15,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import {
 	LuBot,
+	LuFlower2,
 	LuCrosshair,
 	LuHistory,
 	LuInfo,
@@ -31,6 +32,7 @@ import {
 import DummyBotPage from "@/pages/DummyBot.tsx";
 import Tools from "@/pages/Tools.tsx";
 import BattlePass from "@/pages/BattlePass.tsx";
+import Bloomline from "@/pages/Bloomline.tsx";
 import LiveGame from "@/pages/LiveGame.tsx";
 import { LiveGameProvider } from "@/components/live-game/live-game-session";
 import { SWRConfig } from "swr";
@@ -121,6 +123,12 @@ const AppShell = () => {
 								id: "battle-pass",
 								icon: <LuTicket />,
 								component: <BattlePass />,
+							},
+							{
+								title: "nav.bloomline",
+								id: "bloomline",
+								icon: <LuFlower2 />,
+								component: <Bloomline />,
 							},
 							{
 								title: "nav.settings",

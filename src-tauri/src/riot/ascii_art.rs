@@ -166,18 +166,7 @@ pub fn is_ascii_command(input: &str) -> bool {
 }
 
 fn ascii_rest(input: &str) -> Option<&str> {
-    const PREFIX: &str = ".ascii";
-    let trimmed = input.trim_start();
-    let head = trimmed.get(..PREFIX.len())?;
-    if !head.eq_ignore_ascii_case(PREFIX) {
-        return None;
-    }
-    let rest = &trimmed[PREFIX.len()..];
-    if rest.is_empty() || rest.starts_with(char::is_whitespace) {
-        Some(rest.trim())
-    } else {
-        None
-    }
+    crate::riot::chat_command::command_rest(input, "ascii")
 }
 
 /// Whether a token is a reserved destination rather than artwork text.

@@ -29,6 +29,13 @@ const commandReference = [
   "askSyntax",
   "askDesc",
   "askExample",
+  "prefixNote",
+  "partyJoinSyntax",
+  "partyJoinDesc",
+  "partyLeaveSyntax",
+  "partyLeaveDesc",
+  "codeCreateSyntax",
+  "codeCreateDesc",
 ] as const;
 
 const at = (value: unknown, path: string): unknown =>

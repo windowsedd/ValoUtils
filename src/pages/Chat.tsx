@@ -121,6 +121,9 @@ const Chat = () => {
 		{ insert: ".tran ", syntax: ".tran [n]", description: t("chat.cmdTran") },
 		{ insert: ".ascii ", syntax: t("dummyBot.asciiSyntax"), description: t("chat.cmdAscii") },
 		{ insert: ".dodge", syntax: t("dummyBot.dodgeSyntax"), description: t("chat.cmdDodge") },
+		{ insert: ".party join ", syntax: t("dummyBot.partyJoinSyntax"), description: t("dummyBot.partyJoinDesc") },
+		{ insert: ".party leave", syntax: t("dummyBot.partyLeaveSyntax"), description: t("dummyBot.partyLeaveDesc") },
+		{ insert: ".code create", syntax: t("dummyBot.codeCreateSyntax"), description: t("dummyBot.codeCreateDesc") },
 	];
 	const formatDay = (time: number) => {
 		const date = new Date(time);

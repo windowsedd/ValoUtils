@@ -307,6 +307,7 @@ const applyConfig = (message: any) => {
 			</SectionCard>
 
 			<SectionCard title={t("dummyBot.commandsTitle")}>
+				<p className="px-2.5 py-2 text-[11px] leading-5 text-(--text-secondary)">{t("dummyBot.prefixNote")}</p>
 				{/*
 				 * The seven presence toggles are one word each — a full row apiece was
 				 * seven lines of mostly whitespace. Paired into a grid they read as the
@@ -366,6 +367,12 @@ const applyConfig = (message: any) => {
 					<p className="font-mono text-[12px] text-(--accent-selected)">{t("dummyBot.dodgeSyntax")}</p>
 					<p className="mt-1 text-[11px] leading-5 text-(--text-secondary)">{t("dummyBot.dodgeDesc")}</p>
 				</div>
+				{["partyJoin", "partyLeave", "codeCreate"].map((command) => (
+					<div key={command} className="border-t border-(--line) px-2.5 py-2">
+						<p className="font-mono text-[12px] text-(--accent-selected)">{t(`dummyBot.${command}Syntax`)}</p>
+						<p className="mt-1 text-[11px] leading-5 text-(--text-secondary)">{t(`dummyBot.${command}Desc`)}</p>
+					</div>
+				))}
 			</SectionCard>
 
 			<SectionCard title={t("dummyBot.customTitle")} count={customCommands.length}>
@@ -595,6 +602,8 @@ const RESERVED = new Set([
 	".translate",
 	".dodge",
 	".ascii",
+	".party",
+	".code",
 	".ai",
 	".ask",
 	"$online",
@@ -609,6 +618,7 @@ const RESERVED = new Set([
 const normalizeTrigger = (value: string) => {
 	const trimmed = value.trim().toLowerCase();
 	if (!trimmed) return "";
+	if (trimmed.startsWith("/")) return `.${trimmed.slice(1)}`;
 	return trimmed.startsWith(".") || trimmed.startsWith("$") ? trimmed : `.${trimmed}`;
 };
 

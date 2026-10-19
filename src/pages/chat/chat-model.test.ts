@@ -753,6 +753,16 @@ describe("composer command matching", () => {
     { insert: ".ask ", syntax: ".ask", description: "" },
     { insert: ".dodge", syntax: ".dodge", description: "" },
   ];
+  test("routes slash commands and preserves their prefix in suggestions", () => {
+    expect(isComposerCommand("  /ask hello")).toBe(true);
+    expect(isComposerCommand("/unknown")).toBe(true);
+    expect(isComposerCommand("hello /ask")).toBe(false);
+    expect(chatModel.matchComposerCommands("/a", commands).map((c) => c.insert)).toEqual(["/ai ", "/ask "]);
+    expect(chatModel.matchComposerCommands("/a", commands).map((c) => c.syntax)).toEqual(["/ai", "/ask"]);
+    expect(chatModel.matchComposerCommands("/", commands)).toHaveLength(3);
+    expect(chatModel.matchComposerCommands("/ai", commands)).toEqual([]);
+    expect(chatModel.matchComposerCommands("/ai team", commands)).toEqual([]);
+  });
   test("suggests by prefix and stops once arguments start", () => {
     expect(chatModel.matchComposerCommands(".a", commands).map((c) => c.insert)).toEqual([".ai ", ".ask "]);
     expect(chatModel.matchComposerCommands(".", commands)).toHaveLength(3);

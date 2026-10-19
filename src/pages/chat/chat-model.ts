@@ -363,11 +363,11 @@ export const messagesForConversation = (
  * is, whether a custom trigger matches, and how to parse it all stay in Rust,
  * where the trigger list actually lives. This only decides who to hand it to.
  *
- * The leading dot is required. In-game a bare trigger fires, but the composer
+ * A leading dot or slash is required. In-game a bare trigger fires, but the composer
  * is where ordinary messages get written, and matching bare words there would
  * make it impossible to ever send "gg".
  */
-export const isComposerCommand = (text: string) => text.trim().startsWith(".");
+export const isComposerCommand = (text: string) => /^[./]/.test(text.trimStart());
 
 /** The `rooms` key holding the backend's resolved CID for each room channel. */
 const ROOM_KEY: Record<Exclude<ChatChannel, "friends">, ChatRoomKey> = {
@@ -609,12 +609,17 @@ export type ComposerCommandHint = {
   description: string;
 };
 
-/** Commands matching a draft that is still just a `.word` with no arguments. */
+/** Commands matching a draft that is still just a `.word` or `/word` with no arguments. */
 export const matchComposerCommands = (draft: string, commands: ComposerCommandHint[]) => {
   const head = draft.trimStart();
-  if (!head.startsWith(".") || /\s/.test(head)) return [];
+  if (!isComposerCommand(head) || /\s/.test(head)) return [];
   const query = head.toLocaleLowerCase();
-  return commands.filter(
+  const prefixed = commands.map((command) => ({
+    ...command,
+    insert: command.insert.replace(/^[./]/, head[0]),
+    syntax: command.syntax.replace(/^[./]/, head[0]),
+  }));
+  return prefixed.filter(
     (command) => command.insert.trim().startsWith(query) && command.insert.trim() !== query,
   );
 };

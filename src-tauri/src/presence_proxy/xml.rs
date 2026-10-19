@@ -18,6 +18,7 @@ pub enum BotCommand {
     Ascii,
     Ai,
     Ask,
+    Party,
     Unknown,
     Consume,
 }
@@ -238,6 +239,8 @@ pub fn parse_bot_message(stanza: &str) -> Result<Option<(String, BotCommand)>, S
         BotCommand::Ai
     } else if crate::riot::chat_command::is_ask_command(&body) {
         BotCommand::Ask
+    } else if crate::riot::chat_command::is_party_command(&body) {
+        BotCommand::Party
     } else {
         parse_bot_command(&body).unwrap_or(BotCommand::Unknown)
     };
@@ -1016,6 +1019,30 @@ mod tests {
             parse_bot_message(&stanza).unwrap(),
             Some((jid, BotCommand::Dodge))
         );
+    }
+
+    #[test]
+    fn intercepts_slash_and_party_whispers_to_the_bot() {
+        let jid = format!("{}@na1.pvp.net", crate::fake_player::PUUID);
+        for (body, command) in [
+            ("/send team none hello", BotCommand::Translate),
+            ("/tran 2", BotCommand::TranslateHistory),
+            ("/dodge", BotCommand::Dodge),
+            ("/ascii gg", BotCommand::Ascii),
+            ("/ai hello", BotCommand::Ai),
+            ("/ask hello", BotCommand::Ask),
+            (".party join TUE693", BotCommand::Party),
+            ("/party leave", BotCommand::Party),
+            ("/code create", BotCommand::Party),
+        ] {
+            let stanza =
+                format!(r#"<message to="{jid}" type="chat"><body>{body}</body></message>"#);
+            assert_eq!(
+                parse_bot_message(&stanza).unwrap(),
+                Some((jid.clone(), command)),
+                "{body}"
+            );
+        }
     }
 
     #[test]
