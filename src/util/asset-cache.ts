@@ -75,11 +75,15 @@ const openCache = (): Promise<Cache | null> => {
 
 /**
  * `fetch` for valorant-api.com data: a cached response when there is one,
- * otherwise the network, keeping successful answers for next time.
+ * otherwise the network, keeping successful answers for next time. `refresh`
+ * skips the stored copy and replaces it with the network answer.
  */
-export const cachedFetch = async (url: string): Promise<Response> => {
+export const cachedFetch = async (
+	url: string,
+	{ refresh = false }: { refresh?: boolean } = {},
+): Promise<Response> => {
 	const cache = await openCache();
-	if (cache) {
+	if (cache && !refresh) {
 		try {
 			const hit = await cache.match(url);
 			if (hit) return hit;

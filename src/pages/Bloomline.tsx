@@ -7,7 +7,8 @@ import { LoginRequiredPanel } from "@/components/login-required-panel";
 import { PageHeader, SectionCard, SectionRow, pageBodyClass } from "@/components/section-card";
 import { reportIpcError } from "@/util/ipc";
 import { rateLimitedSeconds } from "@/util/rate-limit";
-import { getAgents, localize, type AgentAsset } from "@/util/valorant-assets";
+import { localize, type AgentAsset } from "@/util/valorant-assets";
+import { useAgentAssets } from "@/util/use-agent-assets";
 import {
   acceptedBloomlineDetail,
   bloomlineAgentRows,
@@ -170,7 +171,6 @@ export const BloomlineContent = ({
 const Bloomline = () => {
   const { t, i18n } = useTranslation();
   const [reply, setReply] = useState<BloomlineResponse | null>(null);
-  const [assets, setAssets] = useState<Map<string, AgentAsset>>(new Map());
   const [selected, setSelected] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
   const [detailState, setDetailState] = useState<{
@@ -179,6 +179,7 @@ const Bloomline = () => {
     reply: BloomlineResponse;
   } | null>(null);
   const agents = useMemo(() => (reply?.success ? (reply.agents ?? []) : []), [reply]);
+  const assets = useAgentAssets(agents.map((agent) => agent.agentId));
   const owner = reply?.success ? (reply.puuid ?? null) : null;
   const selectedId = selectedBloomlineAgent(agents, selected);
   const loading = reply === null;
@@ -189,13 +190,6 @@ const Bloomline = () => {
 
   useEffect(() => {
     void track("bloomline:view");
-    let active = true;
-    getAgents().then((value) => {
-      if (active) setAssets(value);
-    });
-    return () => {
-      active = false;
-    };
   }, []);
 
   useEffect(() => {

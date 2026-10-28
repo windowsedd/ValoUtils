@@ -1,6 +1,5 @@
 import type { LivePlayer, WeaponSkin } from "@/types/live-game";
 import {
-  getAgents,
   getMaps,
   getPlayerCard,
   getSeasonAssets,
@@ -14,7 +13,8 @@ import {
   type SkinAsset,
   type TierAsset,
 } from "@/util/valorant-assets";
-import { useEffect, useState } from "react";
+import { useAgentAssets } from "@/util/use-agent-assets";
+import { useEffect, useMemo, useState } from "react";
 
 export type LiveGameAssets = {
   agents: Map<string, AgentAsset>;
@@ -39,8 +39,7 @@ async function pooled<T>(tasks: (() => Promise<T>)[], concurrency = 4): Promise<
 }
 
 export const useLiveGameAssets = (players: LivePlayer[]): LiveGameAssets => {
-  const [assets, setAssets] = useState<LiveGameAssets>({
-    agents: new Map(),
+  const [assets, setAssets] = useState<Omit<LiveGameAssets, "agents">>({
     tiers: new Map(),
     maps: new Map(),
     seasons: new Map(),
@@ -50,9 +49,9 @@ export const useLiveGameAssets = (players: LivePlayer[]): LiveGameAssets => {
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([getAgents(), getTiers(), getMaps(), getSeasonAssets()]).then(
-      ([agents, tiers, maps, seasons]) => {
-        if (!cancelled) setAssets((current) => ({ ...current, agents, tiers, maps, seasons }));
+    Promise.all([getTiers(), getMaps(), getSeasonAssets()]).then(
+      ([tiers, maps, seasons]) => {
+        if (!cancelled) setAssets((current) => ({ ...current, tiers, maps, seasons }));
       },
     );
     return () => {
@@ -104,5 +103,6 @@ export const useLiveGameAssets = (players: LivePlayer[]): LiveGameAssets => {
     };
   }, [players]);
 
-  return assets;
+  const agents = useAgentAssets(players.map((player) => player.characterId));
+  return useMemo(() => ({ ...assets, agents }), [assets, agents]);
 };

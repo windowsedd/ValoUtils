@@ -78,31 +78,59 @@ let eventAssetsPromise: Promise<Map<string, EventAsset>> | null = null;
 const battlepassRewardCache = new Map<string, Promise<SkinAsset | null>>();
 
 // --- Agents ------------------------------------------------------------------
-export const getAgents = (): Promise<Map<string, AgentAsset>> => {
-  if (!agentsPromise) {
-    agentsPromise = cachedFetch(`${API}/agents?isPlayableCharacter=true&language=all`)
-      .then((r) => r.json())
-      .then((json) => {
-        const map = new Map<string, AgentAsset>();
-        for (const a of json?.data ?? []) {
-          const abilities: Record<string, AbilityAsset> = {};
-          for (const ability of a.abilities ?? []) {
-            if (typeof ability?.slot !== "string") continue;
-            abilities[ability.slot.toLowerCase()] = {
-              name: ability.displayName,
-              icon: ability.displayIcon ?? null,
-            };
-          }
-          map.set((a.uuid as string).toLowerCase(), {
-            name: a.displayName,
-            icon: a.displayIconSmall ?? a.displayIcon,
-            abilities,
-          });
+const AGENTS_URL = `${API}/agents?isPlayableCharacter=true&language=all`;
+let agentsRefreshed = false;
+
+const loadAgents = (refresh: boolean): Promise<Map<string, AgentAsset>> =>
+  cachedFetch(AGENTS_URL, { refresh })
+    .then((r) => {
+      if (!r.ok) throw new Error(`agents ${r.status}`);
+      return r.json();
+    })
+    .then((json) => {
+      const map = new Map<string, AgentAsset>();
+      for (const a of json?.data ?? []) {
+        const abilities: Record<string, AbilityAsset> = {};
+        for (const ability of a.abilities ?? []) {
+          if (typeof ability?.slot !== "string") continue;
+          abilities[ability.slot.toLowerCase()] = {
+            name: ability.displayName,
+            icon: ability.displayIcon ?? null,
+          };
         }
-        return map;
-      })
-      .catch(() => new Map<string, AgentAsset>());
+        map.set((a.uuid as string).toLowerCase(), {
+          name: a.displayName,
+          icon: a.displayIconSmall ?? a.displayIcon,
+          abilities,
+        });
+      }
+      return map;
+    });
+
+/**
+ * Playable agents keyed by lowercased uuid. Pass the agent ids about to be
+ * shown: when one is missing (an agent released after the list was cached, or
+ * added to valorant-api.com without a version bump), the list is downloaded
+ * again, at most once per session. A failed download is not memoised, so the
+ * next call tries again.
+ */
+export const getAgents = async (
+  ids: Iterable<string | null | undefined> = [],
+): Promise<Map<string, AgentAsset>> => {
+  if (!agentsPromise) {
+    const pending = loadAgents(false);
+    agentsPromise = pending;
+    pending.catch(() => {
+      if (agentsPromise === pending) agentsPromise = null;
+    });
   }
+  const current = agentsPromise;
+  const map = await current.catch(() => new Map<string, AgentAsset>());
+  if (agentsRefreshed || agentsPromise !== current) return agentsPromise ?? map;
+  const missing = [...ids].some((id) => !!id && !map.has(id.toLowerCase()));
+  if (!missing) return map;
+  agentsRefreshed = true;
+  agentsPromise = loadAgents(true).catch(() => map);
   return agentsPromise;
 };
 

@@ -27,10 +27,10 @@ export const FriendMatchHistory = ({
 	playerProfilesEnabled?: boolean;
 }) => {
 	const { t } = useTranslation();
-	const assets = useMatchAssets();
+	const { details, errors, pending, ensure, prefetch } = useMatchDetails();
+	const assets = useMatchAssets(Object.values(details));
 	const openPlayerProfileModal = useMatchPlayerProfileModal(assets);
 	const openMatchPlayerProfile = playerProfilesEnabled ? openPlayerProfileModal : undefined;
-	const { details, errors, pending, ensure, prefetch } = useMatchDetails();
 	const [expanded, setExpanded] = useState<Set<string>>(new Set());
 	const [queue, setQueue] = useState("all");
 	const queues = useMemo(() => availableFriendQueues(matches), [matches]);

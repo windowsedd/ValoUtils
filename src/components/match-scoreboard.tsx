@@ -3,7 +3,6 @@ import { invoke } from "@tauri-apps/api/core";
 import type { MatchDetails, MatchDetailsResponse, MatchPlayer } from "@/types/matches";
 import { rateLimitedSeconds } from "@/util/rate-limit";
 import {
-	getAgents,
 	getMaps,
 	getSeasonLabels,
 	getTiers,
@@ -13,7 +12,8 @@ import {
 	type TierAsset,
 } from "@/util/valorant-assets";
 import { tierName } from "@/util/valorant-ranks";
-import { useCallback, useEffect, useState } from "react";
+import { useAgentAssets } from "@/util/use-agent-assets";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { MatchAccuracy } from "./match-accuracy-panel";
 import { formatDpr } from "./match-dpr";
@@ -30,23 +30,24 @@ export type MatchAssets = {
 	seasons: Map<string, string>;
 };
 
-export const useMatchAssets = (): MatchAssets => {
-	const [assets, setAssets] = useState<MatchAssets>({
-		agents: new Map(),
+/** `details` are the loaded matches, whose agents must resolve to an asset. */
+export const useMatchAssets = (details: Iterable<MatchDetails | undefined> = []): MatchAssets => {
+	const [assets, setAssets] = useState<Omit<MatchAssets, "agents">>({
 		tiers: new Map(),
 		maps: new Map(),
 		seasons: new Map(),
 	});
 	useEffect(() => {
 		let cancelled = false;
-		Promise.all([getAgents(), getTiers(), getMaps(), getSeasonLabels()]).then(([agents, tiers, maps, seasons]) => {
-			if (!cancelled) setAssets({ agents, tiers, maps, seasons });
+		Promise.all([getTiers(), getMaps(), getSeasonLabels()]).then(([tiers, maps, seasons]) => {
+			if (!cancelled) setAssets({ tiers, maps, seasons });
 		});
 		return () => {
 			cancelled = true;
 		};
 	}, []);
-	return assets;
+	const agents = useAgentAssets([...details].flatMap((match) => match?.players.map((player) => player.characterId) ?? []));
+	return useMemo(() => ({ ...assets, agents }), [assets, agents]);
 };
 
 /**

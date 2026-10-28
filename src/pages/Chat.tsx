@@ -1,7 +1,8 @@
 import type { ChatFriend, ChatMessage, ChatRound } from "@/types/chat";
 import { LoginRequiredPanel } from "@/components/login-required-panel";
 import { useLiveGameSession } from "@/components/live-game/live-game-session";
-import { getAgents, localize, type AgentAsset } from "@/util/valorant-assets";
+import { localize } from "@/util/valorant-assets";
+import { useAgentAssets } from "@/util/use-agent-assets";
 import { LuMessageSquare } from "react-icons/lu";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -35,16 +36,9 @@ const Chat = () => {
 	const composerRef = useRef<HTMLTextAreaElement | null>(null);
 	const [botOpen, setBotOpen] = useState(false);
 	const { snapshot } = useLiveGameSession();
-	const [agents, setAgents] = useState<Map<string, AgentAsset>>(new Map());
-	useEffect(() => {
-		let cancelled = false;
-		getAgents().then((map) => {
-			if (!cancelled) setAgents(map);
-		});
-		return () => {
-			cancelled = true;
-		};
-	}, []);
+	const agents = useAgentAssets(
+		snapshot?.state === "idle" ? [] : (snapshot?.players ?? []).map((player) => player.characterId),
+	);
 	const roster = useMemo(
 		() => chatRosterIdentities(snapshot?.state === "idle" ? [] : (snapshot?.players ?? [])),
 		[snapshot],

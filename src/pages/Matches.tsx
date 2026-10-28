@@ -215,9 +215,9 @@ const Matches = () => {
 	const [aiResults, setAiResults] = useState<Record<string, string>>({});
 	const aiPendingRef = useRef(new Set<string>());
 	const [aiPending, setAiPending] = useState(new Set<string>());
-	const assets = useMatchAssets();
-	const openMatchPlayerProfile = useMatchPlayerProfileModal(assets);
 	const { details, errors, pending, ensure, prefetch } = useMatchDetails();
+	const assets = useMatchAssets(Object.values(details));
+	const openMatchPlayerProfile = useMatchPlayerProfileModal(assets);
 
 	useEffect(() => {
 const applyResponse = (message: any) => {

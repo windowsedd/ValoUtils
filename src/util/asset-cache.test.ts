@@ -59,6 +59,21 @@ describe("cachedFetch", () => {
 		expect(stored.has("https://valorant-api.com/v1/missing")).toBe(false);
 	});
 
+	test("refresh skips the stored copy and replaces it", async () => {
+		const { stored } = fakeCaches();
+		const url = "https://valorant-api.com/v1/agents";
+		stored.set(url, Response.json({ data: ["Jett"] }));
+		globalThis.fetch = (async (asked: string) =>
+			Response.json(
+				String(asked).endsWith("/version") ? { data: { manifestId: "1" } } : { data: ["Jett", "New"] },
+			)) as typeof fetch;
+
+		const { cachedFetch } = await load();
+		expect(await (await cachedFetch(url, { refresh: true })).json()).toEqual({ data: ["Jett", "New"] });
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		expect(await stored.get(url)!.json()).toEqual({ data: ["Jett", "New"] });
+	});
+
 	test("is a plain fetch where Cache Storage does not exist", async () => {
 		Reflect.deleteProperty(globalThis, "caches");
 		globalThis.fetch = (async () => Response.json({ ok: 1 })) as unknown as typeof fetch;
