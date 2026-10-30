@@ -469,6 +469,7 @@ both manual launches and Windows sign-in launches, and does not move other apps.
 ## Key Constraints
 
 - **Windows only** — relies on `%LOCALAPPDATA%`, WebView2, and the Riot Client lockfile
+- **Single instance** — `tauri-plugin-single-instance` (first plugin in `lib.rs`) makes a second launch focus the running window and exit, so the relay, config server and window are never duplicated
 - **Riot Client must be running** to save/load profiles (lockfile must exist)
 - **Valorant must be closed** when loading a profile (Riot Client applies settings on next launch)
 - No cloud sync — profiles are local JSON in `%APPDATA%\ValoUtils`

@@ -24,9 +24,29 @@ use serde_json::json;
 use store::{CacheStore, ConfigStore, ProfilesStore, Store};
 use tauri::Manager;
 
+/// Brings the existing window forward when ValoUtils is launched again.
+fn focus_main_window(app: &tauri::AppHandle) {
+    let Some(window) = app.get_webview_window("main") else {
+        return;
+    };
+    let result = window
+        .unminimize()
+        .and_then(|_| window.show())
+        .and_then(|_| window.set_focus());
+    if let Err(error) = result {
+        log::warn!("Could not focus the running window: {error}");
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // Must be the first plugin: a second launch hands over to the running
+        // instance and exits before anything else (relay, config server,
+        // update check) starts.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            focus_main_window(app);
+        }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_opener::init())
