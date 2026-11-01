@@ -331,13 +331,39 @@ export const buildChapterViews = (
 /** XP Riot's agent recruitment events ask for (shown in game as "x / 200,000 XP"). */
 export const RECRUITMENT_GOAL_XP = 200_000;
 
-export type RecruitmentProgress = {
-  id: string;
+/** `ActiveRecruitmentEventProgress` from the contracts document, plus the event end. */
+export type RecruitmentEvent = {
+  agentId: string;
+  earned: number;
+  endsAt: string | null;
+};
+
+export type RecruitmentView = {
   earned: number;
   goal: number;
   remaining: number;
   percent: number;
+  complete: boolean;
+  /** Whole days until the event ends; null when the end is unknown. */
+  daysLeft: number | null;
 };
+
+export const recruitmentView = (event: RecruitmentEvent, now: number): RecruitmentView => {
+  const earned = Number.isFinite(event.earned) && event.earned > 0 ? event.earned : 0;
+  const end = event.endsAt ? Date.parse(event.endsAt) : Number.NaN;
+  return {
+    earned,
+    goal: RECRUITMENT_GOAL_XP,
+    remaining: Math.max(0, RECRUITMENT_GOAL_XP - earned),
+    percent: Math.min(100, Math.floor((earned / RECRUITMENT_GOAL_XP) * 100)),
+    complete: earned >= RECRUITMENT_GOAL_XP,
+    daysLeft: Number.isNaN(end) ? null : daysRemaining(end, now),
+  };
+};
+
+/** CSS color from valorant-api.com's RRGGBBAA hex. */
+export const agentGradientColor = (hex: string | undefined, fallback: string): string =>
+  hex && /^[0-9a-f]{8}$/i.test(hex) ? `#${hex}` : fallback;
 
 /** Every contract id the public valorant-api.com catalog knows, of any relation type. */
 export const catalogContractIds = (data: readonly unknown[]): Set<string> => {
@@ -350,26 +376,13 @@ export const catalogContractIds = (data: readonly unknown[]): Set<string> => {
 };
 
 /**
- * Agent recruitment progress, found by elimination.
- *
- * Recruitment contracts are not in the public catalog, so any contract on the
- * account that the catalog doesn't know and that has earned XP is a candidate.
- * An empty catalog (fetch failed) would make every contract look unknown, so it
- * yields nothing rather than a list of false matches.
+ * Whether the account has XP on a contract the catalog doesn't know, which
+ * usually means the cached catalog predates a new pass. An empty catalog
+ * (fetch failed) never asks for a reload.
  */
-export const recruitmentCandidates = (
+export const hasUnknownContracts = (
   progress: readonly BattlepassProgress[],
   knownIds: ReadonlySet<string>,
-): RecruitmentProgress[] => {
-  if (knownIds.size === 0) return [];
-  return progress
-    .filter((row) => row.id && !knownIds.has(row.id.toLowerCase()) && row.totalXp > 0)
-    .map((row) => ({
-      id: row.id,
-      earned: row.totalXp,
-      goal: RECRUITMENT_GOAL_XP,
-      remaining: Math.max(0, RECRUITMENT_GOAL_XP - row.totalXp),
-      percent: Math.min(100, Math.floor((row.totalXp / RECRUITMENT_GOAL_XP) * 100)),
-    }))
-    .sort((a, b) => b.earned - a.earned || a.id.localeCompare(b.id));
-};
+): boolean =>
+  knownIds.size > 0 &&
+  progress.some((row) => row.id && row.totalXp > 0 && !knownIds.has(row.id.toLowerCase()));

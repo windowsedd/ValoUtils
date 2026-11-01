@@ -272,12 +272,9 @@
     "recruitment": "요원 영입",
     "recruitmentXp": "{{earned}} / {{goal}} XP · {{percent}}%",
     "recruitmentLeft": "영입까지 {{xp}} XP",
-    "recruitmentDone": "목표 달성",
-    "recruitmentNote": "공개 카탈로그에 없는, XP가 있는 계약으로 추정했습니다. 목표 200,000 XP는 가정값입니다.",
-    "copyRaw": "원본 계약 데이터 복사",
-    "copyRawHint": "요원 영입 진행도 위치를 찾기 위해 Riot의 계약 및 요원 상점 응답을 복사합니다. 계정 ID가 포함됩니다.",
-    "rawCopied": "클립보드에 복사됨",
-    "rawFailed": "원본 데이터를 복사하지 못했습니다"
+    "recruitmentDone": "영입 완료",
+    "recruitUnknownAgent": "신규 요원",
+    "recruitEndsIn_other": "{{count}}일 후 종료"
   },
   "career": {
     "accountStatus": "계정 상태",

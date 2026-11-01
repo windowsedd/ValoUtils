@@ -112,7 +112,7 @@ Rust command conventions:
 | `friend:profile:get` | `friend_profile_get` | Player profile used by Friends and Tools (rank + matches) |
 | `store:get` | `store_get` | Storefront (daily, bundle, Night Market, accessories) + wallet; also saved per account in `cache.json` |
 | `store:cached` | `store_cached` | Last saved storefront for the signed-in account (no PD request), shown while `store_get` loads |
-| `battlepass:get` | `battlepass_get` | Act battle pass XP/level + owned premium contract ids |
+| `battlepass:get` | `battlepass_get` | Act battle pass XP/level, owned premium contract ids, and active agent recruitment progress |
 | `bloomline:get` | `bloomline_get` | Read agent progression; optional agent UUID and expected account load equipped stat counters |
 | `chat:saved-match-details` | `chat_saved_match_details` | Map, mode, agent and result for a saved match chat; fetched once and stored in `match-chat-history.json` |
 | `chat:command` | `chat_command` | Runs a `.`- or `/`-prefixed command typed in the Chat composer; the raw line is never posted |
@@ -260,12 +260,16 @@ stat meaning is inferred. No mutations, polling, extra login, or local storage.
 
 ### Agent recruitment progress
 
-The Battle Pass page shows an Agent recruitment card from the existing
-`battlepass_get` contracts reply (no extra request). Recruitment contracts are
-not in the valorant-api.com catalog, so `recruitmentCandidates` picks contracts
-with XP whose id the catalog doesn't know, against an assumed 200,000 XP goal.
-It shows nothing if the catalog failed to load. The contract id is displayed so a
-match can be confirmed against the in-game number.
+Riot reports the active agent recruitment event at the top of the contracts
+document as `ActiveRecruitmentEventProgress` (`AgentID`, `ProgressionEarned`),
+not as a contract. `battlepass_get` returns it as `recruitment` and, only while
+an event is active, reads `/store/v1/storefronts/agent` for the end date: the
+start of that agent's Kingdom Credit offer. A failed store read only hides the
+end date. The Battle Pass page shows a banner card with the agent's name,
+portrait, background and gradient from valorant-api.com, and XP against the
+200,000 goal (Riot doesn't send the goal).
+The contract catalog is cached until a game patch, so when the account has XP on
+a contract the catalog doesn't know, the page reloads the catalog once.
 
 ### Career account status
 

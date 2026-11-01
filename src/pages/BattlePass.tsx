@@ -13,7 +13,10 @@ import {
 	passesOfKind,
 	passXpProgress,
 	RADIANITE_UUID,
-	recruitmentCandidates,
+	hasUnknownContracts,
+	recruitmentView,
+	agentGradientColor,
+	type RecruitmentEvent,
 	selectBattlepassId,
 	sortBattlepasses,
 	totalLevels,
@@ -25,6 +28,7 @@ import {
 	type SeasonWindow,
 } from "@/pages/battlepass/battlepass-state";
 import { rateLimitedSeconds } from "@/util/rate-limit";
+import { useAgentAssets } from "@/util/use-agent-assets";
 import {
 	getBattlepassContracts,
 	getBattlepassReward,
@@ -45,6 +49,7 @@ type BattlepassResponse = {
 	error?: string;
 	contracts?: BattlepassProgress[];
 	premiumContractIds?: string[];
+	recruitment?: RecruitmentEvent | null;
 };
 
 const RewardArt = ({ asset, className = "" }: { asset: SkinAsset | null; className?: string }) =>
@@ -130,6 +135,7 @@ const BattlePass = () => {
 	const [events, setEvents] = useState<Map<string, EventAsset>>(new Map());
 	const [progress, setProgress] = useState<BattlepassProgress[]>([]);
 	const [premiumIds, setPremiumIds] = useState<string[]>([]);
+	const [recruitmentEvent, setRecruitmentEvent] = useState<RecruitmentEvent | null>(null);
 	const [kind, setKind] = useState<BattlepassKind>("season");
 	const [selectedByKind, setSelectedByKind] = useState<Record<BattlepassKind, string | null>>({
 		season: null,
@@ -141,21 +147,6 @@ const BattlePass = () => {
 	const [loginRequired, setLoginRequired] = useState(false);
 	const [loading, setLoading] = useState(true);
 	const [catalogReady, setCatalogReady] = useState(false);
-	const [rawStatus, setRawStatus] = useState<"idle" | "copying" | "copied" | "failed">("idle");
-
-	const copyRawData = async () => {
-		setRawStatus("copying");
-		invoke("analytics_track", { args: ["battlepass:copy-raw", JSON.stringify({})] }).catch(reportIpcError);
-		try {
-			const reply = await invoke<{ success: boolean; contracts?: unknown; agentStorefront?: unknown }>("battlepass_raw");
-			if (!reply.success) throw new Error("battlepass_raw failed");
-			const text = JSON.stringify({ contracts: reply.contracts, agentStorefront: reply.agentStorefront }, null, 2);
-			await invoke("clipboard_set", { args: [text] });
-			setRawStatus("copied");
-		} catch {
-			setRawStatus("failed");
-		}
-	};
 
 	useEffect(() => {
 		let cancelled = false;
@@ -206,6 +197,7 @@ const onResponse = (message: any) => {
 			setError(null);
 			setProgress(response.contracts ?? []);
 			setPremiumIds(response.premiumContractIds ?? []);
+			setRecruitmentEvent(response.recruitment ?? null);
 			setLoading(false);
 		};
 
@@ -327,14 +319,10 @@ const onResponse = (message: any) => {
 	const liveChapter = entry ? pageIndexForLevel(entry.chapters, level) : -1;
 	const showPremiumBadge = Boolean(entry?.premiumRequired && premium);
 	const waiting = loading || !catalogReady;
-	const candidates = useMemo(
-		() => recruitmentCandidates(progress, knownContractIds),
-		[progress, knownContractIds],
-	);
-	// A contract can look unknown only because the cached catalog is older than
-	// it (a new act pass did). Reload the catalog once before showing anything.
+	// The catalog is cached until a game patch, so a pass added since (Act VI
+	// was) is missing from it. Reload it once when the account has XP on one.
 	const [catalogRechecked, setCatalogRechecked] = useState(false);
-	const needsRecheck = candidates.length > 0 && !catalogRechecked;
+	const needsRecheck = !catalogRechecked && hasUnknownContracts(progress, knownContractIds);
 	useEffect(() => {
 		if (!needsRecheck) return;
 		let cancelled = false;
@@ -354,7 +342,11 @@ const onResponse = (message: any) => {
 			cancelled = true;
 		};
 	}, [needsRecheck]);
-	const recruitment = catalogRechecked ? candidates : [];
+
+	const recruitAgents = useAgentAssets(recruitmentEvent ? [recruitmentEvent.agentId] : []);
+	const recruitAgent = recruitmentEvent ? recruitAgents.get(recruitmentEvent.agentId.toLowerCase()) : undefined;
+	const recruitment = recruitmentEvent ? recruitmentView(recruitmentEvent, Date.now()) : null;
+	const recruitName = recruitAgent ? localize(recruitAgent.name) : t("battlepass.recruitUnknownAgent");
 
 	return (
 		<div className="flex h-full flex-col animate-fade-in">
@@ -428,34 +420,73 @@ const onResponse = (message: any) => {
 					</div>
 				)}
 
-				{!waiting && !error && !loginRequired && recruitment.length > 0 && (
-					<SectionCard title={t("battlepass.recruitment")}>
-						<div data-battlepass-recruitment="" className="flex flex-col gap-3 px-3 py-2">
-							{recruitment.map((row) => (
-								<div key={row.id} className="flex flex-col gap-1.5">
-									<div className="flex items-baseline justify-between gap-3">
-										<span className="text-sm font-semibold tabular-nums text-(--text-primary)">
-											{t("battlepass.recruitmentXp", {
-												earned: row.earned.toLocaleString(),
-												goal: row.goal.toLocaleString(),
-												percent: row.percent,
-											})}
-										</span>
-										<span className="text-xs tabular-nums text-(--text-muted)">
-											{row.remaining > 0
-												? t("battlepass.recruitmentLeft", { xp: row.remaining.toLocaleString() })
-												: t("battlepass.recruitmentDone")}
-										</span>
-									</div>
-									<div className="h-1.5 overflow-hidden rounded-full bg-(--control)">
-										<div className="h-full bg-(--accent)" style={{ width: `${row.percent}%` }} />
-									</div>
-									<span className="select-all font-mono text-[10px] text-(--text-muted)">{row.id}</span>
-								</div>
-							))}
-							<p className="text-[11px] text-(--text-muted)">{t("battlepass.recruitmentNote")}</p>
+				{!waiting && !error && !loginRequired && recruitment && (
+					<section
+						data-battlepass-recruitment=""
+						aria-label={t("battlepass.recruitment")}
+						className="relative overflow-hidden rounded-[10px] border border-(--border)"
+						style={{
+							background: `linear-gradient(110deg, ${agentGradientColor(recruitAgent?.gradient?.[0], "var(--surface)")}, ${agentGradientColor(recruitAgent?.gradient?.[1], "var(--surface)")})`,
+						}}
+					>
+						{recruitAgent?.background && (
+							<img
+								src={recruitAgent.background}
+								alt=""
+								aria-hidden="true"
+								className="pointer-events-none absolute -right-6 top-1/2 h-[160%] -translate-y-1/2 opacity-30 mix-blend-screen"
+							/>
+						)}
+						{recruitAgent?.portrait && (
+							<img
+								src={recruitAgent.portrait}
+								alt=""
+								aria-hidden="true"
+								className="pointer-events-none absolute -bottom-10 right-2 h-[175%] object-contain object-bottom drop-shadow-[0_6px_18px_rgba(0,0,0,0.45)] max-sm:opacity-40"
+							/>
+						)}
+						<div className="relative flex max-w-[62%] flex-col gap-2 px-4 py-4 max-sm:max-w-full">
+							<span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-white/70">
+								{t("battlepass.recruitment")}
+							</span>
+							<h2
+								className="text-2xl font-bold uppercase leading-none tracking-wide"
+								style={{ color: agentGradientColor(recruitAgent?.gradient?.[2], "var(--text-primary)") }}
+							>
+								{recruitName}
+							</h2>
+							<span className="text-[11px] uppercase tracking-wide text-white/70">
+								{recruitment.daysLeft === null
+									? null
+									: recruitment.daysLeft <= 0
+										? t("battlepass.ended")
+										: t("battlepass.recruitEndsIn", { count: recruitment.daysLeft })}
+							</span>
+							<div className="h-1.5 overflow-hidden rounded-full bg-black/35">
+								<div
+									className="h-full"
+									style={{
+										width: `${recruitment.percent}%`,
+										background: agentGradientColor(recruitAgent?.gradient?.[2], "var(--accent)"),
+									}}
+								/>
+							</div>
+							<div className="flex flex-wrap items-baseline justify-between gap-x-3 text-[12px] tabular-nums text-white/90">
+								<span>
+									{t("battlepass.recruitmentXp", {
+										earned: recruitment.earned.toLocaleString(),
+										goal: recruitment.goal.toLocaleString(),
+										percent: recruitment.percent,
+									})}
+								</span>
+								<span className="text-[11px] text-white/70">
+									{recruitment.complete
+										? t("battlepass.recruitmentDone")
+										: t("battlepass.recruitmentLeft", { xp: recruitment.remaining.toLocaleString() })}
+								</span>
+							</div>
 						</div>
-					</SectionCard>
+					</section>
 				)}
 
 				{!waiting && !error && !loginRequired && !entry && (
@@ -670,22 +701,6 @@ const onResponse = (message: any) => {
 							</div>
 						</SectionCard>
 					</>
-				)}
-
-				{!waiting && !loginRequired && (
-					<div data-battlepass-raw="" className="flex flex-wrap items-center justify-end gap-2 text-[11px] text-(--text-muted)">
-						{rawStatus === "copied" && <span>{t("battlepass.rawCopied")}</span>}
-						{rawStatus === "failed" && <span className="text-(--signal-neg)">{t("battlepass.rawFailed")}</span>}
-						<button
-							type="button"
-							onClick={copyRawData}
-							disabled={rawStatus === "copying"}
-							title={t("battlepass.copyRawHint")}
-							className="h-7 rounded-[6px] border border-(--border) bg-(--control) px-2.5 text-[11px] text-(--text-secondary) transition-colors hover:bg-(--surface-hover) hover:text-(--text-primary) disabled:opacity-60"
-						>
-							{t("battlepass.copyRaw")}
-						</button>
-					</div>
 				)}
 			</div>
 		</div>

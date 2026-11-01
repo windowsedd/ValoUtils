@@ -35,7 +35,15 @@ export const localize = (value: Localized | undefined | null): string => {
 
 export type AbilityAsset = { name: Localized; icon: string | null };
 /** `abilities` is keyed by lowercased slot: "ability1", "ability2", "grenade", "ultimate". */
-export type AgentAsset = { name: Localized; icon: string; abilities?: Record<string, AbilityAsset> };
+export type AgentAsset = {
+  name: Localized;
+  icon: string;
+  abilities?: Record<string, AbilityAsset>;
+  /** Full-body render, background art and its gradient (hex RRGGBBAA), when valorant-api.com has them. */
+  portrait?: string | null;
+  background?: string | null;
+  gradient?: string[];
+};
 export type SkinAsset = { name: Localized; icon: string };
 export type TierAsset = {
   name: Localized;
@@ -102,6 +110,11 @@ const loadAgents = (refresh: boolean): Promise<Map<string, AgentAsset>> =>
           name: a.displayName,
           icon: a.displayIconSmall ?? a.displayIcon,
           abilities,
+          portrait: a.fullPortrait ?? null,
+          background: a.background ?? null,
+          gradient: Array.isArray(a.backgroundGradientColors)
+            ? a.backgroundGradientColors.filter((c: unknown): c is string => typeof c === "string")
+            : [],
         });
       }
       return map;

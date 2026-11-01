@@ -1,9 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import {
   buildChapterViews,
-  catalogContractIds,
   catalogFromContracts,
-  recruitmentCandidates,
+  recruitmentView,
+  catalogContractIds,
+  hasUnknownContracts,
+  agentGradientColor,
   RECRUITMENT_GOAL_XP,
   chapterEndLevels,
   currencyDisplayAmount,
@@ -305,32 +307,37 @@ describe("whole-pass XP progression", () => {
 });
 
 describe("agent recruitment", () => {
-  const known = catalogContractIds([{ uuid: "BP-1" }, { uuid: "gear-1" }, { uuid: 3 }, null]);
+  const now = Date.parse("2026-11-01T12:00:00Z");
 
-  test("collects every catalog id lowercased", () => {
-    expect([...known].sort()).toEqual(["bp-1", "gear-1"]);
+  test("progress toward the 200,000 XP goal and days until it ends", () => {
+    expect(recruitmentView({ agentId: "hush", earned: 172_300, endsAt: "2026-11-25T22:00:00Z" }, now)).toEqual({
+      earned: 172_300,
+      goal: RECRUITMENT_GOAL_XP,
+      remaining: 27_700,
+      percent: 86,
+      complete: false,
+      daysLeft: 25,
+    });
   });
 
-  test("keeps unknown contracts with XP, sorted by XP", () => {
-    const rows = recruitmentCandidates(
-      [
-        { id: "bp-1", level: 3, xpTowardNext: 0, totalXp: 50_000 },
-        { id: "GEAR-1", level: 1, xpTowardNext: 0, totalXp: 9_000 },
-        { id: "unused", level: 0, xpTowardNext: 0, totalXp: 0 },
-        { id: "hush", level: 0, xpTowardNext: 0, totalXp: 172_300 },
-        { id: "done", level: 0, xpTowardNext: 0, totalXp: 250_000 },
-      ],
-      known,
-    );
-    expect(rows).toEqual([
-      { id: "done", earned: 250_000, goal: RECRUITMENT_GOAL_XP, remaining: 0, percent: 100 },
-      { id: "hush", earned: 172_300, goal: RECRUITMENT_GOAL_XP, remaining: 27_700, percent: 86 },
-    ]);
+  test("goal reached, unknown end and bad numbers", () => {
+    const done = recruitmentView({ agentId: "hush", earned: 200_000, endsAt: null }, now);
+    expect([done.complete, done.percent, done.remaining, done.daysLeft]).toEqual([true, 100, 0, null]);
+    expect(recruitmentView({ agentId: "x", earned: Number.NaN, endsAt: "nope" }, now)).toMatchObject({ earned: 0, daysLeft: null });
   });
 
-  test("an empty catalog yields no candidates", () => {
-    expect(
-      recruitmentCandidates([{ id: "x", level: 0, xpTowardNext: 0, totalXp: 10 }], new Set()),
-    ).toEqual([]);
+  test("gradient colors accept only RRGGBBAA hex", () => {
+    expect(agentGradientColor("3d2c44ff", "x")).toBe("#3d2c44ff");
+    expect(agentGradientColor("red", "x")).toBe("x");
+    expect(agentGradientColor(undefined, "x")).toBe("x");
   });
+});
+
+test("catalog ids and unknown contracts trigger a catalog reload only with XP", () => {
+  const known = catalogContractIds([{ uuid: "BP-1" }, { uuid: 3 }, null]);
+  expect([...known]).toEqual(["bp-1"]);
+  const row = (id: string, totalXp: number) => ({ id, level: 0, xpTowardNext: 0, totalXp });
+  expect(hasUnknownContracts([row("BP-1", 10), row("new", 0)], known)).toBe(false);
+  expect(hasUnknownContracts([row("new", 10)], known)).toBe(true);
+  expect(hasUnknownContracts([row("new", 10)], new Set())).toBe(false);
 });
