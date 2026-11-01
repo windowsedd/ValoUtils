@@ -268,7 +268,12 @@
 		"passXp": "{{earned}} / {{total}} XP · {{percent}}%",
 		"tiersLeft": "剩餘 {{tiers}} 階 · {{xp}} XP",
 		"allTiers": "已解鎖所有階級",
-		"xpPerDay": "每日需 {{xp}} XP 完成"
+		"xpPerDay": "每日需 {{xp}} XP 完成",
+		"recruitment": "特務招募",
+		"recruitmentXp": "{{earned}} / {{goal}} XP · {{percent}}%",
+		"recruitmentLeft": "距離招募還需 {{xp}} XP",
+		"recruitmentDone": "已達成目標",
+		"recruitmentNote": "以排除法判斷：不在公開目錄中且有 XP 的合約。200,000 XP 目標為假設值。"
 	},
 	"career": {
 		"accountStatus": "帳號狀態",
@@ -406,6 +411,17 @@
 	"chat": {
 		"savedMatchHistory": "對戰紀錄",
 		"currentChat": "目前聊天",
+		"currentChatHint": "即時隊伍與全體聊天",
+		"searchSavedMatches": "搜尋訊息或玩家",
+		"noSavedMatchResults": "沒有符合搜尋的已儲存對戰。",
+		"historyToday": "今天",
+		"historyYesterday": "昨天",
+		"savedMatchCounts": "隊伍 {{team}} · 全體 {{all}}",
+		"savedMatchSpeakers_other": "{{count}} 位玩家",
+		"savedMatchNoMessages": "此聊天室沒有訊息",
+		"outcomeWin": "勝",
+		"outcomeLoss": "敗",
+		"outcomeDraw": "平",
 		"noSavedMatches": "尚無已儲存的對戰。請在設定 → 應用程式開啟儲存對戰聊天紀錄。",
 		"savedReadOnly": "已儲存的對戰聊天 · 唯讀",
 		"title": "聊天",

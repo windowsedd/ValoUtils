@@ -1,7 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import {
   buildChapterViews,
+  catalogContractIds,
   catalogFromContracts,
+  recruitmentCandidates,
+  RECRUITMENT_GOAL_XP,
   chapterEndLevels,
   currencyDisplayAmount,
   currentSeasonId,
@@ -298,5 +301,36 @@ describe("whole-pass XP progression", () => {
     expect(xpPerDayNeeded(1000, 3)).toBe(334);
     expect(xpPerDayNeeded(0, 5)).toBeNull();
     expect(xpPerDayNeeded(500, 0)).toBeNull();
+  });
+});
+
+describe("agent recruitment", () => {
+  const known = catalogContractIds([{ uuid: "BP-1" }, { uuid: "gear-1" }, { uuid: 3 }, null]);
+
+  test("collects every catalog id lowercased", () => {
+    expect([...known].sort()).toEqual(["bp-1", "gear-1"]);
+  });
+
+  test("keeps unknown contracts with XP, sorted by XP", () => {
+    const rows = recruitmentCandidates(
+      [
+        { id: "bp-1", level: 3, xpTowardNext: 0, totalXp: 50_000 },
+        { id: "GEAR-1", level: 1, xpTowardNext: 0, totalXp: 9_000 },
+        { id: "unused", level: 0, xpTowardNext: 0, totalXp: 0 },
+        { id: "hush", level: 0, xpTowardNext: 0, totalXp: 172_300 },
+        { id: "done", level: 0, xpTowardNext: 0, totalXp: 250_000 },
+      ],
+      known,
+    );
+    expect(rows).toEqual([
+      { id: "done", earned: 250_000, goal: RECRUITMENT_GOAL_XP, remaining: 0, percent: 100 },
+      { id: "hush", earned: 172_300, goal: RECRUITMENT_GOAL_XP, remaining: 27_700, percent: 86 },
+    ]);
+  });
+
+  test("an empty catalog yields no candidates", () => {
+    expect(
+      recruitmentCandidates([{ id: "x", level: 0, xpTowardNext: 0, totalXp: 10 }], new Set()),
+    ).toEqual([]);
   });
 });

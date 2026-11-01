@@ -93,11 +93,29 @@ export type ChatResponse =
   | { success: false; code: "loginRequired" }
   | { success: false; error: string };
 
+export type SavedMatchDetails = {
+  mapId: string;
+  queueId: string;
+  gameMode: string;
+  /** Lowercase agent UUID; empty when the account wasn't on the scoreboard. */
+  agentId: string;
+  won: boolean | null;
+  roundsWon: number;
+  roundsLost: number;
+  startMillis: number;
+};
+
 export type SavedChatMatch = {
   matchUuid: string;
   updatedAt: number;
   messages: ChatMessage[];
+  /** Saved in match-chat-history.json once match-details has been read. */
+  details?: SavedMatchDetails;
 };
+
+export type SavedMatchDetailsResponse =
+  | { success: true; matchUuid: string; details: SavedMatchDetails }
+  | { success: false; matchUuid: string; code?: string; error?: string; retryInSeconds?: number };
 
 export type ChatHistoryResponse =
   | { success: true; requestId: string; cid: string; messages: ChatMessage[] }

@@ -114,6 +114,7 @@ Rust command conventions:
 | `store:cached` | `store_cached` | Last saved storefront for the signed-in account (no PD request), shown while `store_get` loads |
 | `battlepass:get` | `battlepass_get` | Act battle pass XP/level + owned premium contract ids |
 | `bloomline:get` | `bloomline_get` | Read agent progression; optional agent UUID and expected account load equipped stat counters |
+| `chat:saved-match-details` | `chat_saved_match_details` | Map, mode, agent and result for a saved match chat; fetched once and stored in `match-chat-history.json` |
 | `chat:command` | `chat_command` | Runs a `.`- or `/`-prefixed command typed in the Chat composer; the raw line is never posted |
 | `live-game:fetch` / `live-game:dump` | `live_game_fetch/dump` | Live match state (polled ~5s) |
 | `chat:get/send/translate/friend-action/disconnect` | `chat_*` | Chat (REST + XMPP) |
@@ -257,6 +258,15 @@ does not supply level thresholds or stat names in these responses, so the UI
 shows levels/points and numbered stat slots with their IDs; no percentage or
 stat meaning is inferred. No mutations, polling, extra login, or local storage.
 
+### Agent recruitment progress
+
+The Battle Pass page shows an Agent recruitment card from the existing
+`battlepass_get` contracts reply (no extra request). Recruitment contracts are
+not in the valorant-api.com catalog, so `recruitmentCandidates` picks contracts
+with XP whose id the catalog doesn't know, against an assumed 200,000 XP goal.
+It shows nothing if the catalog failed to load. The contract id is displayed so a
+match can be confirmed against the in-game number.
+
 ### Career account status
 
 Career shows Account status below Current Rank. `career_account_status` takes the
@@ -295,7 +305,17 @@ retrieve old match chat that the app never observed. Private, party and pregame
 chat are excluded. Raw API fields are not saved. Writes replace a temporary JSON
 file and surface errors without overwriting unreadable history.
 The Team/All sidebar picker opens saved matches read-only and lists only the
-signed-in account's history. Disabling saves keeps existing history. Clear match
+signed-in account's history. Each saved match is a card (newest first) with
+its last message time, Team/All line counts, speaker count and the latest line
+in the viewed room; more than three matches adds a message/player search.
+Cards also show map, mode, your agent and the result. `chat_saved_match_details`
+(`args: [matchUuid]`) reads them from the saved match's `details` field in the
+JSON, or fetches match-details once (shared PD client and auth retry), saves
+them there and returns them. Only matches the signed-in account has saved can be
+looked up. The Chat page looks up missing details one at a time while Team/All
+is open. A failure, usually a match still in progress, is retried after five
+minutes. Older history without `details` still loads.
+Disabling saves keeps existing history. Clear match
 chat history deletes all accounts' saved chats on this device and disables saving
 so polling cannot restore its backlog. No cloud sync or new dependencies.
 

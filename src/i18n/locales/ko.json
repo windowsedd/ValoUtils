@@ -268,7 +268,12 @@
     "passXp": "{{earned}} / {{total}} XP · {{percent}}%",
     "tiersLeft": "{{tiers}}티어 남음 · {{xp}} XP",
     "allTiers": "모든 티어 해금",
-    "xpPerDay": "완료까지 하루 {{xp}} XP"
+    "xpPerDay": "완료까지 하루 {{xp}} XP",
+    "recruitment": "요원 영입",
+    "recruitmentXp": "{{earned}} / {{goal}} XP · {{percent}}%",
+    "recruitmentLeft": "영입까지 {{xp}} XP",
+    "recruitmentDone": "목표 달성",
+    "recruitmentNote": "공개 카탈로그에 없는, XP가 있는 계약으로 추정했습니다. 목표 200,000 XP는 가정값입니다."
   },
   "career": {
     "accountStatus": "계정 상태",
@@ -406,6 +411,17 @@
   "chat": {
     "savedMatchHistory": "매치 기록",
     "currentChat": "현재 채팅",
+    "currentChatHint": "실시간 팀 및 전체 채팅",
+    "searchSavedMatches": "메시지 또는 플레이어 검색",
+    "noSavedMatchResults": "검색과 일치하는 저장된 매치가 없습니다.",
+    "historyToday": "오늘",
+    "historyYesterday": "어제",
+    "savedMatchCounts": "팀 {{team}} · 전체 {{all}}",
+    "savedMatchSpeakers_other": "플레이어 {{count}}명",
+    "savedMatchNoMessages": "이 채팅방에 메시지가 없습니다",
+    "outcomeWin": "승",
+    "outcomeLoss": "패",
+    "outcomeDraw": "무",
     "noSavedMatches": "저장된 매치가 없습니다. 설정 → 애플리케이션에서 매치 채팅 기록 저장을 켜세요.",
     "savedReadOnly": "저장된 매치 채팅 · 읽기 전용",
     "title": "채팅",

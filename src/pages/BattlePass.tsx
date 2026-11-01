@@ -4,6 +4,7 @@ import { LoginRequiredPanel } from "@/components/login-required-panel";
 import { PageHeader, SectionCard, pageBodyClass } from "@/components/section-card";
 import {
 	buildChapterViews,
+	catalogContractIds,
 	catalogFromContracts,
 	currencyDisplayAmount,
 	daysRemaining,
@@ -12,6 +13,7 @@ import {
 	passesOfKind,
 	passXpProgress,
 	RADIANITE_UUID,
+	recruitmentCandidates,
 	selectBattlepassId,
 	sortBattlepasses,
 	totalLevels,
@@ -120,6 +122,7 @@ const stepClass =
 const BattlePass = () => {
 	const { t } = useTranslation();
 	const [catalog, setCatalog] = useState<BattlepassCatalogEntry[]>([]);
+	const [knownContractIds, setKnownContractIds] = useState<Set<string>>(new Set());
 	// Bumped when the login panel sees a Riot Client appear, so the fetch
 	// below re-runs without the user having to leave and re-enter the page.
 	const [reloadKey, setReloadKey] = useState(0);
@@ -145,6 +148,7 @@ const BattlePass = () => {
 			([contracts, seasonAssets, eventAssets]) => {
 				if (cancelled) return;
 				setCatalog(catalogFromContracts(contracts));
+				setKnownContractIds(catalogContractIds(contracts));
 				setSeasons(seasonAssets);
 				setEvents(eventAssets);
 				setCatalogReady(true);
@@ -308,6 +312,10 @@ const onResponse = (message: any) => {
 	const liveChapter = entry ? pageIndexForLevel(entry.chapters, level) : -1;
 	const showPremiumBadge = Boolean(entry?.premiumRequired && premium);
 	const waiting = loading || !catalogReady;
+	const recruitment = useMemo(
+		() => recruitmentCandidates(progress, knownContractIds),
+		[progress, knownContractIds],
+	);
 
 	return (
 		<div className="flex h-full flex-col animate-fade-in">
@@ -379,6 +387,36 @@ const onResponse = (message: any) => {
 						<p className="text-[12px] font-semibold text-(--signal-neg)">{t("battlepass.failedToLoad")}</p>
 						<p className="mt-0.5 text-xs text-(--text-muted)">{error}</p>
 					</div>
+				)}
+
+				{!waiting && !error && !loginRequired && recruitment.length > 0 && (
+					<SectionCard title={t("battlepass.recruitment")}>
+						<div data-battlepass-recruitment="" className="flex flex-col gap-3 px-3 py-2">
+							{recruitment.map((row) => (
+								<div key={row.id} className="flex flex-col gap-1.5">
+									<div className="flex items-baseline justify-between gap-3">
+										<span className="text-sm font-semibold tabular-nums text-(--text-primary)">
+											{t("battlepass.recruitmentXp", {
+												earned: row.earned.toLocaleString(),
+												goal: row.goal.toLocaleString(),
+												percent: row.percent,
+											})}
+										</span>
+										<span className="text-xs tabular-nums text-(--text-muted)">
+											{row.remaining > 0
+												? t("battlepass.recruitmentLeft", { xp: row.remaining.toLocaleString() })
+												: t("battlepass.recruitmentDone")}
+										</span>
+									</div>
+									<div className="h-1.5 overflow-hidden rounded-full bg-(--control)">
+										<div className="h-full bg-(--accent)" style={{ width: `${row.percent}%` }} />
+									</div>
+									<span className="select-all font-mono text-[10px] text-(--text-muted)">{row.id}</span>
+								</div>
+							))}
+							<p className="text-[11px] text-(--text-muted)">{t("battlepass.recruitmentNote")}</p>
+						</div>
+					</SectionCard>
 				)}
 
 				{!waiting && !error && !loginRequired && !entry && (

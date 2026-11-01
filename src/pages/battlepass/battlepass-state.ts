@@ -327,3 +327,49 @@ export const buildChapterViews = (
   });
   return { free, premium: premiumViews };
 };
+
+/** XP Riot's agent recruitment events ask for (shown in game as "x / 200,000 XP"). */
+export const RECRUITMENT_GOAL_XP = 200_000;
+
+export type RecruitmentProgress = {
+  id: string;
+  earned: number;
+  goal: number;
+  remaining: number;
+  percent: number;
+};
+
+/** Every contract id the public valorant-api.com catalog knows, of any relation type. */
+export const catalogContractIds = (data: readonly unknown[]): Set<string> => {
+  const ids = new Set<string>();
+  for (const contract of data) {
+    const id = (contract as { uuid?: unknown } | null)?.uuid;
+    if (typeof id === "string" && id) ids.add(id.toLowerCase());
+  }
+  return ids;
+};
+
+/**
+ * Agent recruitment progress, found by elimination.
+ *
+ * Recruitment contracts are not in the public catalog, so any contract on the
+ * account that the catalog doesn't know and that has earned XP is a candidate.
+ * An empty catalog (fetch failed) would make every contract look unknown, so it
+ * yields nothing rather than a list of false matches.
+ */
+export const recruitmentCandidates = (
+  progress: readonly BattlepassProgress[],
+  knownIds: ReadonlySet<string>,
+): RecruitmentProgress[] => {
+  if (knownIds.size === 0) return [];
+  return progress
+    .filter((row) => row.id && !knownIds.has(row.id.toLowerCase()) && row.totalXp > 0)
+    .map((row) => ({
+      id: row.id,
+      earned: row.totalXp,
+      goal: RECRUITMENT_GOAL_XP,
+      remaining: Math.max(0, RECRUITMENT_GOAL_XP - row.totalXp),
+      percent: Math.min(100, Math.floor((row.totalXp / RECRUITMENT_GOAL_XP) * 100)),
+    }))
+    .sort((a, b) => b.earned - a.earned || a.id.localeCompare(b.id));
+};
