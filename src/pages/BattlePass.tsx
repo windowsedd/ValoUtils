@@ -424,28 +424,33 @@ const onResponse = (message: any) => {
 					<section
 						data-battlepass-recruitment=""
 						aria-label={t("battlepass.recruitment")}
-						className="relative overflow-hidden rounded-[10px] border border-(--border)"
+						className="relative min-h-38 shrink-0 overflow-hidden rounded-[10px] border border-(--border)"
 						style={{
 							background: `linear-gradient(110deg, ${agentGradientColor(recruitAgent?.gradient?.[0], "var(--surface)")}, ${agentGradientColor(recruitAgent?.gradient?.[1], "var(--surface)")})`,
 						}}
 					>
-						{recruitAgent?.background && (
-							<img
-								src={recruitAgent.background}
-								alt=""
-								aria-hidden="true"
-								className="pointer-events-none absolute -right-6 top-1/2 h-[160%] -translate-y-1/2 opacity-30 mix-blend-screen"
-							/>
-						)}
-						{recruitAgent?.portrait && (
-							<img
-								src={recruitAgent.portrait}
-								alt=""
-								aria-hidden="true"
-								className="pointer-events-none absolute -bottom-10 right-2 h-[175%] object-contain object-bottom drop-shadow-[0_6px_18px_rgba(0,0,0,0.45)] max-sm:opacity-40"
-							/>
-						)}
-						<div className="relative flex max-w-[62%] flex-col gap-2 px-4 py-4 max-sm:max-w-full">
+						{/* Art column: the background lettering, and the portrait cropped to
+						    the upper body (the figure fills the middle of a wide, tall image). */}
+						<div
+							aria-hidden="true"
+							className="pointer-events-none absolute inset-y-0 right-0 w-[min(46%,26rem)] [mask-image:linear-gradient(to_right,transparent,black_30%)] max-sm:w-3/5 max-sm:opacity-35"
+						>
+							{recruitAgent?.background && (
+								<img
+									src={recruitAgent.background}
+									alt=""
+									className="absolute right-0 top-1/2 h-[150%] max-w-none -translate-y-1/2 opacity-20 mix-blend-screen"
+								/>
+							)}
+							{recruitAgent?.portrait && (
+								<img
+									src={recruitAgent.portrait}
+									alt=""
+									className="absolute left-1/2 top-[-12%] h-[260%] max-w-none -translate-x-1/2 drop-shadow-[0_6px_18px_rgba(0,0,0,0.45)]"
+								/>
+							)}
+						</div>
+						<div className="relative flex w-[min(58%,40rem)] flex-col gap-2 px-4 py-4 max-sm:w-full">
 							<span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-white/70">
 								{t("battlepass.recruitment")}
 							</span>
