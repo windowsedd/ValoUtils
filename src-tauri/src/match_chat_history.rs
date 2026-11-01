@@ -17,6 +17,100 @@ pub struct SavedMatch {
     match_uuid: String,
     updated_at: u64,
     messages: Vec<Value>,
+    /// Filled once from match-details after the match ends; absent until then.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    details: Option<MatchDetails>,
+}
+
+/// What the history picker shows for a saved match, kept in the JSON so the
+/// match-details request happens once per match.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MatchDetails {
+    map_id: String,
+    queue_id: String,
+    game_mode: String,
+    /// The saved account's agent; empty when it isn't on the scoreboard.
+    agent_id: String,
+    /// `None` when Riot reported no team result for the account.
+    won: Option<bool>,
+    rounds_won: u64,
+    rounds_lost: u64,
+    start_millis: u64,
+}
+
+fn is_match_uuid(uuid: &str) -> bool {
+    uuid.len() == 36
+        && uuid.bytes().enumerate().all(|(i, c)| {
+            if [8, 13, 18, 23].contains(&i) {
+                c == b'-'
+            } else {
+                c.is_ascii_hexdigit()
+            }
+        })
+}
+
+/// Reduces a match-details document to [`MatchDetails`] for `owner`.
+/// `None` when it has no map, which means it isn't a finished match document.
+fn summarize(details: &Value, owner: &str) -> Option<MatchDetails> {
+    let info = details.get("matchInfo")?;
+    let text = |value: &Value, key: &str| {
+        value
+            .get(key)
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string()
+    };
+    let map_id = text(info, "mapId");
+    if map_id.is_empty() {
+        return None;
+    }
+    let me = details
+        .get("players")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .find(|player| {
+            player
+                .get("subject")
+                .and_then(Value::as_str)
+                .is_some_and(|subject| !owner.is_empty() && subject.eq_ignore_ascii_case(owner))
+        });
+    let team_id = me.map(|player| text(player, "teamId")).unwrap_or_default();
+    let teams: Vec<&Value> = details
+        .get("teams")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .collect();
+    let mine = teams
+        .iter()
+        .find(|team| !team_id.is_empty() && text(team, "teamId") == team_id);
+    let rounds = |team: &Value| team.get("roundsWon").and_then(Value::as_u64).unwrap_or(0);
+    Some(MatchDetails {
+        map_id,
+        queue_id: text(info, "queueID"),
+        game_mode: text(info, "gameMode"),
+        agent_id: me
+            .map(|player| text(player, "characterId").to_ascii_lowercase())
+            .unwrap_or_default(),
+        won: mine.and_then(|team| team.get("won").and_then(Value::as_bool)),
+        rounds_won: mine.map(|team| rounds(team)).unwrap_or(0),
+        rounds_lost: if mine.is_some() {
+            teams
+                .iter()
+                .filter(|team| text(team, "teamId") != team_id)
+                .map(|team| rounds(team))
+                .max()
+                .unwrap_or(0)
+        } else {
+            0
+        },
+        start_millis: info
+            .get("gameStartMillis")
+            .and_then(Value::as_u64)
+            .unwrap_or(0),
+    })
 }
 
 fn match_uuid(cid: &str) -> Option<String> {
@@ -27,15 +121,7 @@ fn match_uuid(cid: &str) -> Option<String> {
     let uuid = ["-blue", "-red", "-all"]
         .iter()
         .find_map(|suffix| room.strip_suffix(suffix))?;
-    if uuid.len() != 36
-        || !uuid.bytes().enumerate().all(|(i, c)| {
-            if [8, 13, 18, 23].contains(&i) {
-                c == b'-'
-            } else {
-                c.is_ascii_hexdigit()
-            }
-        })
-    {
+    if !is_match_uuid(uuid) {
         return None;
     }
     Some(uuid.to_ascii_lowercase())
@@ -64,6 +150,7 @@ impl Archive {
                     match_uuid: uuid,
                     updated_at: 0,
                     messages: Vec::new(),
+                    details: None,
                 });
             let mut message = message.clone();
             if let Some(object) = message.as_object_mut() {
@@ -120,6 +207,69 @@ fn read(path: &Path) -> Result<Archive, String> {
     }
 }
 
+/// Replaces the file through a temporary copy, so a failed write keeps the old one.
+fn write(path: &Path, archive: &Archive) -> Result<(), String> {
+    let bytes = serde_json::to_vec(archive).map_err(|e| e.to_string())?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let temporary = path.with_extension("json.tmp");
+    std::fs::write(&temporary, bytes)
+        .map_err(|e| format!("Cannot save match chat history: {e}"))?;
+    std::fs::rename(&temporary, path).map_err(|e| format!("Cannot save match chat history: {e}"))
+}
+
+#[derive(Debug, PartialEq)]
+enum DetailsLookup {
+    /// The account has no saved chat for this match.
+    NotSaved,
+    Saved(MatchDetails),
+    Needed,
+}
+
+fn lookup_details(path: &Path, owner: &str, uuid: &str) -> Result<DetailsLookup, String> {
+    let _guard = FILE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let archive = read(path)?;
+    Ok(
+        match archive
+            .accounts
+            .get(owner)
+            .and_then(|account| account.get(uuid))
+        {
+            None => DetailsLookup::NotSaved,
+            Some(saved) => match &saved.details {
+                Some(details) => DetailsLookup::Saved(details.clone()),
+                None => DetailsLookup::Needed,
+            },
+        },
+    )
+}
+
+/// Adds details to a match still saved for `owner`. Returns false (and writes
+/// nothing) when Clear or another account removed it while the request ran.
+fn store_details(
+    path: &Path,
+    owner: &str,
+    uuid: &str,
+    details: &MatchDetails,
+) -> Result<bool, String> {
+    let _guard = FILE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let mut archive = read(path)?;
+    let Some(saved) = archive
+        .accounts
+        .get_mut(owner)
+        .and_then(|account| account.get_mut(uuid))
+    else {
+        return Ok(false);
+    };
+    if saved.details.as_ref() == Some(details) {
+        return Ok(true);
+    }
+    saved.details = Some(details.clone());
+    write(path, &archive)?;
+    Ok(true)
+}
+
 fn update(
     path: &Path,
     owner: &str,
@@ -130,15 +280,7 @@ fn update(
     let mut archive = read(path)?;
     // Check under FILE_LOCK, so an in-flight capture cannot undo Clear history.
     if enabled() && archive.capture(owner, messages) {
-        let bytes = serde_json::to_vec(&archive).map_err(|e| e.to_string())?;
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-        }
-        let temporary = path.with_extension("json.tmp");
-        std::fs::write(&temporary, bytes)
-            .map_err(|e| format!("Cannot save match chat history: {e}"))?;
-        std::fs::rename(&temporary, path)
-            .map_err(|e| format!("Cannot save match chat history: {e}"))?;
+        write(path, &archive)?;
     }
     let mut matches: Vec<_> = archive
         .accounts
@@ -165,6 +307,60 @@ pub fn capture(
         messages,
         || config.get("saveMatchChatHistory") == Some(serde_json::json!(true)),
     )
+}
+
+/// Map, mode, agent and result for a saved match, from the JSON when it is
+/// already there, otherwise fetched once from match-details and saved.
+/// Only matches the signed-in account has saved can be looked up.
+#[tauri::command]
+pub async fn chat_saved_match_details(
+    args: Vec<Value>,
+    riot: tauri::State<'_, crate::riot::client::RiotState>,
+) -> Result<Value, ()> {
+    let uuid = args
+        .first()
+        .and_then(Value::as_str)
+        .map(|uuid| uuid.trim().to_ascii_lowercase())
+        .unwrap_or_default();
+    if !is_match_uuid(&uuid) {
+        return Ok(
+            serde_json::json!({"success": false, "matchUuid": uuid, "error": "Invalid match id"}),
+        );
+    }
+    let path = crate::store::user_data_dir().join("match-chat-history.json");
+    let result = crate::riot::api::with_api(&riot, |api| {
+        let (uuid, path) = (uuid.clone(), path.clone());
+        async move {
+            match lookup_details(&path, &api.puuid, &uuid)? {
+                DetailsLookup::NotSaved => return Ok(None),
+                DetailsLookup::Saved(details) => return Ok(Some(details)),
+                DetailsLookup::Needed => {}
+            }
+            let document = api.get_match_details(&uuid).await?;
+            let details = summarize(&document, &api.puuid)
+                .ok_or_else(|| "Riot has no finished match details yet.".to_string())?;
+            Ok(store_details(&path, &api.puuid, &uuid, &details)?.then_some(details))
+        }
+    })
+    .await;
+    Ok(match result {
+        Ok(Some(details)) => {
+            serde_json::json!({"success": true, "matchUuid": uuid, "details": details})
+        }
+        Ok(None) => serde_json::json!({
+            "success": false, "matchUuid": uuid, "error": "This match is not in saved chat history."
+        }),
+        Err(error) if error.is_login_required() => {
+            serde_json::json!({"success": false, "matchUuid": uuid, "code": "loginRequired"})
+        }
+        Err(error) => match crate::commands::rate_limited_reply(&error.to_string()).await {
+            Some(mut reply) => {
+                reply["matchUuid"] = serde_json::json!(uuid);
+                reply
+            }
+            None => serde_json::json!({"success": false, "matchUuid": uuid, "error": error}),
+        },
+    })
 }
 
 #[tauri::command]
@@ -272,6 +468,81 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "broken JSON");
         std::fs::remove_file(path).unwrap();
         std::fs::remove_dir(dir).unwrap();
+    }
+
+    fn document(owner_team: &str) -> Value {
+        json!({
+            "matchInfo": {"mapId": "/Game/Maps/Ascent/Ascent", "queueID": "competitive",
+                "gameMode": "/Game/GameModes/Bomb/BombGameMode.BombGameMode_C", "gameStartMillis": 1700},
+            "players": [
+                {"subject": "ME", "teamId": owner_team, "characterId": "ADD6443A-41BD-E414-F6AD-E58D267F4E95"},
+                {"subject": "them", "teamId": "Red", "characterId": "x"}
+            ],
+            "teams": [
+                {"teamId": "Blue", "won": true, "roundsWon": 13},
+                {"teamId": "Red", "won": false, "roundsWon": 9}
+            ]
+        })
+    }
+
+    #[test]
+    fn summarizes_map_mode_agent_and_result_for_the_owner() {
+        let details = summarize(&document("Blue"), "me").unwrap();
+        assert_eq!(details.map_id, "/Game/Maps/Ascent/Ascent");
+        assert_eq!(details.queue_id, "competitive");
+        assert_eq!(details.agent_id, "add6443a-41bd-e414-f6ad-e58d267f4e95");
+        assert_eq!(
+            (details.won, details.rounds_won, details.rounds_lost),
+            (Some(true), 13, 9)
+        );
+        assert_eq!(details.start_millis, 1700);
+        let lost = summarize(&document("Red"), "me").unwrap();
+        assert_eq!(
+            (lost.won, lost.rounds_won, lost.rounds_lost),
+            (Some(false), 9, 13)
+        );
+        let absent = summarize(&document("Blue"), "someone-else").unwrap();
+        assert_eq!((absent.agent_id.as_str(), absent.won), ("", None));
+        assert!(summarize(&json!({"matchInfo": {"mapId": ""}}), "me").is_none());
+    }
+
+    #[test]
+    fn details_are_saved_once_per_owned_match_and_survive_reload() {
+        let dir =
+            std::env::temp_dir().join(format!("valoutils-chat-details-{}", std::process::id()));
+        let path = dir.join("history.json");
+        update(&path, "me", &[line("blue", "a")], || true).unwrap();
+        assert_eq!(
+            lookup_details(&path, "me", MATCH).unwrap(),
+            DetailsLookup::Needed
+        );
+        assert_eq!(
+            lookup_details(&path, "other", MATCH).unwrap(),
+            DetailsLookup::NotSaved
+        );
+        let details = summarize(&document("Blue"), "me").unwrap();
+        assert!(!store_details(&path, "other", MATCH, &details).unwrap());
+        assert!(store_details(&path, "me", MATCH, &details).unwrap());
+        assert_eq!(
+            lookup_details(&path, "me", MATCH).unwrap(),
+            DetailsLookup::Saved(details.clone())
+        );
+        // A later chat capture keeps the details.
+        let matches = update(&path, "me", &[line("all", "b")], || true).unwrap();
+        assert_eq!(matches[0].details.as_ref(), Some(&details));
+        assert_eq!(matches[0].messages.len(), 2);
+        std::fs::remove_file(&path).unwrap();
+        std::fs::remove_dir(dir).unwrap();
+    }
+
+    #[test]
+    fn older_history_without_details_still_loads() {
+        let archive: Archive = serde_json::from_value(json!({"accounts": {"me": {MATCH: {
+            "matchUuid": MATCH, "updatedAt": 1, "messages": []
+        }}}}))
+        .unwrap();
+        assert!(archive.accounts["me"][MATCH].details.is_none());
+        assert!(!serde_json::to_string(&archive).unwrap().contains("details"));
     }
 
     #[test]

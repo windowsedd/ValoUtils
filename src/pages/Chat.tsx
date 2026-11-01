@@ -1,4 +1,4 @@
-import type { ChatFriend, ChatMessage, ChatRound } from "@/types/chat";
+import type { ChatFriend, ChatMessage, ChatRound, SavedChatMatch } from "@/types/chat";
 import { LoginRequiredPanel } from "@/components/login-required-panel";
 import { useLiveGameSession } from "@/components/live-game/live-game-session";
 import { localize } from "@/util/valorant-assets";
@@ -27,6 +27,10 @@ import valoUtilsIcon from "../../src-tauri/icons/icon.png";
 import { PlayerCardAvatar } from "./chat/player-card-avatar";
 import { savedMatchMessages } from "./chat/saved-match-history";
 import { SavedMatchPicker } from "./chat/saved-match-picker";
+import { useSavedMatchDetails } from "./chat/use-saved-match-details";
+
+/** Stable empty list, so the details hook doesn't see a new array on every render. */
+const EMPTY_SAVED: SavedChatMatch[] = [];
 
 const Chat = () => {
 	const { t } = useTranslation();
@@ -59,7 +63,11 @@ const Chat = () => {
 		controller.selectedFriendConversation?.title || controller.selectedConversation?.title;
 	const channel = controller.selectedChannel;
 	const [savedSelection, setSavedSelection] = useState<{ owner: string; matchUuid: string } | null>(null);
-	const savedMatches = controller.summary.savedMatches ?? [];
+	const savedMatches = useSavedMatchDetails(
+		controller.summary.savedMatches ?? EMPTY_SAVED,
+		controller.summary.ownerPuuid,
+		(channel === "team" || channel === "all") && !controller.loginRequired,
+	);
 	const savedMatch = !controller.loginRequired && savedSelection?.owner === controller.summary.ownerPuuid
 		? savedMatches.find(match => match.matchUuid === savedSelection?.matchUuid)
 		: undefined;
@@ -264,6 +272,7 @@ const Chat = () => {
 								counts: (team, all) => t("chat.savedMatchCounts", { team, all }),
 								speakers: (count) => t("chat.savedMatchSpeakers", { count }),
 								noMessages: t("chat.savedMatchNoMessages"),
+								outcome: { win: t("chat.outcomeWin"), loss: t("chat.outcomeLoss"), draw: t("chat.outcomeDraw") },
 							}}
 						/>
 					) : undefined}

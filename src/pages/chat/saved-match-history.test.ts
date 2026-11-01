@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import { relativeDay, savedMatchList, savedMatchMessages, summarizeSavedMatch } from "./saved-match-history";
-import type { ChatMessage, SavedChatMatch } from "@/types/chat";
+import { matchesNeedingDetails, matchOutcome, relativeDay, savedMatchList, savedMatchMessages, summarizeSavedMatch, withFetchedDetails } from "./saved-match-history";
+import type { ChatMessage, SavedChatMatch, SavedMatchDetails } from "@/types/chat";
 
 const match: SavedChatMatch = {
   matchUuid: "match-a", updatedAt: 1,
@@ -50,4 +50,29 @@ test("relative day labels today and yesterday only", () => {
   expect(relativeDay(new Date(2026, 10, 1, 0, 5).getTime(), now)).toBe("today");
   expect(relativeDay(new Date(2026, 9, 31, 23).getTime(), now)).toBe("yesterday");
   expect(relativeDay(new Date(2026, 9, 30, 23).getTime(), now)).toBeNull();
+});
+
+const details = (won: boolean | null, roundsWon: number, roundsLost: number): SavedMatchDetails => ({
+  mapId: "/Game/Maps/Ascent/Ascent", queueId: "competitive", gameMode: "", agentId: "a",
+  won, roundsWon, roundsLost, startMillis: 5,
+});
+
+test("outcome reads win, loss, draw, or nothing without a team result", () => {
+  expect(matchOutcome(details(true, 13, 9))).toBe("win");
+  expect(matchOutcome(details(false, 9, 13))).toBe("loss");
+  expect(matchOutcome(details(false, 12, 12))).toBe("draw");
+  expect(matchOutcome(details(null, 0, 0))).toBeNull();
+  expect(matchOutcome(undefined)).toBeNull();
+});
+
+test("saved details are kept, fetched ones fill gaps, and only gaps need lookups", () => {
+  const saved = { ...older, details: details(true, 13, 9) };
+  const merged = withFetchedDetails([saved, newer], new Map([["m1", details(false, 1, 13)], ["m2", details(true, 13, 2)]]));
+  expect(merged[0]).toBe(saved);
+  expect(merged[1]!.details?.roundsLost).toBe(2);
+  expect(matchesNeedingDetails([saved, newer, { ...newer, matchUuid: "m3", updatedAt: 1000 }])).toEqual(["m3", "m2"]);
+});
+
+test("summary uses the match start time once details exist", () => {
+  expect(summarizeSavedMatch({ ...older, details: details(true, 13, 9) }, "team")).toMatchObject({ at: 5 });
 });
