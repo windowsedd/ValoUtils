@@ -269,7 +269,12 @@
     "passXp": "{{earned}} / {{total}} XP · {{percent}}%",
     "tiersLeft": "{{tiers}} tiers left · {{xp}} XP",
     "allTiers": "All tiers unlocked",
-    "xpPerDay": "{{xp}} XP/day to finish"
+    "xpPerDay": "{{xp}} XP/day to finish",
+    "recruitment": "Agent recruitment",
+    "recruitmentXp": "{{earned}} / {{goal}} XP · {{percent}}%",
+    "recruitmentLeft": "{{xp}} XP to recruit",
+    "recruitmentDone": "Goal reached",
+    "recruitmentNote": "Matched by elimination: a contract with XP that isn't in the public catalog. The 200,000 XP goal is assumed."
   },
   "career": {
     "accountStatus": "Account status",

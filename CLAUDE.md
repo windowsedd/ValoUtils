@@ -257,6 +257,15 @@ does not supply level thresholds or stat names in these responses, so the UI
 shows levels/points and numbered stat slots with their IDs; no percentage or
 stat meaning is inferred. No mutations, polling, extra login, or local storage.
 
+### Agent recruitment progress
+
+The Battle Pass page shows an Agent recruitment card from the existing
+`battlepass_get` contracts reply (no extra request). Recruitment contracts are
+not in the valorant-api.com catalog, so `recruitmentCandidates` picks contracts
+with XP whose id the catalog doesn't know, against an assumed 200,000 XP goal.
+It shows nothing if the catalog failed to load. The contract id is displayed so a
+match can be confirmed against the in-game number.
+
 ### Career account status
 
 Career shows Account status below Current Rank. `career_account_status` takes the
