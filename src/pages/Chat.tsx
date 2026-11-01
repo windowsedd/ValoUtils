@@ -26,6 +26,7 @@ import { DUMMY_BOT_CID, useDummyBotChat } from "./chat/use-dummy-bot-chat";
 import valoUtilsIcon from "../../src-tauri/icons/icon.png";
 import { PlayerCardAvatar } from "./chat/player-card-avatar";
 import { savedMatchMessages } from "./chat/saved-match-history";
+import { SavedMatchPicker } from "./chat/saved-match-picker";
 
 const Chat = () => {
 	const { t } = useTranslation();
@@ -246,20 +247,25 @@ const Chat = () => {
 					title={channelLabels[channel]}
 					available={!!controller.selectedCid && !matchEnded}
 					history={(channel === "team" || channel === "all") ? (
-						<div className="px-4 py-2">
-							<label className="block text-[11px] text-(--text-muted)">
-								{t("chat.savedMatchHistory")}
-								<select className="mt-2 w-full rounded-[6px] border border-(--border) bg-(--control) p-2 text-[12px] text-(--text-primary)"
-									value={viewingSaved ? savedMatch.matchUuid : ""}
-									onChange={event => setSavedSelection(event.target.value ? { owner: controller.summary.ownerPuuid ?? "", matchUuid: event.target.value } : null)}>
-									<option value="">{t("chat.currentChat")}</option>
-									{savedMatches.map(match => <option key={match.matchUuid} value={match.matchUuid}>
-										{new Date(match.updatedAt).toLocaleString()} · {match.matchUuid.slice(0, 8)}
-									</option>)}
-								</select>
-							</label>
-							{savedMatches.length === 0 && <p className="mt-2 text-[11px] text-(--text-muted)">{t("chat.noSavedMatches")}</p>}
-						</div>
+						<SavedMatchPicker
+							matches={savedMatches}
+							channel={channel}
+							selected={viewingSaved ? savedMatch.matchUuid : null}
+							onSelect={(matchUuid) => setSavedSelection(matchUuid ? { owner: controller.summary.ownerPuuid ?? "", matchUuid } : null)}
+							labels={{
+								title: t("chat.savedMatchHistory"),
+								current: t("chat.currentChat"),
+								currentHint: t("chat.currentChatHint"),
+								empty: t("chat.noSavedMatches"),
+								search: t("chat.searchSavedMatches"),
+								noResults: t("chat.noSavedMatchResults"),
+								today: t("chat.historyToday"),
+								yesterday: t("chat.historyYesterday"),
+								counts: (team, all) => t("chat.savedMatchCounts", { team, all }),
+								speakers: (count) => t("chat.savedMatchSpeakers", { count }),
+								noMessages: t("chat.savedMatchNoMessages"),
+							}}
+						/>
 					) : undefined}
 					members={roomMembers}
 					commands={commandHints}

@@ -155,7 +155,7 @@ type ScrollMetrics = {
   clientHeight: number;
 };
 
-const messageTime = (message: ChatMessage) => {
+export const messageTime = (message: ChatMessage) => {
   const numeric = Number(message.timestamp);
   if (Number.isFinite(numeric)) return numeric;
   const parsed = message.timestamp ? Date.parse(message.timestamp) : 0;

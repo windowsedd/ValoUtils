@@ -304,7 +304,10 @@ retrieve old match chat that the app never observed. Private, party and pregame
 chat are excluded. Raw API fields are not saved. Writes replace a temporary JSON
 file and surface errors without overwriting unreadable history.
 The Team/All sidebar picker opens saved matches read-only and lists only the
-signed-in account's history. Disabling saves keeps existing history. Clear match
+signed-in account's history. Each saved match is a card (newest first) with
+its last message time, Team/All line counts, speaker count and the latest line
+in the viewed room; more than three matches adds a message/player search.
+Disabling saves keeps existing history. Clear match
 chat history deletes all accounts' saved chats on this device and disables saving
 so polling cannot restore its backlog. No cloud sync or new dependencies.
 
