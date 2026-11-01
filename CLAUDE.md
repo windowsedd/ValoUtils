@@ -158,7 +158,8 @@ cargo test --lib     # (in src-tauri/) Rust unit tests
 
 ## Build / Release
 
-- CI: GitHub Actions (`.github/workflows/build.yml`) builds on every push; tagged commits (`v*`) trigger `tauri-apps/tauri-action`, which builds, signs, and publishes a **draft** GitHub Release with the NSIS installer + `latest.json` update manifest
+- CI: GitHub Actions (`.github/workflows/build.yml`) runs on pushes to `master` and on `v*` tags. A `master` push whose `package.json` version has no `v<version>` tag yet gets that tag created automatically and is released in the same run (a GITHUB_TOKEN tag push cannot start another run); an existing tag means nothing to release. The build job runs `tauri-apps/tauri-action`, which builds, signs, and publishes a **draft** GitHub Release with the NSIS installer + `latest.json` update manifest
+- Release flow: `bun run version X.Y.Z` bumps the four version files, commits `chore(release): vX.Y.Z` and tags locally; push to `master` (with or without `--follow-tags`). Bumping the version in a PR and merging it also releases
 - Signing: minisign keypair. Public key is embedded in `tauri.conf.json`; the private key (`src-tauri/valoutils.key`, gitignored) must be set as the `TAURI_SIGNING_PRIVATE_KEY` repo secret for CI signing
 - Auto-updater checks on launch and hourly (gated by the `autoUpdate` config flag), endpoint: `releases/latest/download/latest.json`
 - No portable `.exe` target (electron-builder-only feature); NSIS installer only

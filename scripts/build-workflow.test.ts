@@ -7,11 +7,24 @@ const workflow = readFileSync(
   "utf8",
 );
 
-test("Build & Release runs only for version tags", () => {
-  expect(workflow).toMatch(/on:\s*\n\s+push:\s*\n\s+tags: \['v\*'\]\s*\n\s*permissions:/);
-  expect(workflow).not.toContain("branches:");
+test("Build & Release runs for version tags and master pushes only", () => {
+  expect(workflow).toMatch(
+    /on:\s*\n\s+push:\s*\n\s+branches: \[master\]\s*\n\s+tags: \['v\*'\]\s*\n/,
+  );
   expect(workflow).not.toContain("pull_request:");
   expect(workflow).not.toContain("workflow_dispatch:");
+});
+
+test("master pushes tag a new version and build only when a tag is chosen", () => {
+  expect(workflow).toContain("- name: Auto release tag");
+  expect(workflow).toContain("jq -r .version package.json");
+  // An existing tag means that version was already released: never re-tag it.
+  expect(workflow).toMatch(/git rev-parse -q --verify "refs\/tags\/\$tag"[\s\S]*?exit 0/);
+  expect(workflow).toContain("needs: tag");
+  expect(workflow).toContain("if: needs.tag.outputs.tag != ''");
+  expect(workflow).toContain("ref: refs/tags/${{ needs.tag.outputs.tag }}");
+  expect(workflow).toContain("tagName: ${{ needs.tag.outputs.tag }}");
+  expect(workflow).not.toContain("github.ref_name }}'.Substring");
 });
 
 test("tag builds verify and publish without unsigned artifacts", () => {

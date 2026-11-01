@@ -1,19 +1,66 @@
 name: Build & Release
 
+# Two ways in:
+# - Push a v* tag yourself (bun run version X.Y.Z, then push --follow-tags).
+# - Push to master with a version bump: the tag job sees that package.json's
+#   version has no v<version> tag yet, creates and pushes it, and the build job
+#   releases it in this same run. (A tag pushed with GITHUB_TOKEN does not start
+#   another workflow run, so the build has to happen here.)
 on:
   push:
+    branches: [master]
     tags: ['v*']
 
 permissions:
   contents: write
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
+  tag:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Auto release tag
+        id: tag
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            echo "tag=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          version=$(jq -r .version package.json)
+          tag="v$version"
+          git fetch --tags --force
+          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            echo "$tag already exists; nothing to release."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$tag" -m "ValoUtils $tag" "$GITHUB_SHA"
+          git push origin "refs/tags/$tag"
+          echo "::notice::Created release tag $tag at $GITHUB_SHA"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
   build:
+    needs: tag
+    if: needs.tag.outputs.tag != ''
     runs-on: windows-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ needs.tag.outputs.tag }}
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
@@ -34,7 +81,7 @@ jobs:
       - name: Verify release version
         shell: pwsh
         run: |
-          $releaseVersion = '${{ github.ref_name }}'.Substring(1)
+          $releaseVersion = '${{ needs.tag.outputs.tag }}'.Substring(1)
           bun run version:check $releaseVersion
 
       # Without a signing key tauri builds the installer unsigned, tauri-action
@@ -60,8 +107,8 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: 'ValoUtils ${{ github.ref_name }}'
+          tagName: ${{ needs.tag.outputs.tag }}
+          releaseName: 'ValoUtils ${{ needs.tag.outputs.tag }}'
           releaseDraft: true
           prerelease: false
 
@@ -96,4 +143,4 @@ jobs:
       - name: Publishing reminder
         shell: pwsh
         run: |
-          Write-Host "::notice::Draft release ${{ github.ref_name }} is ready at ${{ steps.publish.outputs.releaseHtmlUrl }} — publish it in the GitHub UI, or the auto-updater stays broken."
+          Write-Host "::notice::Draft release ${{ needs.tag.outputs.tag }} is ready at ${{ steps.publish.outputs.releaseHtmlUrl }} — publish it in the GitHub UI, or the auto-updater stays broken."

@@ -173,6 +173,7 @@ function createRelease(root: string, version: string) {
   console.log(`Created ${tag} at ${commit}`);
   console.log("Review the release, then push it with:");
   console.log("git push origin HEAD:master --follow-tags");
+  console.log("(Pushing only the commit also works: CI tags a new version on master.)");
 }
 
 function main() {
