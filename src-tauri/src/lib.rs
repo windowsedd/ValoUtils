@@ -250,6 +250,7 @@ pub fn run() {
             commands::career::career_get,
             commands::career::career_account_status,
             commands::battlepass::battlepass_get,
+            commands::battlepass::battlepass_raw,
             commands::bloomline::bloomline_get,
             commands::store::store_get,
             commands::store::store_cached,

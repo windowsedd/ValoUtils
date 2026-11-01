@@ -274,7 +274,11 @@
     "recruitmentXp": "{{earned}} / {{goal}} XP · {{percent}}%",
     "recruitmentLeft": "{{xp}} XP to recruit",
     "recruitmentDone": "Goal reached",
-    "recruitmentNote": "Matched by elimination: a contract with XP that isn't in the public catalog. The 200,000 XP goal is assumed."
+    "recruitmentNote": "Matched by elimination: a contract with XP that isn't in the public catalog. The 200,000 XP goal is assumed.",
+    "copyRaw": "Copy raw contract data",
+    "copyRawHint": "Copies Riot's contracts and agent store responses, to help locate agent recruitment progress. Includes your account ID.",
+    "rawCopied": "Copied to clipboard",
+    "rawFailed": "Couldn't copy raw data"
   },
   "career": {
     "accountStatus": "Account status",

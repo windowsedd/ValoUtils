@@ -116,6 +116,35 @@ pub async fn battlepass_get(riot: State<'_, RiotState>) -> Result<Value, ()> {
     })
 }
 
+/// Riot's unparsed contracts document and agent storefront, for finding where
+/// agent recruitment progress lives. Read-only, on demand from a button.
+#[tauri::command]
+pub async fn battlepass_raw(riot: State<'_, RiotState>) -> Result<Value, ()> {
+    let result = api::with_api(&riot, |api| async move {
+        let contracts = api.get_contracts(&api.puuid).await?;
+        let agent_store = api
+            .get_agent_storefront()
+            .await
+            .unwrap_or_else(|error| json!({ "error": error }));
+        Ok((contracts, agent_store))
+    })
+    .await;
+    Ok(match result {
+        Ok((contracts, agent_store)) => json!({
+            "success": true,
+            "contracts": contracts,
+            "agentStorefront": agent_store,
+        }),
+        Err(error) if error.is_login_required() => {
+            json!({ "success": false, "code": "loginRequired" })
+        }
+        Err(error) => match super::rate_limited_reply(&error.to_string()).await {
+            Some(reply) => reply,
+            None => json!({ "success": false, "code": error.code(), "error": error }),
+        },
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

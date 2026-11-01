@@ -141,6 +141,21 @@ const BattlePass = () => {
 	const [loginRequired, setLoginRequired] = useState(false);
 	const [loading, setLoading] = useState(true);
 	const [catalogReady, setCatalogReady] = useState(false);
+	const [rawStatus, setRawStatus] = useState<"idle" | "copying" | "copied" | "failed">("idle");
+
+	const copyRawData = async () => {
+		setRawStatus("copying");
+		invoke("analytics_track", { args: ["battlepass:copy-raw", JSON.stringify({})] }).catch(reportIpcError);
+		try {
+			const reply = await invoke<{ success: boolean; contracts?: unknown; agentStorefront?: unknown }>("battlepass_raw");
+			if (!reply.success) throw new Error("battlepass_raw failed");
+			const text = JSON.stringify({ contracts: reply.contracts, agentStorefront: reply.agentStorefront }, null, 2);
+			await invoke("clipboard_set", { args: [text] });
+			setRawStatus("copied");
+		} catch {
+			setRawStatus("failed");
+		}
+	};
 
 	useEffect(() => {
 		let cancelled = false;
@@ -655,6 +670,22 @@ const onResponse = (message: any) => {
 							</div>
 						</SectionCard>
 					</>
+				)}
+
+				{!waiting && !loginRequired && (
+					<div data-battlepass-raw="" className="flex flex-wrap items-center justify-end gap-2 text-[11px] text-(--text-muted)">
+						{rawStatus === "copied" && <span>{t("battlepass.rawCopied")}</span>}
+						{rawStatus === "failed" && <span className="text-(--signal-neg)">{t("battlepass.rawFailed")}</span>}
+						<button
+							type="button"
+							onClick={copyRawData}
+							disabled={rawStatus === "copying"}
+							title={t("battlepass.copyRawHint")}
+							className="h-7 rounded-[6px] border border-(--border) bg-(--control) px-2.5 text-[11px] text-(--text-secondary) transition-colors hover:bg-(--surface-hover) hover:text-(--text-primary) disabled:opacity-60"
+						>
+							{t("battlepass.copyRaw")}
+						</button>
+					</div>
 				)}
 			</div>
 		</div>

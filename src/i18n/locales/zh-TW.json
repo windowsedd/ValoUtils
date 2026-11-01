@@ -273,7 +273,11 @@
 		"recruitmentXp": "{{earned}} / {{goal}} XP · {{percent}}%",
 		"recruitmentLeft": "距離招募還需 {{xp}} XP",
 		"recruitmentDone": "已達成目標",
-		"recruitmentNote": "以排除法判斷：不在公開目錄中且有 XP 的合約。200,000 XP 目標為假設值。"
+		"recruitmentNote": "以排除法判斷：不在公開目錄中且有 XP 的合約。200,000 XP 目標為假設值。",
+		"copyRaw": "複製原始合約資料",
+		"copyRawHint": "複製 Riot 的合約與特務商店回應，以協助找出特務招募進度。內含你的帳號 ID。",
+		"rawCopied": "已複製到剪貼簿",
+		"rawFailed": "無法複製原始資料"
 	},
 	"career": {
 		"accountStatus": "帳號狀態",
