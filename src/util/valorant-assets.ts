@@ -821,9 +821,13 @@ export const getEventAssets = (): Promise<Map<string, EventAsset>> => {
   return eventAssetsPromise;
 };
 
-export const getBattlepassContracts = (): Promise<unknown[]> => {
-  if (!battlepassContractsPromise) {
-    battlepassContractsPromise = cachedFetch(`${API}/contracts?language=all`)
+/**
+ * The contract catalog. `refresh` skips the disk copy, which only expires on a
+ * game patch and can predate a contract valorant-api.com added since.
+ */
+export const getBattlepassContracts = ({ refresh = false }: { refresh?: boolean } = {}): Promise<unknown[]> => {
+  if (!battlepassContractsPromise || refresh) {
+    battlepassContractsPromise = cachedFetch(`${API}/contracts?language=all`, { refresh })
       .then((r) => r.json())
       .then((json) => (Array.isArray(json?.data) ? json.data : []))
       .catch(() => [] as unknown[]);

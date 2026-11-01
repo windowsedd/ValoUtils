@@ -312,10 +312,34 @@ const onResponse = (message: any) => {
 	const liveChapter = entry ? pageIndexForLevel(entry.chapters, level) : -1;
 	const showPremiumBadge = Boolean(entry?.premiumRequired && premium);
 	const waiting = loading || !catalogReady;
-	const recruitment = useMemo(
+	const candidates = useMemo(
 		() => recruitmentCandidates(progress, knownContractIds),
 		[progress, knownContractIds],
 	);
+	// A contract can look unknown only because the cached catalog is older than
+	// it (a new act pass did). Reload the catalog once before showing anything.
+	const [catalogRechecked, setCatalogRechecked] = useState(false);
+	const needsRecheck = candidates.length > 0 && !catalogRechecked;
+	useEffect(() => {
+		if (!needsRecheck) return;
+		let cancelled = false;
+		getBattlepassContracts({ refresh: true })
+			.then((contracts) => {
+				if (cancelled) return;
+				if (contracts.length > 0) {
+					setCatalog(catalogFromContracts(contracts));
+					setKnownContractIds(catalogContractIds(contracts));
+				}
+				setCatalogRechecked(true);
+			})
+			.catch(() => {
+				if (!cancelled) setCatalogRechecked(true);
+			});
+		return () => {
+			cancelled = true;
+		};
+	}, [needsRecheck]);
+	const recruitment = catalogRechecked ? candidates : [];
 
 	return (
 		<div className="flex h-full flex-col animate-fade-in">
