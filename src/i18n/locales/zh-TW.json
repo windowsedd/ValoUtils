@@ -272,8 +272,9 @@
 		"recruitment": "特務招募",
 		"recruitmentXp": "{{earned}} / {{goal}} XP · {{percent}}%",
 		"recruitmentLeft": "距離招募還需 {{xp}} XP",
-		"recruitmentDone": "已達成目標",
-		"recruitmentNote": "以排除法判斷：不在公開目錄中且有 XP 的合約。200,000 XP 目標為假設值。"
+		"recruitmentDone": "已招募",
+		"recruitUnknownAgent": "新特務",
+		"recruitEndsIn_other": "{{count}} 天後結束"
 	},
 	"career": {
 		"accountStatus": "帳號狀態",

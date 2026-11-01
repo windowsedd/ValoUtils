@@ -433,6 +433,16 @@ impl RiotApiClient {
         self.request(Target::Pd, reqwest::Method::GET, &path, None)
             .await
     }
+    /// Agent store offers plus the current and next featured agent.
+    pub async fn get_agent_storefront(&self) -> Result<Value, String> {
+        self.request(
+            Target::Pd,
+            reqwest::Method::GET,
+            "/store/v1/storefronts/agent",
+            None,
+        )
+        .await
+    }
     pub async fn get_entitlements(&self, puuid: &str, item_type_id: &str) -> Result<Value, String> {
         self.request(
             Target::Pd,

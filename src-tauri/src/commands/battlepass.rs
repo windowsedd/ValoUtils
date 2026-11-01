@@ -14,6 +14,56 @@ use tauri::State;
 
 /// Item type for purchased contract / battle-pass upgrades.
 const CONTRACT_ITEM_TYPE: &str = "f85cb6f7-33e5-4dc8-b609-ec7212301948";
+/// Kingdom Credits. A recruitment agent's Kingdom Credit offer opens when the
+/// recruitment event ends.
+const KINGDOM_CREDITS: &str = "85ca954a-41f2-ce94-9b45-8ca3dd39a00d";
+
+/// The account's agent recruitment event progress, as Riot reports it at the
+/// top of the contracts document (`ActiveRecruitmentEventProgress`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecruitmentProgress {
+    pub agent_id: String,
+    pub earned: u64,
+    /// When the event ends (ISO 8601), from the agent store; `None` if unknown.
+    pub ends_at: Option<String>,
+}
+
+pub fn parse_recruitment(contracts: &Value) -> Option<RecruitmentProgress> {
+    let event = contracts.get("ActiveRecruitmentEventProgress")?;
+    let agent_id = as_str(event.get("AgentID")).to_ascii_lowercase();
+    if agent_id.is_empty() {
+        return None;
+    }
+    Some(RecruitmentProgress {
+        agent_id,
+        earned: as_u64(event.get("ProgressionEarned")),
+        ends_at: None,
+    })
+}
+
+/// Start of the agent's Kingdom Credit offer, which is when recruitment ends.
+pub fn recruitment_end(agent_store: &Value, agent_id: &str) -> Option<String> {
+    agent_store
+        .pointer("/AgentStore/AgentStoreOffers")?
+        .as_array()?
+        .iter()
+        .find(|entry| as_str(entry.get("AgentID")).eq_ignore_ascii_case(agent_id))?
+        .get("StoreOffers")?
+        .as_array()?
+        .iter()
+        .find(|offer| {
+            offer
+                .get("Cost")
+                .and_then(Value::as_object)
+                .is_some_and(|cost| {
+                    cost.keys()
+                        .any(|id| id.eq_ignore_ascii_case(KINGDOM_CREDITS))
+                })
+        })
+        .map(|offer| as_str(offer.get("StartDate")))
+        .filter(|date| !date.is_empty())
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -92,12 +142,21 @@ pub async fn battlepass_get(riot: State<'_, RiotState>) -> Result<Value, ()> {
         let puuid = api.puuid.clone();
         let contracts = api.get_contracts(&puuid).await?;
         let entitlements = api.get_entitlements(&puuid, CONTRACT_ITEM_TYPE).await.ok();
-        Ok((puuid, contracts, entitlements))
+        // Only during a recruitment event, and optional: the card still shows
+        // progress without an end date.
+        let mut recruitment = parse_recruitment(&contracts);
+        if let Some(event) = recruitment.as_mut() {
+            if let Ok(store) = api.get_agent_storefront().await {
+                event.ends_at = recruitment_end(&store, &event.agent_id);
+            }
+        }
+        Ok((puuid, contracts, entitlements, recruitment))
     })
     .await;
 
     Ok(match result {
-        Ok((puuid, contracts, entitlements)) => json!({
+        Ok((puuid, contracts, entitlements, recruitment)) => json!({
+            "recruitment": recruitment,
             "success": true,
             "puuid": puuid,
             "contracts": parse_contract_progress(&contracts),
@@ -159,6 +218,51 @@ mod tests {
                 }
             ]
         );
+    }
+
+    #[test]
+    fn reads_active_recruitment_progress() {
+        let contracts = json!({
+            "ActiveRecruitmentEventProgress": {
+                "AgentID": "DDD5A15C-4FBE-42FA-3789-11A55CA5EE04",
+                "CounterID": "ddd5a15c-4fbe-42fa-3789-11a55ca5ee04",
+                "ProgressionEarned": 172300,
+                "Version": 21
+            },
+            "Contracts": []
+        });
+        assert_eq!(
+            parse_recruitment(&contracts),
+            Some(RecruitmentProgress {
+                agent_id: "ddd5a15c-4fbe-42fa-3789-11a55ca5ee04".into(),
+                earned: 172300,
+                ends_at: None,
+            })
+        );
+        assert_eq!(parse_recruitment(&json!({ "Contracts": [] })), None);
+        assert_eq!(
+            parse_recruitment(&json!({ "ActiveRecruitmentEventProgress": { "AgentID": "" } })),
+            None
+        );
+    }
+
+    #[test]
+    fn recruitment_ends_when_the_kingdom_credit_offer_opens() {
+        let store = json!({ "AgentStore": { "AgentStoreOffers": [
+            { "AgentID": "other", "StoreOffers": [
+                { "Cost": { KINGDOM_CREDITS: 8000 }, "StartDate": "2020-06-02T00:00:00Z" }
+            ]},
+            { "AgentID": "DDD5A15C", "StoreOffers": [
+                { "Cost": { "85ad13f7-3d1b-5128-9eb2-7cd8ee0b5741": 1000 }, "StartDate": "2026-10-27T21:00:00Z" },
+                { "Cost": { KINGDOM_CREDITS: 8000 }, "StartDate": "2026-11-25T22:00:00Z" }
+            ]}
+        ]}});
+        assert_eq!(
+            recruitment_end(&store, "ddd5a15c").as_deref(),
+            Some("2026-11-25T22:00:00Z")
+        );
+        assert_eq!(recruitment_end(&store, "missing"), None);
+        assert_eq!(recruitment_end(&json!({}), "ddd5a15c"), None);
     }
 
     #[test]

@@ -273,8 +273,10 @@
     "recruitment": "Agent recruitment",
     "recruitmentXp": "{{earned}} / {{goal}} XP · {{percent}}%",
     "recruitmentLeft": "{{xp}} XP to recruit",
-    "recruitmentDone": "Goal reached",
-    "recruitmentNote": "Matched by elimination: a contract with XP that isn't in the public catalog. The 200,000 XP goal is assumed."
+    "recruitmentDone": "Recruited",
+    "recruitUnknownAgent": "New agent",
+    "recruitEndsIn_other": "Ends in {{count}} days",
+    "recruitEndsIn_one": "Ends in {{count}} day"
   },
   "career": {
     "accountStatus": "Account status",
