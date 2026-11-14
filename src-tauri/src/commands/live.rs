@@ -1083,10 +1083,22 @@ fn extract_weapon(items: &Value, weapon_id: &str) -> Option<Value> {
 fn build_loadout(items: Option<&Value>) -> Value {
     let empty = Value::Null;
     let items = items.unwrap_or(&empty);
+    // Skin per weapon UUID for every gun (MCP "who has which skin"); the page
+    // itself shows the three above.
+    let weapons: serde_json::Map<String, Value> = items
+        .as_object()
+        .into_iter()
+        .flatten()
+        .filter_map(|(weapon, item)| {
+            let skin = item.pointer(&format!("/Sockets/{SOCKET_SKIN}/Item/ID"))?.as_str()?;
+            Some((weapon.to_ascii_lowercase(), json!(skin.to_ascii_lowercase())))
+        })
+        .collect();
     json!({
         "vandal": extract_weapon(items, WEAPON_VANDAL),
         "phantom": extract_weapon(items, WEAPON_PHANTOM),
         "knife": extract_weapon(items, WEAPON_KNIFE),
+        "weapons": weapons,
     })
 }
 

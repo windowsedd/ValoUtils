@@ -29,6 +29,8 @@ struct TemplatePlayer {
     is_self: bool,
     in_my_party: bool,
     incognito: bool,
+    /// Skin UUID by weapon UUID (Live Game's `loadout.weapons`), when known.
+    weapons: serde_json::Map<String, Value>,
 }
 
 #[derive(Debug, Clone)]
@@ -189,6 +191,11 @@ impl TemplateSnapshot {
                         .get("incognito")
                         .and_then(Value::as_bool)
                         .unwrap_or(false),
+                    weapons: player
+                        .pointer("/loadout/weapons")
+                        .and_then(Value::as_object)
+                        .cloned()
+                        .unwrap_or_default(),
                 })
             })
             .collect();
@@ -921,7 +928,9 @@ fn ask_context(
 /// Reads the roster Live Game already keeps; only when that has lapsed (the
 /// window skips polls while you play) does it fetch once. Recent form comes
 /// from the stats cache alone, so this never adds match-history requests.
-pub(crate) async fn ask_game_context(app: &AppHandle) -> Option<String> {
+/// `with_skins` adds each player's equipped skins (MCP `get_live_match`);
+/// `.ask` leaves them out to keep its prompt short.
+pub(crate) async fn ask_game_context(app: &AppHandle, with_skins: bool) -> Option<String> {
     let deadline = tokio::time::Instant::now() + ASK_CONTEXT_TIMEOUT;
     let stored = match app.state::<live::LiveCache>().recent_snapshot() {
         Some(stored) => stored,
@@ -949,6 +958,18 @@ pub(crate) async fn ask_game_context(app: &AppHandle) -> Option<String> {
     let labels = load_content_labels(&plan, deadline).await.unwrap_or_default();
     let stats = app.state::<live::LiveStatsCache>();
     let mut context = ask_context(&snapshot, &labels, |puuid| stats.cached(puuid, &snapshot.queue_id))?;
+    // ask_context lists players in snapshot order, so the two zip together.
+    if with_skins {
+        if let Some((weapons, skins)) = super::mcp_cosmetics::skin_names().await {
+            if let Some(rows) = context["players"].as_array_mut() {
+                for (row, player) in rows.iter_mut().zip(&snapshot.players) {
+                    if !player.weapons.is_empty() {
+                        row["skins"] = serde_json::json!(super::mcp_cosmetics::equipped_skins(&player.weapons, &weapons, &skins));
+                    }
+                }
+            }
+        }
+    }
     // Riot's match APIs carry no live score; the game's own chat presence does.
     if snapshot.state == "coregame" {
         let riot = app.state::<RiotState>();
