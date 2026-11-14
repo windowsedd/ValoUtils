@@ -969,7 +969,7 @@ pub(crate) async fn prepare_ai_for_bot(
 pub async fn execute_ask(line: &str) -> Result<String, RiotError> {
     let question = chat_command::parse_ask_command(line)?;
     let game = match crate::presence_proxy::app_handle() {
-        Some(app) => super::bot_template::ask_game_context(app).await,
+        Some(app) => super::bot_template::ask_game_context(app, false).await,
         None => None,
     };
     let request = crate::ai::prompts::ask_request(&question, game.as_deref());

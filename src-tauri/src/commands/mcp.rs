@@ -73,7 +73,7 @@ pub fn tool_list() -> Vec<Value> {
         tool(
             "get_live_match",
             "Live match",
-            "The current agent select or match: map, mode, phase, the live round score during a match (from your chat presence, when Riot shares it), and for each player their agent, rank, RR, peak rank, level and recent form. Players are labelled You / Ally N / Enemy N.",
+            "The current agent select or match: map, mode, phase, the live round score during a match (from your chat presence, when Riot shares it), and for each player their agent, rank, RR, peak rank, level, recent form and equipped weapon skins (non-default skins only, e.g. Reaver Vandal). Players are labelled You / Ally N / Enemy N.",
         ),
         tool(
             "get_store",
@@ -110,6 +110,30 @@ pub fn tool_list() -> Vec<Value> {
                 false,
             ),
         ),
+        tool(
+            "get_loadout",
+            "Loadout",
+            "Your equipped cosmetics: the skin, chroma variant and gun buddy on every weapon (in armory order), plus your player card, title and sprays, by name.",
+        ),
+        tool(
+            "get_owned_skins",
+            "Owned skins",
+            "Every weapon skin you own, grouped by weapon with counts, plus how many buddies, sprays, player cards and titles you own.",
+        ),
+        tool_with_input(
+            "get_match_timeline",
+            "Match timeline",
+            "Round by round for one finished match: who won each round, how (elimination, spike detonated or defused, time), the running score, the first blood and spike plants. Give round for every kill in that round with time, killer, victim and weapon. Players are You / Ally N / Enemy N with their agent, matching get_match_details.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "matchId": { "type": "string", "description": "Match ID from get_match_history." },
+                    "round": { "type": "integer", "minimum": 1, "description": "A round number for its kill-by-kill detail. Leave out for the round summary." },
+                },
+                "required": ["matchId"],
+                "additionalProperties": false,
+            }),
+        ),
         tool_with_input(
             "build_crosshair_code",
             "Build crosshair code",
@@ -121,6 +145,37 @@ pub fn tool_list() -> Vec<Value> {
             "Look up a player",
             "Any player's Riot ID, current and peak competitive rank, RR, rank per act and recent matches, by Riot ID (Name#Tag) or PUUID. Same lookup as the ValoUtils Tools page.",
             string_input("player", "Riot ID like Name#Tag, or a player PUUID.", true),
+        ),
+        tool_with_input(
+            "compare_players",
+            "Compare players",
+            "Compares 2 to 5 players side by side by Riot ID (Name#Tag) or PUUID: current rank and RR, peak rank, this act's wins, losses and win rate, and the net RR over their recent competitive games. Use \"me\" for the signed-in player.",
+            json!({
+                "type": "object",
+                "properties": { "players": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "minItems": 2,
+                    "maxItems": 5,
+                    "description": "Riot IDs like Name#Tag, PUUIDs, or \"me\"."
+                } },
+                "required": ["players"],
+                "additionalProperties": false,
+            }),
+        ),
+        tool_with_input(
+            "translate_message",
+            "Translate text",
+            "Translates text with the translator chosen in ValoUtils Settings (Google, DeepL or the AI provider). Without a target language it uses the Settings target language.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "text": { "type": "string", "description": "Text to translate (up to 2,000 characters)." },
+                    "targetLanguage": { "type": "string", "description": "Language code like en, ko, zh-TW, ja, es. Leave out for the Settings target language." },
+                },
+                "required": ["text"],
+                "additionalProperties": false,
+            }),
         ),
         tool_with_input(
             "get_match_history",
@@ -297,15 +352,21 @@ pub fn tool_list() -> Vec<Value> {
     ]
 }
 
+/// A tool result: readable Markdown for the agent to show, plus the data as
+/// `structuredContent` when it is an object (MCP 2025-06-18).
 fn text_result(value: &Value, is_error: bool) -> Value {
     let text = match value {
         Value::String(text) => text.clone(),
-        other => serde_json::to_string_pretty(other).unwrap_or_default(),
+        other => crate::mcp_format::to_markdown(other),
     };
-    json!({ "content": [{ "type": "text", "text": text }], "isError": is_error })
+    let mut result = json!({ "content": [{ "type": "text", "text": text }], "isError": is_error });
+    if value.is_object() {
+        result["structuredContent"] = value.clone();
+    }
+    result
 }
 
-fn party_failure(error: &crate::riot::error::RiotError) -> String {
+pub(super) fn party_failure(error: &crate::riot::error::RiotError) -> String {
     if error.is_login_required() {
         LOGIN_MESSAGE.to_string()
     } else {
@@ -314,7 +375,7 @@ fn party_failure(error: &crate::riot::error::RiotError) -> String {
 }
 
 /// Turns a command's `{ success: false, ... }` reply into a readable error.
-fn failure_message(reply: &Value) -> Option<String> {
+pub(super) fn failure_message(reply: &Value) -> Option<String> {
     if reply.get("success") != Some(&json!(false)) && reply.get("error").is_none() {
         return None;
     }
@@ -351,8 +412,9 @@ pub async fn call_tool(app: &AppHandle, name: &str, arguments: &Value) -> Option
             let region = crate::riot::api::create_api(&riot()).await.ok().map(|api| api.region);
             command_result(reply, |career| player_overview(career, region.as_deref()))
         }
-        "get_live_match" => match super::bot_template::ask_game_context(app).await {
-            Some(context) => text_result(&json!(context), false),
+        "get_live_match" => match super::bot_template::ask_game_context(app, true).await {
+            // The context is built as a JSON string for `.ask`; format it as data here.
+            Some(context) => text_result(&serde_json::from_str(&context).unwrap_or(json!(context)), false),
             None => text_result(
                 &json!("Not in agent select or a match right now (or Riot Client isn't signed in)."),
                 false,
@@ -404,6 +466,26 @@ pub async fn call_tool(app: &AppHandle, name: &str, arguments: &Value) -> Option
                 value
             })
         }
+        "get_loadout" => match super::mcp_cosmetics::get_loadout(app).await {
+            Ok(loadout) => text_result(&loadout, false),
+            Err(message) => text_result(&json!(message), true),
+        },
+        "get_owned_skins" => match super::mcp_cosmetics::get_owned_skins(app).await {
+            Ok(owned) => text_result(&owned, false),
+            Err(message) => text_result(&json!(message), true),
+        },
+        "get_match_timeline" => {
+            let id = arguments.get("matchId").and_then(Value::as_str).unwrap_or_default().trim();
+            let round = arguments.get("round").and_then(Value::as_u64);
+            if id.is_empty() {
+                text_result(&json!("matchId is required."), true)
+            } else {
+                match super::mcp_cosmetics::get_match_timeline(app, id, round).await {
+                    Ok(timeline) => text_result(&timeline, false),
+                    Err(message) => text_result(&json!(message), true),
+                }
+            }
+        }
         "build_crosshair_code" => {
             let (code, settings) = crate::crosshair_code::code_from_spec(arguments);
             text_result(&json!({ "code": code, "settingsApplied": settings }), false)
@@ -426,6 +508,56 @@ pub async fn call_tool(app: &AppHandle, name: &str, arguments: &Value) -> Option
                     json!({ "source": name.unwrap_or("current account settings"), "crosshairs": codes })
                 }
             })
+        }
+        "compare_players" => {
+            let mut queries: Vec<String> = arguments
+                .get("players")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .map(|query| query.trim().to_string())
+                .filter(|query| !query.is_empty())
+                .collect();
+            queries.dedup();
+            if queries.len() < 2 || queries.len() > 5 {
+                text_result(&json!("Give 2 to 5 players to compare."), true)
+            } else {
+                // "me" is the signed-in player.
+                if queries.iter().any(|query| query.eq_ignore_ascii_case("me")) {
+                    let me = crate::riot::client::get_tokens(&riot(), false)
+                        .await
+                        .ok()
+                        .and_then(|tokens| tokens.get("subject").and_then(Value::as_str).map(str::to_owned));
+                    match me {
+                        Some(puuid) => queries
+                            .iter_mut()
+                            .filter(|query| query.eq_ignore_ascii_case("me"))
+                            .for_each(|query| *query = puuid.clone()),
+                        None => return Some(text_result(&json!(LOGIN_MESSAGE), true)),
+                    }
+                }
+                compare_players(app, &queries).await
+            }
+        }
+        "translate_message" => {
+            let text = arguments.get("text").and_then(Value::as_str).unwrap_or_default().trim();
+            let target = arguments.get("targetLanguage").and_then(Value::as_str).unwrap_or_default().trim();
+            if text.is_empty() || text.chars().count() > 2000 {
+                text_result(&json!("Give text to translate (up to 2,000 characters)."), true)
+            } else {
+                let reply = super::chat::chat_translate(vec![json!(text), json!(target)], app.state::<ConfigStore>())
+                    .await
+                    .unwrap_or(Value::Null);
+                command_result(reply, |reply| {
+                    json!({
+                        "translation": reply.get("translatedText"),
+                        "from": reply.get("sourceLanguage"),
+                        "to": reply.get("targetLanguage"),
+                        "translator": reply.get("provider"),
+                    })
+                })
+            }
         }
         "lookup_player" => {
             let query = arguments.get("player").and_then(Value::as_str).unwrap_or_default();
@@ -585,7 +717,7 @@ pub async fn call_tool(app: &AppHandle, name: &str, arguments: &Value) -> Option
 }
 
 /// The reduced scoreboard for one match, from the Matches page cache when it's there.
-async fn scoreboard(app: &AppHandle, match_id: &str) -> Result<Value, String> {
+pub(super) async fn scoreboard(app: &AppHandle, match_id: &str) -> Result<Value, String> {
     let reply = super::matches::match_details(
         vec![json!(match_id)],
         app.state::<RiotState>(),
@@ -643,7 +775,7 @@ fn map_name(maps: &HashMap<String, String>, map_id: &str) -> String {
         .unwrap_or_else(|| map_id.rsplit('/').next().unwrap_or(map_id).to_string())
 }
 
-fn agent_name(agents: &HashMap<String, String>, agent_id: &str) -> Value {
+pub(super) fn agent_name(agents: &HashMap<String, String>, agent_id: &str) -> Value {
     match agents.get(&agent_id.to_ascii_lowercase()) {
         Some(name) => json!(name),
         None if agent_id.is_empty() => Value::Null,
@@ -683,7 +815,7 @@ fn team_result(reduced: &Value, team_id: &str) -> (Option<&'static str>, u64, u6
     (Some(result), rounds(mine), enemy)
 }
 
-fn players(reduced: &Value) -> Vec<&Value> {
+pub(super) fn players(reduced: &Value) -> Vec<&Value> {
     reduced
         .get("players")
         .and_then(Value::as_array)
@@ -736,6 +868,42 @@ fn own_match_summary(
         summary.extend(stat_line(me, agents));
     }
     Value::Object(summary)
+}
+
+/// `You` / `Ally N` / `Enemy N` by lowercase PUUID, numbered by ACS within
+/// each side (as the scoreboard lists them), and the player's own team ID.
+pub(super) fn player_labels(reduced: &Value) -> (HashMap<String, String>, String) {
+    let all = players(reduced);
+    let text = |player: &Value, key: &str| player.get(key).and_then(Value::as_str).unwrap_or_default().to_owned();
+    let is_self = |player: &&Value| player.get("isSelf") == Some(&json!(true));
+    let me = all.iter().copied().find(is_self);
+    let my_team = me.map(|me| text(me, "teamId")).unwrap_or_default();
+    let acs = |player: &&Value| player.get("acs").and_then(Value::as_f64).unwrap_or(0.0);
+    let by_acs = |a: &&Value, b: &&Value| acs(b).total_cmp(&acs(a));
+    let mut allies: Vec<&Value> = all
+        .iter()
+        .copied()
+        .filter(|player| me.is_some() && text(player, "teamId") == my_team && !is_self(player))
+        .collect();
+    let mut enemies: Vec<&Value> = all
+        .iter()
+        .copied()
+        .filter(|player| me.is_none() || text(player, "teamId") != my_team)
+        .collect();
+    allies.sort_by(by_acs);
+    enemies.sort_by(by_acs);
+    let id = |player: &Value| text(player, "subject").to_ascii_lowercase();
+    let mut labels = HashMap::new();
+    if let Some(me) = me {
+        labels.insert(id(me), "You".to_string());
+    }
+    for (index, ally) in allies.iter().enumerate() {
+        labels.insert(id(ally), format!("Ally {}", index + 1));
+    }
+    for (index, enemy) in enemies.iter().enumerate() {
+        labels.insert(id(enemy), format!("Enemy {}", index + 1));
+    }
+    (labels, my_team)
 }
 
 /// A whole scoreboard with every other player reduced to Ally N / Enemy N:
@@ -876,7 +1044,7 @@ fn agent_progression(reply: &Value, agents: &HashMap<String, String>) -> Value {
 
 /// Public valorant-api.com documents (contracts, seasons, events), fetched once
 /// per session; the contracts catalog is large and changes only with a patch.
-async fn public_catalog(path: &'static str) -> Option<Arc<Value>> {
+pub(super) async fn public_catalog(path: &'static str) -> Option<Arc<Value>> {
     static CACHE: OnceLock<tokio::sync::Mutex<HashMap<&'static str, Arc<Value>>>> = OnceLock::new();
     let mut cache = CACHE.get_or_init(Default::default).lock().await;
     if let Some(value) = cache.get(path) {
@@ -1290,23 +1458,98 @@ async fn send_chat(app: &AppHandle, channel: &str, friend: &str, message: &str) 
 }
 
 /// Resolves a Riot ID or PUUID, then reads that player's profile.
-async fn lookup_player(app: &AppHandle, query: &str) -> Value {
+/// A player's profile (as `lookup_player` shows it) by Riot ID or PUUID.
+async fn fetch_player_profile(app: &AppHandle, query: &str) -> Result<Value, String> {
     let riot = || app.state::<RiotState>();
     let resolved = super::tools::tools_player_resolve(vec![json!(query)], riot())
         .await
         .unwrap_or(Value::Null);
     if let Some(message) = failure_message(&resolved) {
-        return text_result(&json!(message), true);
+        return Err(format!("{query}: {message}"));
     }
-    let Some(puuid) = resolved.get("puuid").and_then(Value::as_str) else {
-        return text_result(&json!("No Valorant player matched that lookup."), true);
-    };
+    let puuid = resolved
+        .get("puuid")
+        .and_then(Value::as_str)
+        .ok_or_else(|| format!("{query}: no Valorant player matched that lookup."))?
+        .to_string();
     let reply = super::friend_profile::friend_profile_get(vec![json!(puuid)], riot())
         .await
         .unwrap_or(Value::Null);
+    if let Some(message) = failure_message(&reply) {
+        return Err(format!("{query}: {message}"));
+    }
     let text = |key: &str| resolved.get(key).and_then(Value::as_str).unwrap_or_default();
     let riot_id = format!("{}#{}", text("gameName"), text("tagLine"));
-    command_result(reply, |reply| player_profile(&riot_id, puuid, reply))
+    Ok(player_profile(&riot_id, &puuid, reply))
+}
+
+async fn lookup_player(app: &AppHandle, query: &str) -> Value {
+    match fetch_player_profile(app, query).await {
+        Ok(profile) => text_result(&profile, false),
+        Err(message) => text_result(&json!(message), true),
+    }
+}
+
+/// One comparison row from a player profile: rank, peak, this act's record
+/// and the RR trend over recent competitive games.
+fn comparison_row(profile: &Value) -> Value {
+    let current_season = profile.get("currentSeasonId").and_then(Value::as_str).unwrap_or_default();
+    let act = profile
+        .get("competitiveSeasons")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .find(|season| season.get("seasonId").and_then(Value::as_str) == Some(current_season));
+    let number = |key: &str| act.and_then(|act| act.get(key)).and_then(Value::as_u64).unwrap_or(0);
+    let (wins, games) = (number("wins"), number("games"));
+    let rr: Vec<i64> = profile
+        .get("recentMatches")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|game| game.get("rrEarned").and_then(Value::as_i64))
+        .collect();
+    json!({
+        "riotId": profile.get("riotId"),
+        "currentRank": profile.get("currentRank"),
+        "currentRr": profile.get("currentRr"),
+        "peakRank": profile.get("peakRank"),
+        "actRecord": if games > 0 { json!(format!("{wins}W–{}L", games - wins)) } else { Value::Null },
+        "actWinRate": (wins * 100 + games / 2).checked_div(games).map(|rate| json!(format!("{rate}%"))).unwrap_or(Value::Null),
+        "recentRanked": rr.len(),
+        "recentNetRr": if rr.is_empty() { Value::Null } else { json!(rr.iter().sum::<i64>()) },
+    })
+}
+
+/// Profiles for up to five players, side by side; failed lookups are listed.
+async fn compare_players(app: &AppHandle, queries: &[String]) -> Value {
+    let lookups = lookup_in_turn(app, queries).await;
+    let mut rows = Vec::new();
+    let mut failed = Vec::new();
+    for result in lookups {
+        match result {
+            Ok(profile) => rows.push(comparison_row(&profile)),
+            Err(message) => failed.push(json!(message)),
+        }
+    }
+    if rows.is_empty() {
+        return text_result(&json!(failed.iter().filter_map(Value::as_str).collect::<Vec<_>>().join(" ")), true);
+    }
+    let mut summary = json!({ "players": rows });
+    if !failed.is_empty() {
+        summary["notFound"] = json!(failed);
+    }
+    text_result(&summary, false)
+}
+
+/// Looks the players up one after another: each costs PD requests from the
+/// shared budget, so they are not fired all at once.
+async fn lookup_in_turn(app: &AppHandle, queries: &[String]) -> Vec<Result<Value, String>> {
+    let mut results = Vec::with_capacity(queries.len());
+    for query in queries {
+        results.push(fetch_player_profile(app, query).await);
+    }
+    results
 }
 
 /// A player profile with rank tiers named.
@@ -1864,5 +2107,25 @@ mod tests {
     fn riot_ids_match_ignoring_case_and_spaces() {
         assert!(same_riot_id("Some Name#NA1", "somename#na1"));
         assert!(!same_riot_id("Some#NA1", "Some#EU1"));
+    }
+
+    #[test]
+    fn comparison_row_summarizes_rank_act_and_rr_trend() {
+        let profile = json!({
+            "riotId": "Them#EU1",
+            "currentRank": { "tier": 21, "name": "Ascendant 1" },
+            "currentRr": 55,
+            "peakRank": { "tier": 24, "name": "Immortal 1" },
+            "currentSeasonId": "act",
+            "competitiveSeasons": [{ "seasonId": "act", "wins": 12, "games": 20 }],
+            "recentMatches": [{ "rrEarned": 21 }, { "rrEarned": -16 }, { "rrEarned": null }],
+        });
+        let row = comparison_row(&profile);
+        assert_eq!(row["actRecord"], "12W–8L");
+        assert_eq!(row["actWinRate"], "60%");
+        assert_eq!(row["recentRanked"], 2);
+        assert_eq!(row["recentNetRr"], 5);
+        let empty = comparison_row(&json!({ "riotId": "New#1" }));
+        assert!(empty["actRecord"].is_null() && empty["recentNetRr"].is_null());
     }
 }

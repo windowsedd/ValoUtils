@@ -7,6 +7,7 @@ mod aptabase;
 mod chat_certs;
 mod match_chat_history;
 mod mcp;
+mod mcp_format;
 mod client_config;
 mod commands;
 mod crosshair_code;

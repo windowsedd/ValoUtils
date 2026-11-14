@@ -57,6 +57,18 @@ ValoUtils is an unofficial Windows desktop companion for VALORANT. It manages co
 - Run the interface in English, Korean, or Traditional Chinese.
 - Receive minisign-verified updates on launch and during hourly checks when automatic updates are enabled.
 
+### Links (`valoutils://`)
+
+The installer registers `valoutils://` links, so a link opens ValoUtils, or the window that is already running, on the right page.
+
+| Link | Opens | Copy it from |
+| --- | --- | --- |
+| `valoutils://crosshair?code=<code>&name=<label>` | Tools → Crosshair generator, showing that crosshair with Copy code | **Copy link** in the crosshair generator |
+| `valoutils://player?riotId=<Name%23Tag>` or `?puuid=<puuid>` | Tools → Player lookup, already searching for that player | **Copy player link** on a looked-up player |
+| `valoutils://match?id=<match id>` | That match's full scoreboard over the current page | **Copy match link** on a saved match's scoreboard in Chat → History |
+
+Codes, Riot IDs, and names in a link are URL-encoded (for example `#` becomes `%23`). Links only work for people who have ValoUtils installed. Some apps, such as Discord, may not make them clickable; pasting one into a browser address bar or the Windows Run box (Win + R) opens it. Player and match links need a signed-in Riot Client, like the pages they open.
+
 ## Requirements and privacy
 
 - Windows 10 or Windows 11 on x64 hardware.

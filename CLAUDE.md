@@ -500,7 +500,9 @@ Requests with an `Origin` header are refused so web pages can't reach it.
 Tools live in `commands/mcp.rs` and reuse existing commands (same PD client,
 rate budget and auth retry): `get_player_overview` (Riot ID, PUUID, region, current act wins/games/leaderboard,
 peak rank from wins by tier, per-act ranks, net RR), `get_live_match` (the `.ask`
-context: You / Ally N / Enemy N, no names), `get_store` (skin and bundle names
+context: You / Ally N / Enemy N, no names; MCP adds each player's non-default
+skins from Live Game's `loadout.weapons`, skin per weapon UUID, no extra Riot
+requests), `get_store` (skin and bundle names
 from valorant-api.com), `get_battle_pass` (active act/event passes from the valorant-api.com
 contracts, seasons and events catalogs, cached per session: tier, XP, premium,
 days left and the next three rewards by name), `list_settings_profiles` (names and
@@ -516,7 +518,13 @@ notes or party IDs), `get_account_status`, `get_agent_progression`; party and qu
 `EligibleQueues`), `create_party_code`, `join_party`, `disable_party_link`; chat:
 `get_chat_messages` (party/team/all/friend from `chat_get`), `send_chat_message`
 (rooms through the `.ascii` relay path, whispers to friends by Riot ID only),
-`set_presence`; launch: `open_riot_client`, `open_valorant` (`mode` "relay" =
+`set_presence`; cosmetics and rounds (`commands/mcp_cosmetics.rs`): `get_loadout`
+(equipped skin/chroma/buddy per weapon in armory order, card, title, sprays),
+`get_owned_skins` (skins by weapon from inventory skin levels, other counts),
+`compare_players` (2–5 Riot IDs/PUUIDs/"me", looked up one at a time: rank, RR,
+peak, act record and win rate, recent net RR), `translate_message` (`chat_translate`
+with the Settings translator), `get_match_timeline` (`matchId`, optional `round`; labels from
+`mcp::player_labels`, same as the scoreboard); launch: `open_riot_client`, `open_valorant` (`mode` "relay" =
 Launch with XMPP relay, the default, or "normal"). Tools that act are marked
 `readOnlyHint: false`. Agent and map names
 come from `bot_template::content_names` (cached valorant-api.com catalog).
@@ -526,6 +534,10 @@ Docs button opens `McpDocsPage` (connect steps, example questions, and the live
 tool list from `mcp_tools`).
 Commands: `mcp_status`, `mcp_tools`, `mcp_set_enabled` (`args: [bool]`),
 `mcp_regenerate_token`.
+Tool results are Markdown from `src-tauri/src/mcp_format.rs` (labelled lines,
+tables for lists, identifying columns first, ranks by name, yes/no, tidy numbers,
+scores as "7–5"), with the raw object in `structuredContent`; the server
+instructions ask agents to lead with the answer and never paste JSON.
 
 ### Open Riot Client
 
