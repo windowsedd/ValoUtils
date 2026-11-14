@@ -74,7 +74,9 @@
     "launchNormal": "일반 실행",
     "rateLimited": "Riot 요청 제한이 적용되었습니다. 약 {{seconds}}초 후 다시 시도하세요.",
     "playing": "플레이 중",
-    "playingHint": "발로란트가 실행 중입니다. Riot Client 로그인이 끝나면 ValoUtils가 세션을 자동으로 가져옵니다."
+    "playingHint": "발로란트가 실행 중입니다. Riot Client 로그인이 끝나면 ValoUtils가 세션을 자동으로 가져옵니다.",
+    "openRiotClient": "Riot Client 열기",
+    "openRiotClientHint": "발로란트는 실행하지 않고 XMPP 릴레이를 거쳐 Riot Client만 엽니다."
   },
   "riotStatus": {
     "connecting": "연결 중...",
@@ -193,7 +195,8 @@
     "accessoryStore": "액세서리 상점",
     "hiddenCard": "공개되지 않음",
     "unknownItem": "알 수 없는 항목",
-    "resetsIn": "갱신까지"
+    "resetsIn": "갱신까지",
+    "featuredBundleNumbered": "추천 번들 {{number}}/{{total}}"
   },
   "inventory": {
     "title": "인벤토리",
@@ -276,7 +279,10 @@
     "recruitmentLeft": "영입까지 {{xp}} XP",
     "recruitmentDone": "영입 완료",
     "recruitUnknownAgent": "신규 요원",
-    "recruitEndsIn_other": "{{count}}일 후 종료"
+    "recruitEndsIn_other": "{{count}}일 후 종료",
+    "nextRewards": "다음 보상",
+    "tierNumber": "{{tier}}티어",
+    "xpAway": "{{xp}} XP 남음"
   },
   "career": {
     "accountStatus": "계정 상태",
@@ -515,7 +521,10 @@
     "history": "기록",
     "historyRoom": "채팅방",
     "scoreboard": "스코어보드",
-    "historyOwner": "계정:"
+    "historyOwner": "계정:",
+    "historyAccount": "계정",
+    "historyMatchCount_other": "저장된 매치 {{count}}개",
+    "viewSavedChat": "저장된 채팅 보기"
   },
   "settings": {
     "saveMatchChatHistory": "매치 채팅 기록 저장",
@@ -943,7 +952,9 @@
       "fall": "낙사",
       "ability": "스킬",
       "noMinimap": "이 맵의 미니맵이 없습니다."
-    }
+    },
+    "copyPuuid": "PUUID 복사",
+    "puuidCopied": "PUUID를 복사했습니다"
   },
   "logs": {
     "title": "로그",

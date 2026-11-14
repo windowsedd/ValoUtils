@@ -53,10 +53,15 @@ type AccessoryOffer = {
 	price: Price;
 };
 
+/** Featured bundles from a reply (empty between rotations). */
+const bundlesOf = (reply: any): FeaturedBundle[] =>
+	Array.isArray(reply?.featuredBundles) ? reply.featuredBundles : [];
+
 type StoreData = {
 	wallet: { valorantPoints: number; radianite: number; kingdomCredits: number };
 	daily: { remainingSeconds: number; offers: DailyOffer[] };
-	featuredBundle: FeaturedBundle | null;
+	/** Every featured bundle; Riot often runs two at once. */
+	featuredBundles: FeaturedBundle[];
 	nightMarket: { remainingSeconds: number; offers: NightMarketOffer[] } | null;
 	accessory: { remainingSeconds: number; offers: AccessoryOffer[] } | null;
 };
@@ -152,7 +157,8 @@ const Store = () => {
 	const [reloadKey, setReloadKey] = useState(0);
 	const [fetchedAt, setFetchedAt] = useState(() => Date.now());
 	const [skins, setSkins] = useState<Map<string, SkinAsset | null>>(new Map());
-	const [bundleArt, setBundleArt] = useState<BundleAsset | null>(null);
+	/** Bundle art by data asset id. */
+	const [bundleArt, setBundleArt] = useState<Map<string, BundleAsset>>(new Map());
 	const [error, setError] = useState<string | null>(null);
 	const [loginRequired, setLoginRequired] = useState(false);
 	const [loading, setLoading] = useState(true);
@@ -169,7 +175,7 @@ const Store = () => {
 			setData({
 				wallet: response.wallet,
 				daily: response.daily,
-				featuredBundle: response.featuredBundle ?? null,
+				featuredBundles: bundlesOf(response),
 				nightMarket: response.nightMarket ?? null,
 				accessory: response.accessory ?? null,
 			});
@@ -224,10 +230,12 @@ const Store = () => {
 				const current =
 					reply?.success &&
 					typeof at === "number" &&
+					// Shops saved before `featuredBundles` existed are refetched.
+					Array.isArray(reply.featuredBundles) &&
 					secondsUntilRotation(
 						[
 							reply.daily?.remainingSeconds,
-							reply.featuredBundle?.remainingSeconds,
+							...bundlesOf(reply).map((bundle) => bundle.remainingSeconds),
 							reply.nightMarket?.remainingSeconds,
 							reply.accessory?.remainingSeconds,
 						],
@@ -252,7 +260,7 @@ const Store = () => {
 		const left = secondsUntilRotation(
 			[
 				data.daily.remainingSeconds,
-				data.featuredBundle?.remainingSeconds,
+				...data.featuredBundles.map((bundle) => bundle.remainingSeconds),
 				data.nightMarket?.remainingSeconds,
 				data.accessory?.remainingSeconds,
 			],
@@ -303,10 +311,12 @@ const Store = () => {
 				itemTypeId: offer.itemTypeId,
 				itemId: offer.itemId,
 			})),
-			...(data?.featuredBundle?.items ?? []).map((item) => ({
-				itemTypeId: item.itemTypeId,
-				itemId: item.itemId,
-			})),
+			...(data?.featuredBundles ?? []).flatMap((bundle) =>
+				bundle.items.map((item) => ({
+					itemTypeId: item.itemTypeId,
+					itemId: item.itemId,
+				})),
+			),
 		].filter((job) => job.itemId);
 		if (!jobs.length) return;
 		let cancelled = false;
@@ -320,19 +330,26 @@ const Store = () => {
 		return () => {
 			cancelled = true;
 		};
-	}, [data?.accessory, data?.featuredBundle]);
+	}, [data?.accessory, data?.featuredBundles]);
 
+	const bundleAssetIds = (data?.featuredBundles ?? []).map((bundle) => bundle.dataAssetId).filter(Boolean).join(",");
 	useEffect(() => {
-		const id = data?.featuredBundle?.dataAssetId;
-		if (!id) return;
+		if (!bundleAssetIds) return;
 		let cancelled = false;
-		getBundle(id).then((asset) => {
-			if (!cancelled) setBundleArt(asset);
+		Promise.all(
+			bundleAssetIds.split(",").map((id) => getBundle(id).then((asset) => [id, asset] as const)),
+		).then((entries) => {
+			if (cancelled) return;
+			setBundleArt((previous) => {
+				const next = new Map(previous);
+				for (const [id, asset] of entries) if (asset) next.set(id, asset);
+				return next;
+			});
 		});
 		return () => {
 			cancelled = true;
 		};
-	}, [data?.featuredBundle?.dataAssetId]);
+	}, [bundleAssetIds]);
 
 	const wallet = data?.wallet;
 
@@ -429,35 +446,42 @@ const Store = () => {
 							</div>
 						</SectionCard>
 
-						{data.featuredBundle && (
+						{data.featuredBundles.map((bundle, index) => {
+							const art = bundleArt.get(bundle.dataAssetId) ?? null;
+							return (
 							<SectionCard
-								title={t("store.featuredBundle")}
-								right={<Countdown seconds={data.featuredBundle.remainingSeconds} since={fetchedAt} />}
+								key={bundle.bundleId || bundle.dataAssetId || index}
+								title={
+									data.featuredBundles.length > 1
+										? t("store.featuredBundleNumbered", { number: index + 1, total: data.featuredBundles.length })
+										: t("store.featuredBundle")
+								}
+								right={<Countdown seconds={bundle.remainingSeconds} since={fetchedAt} />}
 							>
 								<div className="flex flex-col gap-3 px-3 py-2">
-									{bundleArt?.verticalPromo || bundleArt?.icon ? (
+									{art?.verticalPromo || art?.icon ? (
 										<img
-											src={bundleArt.verticalPromo ?? bundleArt.icon ?? ""}
-											alt={localize(bundleArt.name)}
+											src={art.verticalPromo ?? art.icon ?? ""}
+											alt={localize(art.name)}
 											className="h-40 w-full rounded-[8px] object-cover"
 										/>
 									) : null}
 									<div className="flex items-baseline justify-between gap-3">
 										<span className="truncate text-[13px] font-semibold text-(--text-primary)">
-											{bundleArt ? localize(bundleArt.name) : t("store.featuredBundle")}
+											{art ? localize(art.name) : t("store.featuredBundle")}
 										</span>
 										<span className="tabular-nums text-sm text-(--text-primary)">
-											{data.featuredBundle.totalDiscounted < data.featuredBundle.totalBase && (
+											{bundle.totalDiscounted < bundle.totalBase && (
 												<span className="mr-2 text-(--text-muted) line-through">
-													{formatAmount(data.featuredBundle.totalBase)}
+													{formatAmount(bundle.totalBase)}
 												</span>
 											)}
-											{formatAmount(data.featuredBundle.totalDiscounted)}
+											{formatAmount(bundle.totalDiscounted)}
 											<span className="ml-1 text-[11px] text-(--text-muted)">VP</span>
 										</span>
 									</div>
 									<div className="flex flex-col gap-1">
-										{data.featuredBundle.items.map((item) => {
+										{bundle.items.map((item) => {
 											const asset = skins.get(item.itemId) ?? null;
 											return (
 												<div
@@ -482,7 +506,8 @@ const Store = () => {
 									</div>
 								</div>
 							</SectionCard>
-						)}
+							);
+						})}
 
 						{data.nightMarket && (
 							<SectionCard

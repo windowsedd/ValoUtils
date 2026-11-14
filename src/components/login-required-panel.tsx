@@ -2,18 +2,20 @@ import { reportIpcError } from "@/util/ipc";
 import { ClientConfigWakeButton } from "./client-config-wake-button";
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback,  useEffect, useRef, useState, type ReactNode  } from "react";
-import { LuPlay } from "react-icons/lu";
+import { LuMonitor, LuPlay } from "react-icons/lu";
 import { useTranslation } from "react-i18next";
 
 /**
  * `relay` routes the client through the local client-config server so presence
- * masking works; `normal` is a plain launch for when that isn't wanted.
+ * masking works; `normal` is a plain launch for when that isn't wanted;
+ * `client` opens the Riot Client through the relay without launching a game.
  */
-type LaunchMode = "relay" | "normal";
+type LaunchMode = "relay" | "normal" | "client";
 
 const LAUNCH_CHANNEL: Record<LaunchMode, string> = {
 	relay: "riot_launch_with_config",
 	normal: "riot_launch_normal",
+	client: "riot_open_client_with_config",
 };
 
 type LoginRequiredPanelProps = {
@@ -169,6 +171,16 @@ const applyStatus = (message: any) => {
 					>
 						<LuPlay className="h-3 w-3" />
 						{launching === "normal" ? t("common.launching") : t("common.launchNormal")}
+					</button>
+					<button
+						type="button"
+						onClick={() => launch("client")}
+						disabled={busy || alreadyRunning}
+						title={t("common.openRiotClientHint")}
+						className="flex h-8 items-center gap-1.5 rounded-[6px] border border-(--border) bg-(--control) px-3 text-[12px] font-medium text-(--text-primary) transition-colors hover:bg-(--surface-hover) disabled:cursor-not-allowed disabled:opacity-40"
+					>
+						<LuMonitor className="h-3 w-3" />
+						{launching === "client" ? t("common.launching") : t("common.openRiotClient")}
 					</button>
 					</>
 					)}

@@ -147,7 +147,8 @@ pub struct Storefront {
     pub daily: DailyStore,
     /// Absent between bundle rotations rather than empty, so the frontend can
     /// omit the section instead of drawing an empty one.
-    pub featured_bundle: Option<FeaturedBundle>,
+    /// Every featured bundle; empty between rotations.
+    pub featured_bundles: Vec<FeaturedBundle>,
     /// Absent except during a Night Market window, which is most of the time.
     pub night_market: Option<NightMarket>,
     pub accessory: Option<AccessoryStore>,
@@ -239,15 +240,25 @@ pub fn parse_daily(storefront: &Value) -> DailyStore {
     }
 }
 
-pub fn parse_featured_bundle(storefront: &Value) -> Option<FeaturedBundle> {
-    let featured = storefront.get("FeaturedBundle")?;
-    // `Bundles` is the current shape; `Bundle` is the older singular one.
-    let bundle = featured
-        .get("Bundles")
-        .and_then(Value::as_array)
-        .and_then(|bundles| bundles.first())
-        .or_else(|| featured.get("Bundle"))?;
+/// Every featured bundle. Riot often runs two at once; `Bundles` lists them
+/// all, and the older singular `Bundle` shape still parses as one.
+pub fn parse_featured_bundles(storefront: &Value) -> Vec<FeaturedBundle> {
+    let Some(featured) = storefront.get("FeaturedBundle") else {
+        return Vec::new();
+    };
+    match featured.get("Bundles").and_then(Value::as_array) {
+        Some(bundles) if !bundles.is_empty() => bundles
+            .iter()
+            .map(|bundle| parse_bundle(bundle, featured))
+            .collect(),
+        _ => featured
+            .get("Bundle")
+            .map(|bundle| vec![parse_bundle(bundle, featured)])
+            .unwrap_or_default(),
+    }
+}
 
+fn parse_bundle(bundle: &Value, featured: &Value) -> FeaturedBundle {
     let items = bundle
         .get("Items")
         .and_then(Value::as_array)
@@ -276,7 +287,7 @@ pub fn parse_featured_bundle(storefront: &Value) -> Option<FeaturedBundle> {
         })
         .unwrap_or_default();
 
-    Some(FeaturedBundle {
+    FeaturedBundle {
         bundle_id: as_str(bundle.get("ID")),
         data_asset_id: as_str(bundle.get("DataAssetID")),
         // The duration sits on the bundle in the current shape and on the
@@ -289,7 +300,7 @@ pub fn parse_featured_bundle(storefront: &Value) -> Option<FeaturedBundle> {
         total_base: parse_price(bundle.get("TotalBaseCost")).amount,
         total_discounted: parse_price(bundle.get("TotalDiscountedCost")).amount,
         items,
-    })
+    }
 }
 
 pub fn parse_night_market(storefront: &Value) -> Option<NightMarket> {
@@ -365,7 +376,7 @@ pub fn parse_storefront(storefront: &Value, wallet: &Value) -> Storefront {
     Storefront {
         wallet: parse_wallet(wallet),
         daily: parse_daily(storefront),
-        featured_bundle: parse_featured_bundle(storefront),
+        featured_bundles: parse_featured_bundles(storefront),
         night_market: parse_night_market(storefront),
         accessory: parse_accessory_store(storefront),
     }
@@ -570,7 +581,7 @@ mod tests {
 
     #[test]
     fn the_bundle_reports_art_id_and_both_totals() {
-        let bundle = parse_featured_bundle(&storefront()).unwrap();
+        let bundle = parse_featured_bundles(&storefront()).remove(0);
         assert_eq!(bundle.bundle_id, "bundle-1");
         // Art is keyed by DataAssetID, so confusing it with ID renders nothing.
         assert_eq!(bundle.data_asset_id, "bundle-art-1");
@@ -590,7 +601,7 @@ mod tests {
                 "BundleRemainingDurationInSeconds": 1234
             }
         });
-        let bundle = parse_featured_bundle(&old).unwrap();
+        let bundle = parse_featured_bundles(&old).remove(0);
         assert_eq!(bundle.data_asset_id, "art");
         // Duration lives on the envelope in this shape, not on the bundle.
         assert_eq!(bundle.remaining_seconds, 1234);
@@ -644,7 +655,7 @@ mod tests {
         let parsed = parse_storefront(&json!({}), &json!({}));
         assert!(parsed.daily.offers.is_empty());
         assert_eq!(parsed.daily.remaining_seconds, 0);
-        assert!(parsed.featured_bundle.is_none());
+        assert!(parsed.featured_bundles.is_empty());
         assert!(parsed.night_market.is_none());
         assert!(parsed.accessory.is_none());
     }
@@ -674,10 +685,28 @@ mod tests {
         let value = serde_json::to_value(&parsed).unwrap();
         assert_eq!(value["wallet"]["valorantPoints"], 4215);
         assert_eq!(value["daily"]["remainingSeconds"], 43_200);
-        assert_eq!(value["featuredBundle"]["dataAssetId"], "bundle-art-1");
+        assert_eq!(value["featuredBundles"][0]["dataAssetId"], "bundle-art-1");
         assert_eq!(
             value["daily"]["offers"][0]["price"]["currency"],
             "valorantPoints"
         );
+    }
+
+    #[test]
+    fn every_featured_bundle_is_kept() {
+        let two = json!({
+            "FeaturedBundle": {
+                "Bundles": [
+                    { "ID": "a", "DataAssetID": "art-a", "DurationRemainingInSeconds": 10, "Items": [] },
+                    { "ID": "b", "DataAssetID": "art-b", "DurationRemainingInSeconds": 20, "Items": [] }
+                ]
+            }
+        });
+        let bundles = parse_featured_bundles(&two);
+        assert_eq!(bundles.len(), 2);
+        assert_eq!(bundles[1].data_asset_id, "art-b");
+        assert_eq!(bundles[1].remaining_seconds, 20);
+        assert_eq!(bundles[0].bundle_id, "a");
+        assert!(parse_featured_bundles(&json!({})).is_empty());
     }
 }

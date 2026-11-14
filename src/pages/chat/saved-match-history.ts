@@ -93,22 +93,42 @@ export const matchesNeedingDetails = (matches: readonly SavedChatMatch[]): strin
     .sort((a, b) => b.updatedAt - a.updatedAt || a.matchUuid.localeCompare(b.matchUuid))
     .map(match => match.matchUuid);
 
-/** Saved speakers keyed by PUUID, in the shape the chat thread resolves senders from. */
-export const savedSpeakerRoster = (details: SavedMatchDetails | null | undefined) =>
-  new Map(
-    (details?.speakers ?? []).map(speaker => [
-      speaker.puuid.toLowerCase(),
-      { name: speaker.name, agentId: speaker.agentId || null, cardId: null },
-    ]),
+/**
+ * Saved speakers keyed by PUUID, in the shape the chat thread resolves senders
+ * from. Match-details speakers (with agents) win over the history name list.
+ */
+export const savedSpeakerRoster = (
+  details: SavedMatchDetails | null | undefined,
+  names: Readonly<Record<string, string>> = {},
+) => {
+  const roster = new Map<string, { name: string; agentId: string | null; cardId: string | null }>(
+    Object.entries(names).map(([puuid, name]) => [puuid.toLowerCase(), { name, agentId: null, cardId: null }]),
   );
+  for (const speaker of details?.speakers ?? []) {
+    roster.set(speaker.puuid.toLowerCase(), {
+      name: speaker.name || roster.get(speaker.puuid.toLowerCase())?.name || "",
+      agentId: speaker.agentId || null,
+      cardId: null,
+    });
+  }
+  return roster;
+};
 
 const PUUID_LIKE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** A saved line's speaker: their saved Riot ID, else a readable sender name, else "". */
-export const savedSenderName = (message: ChatMessage, details: SavedMatchDetails | null | undefined) => {
+/**
+ * A saved line's speaker: their saved Riot ID (from match details, then the
+ * history's name list), else a readable sender name, else "".
+ */
+export const savedSenderName = (
+  message: ChatMessage,
+  details: SavedMatchDetails | null | undefined,
+  names: Readonly<Record<string, string>> = {},
+) => {
   const id = message.sender.split("@")[0]!.toLowerCase();
   const speaker = details?.speakers?.find(entry => entry.puuid.toLowerCase() === id);
   if (speaker?.name) return speaker.name;
+  if (names[id]) return names[id];
   const labeled = message.senderName.trim();
   return labeled && !PUUID_LIKE.test(labeled.split("@")[0]!) ? labeled : "";
 };

@@ -20,6 +20,7 @@ import {
 	selectBattlepassId,
 	sortBattlepasses,
 	totalLevels,
+	upcomingRewards,
 	xpPerDayNeeded,
 	type BattlepassCatalogEntry,
 	type BattlepassKind,
@@ -280,14 +281,27 @@ const onResponse = (message: any) => {
 		[entry, page, level, premium],
 	);
 	const visibleRewards = useMemo(() => [...views.free, ...views.premium], [views]);
+	/** The next few tiers after the player's level, for the progress card. */
+	const upcoming = useMemo(
+		() =>
+			entry
+				? upcomingRewards(entry.chapters, level, xpTowardNext, premium || !entry.premiumRequired, 3)
+				: [],
+		[entry, level, xpTowardNext, premium],
+	);
+	// Art for the page on screen and for the upcoming row, which may sit on another page.
+	const artRewards = useMemo(
+		() => [...visibleRewards.map((view) => view.reward), ...upcoming.map((item) => item.reward)],
+		[visibleRewards, upcoming],
+	);
 
 	useEffect(() => {
-		if (!visibleRewards.length) return;
+		if (!artRewards.length) return;
 		let cancelled = false;
 		Promise.all(
-			visibleRewards.map((view) =>
-				getBattlepassReward(view.reward.type, view.reward.uuid).then(
-					(asset) => [`${view.reward.type}:${view.reward.uuid}`, asset] as const,
+			artRewards.map((reward) =>
+				getBattlepassReward(reward.type, reward.uuid).then(
+					(asset) => [`${reward.type}:${reward.uuid}`, asset] as const,
 				),
 			),
 		).then((entries) => {
@@ -296,7 +310,7 @@ const onResponse = (message: any) => {
 		return () => {
 			cancelled = true;
 		};
-	}, [visibleRewards]);
+	}, [artRewards]);
 
 	const levelsTotal = entry ? totalLevels(entry.chapters) : 0;
 	const xpNeeded = entry ? nextLevelXp(entry.chapters, level) : 0;
@@ -582,6 +596,50 @@ const onResponse = (message: any) => {
 											{pace !== null && (
 												<span>{t("battlepass.xpPerDay", { xp: pace.toLocaleString() })}</span>
 											)}
+										</div>
+									</div>
+								)}
+
+								{/* What the next tiers unlock, so the bars read as "how far to what". */}
+								{upcoming.length > 0 && (
+									<div data-battlepass-upcoming="" className="mt-1 flex flex-col gap-2 border-t border-(--line) pt-2">
+										<span className="text-xs text-(--text-secondary)">{t("battlepass.nextRewards")}</span>
+										<div className="grid grid-cols-3 gap-2">
+											{upcoming.map((item, index) => {
+												const asset = assets.get(`${item.reward.type}:${item.reward.uuid}`) ?? null;
+												const name = asset ? localize(asset.name) : item.reward.type;
+												const amount = currencyDisplayAmount(item.reward.uuid, item.reward.amount);
+												const paywalled = item.status === "premiumLocked";
+												return (
+													<div
+														key={`${item.tier}-${item.reward.uuid}`}
+														data-upcoming-tier={item.tier}
+														className={`flex min-w-0 flex-col gap-1 rounded-[8px] border p-2 ${
+															index === 0 ? "border-(--accent-border) bg-(--accent-soft)" : "border-(--line) bg-(--panel-raised)"
+														}`}
+													>
+														<div className="grid h-12 place-items-center overflow-hidden rounded-[6px] bg-(--control)">
+															{asset?.icon ? (
+																<img src={asset.icon} alt="" className="max-h-12 max-w-full object-contain" />
+															) : (
+																<LuTicket className="text-(--text-muted)" aria-hidden="true" />
+															)}
+														</div>
+														<p className="truncate text-[11px] text-(--text-primary)" title={name}>
+															{amount > 1 ? `${amount.toLocaleString()} ${name}` : name}
+														</p>
+														<p className="flex items-center justify-between gap-1 text-[10px] tabular-nums text-(--text-muted)">
+															<span>{t("battlepass.tierNumber", { tier: item.tier })}</span>
+															<span>{t("battlepass.xpAway", { xp: item.xpAway.toLocaleString() })}</span>
+														</p>
+														{paywalled && (
+															<span className="self-start rounded-[4px] border border-(--signal-warn)/40 px-1 text-[9px] font-medium uppercase tracking-wide text-(--signal-warn)">
+																{t("battlepass.premium")}
+															</span>
+														)}
+													</div>
+												);
+											})}
 										</div>
 									</div>
 								)}

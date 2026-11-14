@@ -119,7 +119,7 @@ Rust command conventions:
 | `career:get` | `career_get` | MMR + competitive history |
 | `tools:player:resolve` | `tools_player_resolve` | Resolve `GameName#Tag` or PUUID to a canonical Riot ID |
 | `friend:profile:get` | `friend_profile_get` | Player profile used by Friends and Tools (rank + matches) |
-| `store:get` | `store_get` | Storefront (daily, bundle, Night Market, accessories) + wallet; also saved per account in `cache.json` |
+| `store:get` | `store_get` | Storefront (daily, every featured bundle in `featuredBundles` — Riot often runs two — Night Market, accessories) + wallet; also saved per account in `cache.json` |
 | `store:cached` | `store_cached` | Last saved storefront for the signed-in account (no PD request), shown while `store_get` loads |
 | `battlepass:get` | `battlepass_get` | Act battle pass XP/level, owned premium contract ids, and active agent recruitment progress |
 | `bloomline:get` | `bloomline_get` | Read agent progression; optional agent UUID and expected account load equipped stat counters |
@@ -267,6 +267,12 @@ does not supply level thresholds or stat names in these responses, so the UI
 shows levels/points and numbered stat slots with their IDs; no percentage or
 stat meaning is inferred. No mutations, polling, extra login, or local storage.
 
+### Battle pass next rewards
+
+The Battle Pass progress card shows a Next rewards row: the next three tiers
+after the player's level (`upcomingRewards` in `battlepass-state.ts`) with art,
+name, tier, XP still needed and a Premium tag when the premium track isn't owned.
+
 ### Agent recruitment progress
 
 Riot reports the active agent recruitment event at the top of the contracts
@@ -322,7 +328,14 @@ read-only, newest first, with a Team/All switch; it lists only the signed-in
 account's history. The live Team/All sidebars no longer carry the picker.
 A collapsible Scoreboard bar above a saved thread shows every player's line
 (`MatchScoreboard` + `useMatchDetails`, the Matches page's `match_details` cache),
-fetched only when opened. Each saved match is a card (newest first) with
+fetched only when opened. Its rows have a Copy PUUID button (`copyPuuid` on
+`MatchScoreboard`; the Matches page leaves it off).
+History lists every account with saved chat (`chat_saved_history_accounts`) in an
+account picker; the signed-in account stays live, others are read from the file
+(`chat_saved_history_get`, `args: [puuid]`). While signed in, missing owner and
+speaker Riot IDs are looked up in batches of 100 through the name service and
+saved under `names` in `match-chat-history.json`. History needs no sign-in; the
+Chat sign-in panel offers View saved chat. Each saved match is a card (newest first) with
 its last message time, Team/All line counts, speaker count and the latest line
 in the viewed room; more than three matches adds a message/player search.
 Cards also show map, mode, your agent and the result. `chat_saved_match_details`
@@ -481,9 +494,12 @@ client configs survive restarts. Every request needs `Authorization: Bearer
 <mcpToken>` (32 random bytes, created on first use, replaceable from Settings).
 Requests with an `Origin` header are refused so web pages can't reach it.
 Tools live in `commands/mcp.rs` and reuse existing commands (same PD client,
-rate budget and auth retry): `get_player_overview`, `get_live_match` (the `.ask`
+rate budget and auth retry): `get_player_overview` (Riot ID, PUUID, region, current act wins/games/leaderboard,
+peak rank from wins by tier, per-act ranks, net RR), `get_live_match` (the `.ask`
 context: You / Ally N / Enemy N, no names), `get_store` (skin and bundle names
-from valorant-api.com), `get_battle_pass`, `list_settings_profiles` (names and
+from valorant-api.com), `get_battle_pass` (active act/event passes from the valorant-api.com
+contracts, seasons and events catalogs, cached per session: tier, XP, premium,
+days left and the next three rewards by name), `list_settings_profiles` (names and
 dates only), `get_settings_profile` (decoded settings of a saved profile or the
 current account), `lookup_player` (Riot ID or PUUID → rank and matches, as on
 the Tools page), `get_match_history` (own line per match, up to 10, one
@@ -500,6 +516,13 @@ Docs button opens `McpDocsPage` (connect steps, example questions, and the live
 tool list from `mcp_tools`).
 Commands: `mcp_status`, `mcp_tools`, `mcp_set_enabled` (`args: [bool]`),
 `mcp_regenerate_token`.
+
+### Open Riot Client
+
+The login panel's Open Riot Client button (`riot_open_client_with_config`, MCP
+`open_riot_client`) starts the Riot Client through the config server and XMPP
+relay with no `--launch-product`, so chat, presence and the bot work out of
+game. Launch arguments still apply, minus product/patchline/config-URL flags.
 
 ### Playing state
 
