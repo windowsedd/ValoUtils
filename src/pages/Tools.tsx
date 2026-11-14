@@ -7,9 +7,12 @@ import type { Friend } from "@/types/friends";
 import type { FriendProfileResponse } from "@/types/friend-profile";
 import { acceptedFriendProfile } from "@/components/friends/friend-profile-state";
 import { getTiers, type TierAsset } from "@/util/valorant-assets";
-import { useCallback,  useEffect, useState, type FormEvent, type ReactNode  } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { LuBoxes, LuLayoutGrid, LuChevronRight, LuSearch, LuUserSearch, LuWrench } from "react-icons/lu";
+import { LuBoxes, LuCheck, LuCrosshair, LuLayoutGrid, LuLink, LuChevronRight, LuSearch, LuUserSearch, LuWrench } from "react-icons/lu";
+import { CrosshairGenerator } from "./tools/crosshair-generator";
+import { Button } from "@/components/ui/button";
+import { hasSharedCrosshair, hasSharedPlayer, onSharedPlayer, playerLink, takeSharedPlayer } from "@/util/deep-links";
 import {
 	applyToolsProfileError,
 	applyToolsProfileSuccess,
@@ -54,12 +57,22 @@ const asFriend = (player: ToolsResolvedPlayer): Friend => ({
  * page once picked, which also leaves an obvious slot for the third tool rather
  * than a switch that has to grow a segment every time.
  */
-type ToolId = "lookup" | "inventory";
+type ToolId = "lookup" | "inventory" | "crosshair";
 
 const Tools = () => {
 	const { t } = useTranslation();
-	/** null = the index grid. */
-	const [tool, setTool] = useState<ToolId | null>(null);
+	/** null = the index grid. valoutils:// links open a tool directly. */
+	const [tool, setTool] = useState<ToolId | null>(() =>
+		hasSharedCrosshair() ? "crosshair" : hasSharedPlayer() ? "lookup" : null,
+	);
+	useEffect(() => {
+		const onOpen = (event: Event) => {
+			const requested = (event as CustomEvent<{ tool?: ToolId }>).detail?.tool;
+			if (requested) setTool(requested);
+		};
+		window.addEventListener("valoutils:tools-open", onOpen);
+		return () => window.removeEventListener("valoutils:tools-open", onOpen);
+	}, []);
 	const [query, setQuery] = useState("");
 	const [state, setState] = useState(initialToolsLookupState);
 	const [tiers, setTiers] = useState<Map<number, TierAsset>>(new Map());
@@ -125,13 +138,38 @@ const onResolved = useCallback((message: any) => {
 	useEffect(() => {
 	}, []);
 
-	const onSearch = (event: FormEvent) => {
-		event.preventDefault();
-		const value = query.trim();
+	const lookup = (value: string) => {
 		setState((current) => beginToolsLookup(current));
 		invoke("analytics_track", { args: ["tools:player:lookup", JSON.stringify({})] }).catch(reportIpcError);
 		invoke<any>("tools_player_resolve", { args: [value] }).then(onResolved).catch(error => onResolved({ success: false, error: String(error) }));
 	};
+
+	const onSearch = (event: FormEvent) => {
+		event.preventDefault();
+		lookup(query.trim());
+	};
+
+	// A valoutils://player link fills the search and runs it.
+	const lookupRef = useRef(lookup);
+	lookupRef.current = lookup;
+	useEffect(() => {
+		const run = () => {
+			const shared = takeSharedPlayer();
+			if (!shared) return;
+			setTool("lookup");
+			setQuery(shared);
+			lookupRef.current(shared);
+		};
+		run();
+		return onSharedPlayer(run);
+	}, []);
+
+	const [linkCopied, setLinkCopied] = useState(false);
+	useEffect(() => {
+		if (!linkCopied) return;
+		const timer = setTimeout(() => setLinkCopied(false), 1500);
+		return () => clearTimeout(timer);
+	}, [linkCopied]);
 
 	const errorMessage = state.error ? t(`tools.${state.error}`) : null;
 	const searching = state.status === "resolving" || state.status === "loadingProfile";
@@ -148,6 +186,12 @@ const onResolved = useCallback((message: any) => {
 			icon: <LuBoxes />,
 			title: t("tools.inventory"),
 			description: t("tools.inventoryDesc"),
+		},
+		{
+			id: "crosshair",
+			icon: <LuCrosshair />,
+			title: t("tools.crosshair"),
+			description: t("tools.crosshairDesc"),
 		},
 	];
 	const openTool = catalog.find((entry) => entry.id === tool);
@@ -199,6 +243,8 @@ const onResolved = useCallback((message: any) => {
 				</div>
 			)}
 
+			{tool === "crosshair" && <CrosshairGenerator />}
+
 			{tool === "inventory" && (
 				<div data-tools-inventory="" className="flex min-h-0 flex-1 flex-col overflow-hidden px-6 pt-5">
 					<Inventory embedded />
@@ -233,6 +279,22 @@ const onResolved = useCallback((message: any) => {
 				)}
 				{state.player && state.profile && (
 					<div data-tools-profile="" className="min-h-0 flex-1 overflow-y-auto">
+						<div className="mb-2 flex justify-end">
+							<Button
+								size="sm"
+								variant="outline"
+								title={t("tools.playerLinkHint")}
+								onClick={() => {
+									const player = state.player!;
+									invoke("clipboard_set", { args: [playerLink(`${player.gameName}#${player.tagLine}`)] }).catch(reportIpcError);
+									invoke("analytics_track", { args: ["tools:player-link"] }).catch(reportIpcError);
+									setLinkCopied(true);
+								}}
+							>
+								{linkCopied ? <LuCheck className="text-(--signal-pos)" /> : <LuLink />}
+								{linkCopied ? t("settings.copied") : t("tools.copyPlayerLink")}
+							</Button>
+						</div>
 						<FriendProfile
 							key={state.player.puuid}
 							embedded

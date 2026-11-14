@@ -1,6 +1,6 @@
 import { reportIpcError } from "@/util/ipc";
 import { invoke } from "@tauri-apps/api/core";
-import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Route } from "@/types/router";
 import RiotStatusBar from "@/components/riot-status-bar";
 import { NavbarRail } from "@/components/navbar-rail";
@@ -128,6 +128,18 @@ const Router = () => {
 		"settings",
 		showLogsTab,
 	);
+
+	// Other parts of the app (e.g. valoutils:// links) ask for a page this way.
+	const goToRef = useRef(goTo);
+	goToRef.current = goTo;
+	useEffect(() => {
+		const onNavigate = (event: Event) => {
+			const routeId = (event as CustomEvent<{ routeId?: string }>).detail?.routeId;
+			if (routeId) goToRef.current(routeId);
+		};
+		window.addEventListener("valoutils:navigate", onNavigate);
+		return () => window.removeEventListener("valoutils:navigate", onNavigate);
+	}, []);
 
 	const selectRoute = (routeId: string) => {
 		goTo(routeId);

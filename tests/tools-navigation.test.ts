@@ -47,7 +47,8 @@ describe("Tools navigation and player lookup shell", () => {
     expect(page).toContain("data-tool={entry.id}");
     expect(page).toContain("setTool(entry.id)");
     // The index is the landing state, and the header tabs get back to it.
-    expect(page).toContain("useState<ToolId | null>(null)");
+    // valoutils:// links can open a tool directly; otherwise the index shows.
+    expect(page).toContain('hasSharedCrosshair() ? "crosshair" : hasSharedPlayer() ? "lookup" : null');
     expect(page).toContain("<PageTabs");
     expect(page).toContain('setTool(id === "all" ? null : id)');
     // A tool takes the page over rather than rendering beneath the grid.

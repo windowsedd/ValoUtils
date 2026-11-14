@@ -178,7 +178,28 @@
 		"unavailable": "目前無法載入此玩家資料。",
 		"lookupDesc": "以 Riot ID 或 PUUID 查詢任何玩家的段位、賽季紀錄與近期對戰。",
 		"inventoryDesc": "瀏覽帳號中的武器造型、配件與已集齊的套組。",
-		"allTools": "全部工具"
+		"allTools": "全部工具",
+		"crosshair": "準星產生器",
+		"crosshairDesc": "描述想要的準星，透過你的 AI 提供者產生可匯入的代碼。",
+		"crosshairPrompt": "描述你的準星",
+		"crosshairPlaceholder": "例如：無外框的小青色點，或有間隙的細白十字",
+		"crosshairGenerate": "產生",
+		"crosshairHint": "使用 設定 → AI 中的提供者。代碼由 ValoUtils 產生，一定可以匯入。",
+		"crosshairUntitled": "準星",
+		"crosshairCopy": "複製代碼",
+		"crosshairImport": "在特戰英豪：設定 → 準星 → 匯入設定檔代碼，然後貼上。",
+		"crosshairRecent": "最近",
+		"crosshairExamples": {
+			"dot": "無外框的小青色點",
+			"classic": "細白線加小間隙，不要外線",
+			"plus": "有黑色外框的粗綠色十字",
+			"pink": "有中心點的粉紅色準星"
+		},
+		"crosshairCopyLink": "複製連結",
+		"crosshairLinkHint": "在 ValoUtils 中開啟此準星的 valoutils://crosshair 連結。",
+		"crosshairShared": "從連結開啟",
+		"copyPlayerLink": "複製玩家連結",
+		"playerLinkHint": "在 ValoUtils 查詢此玩家的 valoutils://player 連結。"
 	},
 	"store": {
 		"title": "商店",
@@ -524,7 +545,23 @@
 		"historyOwner": "帳號：",
 		"historyAccount": "帳號",
 		"historyMatchCount_other": "{{count}} 場已儲存的對戰",
-		"viewSavedChat": "查看已儲存的聊天"
+		"viewSavedChat": "查看已儲存的聊天",
+		"partyCode": "隊伍代碼",
+		"partyCodeCreate": "建立邀請代碼",
+		"partyCodeNew": "新代碼",
+		"partyCodePlaceholder": "代碼或隊伍連結",
+		"partyCodeJoinLabel": "要加入的隊伍代碼",
+		"partyJoin": "加入",
+		"partyJoined": "已加入隊伍 {{code}}。",
+		"partyCodeLogin": "請先登入 Riot Client。",
+		"partyCodeFailed": "Riot 未接受此操作，請再試一次。",
+		"partyLink": "隊伍連結",
+		"partyCopyCode": "複製代碼",
+		"partyCopyLink": "複製隊伍連結",
+		"partyLinkDisable": "停用連結",
+		"partyLinkDisabled": "已停用隊伍連結與代碼。",
+		"copyMatchLink": "複製對戰連結",
+		"matchLinkHint": "在 ValoUtils 開啟此計分板的 valoutils://match 連結。"
 	},
 	"settings": {
 		"saveMatchChatHistory": "儲存對戰聊天紀錄",
@@ -1074,5 +1111,8 @@
 		"privacyLocal": "只能從這台電腦（127.0.0.1）存取，且每個請求都需要你的秘密權杖。網頁無法連線。",
 		"privacyNames": "即時對戰與計分板工具以 You / Ally N / Enemy N 標示其他玩家，絕不顯示名稱。好友與玩家查詢會傳回 Riot ID，因為這正是它們的用途。",
 		"privacyRate": "代理的呼叫與應用程式共用 Riot 請求額度。若 Riot 限制請求，工具會告訴代理何時再試。"
+	},
+	"deepLink": {
+		"matchTitle": "對戰計分板"
 	}
 }

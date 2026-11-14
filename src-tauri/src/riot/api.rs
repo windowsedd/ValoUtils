@@ -605,6 +605,58 @@ impl RiotApiClient {
         )
         .await
     }
+    /// Starts matchmaking for the party in its selected queue.
+    pub async fn party_queue_join(&self, party_id: &str) -> Result<Value, String> {
+        self.request(
+            Target::Glz,
+            reqwest::Method::POST,
+            &format!(
+                "/parties/v1/parties/{}/matchmaking/join",
+                client::urlencoding_encode(party_id)
+            ),
+            None,
+        )
+        .await
+    }
+    /// Stops matchmaking for the party.
+    pub async fn party_queue_leave(&self, party_id: &str) -> Result<Value, String> {
+        self.request(
+            Target::Glz,
+            reqwest::Method::POST,
+            &format!(
+                "/parties/v1/parties/{}/matchmaking/leave",
+                client::urlencoding_encode(party_id)
+            ),
+            None,
+        )
+        .await
+    }
+    /// Selects the party's queue (`competitive`, `unrated`, `swiftplay`, ...).
+    pub async fn party_change_queue(&self, party_id: &str, queue_id: &str) -> Result<Value, String> {
+        self.request(
+            Target::Glz,
+            reqwest::Method::POST,
+            &format!(
+                "/parties/v1/parties/{}/queue",
+                client::urlencoding_encode(party_id)
+            ),
+            Some(serde_json::json!({ "queueID": queue_id })),
+        )
+        .await
+    }
+    /// Turns off the party's invite code, and with it the party link.
+    pub async fn party_disable_code(&self, party_id: &str) -> Result<Value, String> {
+        self.request(
+            Target::Glz,
+            reqwest::Method::DELETE,
+            &format!(
+                "/parties/v1/parties/{}/invitecode",
+                client::urlencoding_encode(party_id)
+            ),
+            None,
+        )
+        .await
+    }
     pub async fn party_get_chat_token(&self, party_id: &str) -> Result<Value, String> {
         self.request(
             Target::Glz,

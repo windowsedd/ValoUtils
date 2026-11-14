@@ -948,8 +948,26 @@ pub(crate) async fn ask_game_context(app: &AppHandle) -> Option<String> {
     };
     let labels = load_content_labels(&plan, deadline).await.unwrap_or_default();
     let stats = app.state::<live::LiveStatsCache>();
-    ask_context(&snapshot, &labels, |puuid| stats.cached(puuid, &snapshot.queue_id))
-        .map(|context| context.to_string())
+    let mut context = ask_context(&snapshot, &labels, |puuid| stats.cached(puuid, &snapshot.queue_id))?;
+    // Riot's match APIs carry no live score; the game's own chat presence does.
+    if snapshot.state == "coregame" {
+        let riot = app.state::<RiotState>();
+        let score = tokio::time::timeout(
+            Duration::from_secs(2),
+            super::friends::fetch_own_match_score(riot.inner()),
+        )
+        .await
+        .ok()
+        .flatten();
+        if let Some((yours, theirs)) = score {
+            context["score"] = serde_json::json!({
+                "yourTeam": yours,
+                "enemyTeam": theirs,
+                "roundsPlayed": yours + theirs,
+            });
+        }
+    }
+    Some(context.to_string())
 }
 
 #[cfg(test)]

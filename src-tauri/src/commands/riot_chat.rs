@@ -597,40 +597,141 @@ pub async fn execute_party_command(
 ) -> Result<String, RiotError> {
     let command = chat_command::parse_party_command(input)?;
     let app = app.ok_or(RiotError::RiotClientNotRunning)?;
-    let riot = app
-        .try_state::<crate::riot::client::RiotState>()
-        .ok_or(RiotError::RiotClientNotRunning)?;
+    match command {
+        chat_command::PartyCommand::Join(code) => {
+            join_party_by_code(app, &code).await.map(|code| format!("Joined party {code}."))
+        }
+        chat_command::PartyCommand::Leave => {
+            let riot = riot_state(app)?;
+            crate::riot::api::with_api(&riot, |api| async move {
+                api.party_leave().await?;
+                Ok("Left the party.".to_string())
+            })
+            .await
+        }
+        chat_command::PartyCommand::CreateCode => create_party_invite_code(app)
+            .await
+            .map(|code| format!("Party invite code: {code}")),
+    }
+}
+
+fn riot_state(app: &AppHandle) -> Result<tauri::State<'_, crate::riot::client::RiotState>, RiotError> {
+    app.try_state::<crate::riot::client::RiotState>()
+        .ok_or(RiotError::RiotClientNotRunning)
+}
+
+/// Riot's party link, as the game's Party Link panel shows it.
+pub(crate) fn party_link(code: &str) -> String {
+    format!("https://gg.riotgames.com/VAL?joinCode={code}")
+}
+
+/// The invite code from a pasted party link (`...?joinCode=ABC123`), or the
+/// text itself when it is a bare code.
+pub(crate) fn party_code_from_input(input: &str) -> String {
+    let input = input.trim();
+    let lower = input.to_ascii_lowercase();
+    match lower.find("joincode=") {
+        Some(start) => input[start + "joincode=".len()..]
+            .split(['&', '#', ' '])
+            .next()
+            .unwrap_or_default()
+            .to_string(),
+        None => input.to_string(),
+    }
+}
+
+async fn current_party_id(api: &crate::riot::api::RiotApiClient) -> Result<String, RiotError> {
+    let player = api.party_get_by_player(&api.puuid).await?;
+    Ok(player
+        .get("CurrentPartyID")
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| "You are not in a party.".to_string())?
+        .to_string())
+}
+
+/// Creates an invite code for the signed-in player's current party.
+pub(crate) async fn create_party_invite_code(app: &AppHandle) -> Result<String, RiotError> {
+    let riot = riot_state(app)?;
+    crate::riot::api::with_api(&riot, |api| async move {
+        let party_id = current_party_id(&api).await?;
+        let party = api.party_create_code(&party_id).await?;
+        let code = party
+            .get("InviteCode")
+            .and_then(Value::as_str)
+            .filter(|value| !value.trim().is_empty())
+            .ok_or_else(|| "Riot did not return a party invite code.".to_string())?;
+        Ok(code.to_string())
+    })
+    .await
+}
+
+/// Turns off the current party's invite code and party link.
+pub(crate) async fn disable_party_invite_code(app: &AppHandle) -> Result<(), RiotError> {
+    let riot = riot_state(app)?;
+    crate::riot::api::with_api(&riot, |api| async move {
+        let party_id = current_party_id(&api).await?;
+        api.party_disable_code(&party_id).await?;
+        Ok(())
+    })
+    .await
+}
+
+/// Joins a party by invite code or pasted party link. Codes are letters and
+/// digits, case-insensitive; returns the normalized code.
+pub(crate) async fn join_party_by_code(app: &AppHandle, code: &str) -> Result<String, RiotError> {
+    let chat_command::PartyCommand::Join(code) =
+        chat_command::parse_party_command(&format!(".party join {}", party_code_from_input(code)))?
+    else {
+        return Err(RiotError::InvalidCommand("Enter a party code.".into()));
+    };
+    let riot = riot_state(app)?;
     crate::riot::api::with_api(&riot, |api| {
-        let command = command.clone();
+        let code = code.clone();
         async move {
-            match command {
-                chat_command::PartyCommand::Join(code) => {
-                    api.party_join_by_code(&code).await?;
-                    Ok(format!("Joined party {code}."))
-                }
-                chat_command::PartyCommand::Leave => {
-                    api.party_leave().await?;
-                    Ok("Left the party.".into())
-                }
-                chat_command::PartyCommand::CreateCode => {
-                    let player = api.party_get_by_player(&api.puuid).await?;
-                    let party_id = player
-                        .get("CurrentPartyID")
-                        .and_then(Value::as_str)
-                        .filter(|value| !value.trim().is_empty())
-                        .ok_or_else(|| "You are not in a party.".to_string())?;
-                    let party = api.party_create_code(party_id).await?;
-                    let code = party
-                        .get("InviteCode")
-                        .and_then(Value::as_str)
-                        .filter(|value| !value.trim().is_empty())
-                        .ok_or_else(|| "Riot did not return a party invite code.".to_string())?;
-                    Ok(format!("Party invite code: {code}"))
-                }
-            }
+            api.party_join_by_code(&code).await?;
+            Ok(code)
         }
     })
     .await
+}
+
+async fn party_error_reply(error: RiotError) -> Value {
+    if error.is_login_required() {
+        return json!({ "success": false, "code": "loginRequired" });
+    }
+    match super::rate_limited_reply(&error.to_string()).await {
+        Some(reply) => reply,
+        None => json!({ "success": false, "code": error.code(), "error": error }),
+    }
+}
+
+/// Creates an invite code for the current party: `{ success, inviteCode, link }`.
+#[tauri::command]
+pub async fn party_code_create(app: AppHandle) -> Result<Value, ()> {
+    Ok(match create_party_invite_code(&app).await {
+        Ok(code) => json!({ "success": true, "inviteCode": code, "link": party_link(&code) }),
+        Err(error) => party_error_reply(error).await,
+    })
+}
+
+/// Turns off the current party's invite code and link: `{ success }`.
+#[tauri::command]
+pub async fn party_code_disable(app: AppHandle) -> Result<Value, ()> {
+    Ok(match disable_party_invite_code(&app).await {
+        Ok(()) => json!({ "success": true }),
+        Err(error) => party_error_reply(error).await,
+    })
+}
+
+/// Joins a party by invite code or party link (`args: [code]`): `{ success, inviteCode }`.
+#[tauri::command]
+pub async fn party_code_join(args: Vec<Value>, app: AppHandle) -> Result<Value, ()> {
+    let code = args.first().and_then(Value::as_str).unwrap_or_default().to_string();
+    Ok(match join_party_by_code(&app, &code).await {
+        Ok(code) => json!({ "success": true, "inviteCode": code }),
+        Err(error) => party_error_reply(error).await,
+    })
 }
 
 /// Leaves the current pre-game lobby via GLZ `POST /pregame/v1/matches/{id}/quit`.
@@ -754,6 +855,15 @@ async fn post_ascii_art(
     .await?;
 
     Ok(prepared.body)
+}
+
+/// Posts one line, unchanged, to the party, team or all room (MCP chat).
+pub(crate) async fn post_to_room(
+    channel: ChatChannel,
+    text: String,
+    app: &AppHandle,
+) -> Result<(), RiotError> {
+    post_ascii_art(channel, text, Some(app)).await.map(|_| ())
 }
 
 /// Prepares rendered `.ascii` artwork for the relay to post.
@@ -1977,6 +2087,14 @@ fn translator_config(app: &AppHandle) -> TranslatorConfig {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn party_links_wrap_and_unwrap_the_invite_code() {
+        assert_eq!(super::party_link("TUE693"), "https://gg.riotgames.com/VAL?joinCode=TUE693");
+        assert_eq!(super::party_code_from_input(" https://gg.riotgames.com/VAL?joinCode=TUE693 "), "TUE693");
+        assert_eq!(super::party_code_from_input("gg.riotgames.com/VAL?JOINCODE=ab12&x=1"), "ab12");
+        assert_eq!(super::party_code_from_input("tue693"), "tue693");
+    }
+
     use super::*;
 
     fn direct_custom_command(language: &str, message: &str) -> chat_command::CustomBotCommand {

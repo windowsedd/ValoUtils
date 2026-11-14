@@ -124,6 +124,7 @@ Rust command conventions:
 | `battlepass:get` | `battlepass_get` | Act battle pass XP/level, owned premium contract ids, and active agent recruitment progress |
 | `bloomline:get` | `bloomline_get` | Read agent progression; optional agent UUID and expected account load equipped stat counters |
 | `chat:saved-match-details` | `chat_saved_match_details` | Map, mode, agent and result for a saved match chat; fetched once and stored in `match-chat-history.json` |
+| `party:code-create` / `party:code-join` / `party:code-disable` | `party_code_create` / `party_code_join` / `party_code_disable` | Create the current party's invite code (`{ success, inviteCode, link }`; the link is Riot's `https://gg.riotgames.com/VAL?joinCode=CODE`), join by code or pasted party link (`args: [code]`), or turn the code and link off (`DELETE /parties/v1/parties/{id}/invitecode`). Shared with `.code create`, `.party join` and MCP `create_party_code` / `join_party` / `disable_party_link`. UI: Chat → Party sidebar |
 | `chat:command` | `chat_command` | Runs a `.`- or `/`-prefixed command typed in the Chat composer; the raw line is never posted |
 | `live-game:fetch` / `live-game:dump` | `live_game_fetch/dump` | Live match state (polled ~5s) |
 | `chat:get/send/translate/friend-action/disconnect` | `chat_*` | Chat (REST + XMPP) |
@@ -397,7 +398,10 @@ In agent select or a live match, `.ask` also sends a fenced `<live_game>` block
 (`bot_template::ask_game_context`): map, mode, phase, and per player agent, rank,
 RR, peak, level and cached recent form, labelled `You` / `Ally N` / `Enemy N`.
 It reads the stored Live Game roster (one fetch only when that has lapsed) and
-`LiveStatsCache` only, never extra match-history requests. No live score exists.
+`LiveStatsCache` only, never extra match-history requests. In a live game it adds
+`score` (yourTeam, enemyTeam, roundsPlayed) from the player's own chat presence
+(`partyOwnerMatchScoreAllyTeam`/`EnemyTeam` in `/chat/v4/presences`, via
+`friends::fetch_own_match_score`, 2 s cap); Riot's match APIs carry no live score.
 Match analysis sends only anonymized scoreboard stats: `You`, `Ally N`, and
 `Enemy N`. Never send other players' Riot IDs, PUUIDs, or party IDs in match
 analysis. Results stay in Matches state by match ID; Regenerate makes a new call.
@@ -506,9 +510,15 @@ the Tools page), `get_match_history` (own line per match, up to 10, one
 match-details request each through the Matches cache), `get_match_details`
 (scoreboard with every player labelled You / Ally N / Enemy N; no Riot IDs,
 PUUIDs or party IDs, only a `premadeWithYou` flag), `get_friends` (no PUUIDs,
-notes or party IDs), `get_account_status`, `get_agent_progression` and
-`open_valorant` (the only non-read tool; `mode` "relay" = Launch with XMPP
-relay, the default, or "normal"). Agent and map names
+notes or party IDs), `get_account_status`, `get_agent_progression`; party and queue: `get_party`,
+`leave_party`, `start_queue`, `stop_queue`, `change_queue` (GLZ
+`/parties/v1/parties/{id}/matchmaking/join|leave` and `/queue`, checked against
+`EligibleQueues`), `create_party_code`, `join_party`, `disable_party_link`; chat:
+`get_chat_messages` (party/team/all/friend from `chat_get`), `send_chat_message`
+(rooms through the `.ascii` relay path, whispers to friends by Riot ID only),
+`set_presence`; launch: `open_riot_client`, `open_valorant` (`mode` "relay" =
+Launch with XMPP relay, the default, or "normal"). Tools that act are marked
+`readOnlyHint: false`. Agent and map names
 come from `bot_template::content_names` (cached valorant-api.com catalog).
 Settings shows copyable setups: an agent prompt, a Claude Code command, Claude
 Desktop JSON and HTTP-client JSON. The token is masked on screen. The section's
@@ -569,6 +579,37 @@ main window within the selected monitor's work area before `lib.rs` shows it;
 `tauri.conf.json` starts the window hidden to avoid flashing on the wrong display.
 Placement errors are logged and the window is still shown. The choice applies to
 both manual launches and Windows sign-in launches, and does not move other apps.
+
+### Crosshair codes
+
+`src-tauri/src/crosshair_code.rs` turns each saved crosshair profile
+(`SavedCrosshairProfileData`) into a share code, listing only non-default values
+like the game. Only the primary crosshair (`P` section) is encoded; its keys and
+defaults mirror `crosshair-svg-generator.tsx` and the fields in
+`util/crosshair-mapper.ts`. Not encoded yet: ADS/sniper sections, general flags,
+outline color, hide crosshair, spectated crosshair, focus mode. Settings view
+replies include `crosshairCodes` (`[{ name, code, active }]`); MCP
+`get_crosshair_codes` returns them for the account or a saved profile.
+`code_from_spec` builds a code from a plain description (color, outlines, center
+dot, inner/outer lines), clamped to in-game ranges: MCP `build_crosshair_code`
+takes it directly; `ai_crosshair_generate` (`args: [description]`) asks the
+Settings → AI provider for that description (`prompts::CROSSHAIR_DESIGNER`) and
+returns `{ success, code, name, settings }`. UI: Tools → Crosshair generator
+(prompt, previews on three backgrounds, Copy code, Copy link, recent results).
+
+### valoutils:// links
+
+`tauri-plugin-deep-link` registers the `valoutils` scheme (NSIS installer; dev
+builds call `register_all` at startup). With single-instance's `deep-link`
+feature, a link opened while the app runs reaches `on_open_url` in the running
+window. `commands/deep_link.rs` parses `valoutils://crosshair?code=..&name=..` (code
+limited to share-code characters), `valoutils://player?riotId=Name%23Tag` or
+`?puuid=..`, and `valoutils://match?id=..`; it keeps the link as pending
+(`deep_link_take`) and emits `deep-link:open` (`{ kind, ... }`). `DeepLinkWatcher`
+opens crosshairs and players on Tools (`valoutils:navigate` /
+`valoutils:tools-open` window events, parked in `util/deep-links.ts`) and matches
+in the app-wide dialog (`MatchLinkView`). Copy-link buttons: crosshair generator,
+Tools player lookup, History scoreboard.
 
 ### Add a new settings tab in the viewer
 

@@ -179,7 +179,28 @@
     "unavailable": "This player profile is unavailable right now.",
     "lookupDesc": "Find any player's rank, act history and recent matches by Riot ID or PUUID.",
     "inventoryDesc": "Browse the skins, accessories and complete sets on your account.",
-    "allTools": "All tools"
+    "allTools": "All tools",
+    "crosshair": "Crosshair generator",
+    "crosshairDesc": "Describe a crosshair and get a code to import, using your AI provider.",
+    "crosshairPrompt": "Describe your crosshair",
+    "crosshairPlaceholder": "e.g. small cyan dot with no outlines, or a thin white plus with a gap",
+    "crosshairGenerate": "Generate",
+    "crosshairHint": "Uses the AI provider from Settings → AI. ValoUtils builds the code, so it always imports.",
+    "crosshairUntitled": "Crosshair",
+    "crosshairCopy": "Copy code",
+    "crosshairImport": "In VALORANT: Settings → Crosshair → Import Profile Code, then paste.",
+    "crosshairRecent": "Recent",
+    "crosshairExamples": {
+      "dot": "Small cyan dot, no outlines",
+      "classic": "Thin white lines with a small gap, no outer lines",
+      "plus": "Green plus, thick, with black outlines",
+      "pink": "Pink crosshair with a center dot"
+    },
+    "crosshairCopyLink": "Copy link",
+    "crosshairLinkHint": "A valoutils://crosshair link that opens this crosshair in ValoUtils.",
+    "crosshairShared": "Opened from a link",
+    "copyPlayerLink": "Copy player link",
+    "playerLinkHint": "A valoutils://player link that looks this player up in ValoUtils."
   },
   "store": {
     "title": "Store",
@@ -529,7 +550,23 @@
     "historyAccount": "Account",
     "historyMatchCount_one": "{{count}} saved match",
     "historyMatchCount_other": "{{count}} saved matches",
-    "viewSavedChat": "View saved chat"
+    "viewSavedChat": "View saved chat",
+    "partyCode": "Party code",
+    "partyCodeCreate": "Create invite code",
+    "partyCodeNew": "New code",
+    "partyCodePlaceholder": "Code or party link",
+    "partyCodeJoinLabel": "Party code to join",
+    "partyJoin": "Join",
+    "partyJoined": "Joined party {{code}}.",
+    "partyCodeLogin": "Sign in to the Riot Client first.",
+    "partyCodeFailed": "Riot didn't accept that. Try again.",
+    "partyLink": "Party link",
+    "partyCopyCode": "Copy code",
+    "partyCopyLink": "Copy party link",
+    "partyLinkDisable": "Disable link",
+    "partyLinkDisabled": "Party link and code turned off.",
+    "copyMatchLink": "Copy match link",
+    "matchLinkHint": "A valoutils://match link that opens this scoreboard in ValoUtils."
   },
   "settings": {
     "saveMatchChatHistory": "Save match chat history",
@@ -1087,5 +1124,8 @@
     "privacyLocal": "Only reachable from this PC (127.0.0.1), and every request needs your secret token. Web pages can't connect.",
     "privacyNames": "Live match and scoreboard tools label other players You / Ally N / Enemy N, never by name. Friends and Look up a player do return Riot IDs, because that's what they're for.",
     "privacyRate": "Agent calls share Riot's request budget with the app. If Riot rate-limits, the tool tells the agent when to try again."
+  },
+  "deepLink": {
+    "matchTitle": "Match scoreboard"
   }
 }
