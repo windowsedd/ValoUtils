@@ -328,6 +328,44 @@ export const buildChapterViews = (
   return { free, premium: premiumViews };
 };
 
+export type UpcomingReward = {
+  /** 1-based tier the reward unlocks at. */
+  tier: number;
+  reward: BattlepassReward;
+  /** XP still needed from where the player is now to unlock it. */
+  xpAway: number;
+  status: BattlepassRewardStatus;
+};
+
+/**
+ * The next `count` tier rewards after `level`, in order, with the XP still
+ * needed for each. `xpTowardNext` already counts toward the first one.
+ * `premium` is whether the player can claim premium-track tiers.
+ */
+export const upcomingRewards = (
+  chapters: readonly BattlepassChapter[],
+  level: number,
+  xpTowardNext: number,
+  premium: boolean,
+  count = 3,
+): UpcomingReward[] => {
+  const upcoming: UpcomingReward[] = [];
+  let index = 0;
+  let xpAway = 0;
+  for (const chapter of chapters) {
+    for (const row of chapter.levels) {
+      if (index >= level) {
+        xpAway += index === level ? Math.max(0, row.xp - Math.max(0, xpTowardNext)) : row.xp;
+        const { status } = premiumLevelStatus(level, index, premium, chapter.isEpilogue);
+        upcoming.push({ tier: index + 1, reward: row.reward, xpAway, status });
+        if (upcoming.length >= count) return upcoming;
+      }
+      index += 1;
+    }
+  }
+  return upcoming;
+};
+
 /** XP Riot's agent recruitment events ask for (shown in game as "x / 200,000 XP"). */
 export const RECRUITMENT_GOAL_XP = 200_000;
 

@@ -74,7 +74,9 @@
     "launchNormal": "Normal startup",
     "rateLimited": "Riot is rate-limiting requests. Try again in about {{seconds}}s.",
     "playing": "Playing",
-    "playingHint": "Valorant is running. ValoUtils picks the session up once Riot Client finishes signing in."
+    "playingHint": "Valorant is running. ValoUtils picks the session up once Riot Client finishes signing in.",
+    "openRiotClient": "Open Riot Client",
+    "openRiotClientHint": "Starts only the Riot Client, through the XMPP relay, without launching Valorant."
   },
   "riotStatus": {
     "connecting": "Connecting...",
@@ -194,7 +196,8 @@
     "accessoryStore": "Accessory Store",
     "hiddenCard": "Not revealed",
     "unknownItem": "Unknown item",
-    "resetsIn": "Resets in"
+    "resetsIn": "Resets in",
+    "featuredBundleNumbered": "Featured bundle {{number}} of {{total}}"
   },
   "inventory": {
     "title": "Inventory",
@@ -278,7 +281,10 @@
     "recruitmentDone": "Recruited",
     "recruitUnknownAgent": "New agent",
     "recruitEndsIn_other": "Ends in {{count}} days",
-    "recruitEndsIn_one": "Ends in {{count}} day"
+    "recruitEndsIn_one": "Ends in {{count}} day",
+    "nextRewards": "Next rewards",
+    "tierNumber": "Tier {{tier}}",
+    "xpAway": "{{xp}} XP away"
   },
   "career": {
     "accountStatus": "Account status",
@@ -519,7 +525,11 @@
     "history": "History",
     "historyRoom": "Room",
     "scoreboard": "Scoreboard",
-    "historyOwner": "Account:"
+    "historyOwner": "Account:",
+    "historyAccount": "Account",
+    "historyMatchCount_one": "{{count}} saved match",
+    "historyMatchCount_other": "{{count}} saved matches",
+    "viewSavedChat": "View saved chat"
   },
   "settings": {
     "saveMatchChatHistory": "Save match chat history",
@@ -954,7 +964,9 @@
       "fall": "Fall",
       "ability": "Ability",
       "noMinimap": "No minimap for this map."
-    }
+    },
+    "copyPuuid": "Copy PUUID",
+    "puuidCopied": "PUUID copied"
   },
   "logs": {
     "title": "Logs",

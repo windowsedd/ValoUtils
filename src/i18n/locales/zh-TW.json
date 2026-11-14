@@ -74,7 +74,9 @@
 		"launchNormal": "正常啟動",
 		"rateLimited": "Riot 暫時限制請求。請約 {{seconds}} 秒後再試。",
 		"playing": "遊戲中",
-		"playingHint": "特戰英豪正在執行。Riot Client 完成登入後，ValoUtils 會自動接上工作階段。"
+		"playingHint": "特戰英豪正在執行。Riot Client 完成登入後，ValoUtils 會自動接上工作階段。",
+		"openRiotClient": "開啟 Riot Client",
+		"openRiotClientHint": "只透過 XMPP 中繼開啟 Riot Client，不啟動特戰英豪。"
 	},
 	"riotStatus": {
 		"connecting": "連線中...",
@@ -193,7 +195,8 @@
 		"accessoryStore": "配件商店",
 		"hiddenCard": "尚未揭曉",
 		"unknownItem": "未知項目",
-		"resetsIn": "重置倒數"
+		"resetsIn": "重置倒數",
+		"featuredBundleNumbered": "精選組合 {{number}}/{{total}}"
 	},
 	"inventory": {
 		"title": "收藏",
@@ -276,7 +279,10 @@
 		"recruitmentLeft": "距離招募還需 {{xp}} XP",
 		"recruitmentDone": "已招募",
 		"recruitUnknownAgent": "新特務",
-		"recruitEndsIn_other": "{{count}} 天後結束"
+		"recruitEndsIn_other": "{{count}} 天後結束",
+		"nextRewards": "下一個獎勵",
+		"tierNumber": "第 {{tier}} 階",
+		"xpAway": "還差 {{xp}} XP"
 	},
 	"career": {
 		"accountStatus": "帳號狀態",
@@ -515,7 +521,10 @@
 		"history": "紀錄",
 		"historyRoom": "聊天室",
 		"scoreboard": "計分板",
-		"historyOwner": "帳號："
+		"historyOwner": "帳號：",
+		"historyAccount": "帳號",
+		"historyMatchCount_other": "{{count}} 場已儲存的對戰",
+		"viewSavedChat": "查看已儲存的聊天"
 	},
 	"settings": {
 		"saveMatchChatHistory": "儲存對戰聊天紀錄",
@@ -943,7 +952,9 @@
 			"fall": "墜落",
 			"ability": "技能",
 			"noMinimap": "此地圖沒有小地圖。"
-		}
+		},
+		"copyPuuid": "複製 PUUID",
+		"puuidCopied": "已複製 PUUID"
 	},
 	"logs": {
 		"title": "日誌",

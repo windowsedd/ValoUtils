@@ -60,6 +60,7 @@ export const SavedMatchPicker = ({
 	labels,
 	showCurrent = true,
 	fill = false,
+	names,
 }: {
 	matches: readonly SavedChatMatch[];
 	channel: "team" | "all";
@@ -70,6 +71,8 @@ export const SavedMatchPicker = ({
 	showCurrent?: boolean;
 	/** Grow to the panel's height instead of a short scrolling list. */
 	fill?: boolean;
+	/** Riot IDs by lowercase PUUID, for speakers match details don't name. */
+	names?: Readonly<Record<string, string>>;
 }) => {
 	const [query, setQuery] = useState("");
 	const list = useMemo(() => savedMatchList(matches, channel, query), [matches, channel, query]);
@@ -192,7 +195,7 @@ export const SavedMatchPicker = ({
 									<span className="relative truncate text-[11px] text-(--text-secondary)">
 										{summary.last ? (
 											<>
-												<span className="text-(--text-muted)">{savedSenderName(summary.last, details) || "?"}: </span>
+												<span className="text-(--text-muted)">{savedSenderName(summary.last, details, names) || "?"}: </span>
 												{summary.last.body}
 											</>
 										) : (

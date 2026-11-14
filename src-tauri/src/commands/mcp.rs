@@ -1,10 +1,12 @@
 //! Tools for the local MCP server (`crate::mcp`) and the Settings commands
 //! that control it. Each tool reuses an existing command, so it shares that
 //! command's PD client, rate budget and auth retry. All are read-only except
-//! `open_valorant`, which launches the game like the app's Launch button.
+//! `open_riot_client` and `open_valorant`, which start the Riot Client (and
+//! the game) like the app's launch buttons.
 
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, HashMap};
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 use tauri::{AppHandle, Manager, State};
 
@@ -55,7 +57,7 @@ pub fn tool_list() -> Vec<Value> {
         tool(
             "get_player_overview",
             "Player overview",
-            "Riot ID, account level, current competitive rank and RR, rank shields, competitive rank per act, and recent competitive games with the RR gained or lost.",
+            "Your account overview: Riot ID, PUUID, region, account level, current rank and RR, rank shields, this act's wins, games, win rate and leaderboard position, peak rank (with its act), rank per act, and recent competitive games with the RR gained or lost plus a net RR summary.",
         ),
         tool(
             "get_live_match",
@@ -65,12 +67,12 @@ pub fn tool_list() -> Vec<Value> {
         tool(
             "get_store",
             "Store",
-            "Today's store offers with skin names and prices, the featured bundle, the Night Market when it's open, accessory offers, and wallet balances (VP, Radianite, Kingdom Credits).",
+            "Today's store offers with skin names and prices, every featured bundle (often two at once) with name, price and time left, the Night Market when it's open, accessory offers, and wallet balances (VP, Radianite, Kingdom Credits).",
         ),
         tool(
             "get_battle_pass",
             "Battle pass",
-            "Battle pass and contract progress (XP and level), which premium contracts are owned, and the active agent recruitment event, if any.",
+            "Your active act battle pass and event passes: name, tier reached out of total, XP toward the next tier, whole-pass XP and percent, premium owned, days left, and the next rewards by name with the tier and XP needed for each. Also the active agent recruitment event, if any.",
         ),
         tool(
             "list_settings_profiles",
@@ -127,6 +129,20 @@ pub fn tool_list() -> Vec<Value> {
             "Agent progression",
             "Your progression level and points per agent (Riot's agent mastery system).",
         ),
+        {
+            let mut client = tool(
+                "open_riot_client",
+                "Open Riot Client",
+                "Opens the Riot Client through ValoUtils' XMPP relay without launching a game, so ValoUtils chat, presence and bot commands work out of game. Fails if the Riot Client is already running; close it completely first.",
+            );
+            client["annotations"] = json!({
+                "readOnlyHint": false,
+                "destructiveHint": false,
+                "idempotentHint": false,
+                "openWorldHint": false,
+            });
+            client
+        },
         {
             let mut launch = tool_with_input(
                 "open_valorant",
@@ -195,7 +211,9 @@ pub async fn call_tool(app: &AppHandle, name: &str, arguments: &Value) -> Option
     Some(match name {
         "get_player_overview" => {
             let reply = super::career::career_get(riot()).await.unwrap_or(Value::Null);
-            command_result(reply, player_overview)
+            // Tokens are cached by now, so this is local only.
+            let region = crate::riot::api::create_api(&riot()).await.ok().map(|api| api.region);
+            command_result(reply, |career| player_overview(career, region.as_deref()))
         }
         "get_live_match" => match super::bot_template::ask_game_context(app).await {
             Some(context) => text_result(&json!(context), false),
@@ -215,7 +233,10 @@ pub async fn call_tool(app: &AppHandle, name: &str, arguments: &Value) -> Option
         }
         "get_battle_pass" => {
             let reply = super::battlepass::battlepass_get(riot()).await.unwrap_or(Value::Null);
-            command_result(reply, |value| value)
+            match failure_message(&reply) {
+                Some(message) => text_result(&json!(message), true),
+                None => text_result(&battle_pass_summary(&reply).await, false),
+            }
         }
         "list_settings_profiles" => {
             let profiles = app.state::<ProfilesStore>().get("profiles");
@@ -301,6 +322,14 @@ pub async fn call_tool(app: &AppHandle, name: &str, arguments: &Value) -> Option
             let reply = super::bloomline::bloomline_get(vec![], riot()).await.unwrap_or(Value::Null);
             let (agents, _) = super::bot_template::content_names().await;
             command_result(reply, |reply| agent_progression(&reply, &agents))
+        }
+        "open_riot_client" => {
+            let reply = super::riot_launch::riot_open_client_with_config(vec![], app.state::<ConfigStore>())
+                .await
+                .unwrap_or(Value::Null);
+            command_result(reply, |_| {
+                json!("The Riot Client is opening with the XMPP relay. Sign in there; no game is launched.")
+            })
         }
         "open_valorant" if super::riot_launch::valorant_running() => {
             text_result(&json!("Valorant is already running."), false)
@@ -616,6 +645,217 @@ fn agent_progression(reply: &Value, agents: &HashMap<String, String>) -> Value {
     json!({ "agents": rows })
 }
 
+/// Public valorant-api.com documents (contracts, seasons, events), fetched once
+/// per session; the contracts catalog is large and changes only with a patch.
+async fn public_catalog(path: &'static str) -> Option<Arc<Value>> {
+    static CACHE: OnceLock<tokio::sync::Mutex<HashMap<&'static str, Arc<Value>>>> = OnceLock::new();
+    let mut cache = CACHE.get_or_init(Default::default).lock().await;
+    if let Some(value) = cache.get(path) {
+        return Some(value.clone());
+    }
+    let value = Arc::new(fetch_public_json(&format!("https://valorant-api.com/v1/{path}?language=en-US")).await?);
+    cache.insert(path, value.clone());
+    Some(value)
+}
+
+/// valorant-api.com endpoint per battle pass reward type (as the Battle Pass page uses).
+fn reward_endpoint(reward_type: &str) -> Option<&'static str> {
+    Some(match reward_type.to_ascii_lowercase().as_str() {
+        "equippableskinlevel" => "weapons/skinlevels",
+        "equippablecharmlevel" => "buddies/levels",
+        "playercard" => "playercards",
+        "spray" => "sprays",
+        "title" => "playertitles",
+        "currency" => "currencies",
+        _ => return None,
+    })
+}
+
+const RADIANITE_UUID: &str = "e59aa87c-4cbf-517a-5983-6e81511be9b7";
+
+/// One tier of a pass, flattened across chapters.
+#[derive(Debug, Clone, PartialEq)]
+struct PassTier {
+    xp: u64,
+    reward_type: String,
+    reward_uuid: String,
+    amount: u64,
+    epilogue: bool,
+}
+
+fn pass_tiers(contract: &Value) -> Vec<PassTier> {
+    contract
+        .pointer("/content/chapters")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .flat_map(|chapter| {
+            let epilogue = chapter.get("isEpilogue").and_then(Value::as_bool).unwrap_or(false);
+            chapter
+                .get("levels")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(move |level| {
+                    let reward = level.get("reward")?;
+                    Some(PassTier {
+                        xp: level.get("xp").and_then(Value::as_u64).unwrap_or(0),
+                        reward_type: reward.get("type").and_then(Value::as_str).unwrap_or_default().to_string(),
+                        reward_uuid: reward.get("uuid").and_then(Value::as_str).unwrap_or_default().to_string(),
+                        amount: reward.get("amount").and_then(Value::as_u64).unwrap_or(1),
+                        epilogue,
+                    })
+                })
+        })
+        .collect()
+}
+
+/// The next `count` tiers after `level`: (tier number, tier, XP still needed).
+fn next_tiers(tiers: &[PassTier], level: usize, xp_toward_next: u64, count: usize) -> Vec<(usize, &PassTier, u64)> {
+    let mut away = 0;
+    tiers
+        .iter()
+        .enumerate()
+        .skip(level)
+        .take(count)
+        .map(|(index, tier)| {
+            away += if index == level { tier.xp.saturating_sub(xp_toward_next) } else { tier.xp };
+            (index + 1, tier, away)
+        })
+        .collect()
+}
+
+/// Active passes with progress and the next rewards by name.
+async fn battle_pass_summary(reply: &Value) -> Value {
+    let (catalog, seasons, events) = tokio::join!(
+        public_catalog("contracts"),
+        public_catalog("seasons"),
+        public_catalog("events"),
+    );
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_secs() as i64)
+        .unwrap_or(0);
+    let mut windows: HashMap<String, (i64, i64)> = HashMap::new();
+    for document in [seasons.as_deref(), events.as_deref()].into_iter().flatten() {
+        for row in document.get("data").and_then(Value::as_array).into_iter().flatten() {
+            let time = |key: &str| row.get(key).and_then(Value::as_str).and_then(crate::util_time::iso_to_unix_secs);
+            if let (Some(id), Some(start), Some(end)) = (row.get("uuid").and_then(Value::as_str), time("startTime"), time("endTime")) {
+                windows.insert(id.to_ascii_lowercase(), (start, end));
+            }
+        }
+    }
+    let progress: HashMap<String, &Value> = reply
+        .get("contracts")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|row| Some((row.get("id")?.as_str()?.to_ascii_lowercase(), row)))
+        .collect();
+    let owned: Vec<String> = reply
+        .get("premiumContractIds")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .map(str::to_ascii_lowercase)
+        .collect();
+
+    let mut passes = Vec::new();
+    for contract in catalog.as_deref().and_then(|c| c.get("data")).and_then(Value::as_array).into_iter().flatten() {
+        let kind = match contract.pointer("/content/relationType").and_then(Value::as_str) {
+            Some("Season") => "act",
+            Some("Event") => "event",
+            _ => continue,
+        };
+        let relation = contract.pointer("/content/relationUuid").and_then(Value::as_str).unwrap_or_default();
+        let Some(&(_, end)) = windows
+            .get(&relation.to_ascii_lowercase())
+            .filter(|(start, end)| *start <= now && now < *end)
+        else {
+            continue;
+        };
+        let tiers = pass_tiers(contract);
+        if tiers.is_empty() {
+            continue;
+        }
+        let id = contract.get("uuid").and_then(Value::as_str).unwrap_or_default().to_ascii_lowercase();
+        let row = progress.get(&id);
+        let number = |key: &str| row.and_then(|row| row.get(key)).and_then(Value::as_u64).unwrap_or(0);
+        let (level, toward, earned) = (number("level") as usize, number("xpTowardNext"), number("totalXp"));
+        let premium_required = contract.pointer("/content/premiumVPCost").and_then(Value::as_u64).unwrap_or(0) > 0;
+        let premium_owned = owned.contains(&id);
+        let total_xp: u64 = tiers.iter().map(|tier| tier.xp).sum();
+
+        let upcoming = next_tiers(&tiers, level, toward, 3);
+        let mut lookups = tokio::task::JoinSet::new();
+        for (index, (_, tier, _)) in upcoming.iter().enumerate() {
+            if let Some(endpoint) = reward_endpoint(&tier.reward_type) {
+                let url = format!("https://valorant-api.com/v1/{endpoint}/{}?language=en-US", tier.reward_uuid.to_ascii_lowercase());
+                lookups.spawn(async move {
+                    let body = fetch_public_json(&url).await;
+                    let name = body.as_ref().and_then(|body| {
+                        body.pointer("/data/displayName")
+                            .or_else(|| body.pointer("/data/titleText"))
+                            .and_then(Value::as_str)
+                            .map(str::to_owned)
+                    });
+                    (index, name)
+                });
+            }
+        }
+        let mut names = vec![None; upcoming.len()];
+        let _ = tokio::time::timeout(NAME_LOOKUP_TIMEOUT, async {
+            while let Some(Ok((index, name))) = lookups.join_next().await {
+                names[index] = name;
+            }
+        })
+        .await;
+        let next_rewards: Vec<Value> = upcoming
+            .iter()
+            .zip(names)
+            .map(|((tier_number, tier, away), name)| {
+                let amount = if tier.reward_uuid.eq_ignore_ascii_case(RADIANITE_UUID) && tier.amount == 1 { 10 } else { tier.amount };
+                json!({
+                    "tier": tier_number,
+                    "type": tier.reward_type,
+                    "name": name,
+                    "amount": amount,
+                    "xpAway": away,
+                    "needsPremium": premium_required && !premium_owned && !tier.epilogue,
+                })
+            })
+            .collect();
+
+        passes.push(json!({
+            "name": contract.get("displayName"),
+            "kind": kind,
+            "tierReached": level.min(tiers.len()),
+            "totalTiers": tiers.len(),
+            "xpTowardNextTier": toward,
+            "xpForNextTier": tiers.get(level).map(|tier| tier.xp),
+            "passXp": {
+                "earned": earned,
+                "total": total_xp,
+                "percent": (earned.min(total_xp) * 100).checked_div(total_xp).unwrap_or(0),
+            },
+            "premiumRequired": premium_required,
+            "premiumOwned": premium_owned,
+            "daysLeft": ((end - now).max(0) + 86_399) / 86_400,
+            "complete": level >= tiers.len(),
+            "nextRewards": next_rewards,
+        }));
+    }
+    let mut summary = json!({ "activePasses": passes });
+    if catalog.is_none() {
+        summary["note"] = json!("The public battle pass catalog (valorant-api.com) could not be reached, so passes could not be listed.");
+    }
+    if let Some(recruitment) = reply.get("recruitment").filter(|value| !value.is_null()) {
+        summary["recruitment"] = recruitment.clone();
+    }
+    summary
+}
+
 /// Resolves a Riot ID or PUUID, then reads that player's profile.
 async fn lookup_player(app: &AppHandle, query: &str) -> Value {
     let riot = || app.state::<RiotState>();
@@ -678,7 +918,7 @@ fn tier_entry(tier: Option<u64>) -> Value {
 
 /// Career without the raw MMR document (every season of every queue) and
 /// with tier numbers named, so it stays small enough to be useful to a model.
-fn player_overview(career: Value) -> Value {
+fn player_overview(career: Value, region: Option<&str>) -> Value {
     let latest = career.pointer("/mmr/LatestCompetitiveUpdate");
     let field = |value: Option<&Value>, key: &str| value.and_then(|v| v.get(key)).and_then(Value::as_u64);
     let recent: Vec<Value> = career
@@ -699,14 +939,94 @@ fn player_overview(career: Value) -> Value {
             })
         })
         .collect();
+    let current_season = career.get("currentSeasonId").and_then(Value::as_str).unwrap_or_default();
+    let seasons: Vec<&Value> = career
+        .get("competitiveSeasons")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .collect();
+    let number = |season: &Value, key: &str| season.get(key).and_then(Value::as_u64).unwrap_or(0);
+    let win_rate = |wins: u64, games: u64| {
+        (games > 0).then(|| ((wins as f64 / games as f64) * 1000.0).round() / 10.0)
+    };
+    // Riot's peak rank is the highest tier the player has won a game at.
+    let peak = seasons
+        .iter()
+        .flat_map(|season| {
+            season
+                .get("winsByTier")
+                .and_then(Value::as_object)
+                .into_iter()
+                .flatten()
+                .filter_map(move |(tier, _)| tier.parse::<u64>().ok().map(|tier| (tier, season.get("seasonId"))))
+        })
+        .max_by_key(|(tier, _)| *tier);
+    let current_act = seasons
+        .iter()
+        .find(|season| season.get("seasonId").and_then(Value::as_str) == Some(current_season))
+        .map(|season| {
+            let (wins, games) = (number(season, "wins"), number(season, "games"));
+            json!({
+                "rank": tier_entry(Some(number(season, "tier")).filter(|tier| *tier > 0)),
+                "rr": number(season, "rankedRating"),
+                "wins": wins,
+                "games": games,
+                "winRatePercent": win_rate(wins, games),
+                "leaderboardRank": career
+                    .pointer(&format!("/mmr/QueueSkills/competitive/SeasonalInfoBySeasonID/{current_season}/LeaderboardRank"))
+                    .and_then(Value::as_u64)
+                    .filter(|rank| *rank > 0),
+            })
+        });
+    let acts: Vec<Value> = seasons
+        .iter()
+        .filter(|season| number(season, "games") > 0)
+        .map(|season| {
+            let (wins, games) = (number(season, "wins"), number(season, "games"));
+            json!({
+                "seasonId": season.get("seasonId"),
+                "rank": tier_entry(Some(number(season, "tier")).filter(|tier| *tier > 0)),
+                "rr": number(season, "rankedRating"),
+                "wins": wins,
+                "games": games,
+                "winRatePercent": win_rate(wins, games),
+            })
+        })
+        .collect();
+    let rr_change: i64 = recent
+        .iter()
+        .filter_map(|game| game.get("rrEarned").and_then(Value::as_i64))
+        .sum();
+    let (gains, losses) = recent.iter().fold((0, 0), |(up, down), game| {
+        match game.get("rrEarned").and_then(Value::as_i64) {
+            Some(rr) if rr > 0 => (up + 1, down),
+            Some(rr) if rr < 0 => (up, down + 1),
+            _ => (up, down),
+        }
+    });
     json!({
         "riotId": career.get("riotId"),
+        "puuid": career.get("puuid"),
+        "region": region,
         "accountLevel": career.get("accountLevel"),
         "currentRank": tier_entry(field(latest, "TierAfterUpdate")),
         "currentRr": field(latest, "RankedRatingAfterUpdate"),
         "rankShields": career.get("rankShields"),
         "currentSeasonId": career.get("currentSeasonId"),
-        "competitiveSeasons": career.get("competitiveSeasons"),
+        "currentAct": current_act,
+        "peakRank": peak.map(|(tier, season)| json!({
+            "tier": tier,
+            "name": rank_label(tier),
+            "seasonId": season,
+        })),
+        "recentCompetitiveSummary": {
+            "games": recent.len(),
+            "rrGained": gains,
+            "rrLost": losses,
+            "netRr": rr_change,
+        },
+        "acts": acts,
         "recentCompetitive": recent,
     })
 }
@@ -740,12 +1060,12 @@ fn store_name_targets(store: &Value) -> Vec<(String, String)> {
             }
         }
     }
-    if let Some(id) = store
-        .pointer("/featuredBundle/dataAssetId")
-        .and_then(Value::as_str)
-        .filter(|id| !id.is_empty())
-    {
-        targets.push(("/featuredBundle".into(), format!("bundles/{id}")));
+    if let Some(bundles) = store.get("featuredBundles").and_then(Value::as_array) {
+        for (index, bundle) in bundles.iter().enumerate() {
+            if let Some(id) = bundle.get("dataAssetId").and_then(Value::as_str).filter(|id| !id.is_empty()) {
+                targets.push((format!("/featuredBundles/{index}"), format!("bundles/{id}")));
+            }
+        }
     }
     targets
 }
@@ -852,18 +1172,44 @@ mod tests {
         let career = json!({
             "success": true,
             "riotId": "Me#NA1",
+            "puuid": "me-puuid",
+            "currentSeasonId": "act-2",
             "mmr": { "LatestCompetitiveUpdate": { "TierAfterUpdate": 24, "RankedRatingAfterUpdate": 40 },
-                     "QueueSkills": { "huge": true } },
-            "competitiveUpdates": { "Matches": [{
-                "MatchID": "m1", "MapID": "/Game/Maps/Ascent/Ascent", "MatchStartTime": 5,
-                "TierBeforeUpdate": 23, "TierAfterUpdate": 24, "RankedRatingEarned": 21, "RankedRatingAfterUpdate": 40
-            }]},
+                     "QueueSkills": { "competitive": { "SeasonalInfoBySeasonID": {
+                         "act-2": { "LeaderboardRank": 812 }
+                     } } } },
+            "competitiveSeasons": [
+                { "seasonId": "act-1", "tier": 22, "rankedRating": 10, "wins": 30, "games": 50,
+                  "winsByTier": { "22": 5, "25": 1 } },
+                { "seasonId": "act-2", "tier": 24, "rankedRating": 40, "wins": 9, "games": 16,
+                  "winsByTier": { "24": 9 } },
+                { "seasonId": "act-0", "tier": 0, "rankedRating": 0, "wins": 0, "games": 0, "winsByTier": {} },
+            ],
+            "competitiveUpdates": { "Matches": [
+                { "MatchID": "m1", "MapID": "/Game/Maps/Ascent/Ascent", "MatchStartTime": 5,
+                  "TierBeforeUpdate": 23, "TierAfterUpdate": 24, "RankedRatingEarned": 21, "RankedRatingAfterUpdate": 40 },
+                { "MatchID": "m0", "MapID": "/Game/Maps/Bind/Bind", "MatchStartTime": 4,
+                  "TierBeforeUpdate": 23, "TierAfterUpdate": 23, "RankedRatingEarned": -15, "RankedRatingAfterUpdate": 19 },
+            ]},
         });
-        let overview = player_overview(career);
+        let overview = player_overview(career, Some("na"));
+        assert_eq!(overview["puuid"], "me-puuid");
+        assert_eq!(overview["region"], "na");
         assert_eq!(overview["currentRank"]["name"], "Immortal 1");
         assert_eq!(overview["currentRr"], 40);
         assert_eq!(overview["recentCompetitive"][0]["map"], "Ascent");
         assert_eq!(overview["recentCompetitive"][0]["rankBefore"]["name"], "Ascendant 3");
+        assert_eq!(overview["currentAct"]["wins"], 9);
+        assert_eq!(overview["currentAct"]["winRatePercent"], 56.3);
+        assert_eq!(overview["currentAct"]["leaderboardRank"], 812);
+        // Peak follows the highest tier with a win, across every act.
+        assert_eq!(overview["peakRank"]["name"], "Immortal 2");
+        assert_eq!(overview["peakRank"]["seasonId"], "act-1");
+        assert_eq!(overview["recentCompetitiveSummary"]["netRr"], 6);
+        assert_eq!(overview["recentCompetitiveSummary"]["rrGained"], 1);
+        assert_eq!(overview["recentCompetitiveSummary"]["rrLost"], 1);
+        // Acts with no games are left out.
+        assert_eq!(overview["acts"].as_array().unwrap().len(), 2);
         assert!(overview.get("mmr").is_none());
     }
 
@@ -892,14 +1238,15 @@ mod tests {
         let store = json!({
             "daily": { "offers": [{ "itemId": "a" }, { "itemId": "" }] },
             "nightMarket": { "offers": [{ "itemId": "b" }] },
-            "featuredBundle": { "dataAssetId": "c" },
+            "featuredBundles": [{ "dataAssetId": "c" }, { "dataAssetId": "d" }],
         });
         assert_eq!(
             store_name_targets(&store),
             vec![
                 ("/daily/offers/0".into(), "weapons/skinlevels/a".into()),
                 ("/nightMarket/offers/0".into(), "weapons/skinlevels/b".into()),
-                ("/featuredBundle".into(), "bundles/c".into()),
+                ("/featuredBundles/0".into(), "bundles/c".into()),
+                ("/featuredBundles/1".into(), "bundles/d".into()),
             ]
         );
     }
@@ -911,7 +1258,7 @@ mod tests {
             .filter(|tool| tool["annotations"]["readOnlyHint"] != true)
             .map(|tool| tool["name"].as_str().unwrap().to_owned())
             .collect();
-        assert_eq!(writable, ["open_valorant"]);
+        assert_eq!(writable, ["open_riot_client", "open_valorant"]);
         for tool in tool_list() {
             assert_eq!(tool["inputSchema"]["type"], "object");
         }
@@ -1013,5 +1360,28 @@ mod tests {
         assert_eq!(profile["peakRank"]["name"], "Immortal 1");
         assert_eq!(profile["recentMatches"][0]["rankAfter"], "Ascendant 1");
         assert!(profile["recentMatches"][1].get("rankBefore").is_none());
+    }
+
+    #[test]
+    fn next_tiers_count_xp_from_where_the_player_is() {
+        let contract = json!({ "content": { "chapters": [
+            { "isEpilogue": false, "levels": [
+                { "xp": 100, "reward": { "type": "Spray", "uuid": "a", "amount": 1 } },
+                { "xp": 200, "reward": { "type": "Title", "uuid": "b", "amount": 1 } },
+            ] },
+            { "isEpilogue": true, "levels": [
+                { "xp": 300, "reward": { "type": "Currency", "uuid": "c", "amount": 1 } },
+            ] },
+        ] } });
+        let tiers = pass_tiers(&contract);
+        assert_eq!(tiers.len(), 3);
+        assert!(tiers[2].epilogue);
+        let next = next_tiers(&tiers, 1, 50, 3);
+        let summary: Vec<(usize, &str, u64)> =
+            next.iter().map(|(tier, row, away)| (*tier, row.reward_uuid.as_str(), *away)).collect();
+        assert_eq!(summary, [(2, "b", 150), (3, "c", 450)]);
+        assert!(next_tiers(&tiers, 3, 0, 3).is_empty());
+        assert_eq!(reward_endpoint("EquippableSkinLevel"), Some("weapons/skinlevels"));
+        assert_eq!(reward_endpoint("Unknown"), None);
     }
 }

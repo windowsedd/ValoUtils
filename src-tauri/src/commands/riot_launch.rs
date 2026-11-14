@@ -347,6 +347,59 @@ pub async fn riot_launch_with_config(
     command_result(result)
 }
 
+/// Riot Client arguments for opening the client alone: the relay's config URL
+/// and the user's extra arguments, without a product to launch.
+fn client_only_args(config_url: &str, extra: &[String]) -> Vec<String> {
+    let mut args = vec![format!("--client-config-url={config_url}")];
+    args.extend(
+        extra
+            .iter()
+            .filter(|arg| {
+                !arg.starts_with("--client-config-url")
+                    && !arg.starts_with("--launch-product")
+                    && !arg.starts_with("--launch-patchline")
+            })
+            .cloned(),
+    );
+    args
+}
+
+/// Opens the Riot Client through the local config server and XMPP relay
+/// without launching a game, so chat, presence and the bot work out of game.
+#[tauri::command]
+pub async fn riot_open_client_with_config(
+    #[allow(unused_variables)] args: Vec<Value>,
+    config: tauri::State<'_, ConfigStore>,
+) -> Result<Value, ()> {
+    let _launch_guard = launch_lock().lock().await;
+    let extra = configured_extra_args(&config);
+
+    let result: Result<Value, String> = async {
+        if riot_client_running() {
+            return Err("The Riot Client is already running. Close it completely (including the tray icon), then open it again.".into());
+        }
+        let exe = riot_client_exe()?;
+        let relay_port = start_config_and_relay().await?;
+        let config_url = format!("http://127.0.0.1:{}", client_config::port());
+        let args = client_only_args(&config_url, &extra);
+        if let Err(error) = spawn_riot(&exe, &args) {
+            client_config::stop().await;
+            presence_proxy::stop().await;
+            return Err(error);
+        }
+        Ok(json!({
+            "success": true,
+            "exe": exe.to_string_lossy(),
+            "configUrl": config_url,
+            "relayPort": relay_port,
+            "extraArgs": extra,
+        }))
+    }
+    .await;
+
+    command_result(result)
+}
+
 #[tauri::command]
 pub async fn riot_launch_normal(
     args: Vec<Value>,
@@ -474,5 +527,14 @@ mod tests {
         assert_eq!(effective_target(&default), ("valorant".to_string(), "live".to_string()));
         let pbe = launch_args("valorant", "live", None, &split_launch_args("--launch-patchline=pbe"));
         assert_eq!(effective_target(&pbe), ("valorant".to_string(), "pbe".to_string()));
+    }
+
+    #[test]
+    fn opening_the_client_alone_launches_no_product() {
+        let extra = split_launch_args("--launch-patchline=pbe --x --client-config-url=http://elsewhere");
+        assert_eq!(
+            client_only_args("http://127.0.0.1:8000", &extra),
+            ["--client-config-url=http://127.0.0.1:8000", "--x"]
+        );
     }
 }

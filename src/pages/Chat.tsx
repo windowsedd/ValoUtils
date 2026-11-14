@@ -31,6 +31,7 @@ import { PlayerCardAvatar } from "./chat/player-card-avatar";
 import { matchOutcome, savedMatchList, savedMatchMessages, savedSpeakerRoster } from "./chat/saved-match-history";
 import { ChatHistoryPanel } from "./chat/chat-history-panel";
 import { SavedMatchScoreboard } from "./chat/saved-match-scoreboard";
+import { useSavedHistoryAccounts } from "./chat/use-saved-history-accounts";
 import { SavedMatchPicker } from "./chat/saved-match-picker";
 import { useSavedMatchDetails } from "./chat/use-saved-match-details";
 
@@ -76,12 +77,19 @@ const Chat = () => {
 		controller.summary.ownerPuuid,
 		historyOpen && !controller.loginRequired,
 	);
+	// Every account with saved chat; the signed-in one stays live. Works signed out.
+	const history = useSavedHistoryAccounts(
+		historyOpen,
+		controller.loginRequired ? "" : (controller.summary.ownerPuuid ?? ""),
+		savedMatches,
+	);
+	const historyMatches = history.matches;
 	// Opening History shows the newest match until another one is picked.
-	const newestSaved = useMemo(() => savedMatchList(savedMatches, historyRoom)[0]?.matchUuid, [savedMatches, historyRoom]);
+	const newestSaved = useMemo(() => savedMatchList(historyMatches, historyRoom)[0]?.matchUuid, [historyMatches, historyRoom]);
 	const selectedSaved =
-		savedSelection && savedSelection.owner === controller.summary.ownerPuuid ? savedSelection.matchUuid : newestSaved;
-	const savedMatch = historyOpen && !controller.loginRequired
-		? savedMatches.find(match => match.matchUuid === selectedSaved)
+		savedSelection && savedSelection.owner === history.owner ? savedSelection.matchUuid : newestSaved;
+	const savedMatch = historyOpen
+		? historyMatches.find(match => match.matchUuid === selectedSaved)
 		: undefined;
 	const viewingSaved = !!savedMatch;
 	// Riot ID of the account whose saved history is shown. Read once from the
@@ -104,9 +112,14 @@ const Chat = () => {
 			active = false;
 		};
 	}, [historyOpen, ownerPuuid, historyOwner]);
-	const historyOwnerName = historyOwner?.puuid === ownerPuuid ? historyOwner.name : "";
+	const historyOwnerName =
+		history.names[history.owner.toLowerCase()] ||
+		(historyOwner?.puuid === ownerPuuid && history.owner === ownerPuuid ? historyOwner.name : "");
 	const historyMessages = savedMatchMessages(savedMatch, historyRoom);
-	const savedRoster = useMemo(() => savedSpeakerRoster(savedMatch?.details), [savedMatch?.details]);
+	const savedRoster = useMemo(
+		() => savedSpeakerRoster(savedMatch?.details, history.names),
+		[savedMatch?.details, history.names],
+	);
 	const [maps, setMaps] = useState<Map<string, MapAsset> | null>(null);
 	useEffect(() => {
 		if (!viewingSaved || maps) return;
@@ -294,15 +307,30 @@ const Chat = () => {
 				<ChatHistoryPanel
 					title={t("chat.savedMatchHistory")}
 					owner={historyOwnerName}
+					accounts={history.accounts}
+					selectedAccount={history.owner}
+					onAccountChange={(puuid) => {
+						history.setOwner(puuid);
+						setSavedSelection(null);
+						invoke("analytics_track", { args: ["chat:history-account"] }).catch(reportIpcError);
+					}}
 					room={historyRoom}
 					onRoomChange={setHistoryRoom}
-					labels={{ team: channelLabels.team, all: channelLabels.all, room: t("chat.historyRoom"), owner: t("chat.historyOwner") }}
+					labels={{
+						team: channelLabels.team,
+						all: channelLabels.all,
+						room: t("chat.historyRoom"),
+						owner: t("chat.historyOwner"),
+						account: t("chat.historyAccount"),
+						matchCount: (count) => t("chat.historyMatchCount", { count }),
+					}}
 				>
 					<SavedMatchPicker
-						matches={savedMatches}
+						matches={historyMatches}
+						names={history.names}
 						channel={historyRoom}
 						selected={savedMatch?.matchUuid ?? null}
-						onSelect={(matchUuid) => setSavedSelection(matchUuid ? { owner: controller.summary.ownerPuuid ?? "", matchUuid } : null)}
+						onSelect={(matchUuid) => setSavedSelection(matchUuid ? { owner: history.owner, matchUuid } : null)}
 						showCurrent={false}
 						fill
 						labels={{
@@ -385,11 +413,11 @@ const Chat = () => {
 					</div>
 				)}
 
-				{controller.loading ? (
+				{controller.loading && !historyOpen ? (
 					<div className="flex min-h-0 flex-1 items-center justify-center text-[12px] text-(--text-muted)">
 						{t("chat.loading")}
 					</div>
-				) : controller.loginRequired && !showBot ? (
+				) : controller.loginRequired && !showBot && !historyOpen ? (
 					<LoginRequiredPanel
 						onRetry={controller.refreshSummary}
 						icon={<LuMessageSquare />}
@@ -403,6 +431,14 @@ const Chat = () => {
 						>
 							{t("chat.refresh")}
 						</button>
+						{/* Saved chat is local, so it can be read without signing in. */}
+						<button
+							type="button"
+							className="h-8 rounded-[6px] border border-(--border) bg-(--control) px-3 text-[12px] font-medium text-(--text-primary) hover:bg-(--surface-hover)"
+							onClick={() => setHistoryOpen(true)}
+						>
+							{t("chat.viewSavedChat")}
+						</button>
 					</LoginRequiredPanel>
 				) : (
 					<>
@@ -410,7 +446,7 @@ const Chat = () => {
 							<SavedMatchScoreboard
 								key={savedMatch.matchUuid}
 								matchUuid={savedMatch.matchUuid}
-								ownerPuuid={controller.summary.ownerPuuid}
+								ownerPuuid={history.owner}
 							/>
 						)}
 						<ChatThread

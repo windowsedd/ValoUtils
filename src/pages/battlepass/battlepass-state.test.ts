@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import {
+import { upcomingRewards,
   buildChapterViews,
   catalogFromContracts,
   recruitmentView,
@@ -340,4 +340,23 @@ test("catalog ids and unknown contracts trigger a catalog reload only with XP", 
   expect(hasUnknownContracts([row("BP-1", 10), row("new", 0)], known)).toBe(false);
   expect(hasUnknownContracts([row("new", 10)], known)).toBe(true);
   expect(hasUnknownContracts([row("new", 10)], new Set())).toBe(false);
+});
+
+test("upcoming rewards list the next tiers with XP still needed", () => {
+  const reward = (uuid: string) => ({ type: "Spray", uuid, amount: 1, highlighted: false });
+  const chapters = [
+    { isEpilogue: false, freeRewards: [], levels: [{ xp: 100, reward: reward("a") }, { xp: 200, reward: reward("b") }] },
+    { isEpilogue: true, freeRewards: [], levels: [{ xp: 300, reward: reward("c") }, { xp: 400, reward: reward("d") }] },
+  ];
+  const next = upcomingRewards(chapters, 1, 50, false);
+  expect(next.map((item) => item.tier)).toEqual([2, 3, 4]);
+  // 150 left on tier 2, then each later tier's full cost on top.
+  expect(next.map((item) => item.xpAway)).toEqual([150, 450, 850]);
+  // Without premium the next premium-track tier is paywalled; epilogue tiers are free.
+  expect(next.map((item) => item.status)).toEqual(["premiumLocked", "locked", "locked"]);
+  expect(upcomingRewards(chapters, 1, 50, true)[0]!.status).toBe("current");
+  expect(upcomingRewards(chapters, 4, 0, true)).toEqual([]);
+  expect(upcomingRewards(chapters, 0, 0, true, 1)).toEqual([
+    { tier: 1, reward: reward("a"), xpAway: 100, status: "current" },
+  ]);
 });

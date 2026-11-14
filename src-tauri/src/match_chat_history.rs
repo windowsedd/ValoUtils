@@ -9,6 +9,88 @@ static FILE_LOCK: Mutex<()> = Mutex::new(());
 #[derive(Default, Serialize, Deserialize)]
 struct Archive {
     accounts: BTreeMap<String, BTreeMap<String, SavedMatch>>,
+    /// Riot IDs by lowercase PUUID, for account owners and speakers, so saved
+    /// history stays readable while signed out or on another account.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    names: BTreeMap<String, String>,
+}
+
+fn looks_like_puuid(value: &str) -> bool {
+    is_match_uuid(value)
+}
+
+impl Archive {
+    /// Owners and speakers whose Riot ID isn't known yet.
+    fn unnamed(&self) -> Vec<String> {
+        let mut ids: Vec<String> = Vec::new();
+        for (owner, matches) in &self.accounts {
+            ids.push(owner.to_ascii_lowercase());
+            for saved in matches.values() {
+                for message in &saved.messages {
+                    if let Some(sender) = message.get("sender").and_then(Value::as_str) {
+                        ids.push(sender_root(sender));
+                    }
+                }
+            }
+        }
+        ids.sort();
+        ids.dedup();
+        ids.retain(|id| looks_like_puuid(id) && !self.names.contains_key(id));
+        ids
+    }
+
+    /// Every account with saved chat, most recently saved first.
+    fn account_list(&self) -> Vec<Value> {
+        let mut accounts: Vec<Value> = self
+            .accounts
+            .iter()
+            .filter(|(_, matches)| !matches.is_empty())
+            .map(|(owner, matches)| {
+                serde_json::json!({
+                    "puuid": owner,
+                    "name": self.names.get(&owner.to_ascii_lowercase()),
+                    "matchCount": matches.len(),
+                    "updatedAt": matches.values().map(|saved| saved.updated_at).max().unwrap_or(0),
+                })
+            })
+            .collect();
+        accounts.sort_by_key(|account| std::cmp::Reverse(account["updatedAt"].as_u64().unwrap_or(0)));
+        accounts
+    }
+
+    /// Names for one account's owner and speakers.
+    fn names_for(&self, owner: &str) -> BTreeMap<String, String> {
+        let mut wanted = vec![owner.to_ascii_lowercase()];
+        for saved in self.accounts.get(owner).into_iter().flat_map(|matches| matches.values()) {
+            for message in &saved.messages {
+                if let Some(sender) = message.get("sender").and_then(Value::as_str) {
+                    wanted.push(sender_root(sender));
+                }
+            }
+        }
+        wanted
+            .into_iter()
+            .filter_map(|id| self.names.get(&id).map(|name| (id, name.clone())))
+            .collect()
+    }
+}
+
+/// `GameName#Tag` entries from a name-service reply, by lowercase PUUID.
+fn names_from_reply(reply: &Value) -> BTreeMap<String, String> {
+    reply
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|entry| {
+            let subject = entry.get("Subject")?.as_str()?.to_ascii_lowercase();
+            let name = entry.get("GameName")?.as_str()?.trim();
+            if name.is_empty() {
+                return None;
+            }
+            let tag = entry.get("TagLine").and_then(Value::as_str).unwrap_or_default().trim();
+            Some((subject, if tag.is_empty() { name.to_string() } else { format!("{name}#{tag}") }))
+        })
+        .collect()
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -397,7 +479,7 @@ pub async fn chat_saved_match_details(
             let document = api.get_match_details(&uuid).await?;
             let details = summarize(&document, &api.puuid)
                 .ok_or_else(|| "Riot has no finished match details yet.".to_string())?;
-            Ok(store_details(&path, &api.puuid, &uuid, &details)?)
+            store_details(&path, &api.puuid, &uuid, &details)
         }
     })
     .await;
@@ -419,6 +501,94 @@ pub async fn chat_saved_match_details(
             None => serde_json::json!({"success": false, "matchUuid": uuid, "error": error}),
         },
     })
+}
+
+const NAME_BATCH: usize = 100;
+
+fn history_path() -> std::path::PathBuf {
+    crate::store::user_data_dir().join("match-chat-history.json")
+}
+
+/// Every account with saved match chat on this PC, with its Riot ID. While
+/// signed in, missing owner and speaker names are looked up in batches through
+/// the name service and saved, so later reads need no request.
+#[tauri::command]
+pub async fn chat_saved_history_accounts(
+    riot: tauri::State<'_, crate::riot::client::RiotState>,
+) -> Result<Value, ()> {
+    let path = history_path();
+    let unnamed = {
+        let _guard = FILE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        match read(&path) {
+            Ok(archive) => archive.unnamed(),
+            Err(error) => return Ok(serde_json::json!({ "success": false, "error": error })),
+        }
+    };
+    if !unnamed.is_empty() {
+        let looked_up = crate::riot::api::with_api(&riot, |api| {
+            let unnamed = unnamed.clone();
+            async move {
+                let mut names = BTreeMap::new();
+                for batch in unnamed.chunks(NAME_BATCH) {
+                    let reply = api
+                        .get_names(batch)
+                        .await
+                        .map_err(crate::riot::error::RiotError::Other)?;
+                    names.extend(names_from_reply(&reply));
+                }
+                Ok(names)
+            }
+        })
+        .await;
+        match looked_up {
+            Ok(names) if !names.is_empty() => {
+                let _guard = FILE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+                if let Ok(mut archive) = read(&path) {
+                    archive.names.extend(names);
+                    if let Err(error) = write(&path, &archive) {
+                        log::warn!("Could not save chat history names: {error}");
+                    }
+                }
+            }
+            Ok(_) => {}
+            // Signed out or rate limited: list the accounts with the names already known.
+            Err(error) => log::info!("Chat history names not looked up: {error}"),
+        }
+    }
+    let _guard = FILE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    Ok(match read(&path) {
+        Ok(archive) => serde_json::json!({ "success": true, "accounts": archive.account_list() }),
+        Err(error) => serde_json::json!({ "success": false, "error": error }),
+    })
+}
+
+/// One account's saved matches and the known names of its owner and speakers.
+/// Local only, so it works signed out and for accounts other than the current one.
+#[tauri::command]
+pub fn chat_saved_history_get(args: Vec<Value>) -> Value {
+    let owner = args.first().and_then(Value::as_str).unwrap_or_default().to_string();
+    if owner.is_empty() {
+        return serde_json::json!({ "success": false, "error": "No account given." });
+    }
+    let _guard = FILE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    match read(&history_path()) {
+        Ok(archive) => {
+            let mut matches: Vec<SavedMatch> = archive
+                .accounts
+                .get(&owner)
+                .into_iter()
+                .flat_map(|account| account.values().cloned())
+                .collect();
+            matches.sort_by(|a, b| b.updated_at.cmp(&a.updated_at).then_with(|| a.match_uuid.cmp(&b.match_uuid)));
+            serde_json::json!({
+                "success": true,
+                "owner": owner,
+                "matches": matches,
+                "names": archive.names_for(&owner),
+            })
+        }
+        Err(error) => serde_json::json!({ "success": false, "error": error }),
+    }
 }
 
 #[tauri::command]
@@ -656,5 +826,28 @@ mod tests {
             .unwrap()
             .is_empty());
         assert!(!path.exists());
+    }
+
+    #[test]
+    fn accounts_list_names_and_unnamed_speakers() {
+        const OWNER: &str = "11111111-1111-1111-1111-111111111111";
+        const SPEAKER: &str = "22222222-2222-2222-2222-222222222222";
+        let mut archive = Archive::default();
+        let mut spoken = line("blue", "a");
+        spoken["sender"] = json!(format!("{SPEAKER}@ap1.pvp.net"));
+        archive.capture(OWNER, &[spoken]);
+        assert_eq!(archive.unnamed(), [OWNER, SPEAKER]);
+        archive.names.extend(names_from_reply(&json!([
+            { "Subject": OWNER.to_uppercase(), "GameName": "Me", "TagLine": "NA1" },
+            { "Subject": SPEAKER, "GameName": "", "TagLine": "x" },
+        ])));
+        assert_eq!(archive.unnamed(), [SPEAKER]);
+        let accounts = archive.account_list();
+        assert_eq!(accounts[0]["name"], "Me#NA1");
+        assert_eq!(accounts[0]["matchCount"], 1);
+        assert_eq!(archive.names_for(OWNER).get(OWNER).map(String::as_str), Some("Me#NA1"));
+        // Names survive a save and reload; older files without them still load.
+        let saved: Archive = serde_json::from_str(&serde_json::to_string(&archive).unwrap()).unwrap();
+        assert_eq!(saved.names.len(), 1);
     }
 }

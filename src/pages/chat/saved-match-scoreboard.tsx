@@ -67,6 +67,7 @@ export const SavedMatchScoreboard = ({ matchUuid, ownerPuuid }: { matchUuid: str
 						loading={!match && !errors[matchUuid]}
 						error={errors[matchUuid]}
 						highlightPuuid={ownerPuuid ?? undefined}
+						copyPuuid
 					/>
 				</div>
 			)}

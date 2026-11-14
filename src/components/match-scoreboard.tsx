@@ -1,3 +1,4 @@
+import { reportIpcError } from "@/util/ipc";
 import { listenEvent } from "@/util/ipc";
 import { invoke } from "@tauri-apps/api/core";
 import type { MatchDetails, MatchDetailsResponse, MatchPlayer } from "@/types/matches";
@@ -15,6 +16,7 @@ import { tierName } from "@/util/valorant-ranks";
 import { useAgentAssets } from "@/util/use-agent-assets";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { LuCheck, LuCopy } from "react-icons/lu";
 import { MatchAccuracy } from "./match-accuracy-panel";
 import { formatDpr } from "./match-dpr";
 import { isMatchPlayerHighlighted } from "./match-player-highlight";
@@ -156,12 +158,42 @@ const Stat = ({ label, value, color }: { label: string; value: string; color?: s
 	</div>
 );
 
-const ScoreboardRow = ({ player, assets, highlighted, onPlayerSelect, coachLabel }: {
+/** Copies a player's PUUID; shown on hover or keyboard focus of its row. */
+const CopyPuuidButton = ({ puuid, label, copiedLabel }: { puuid: string; label: string; copiedLabel: string }) => {
+	const [copied, setCopied] = useState(false);
+	useEffect(() => {
+		if (!copied) return;
+		const timer = setTimeout(() => setCopied(false), 1500);
+		return () => clearTimeout(timer);
+	}, [copied]);
+	return (
+		<button
+			type="button"
+			data-copy-puuid=""
+			aria-label={copied ? copiedLabel : label}
+			title={copied ? copiedLabel : label}
+			onClick={() => {
+				invoke("clipboard_set", { args: [puuid] }).catch(reportIpcError);
+				invoke("analytics_track", { args: ["scoreboard:copy-puuid"] }).catch(reportIpcError);
+				setCopied(true);
+			}}
+			className={`press-flat grid size-6 shrink-0 place-items-center rounded-[6px] text-(--text-muted) outline-none transition-[opacity,color,background-color] hover:bg-(--surface-hover) hover:text-(--text-primary) focus-visible:opacity-100 focus-visible:shadow-[0_0_0_2px_var(--accent-soft)] group-hover:opacity-100 ${
+				copied ? "opacity-100 text-(--signal-pos)" : "opacity-0"
+			}`}
+		>
+			{copied ? <LuCheck className="size-3.5" aria-hidden="true" /> : <LuCopy className="size-3.5" aria-hidden="true" />}
+		</button>
+	);
+};
+
+const ScoreboardRow = ({ player, assets, highlighted, onPlayerSelect, coachLabel, copy }: {
 	player: MatchPlayer;
 	assets: MatchAssets;
 	highlighted: boolean;
 	onPlayerSelect?: (player: MatchPlayer) => void;
 	coachLabel: string;
+	/** Adds a Copy PUUID button after the row. */
+	copy?: { label: string; copiedLabel: string };
 }) => {
 	const agent = assets.agents.get(player.characterId.toLowerCase());
 	const tierIcon = player.competitiveTier > 0 ? assets.tiers.get(player.competitiveTier)?.icon : undefined;
@@ -200,7 +232,7 @@ const ScoreboardRow = ({ player, assets, highlighted, onPlayerSelect, coachLabel
 		highlighted ? "bg-(--accent-soft)" : "hover:bg-(--surface-hover)"
 	}`;
 
-	return interaction.selectable ? (
+	const row = interaction.selectable ? (
 		<button
 			type="button"
 			onClick={interaction.activate}
@@ -211,6 +243,14 @@ const ScoreboardRow = ({ player, assets, highlighted, onPlayerSelect, coachLabel
 		</button>
 	) : (
 		<div className={className}>{content}</div>
+	);
+	if (!copy || !player.subject) return row;
+	// The copy button sits beside the row, never inside a row that is itself a button.
+	return (
+		<div className="group flex items-center gap-1">
+			<div className="min-w-0 flex-1">{row}</div>
+			<CopyPuuidButton puuid={player.subject} label={copy.label} copiedLabel={copy.copiedLabel} />
+		</div>
 	);
 };
 
@@ -225,6 +265,7 @@ export const MatchScoreboard = ({
 	error,
 	highlightPuuid,
 	onPlayerSelect,
+	copyPuuid = false,
 }: {
 	details?: MatchDetails;
 	assets: MatchAssets;
@@ -232,6 +273,8 @@ export const MatchScoreboard = ({
 	error?: string;
 	highlightPuuid?: string;
 	onPlayerSelect?: (player: MatchPlayer) => void;
+	/** Show a Copy PUUID button on each player's row. */
+	copyPuuid?: boolean;
 }) => {
 	const { t } = useTranslation();
 	if (loading) return <p className="px-2 py-3 text-[11px] text-(--text-muted)">{t("matches.loadingDetails")}</p>;
@@ -281,6 +324,7 @@ export const MatchScoreboard = ({
 					<span className="w-12 text-right shrink-0">{t("matches.dpr")}</span>
 					<span className="w-10 text-right shrink-0">{t("matches.fb")}</span>
 					<span className="w-12 text-right shrink-0">{t("matches.hs")}</span>
+					{copyPuuid && <span className="w-6 shrink-0" aria-hidden="true" />}
 				</div>
 				{details.players.map((player) => (
 					<ScoreboardRow
@@ -290,6 +334,7 @@ export const MatchScoreboard = ({
 						highlighted={isMatchPlayerHighlighted(player, highlightPuuid)}
 						onPlayerSelect={onPlayerSelect}
 						coachLabel={t("matches.coach")}
+						copy={copyPuuid ? { label: t("matches.copyPuuid"), copiedLabel: t("matches.puuidCopied") } : undefined}
 					/>
 				))}
 			</div>
