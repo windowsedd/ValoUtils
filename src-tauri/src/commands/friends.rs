@@ -98,6 +98,41 @@ fn valorant_presence(presence: &Value) -> Option<Value> {
     }))
 }
 
+/// The live round score from the player's own chat presence: the game puts
+/// `partyOwnerMatchScoreAllyTeam` / `...EnemyTeam` in the presence it sends
+/// (the same field friends' scores come from), and the Riot Client's local
+/// presence list includes the signed-in player. `(yours, theirs)`, only while
+/// the presence says the player is in a match.
+pub(crate) fn own_match_score(presences: &[Value], puuid: &str) -> Option<(i64, i64)> {
+    presences
+        .iter()
+        .filter(|presence| {
+            id_root(&first_str([presence.get("puuid"), presence.get("pid")])).eq_ignore_ascii_case(puuid)
+        })
+        .filter_map(valorant_presence)
+        .find_map(|game| {
+            let in_game = game
+                .get("sessionLoopState")
+                .and_then(Value::as_str)
+                .is_some_and(|state| state.eq_ignore_ascii_case("INGAME"));
+            let ally = game.get("allyScore").and_then(Value::as_i64)?;
+            let enemy = game.get("enemyScore").and_then(Value::as_i64)?;
+            in_game.then_some((ally, enemy))
+        })
+}
+
+/// [`own_match_score`] from the Riot Client's current presences.
+pub(crate) async fn fetch_own_match_score(riot: &RiotState) -> Option<(i64, i64)> {
+    let puuid = riot_client::get_tokens(riot, false)
+        .await
+        .ok()?
+        .get("subject")
+        .and_then(Value::as_str)?
+        .to_string();
+    let presences = riot_client::get_presences(riot).await.ok()?;
+    own_match_score(&presences, &puuid)
+}
+
 /// How much a presence entry is worth when one player has several. Higher wins.
 /// A game presence carries the `private` blob; the `riot_client` launcher entry
 /// carries nothing and must never displace it.
@@ -270,4 +305,33 @@ fn now_iso() -> String {
         .unwrap_or(0);
     let (y, m, d, h, mi, s) = crate::util_time::civil_from_unix_secs(secs);
     format!("{y:04}-{m:02}-{d:02}T{h:02}:{mi:02}:{s:02}Z")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn blob(state: &str) -> String {
+        base64::engine::general_purpose::STANDARD.encode(
+            json!({
+                "matchPresenceData": { "sessionLoopState": state, "queueId": "unrated" },
+                "partyOwnerMatchScoreAllyTeam": 7,
+                "partyOwnerMatchScoreEnemyTeam": 5,
+            })
+            .to_string(),
+        )
+    }
+
+    #[test]
+    fn own_score_comes_from_the_players_in_game_presence() {
+        let presences = vec![
+            json!({ "puuid": "friend", "product": "valorant", "private": blob("INGAME") }),
+            json!({ "puuid": "ME", "product": "riot_client" }),
+            json!({ "pid": "me@ap1.pvp.net", "product": "valorant", "private": blob("INGAME") }),
+        ];
+        assert_eq!(own_match_score(&presences, "me"), Some((7, 5)));
+        let menus = vec![json!({ "puuid": "me", "product": "valorant", "private": blob("MENUS") })];
+        assert_eq!(own_match_score(&menus, "me"), None);
+        assert_eq!(own_match_score(&presences, "nobody"), None);
+    }
 }

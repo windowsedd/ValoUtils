@@ -32,6 +32,7 @@ import { matchOutcome, savedMatchList, savedMatchMessages, savedSpeakerRoster } 
 import { ChatHistoryPanel } from "./chat/chat-history-panel";
 import { SavedMatchScoreboard } from "./chat/saved-match-scoreboard";
 import { useSavedHistoryAccounts } from "./chat/use-saved-history-accounts";
+import { PartyCodePanel } from "./chat/party-code-panel";
 import { SavedMatchPicker } from "./chat/saved-match-picker";
 import { useSavedMatchDetails } from "./chat/use-saved-match-details";
 
@@ -388,6 +389,7 @@ const Chat = () => {
 					channel={channel}
 					title={channelLabels[channel]}
 					available={!!controller.selectedCid && !matchEnded}
+					history={channel === "party" && !controller.loginRequired ? <PartyCodePanel /> : undefined}
 					members={roomMembers}
 					commands={commandHints}
 					labels={{

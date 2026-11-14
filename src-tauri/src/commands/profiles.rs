@@ -261,7 +261,9 @@ fn view_settings_blob(data: &str) -> Value {
     match settings_decoder::decode_profile_data(data) {
         Ok(decoded) => {
             let crosshairs = settings_decoder::extract_crosshair_profiles(&decoded);
-            json!({ "success": true, "settings": decoded, "crosshairs": crosshairs })
+            // Share codes for each saved crosshair (primary), e.g. "0;P;c;5;h;0".
+            let codes = crosshairs.as_ref().map(crate::crosshair_code::crosshair_codes).unwrap_or_default();
+            json!({ "success": true, "settings": decoded, "crosshairs": crosshairs, "crosshairCodes": codes })
         }
         Err(e) => json!({ "error": e, "success": false }),
     }

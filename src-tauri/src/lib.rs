@@ -9,6 +9,7 @@ mod match_chat_history;
 mod mcp;
 mod client_config;
 mod commands;
+mod crosshair_code;
 mod fake_player;
 mod presence_proxy;
 mod riot;
@@ -26,7 +27,7 @@ use store::{CacheStore, ConfigStore, ProfilesStore, Store};
 use tauri::Manager;
 
 /// Brings the existing window forward when ValoUtils is launched again.
-fn focus_main_window(app: &tauri::AppHandle) {
+pub(crate) fn focus_main_window(app: &tauri::AppHandle) {
     let Some(window) = app.get_webview_window("main") else {
         return;
     };
@@ -48,6 +49,9 @@ pub fn run() {
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             focus_main_window(app);
         }))
+        // valoutils:// links; with the single-instance "deep-link" feature a
+        // link opened while the app runs is delivered to on_open_url below.
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_opener::init())
@@ -189,6 +193,27 @@ pub fn run() {
             app.manage(commands::live_party::LivePartyHistoryCache::default());
             app.manage(commands::matches::MatchCache::default());
             app.manage(commands::matches::MatchTimelineCache::default());
+            {
+                use tauri_plugin_deep_link::DeepLinkExt;
+                // Installed builds get the scheme from the NSIS installer; dev
+                // builds register it for the current user so links work there too.
+                #[cfg(debug_assertions)]
+                if let Err(error) = app.deep_link().register_all() {
+                    log::warn!("Could not register valoutils:// links: {error}");
+                }
+                let handle = app.handle().clone();
+                app.deep_link().on_open_url(move |event| {
+                    for url in event.urls() {
+                        commands::deep_link::open(&handle, &url);
+                    }
+                });
+                // A link that launched the app.
+                if let Ok(Some(urls)) = app.deep_link().get_current() {
+                    for url in urls {
+                        commands::deep_link::open(app.handle(), &url);
+                    }
+                }
+            }
             tauri::async_runtime::spawn(commands::riot_launch::autostart());
             tauri::async_runtime::spawn(mcp::start_if_enabled(app.handle().clone()));
             commands::chat::ensure_chat_forwarders(app.handle());
@@ -217,6 +242,10 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::app::open_url,
+            commands::deep_link::deep_link_take,
+            commands::riot_chat::party_code_create,
+            commands::riot_chat::party_code_join,
+            commands::riot_chat::party_code_disable,
             commands::mcp::mcp_status,
             commands::mcp::mcp_tools,
             commands::mcp::mcp_set_enabled,
@@ -235,6 +264,7 @@ pub fn run() {
             commands::ai::ai_test,
             commands::ai::ai_models,
             commands::ai::ai_match_analyze,
+            commands::ai::ai_crosshair_generate,
             commands::startup::startup_get,
             commands::startup::startup_set,
             commands::display::display_get,

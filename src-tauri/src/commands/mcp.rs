@@ -39,6 +39,17 @@ fn tool_with_input(name: &str, title: &str, description: &str, input: Value) -> 
     })
 }
 
+/// Marks a tool as one that changes something (not read-only).
+fn action(mut tool: Value) -> Value {
+    tool["annotations"] = json!({
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false,
+    });
+    tool
+}
+
 /// One string property, optionally required.
 fn string_input(property: &str, description: &str, required: bool) -> Value {
     let mut input = json!({
@@ -62,7 +73,7 @@ pub fn tool_list() -> Vec<Value> {
         tool(
             "get_live_match",
             "Live match",
-            "The current agent select or match: map, mode, phase, and for each player their agent, rank, RR, peak rank, level and recent form. Players are labelled You / Ally N / Enemy N.",
+            "The current agent select or match: map, mode, phase, the live round score during a match (from your chat presence, when Riot shares it), and for each player their agent, rank, RR, peak rank, level and recent form. Players are labelled You / Ally N / Enemy N.",
         ),
         tool(
             "get_store",
@@ -88,6 +99,22 @@ pub fn tool_list() -> Vec<Value> {
                 "Saved profile name from list_settings_profiles. Leave out for the account's current settings.",
                 false,
             ),
+        ),
+        tool_with_input(
+            "get_crosshair_codes",
+            "Crosshair codes",
+            "Share codes (like 0;P;c;5;h;0;0l;4) for every crosshair profile saved on your account, or in a saved ValoUtils settings profile, with the active one marked. The code covers the primary crosshair, which is what players paste into Settings > Crosshair > Import.",
+            string_input(
+                "name",
+                "Saved profile name from list_settings_profiles. Leave out for the account's current crosshairs.",
+                false,
+            ),
+        ),
+        tool_with_input(
+            "build_crosshair_code",
+            "Build crosshair code",
+            "Builds a VALORANT crosshair share code from a description of its settings. Turn the player's request into these settings (leave out what they didn't ask for; outer lines are usually off) and give them the returned code to paste into Settings > Crosshair > Import. Values are clamped to the game's ranges.",
+            crate::crosshair_code::spec_schema(),
         ),
         tool_with_input(
             "lookup_player",
@@ -129,6 +156,107 @@ pub fn tool_list() -> Vec<Value> {
             "Agent progression",
             "Your progression level and points per agent (Riot's agent mastery system).",
         ),
+        tool(
+            "get_party",
+            "Party",
+            "Your current Valorant party: members (Riot ID, rank, level, owner, ready), the selected queue, whether it is searching for a match, open/closed, and the queues it can enter.",
+        ),
+        action(tool(
+            "leave_party",
+            "Leave party",
+            "Leaves your current Valorant party (you get a party of your own).",
+        )),
+        action(tool(
+            "start_queue",
+            "Start queue",
+            "Starts searching for a match in the party's selected queue. Only the party owner can start the queue.",
+        )),
+        action(tool(
+            "stop_queue",
+            "Stop queue",
+            "Stops searching for a match.",
+        )),
+        action(tool_with_input(
+            "change_queue",
+            "Change queue",
+            "Selects the party's queue, e.g. competitive, unrated, swiftplay, spikerush, deathmatch, ggteam (Escalation), hurm (Team Deathmatch). Use get_party for the queues this party can enter.",
+            string_input("queue", "Queue ID, e.g. competitive or unrated.", true),
+        )),
+        tool_with_input(
+            "get_chat_messages",
+            "Read chat",
+            "Recent messages in your party, team or all chat, or with a friend (by Riot ID). Newest last.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "channel": { "type": "string", "enum": ["party", "team", "all", "friend"] },
+                    "friend": { "type": "string", "description": "Friend's Riot ID (Name#Tag) when channel is friend." },
+                    "limit": { "type": "integer", "minimum": 1, "maximum": 50, "description": "How many messages. Default 20." },
+                },
+                "required": ["channel"],
+                "additionalProperties": false,
+            }),
+        ),
+        action(tool_with_input(
+            "send_chat_message",
+            "Send chat message",
+            "Sends a message as you to your party, team or all chat, or as a whisper to a friend (by Riot ID). Team and all chat need a running match (or agent select); posting to rooms works best when the Riot Client was opened through ValoUtils' XMPP relay.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "channel": { "type": "string", "enum": ["party", "team", "all", "friend"] },
+                    "message": { "type": "string", "description": "The message text." },
+                    "friend": { "type": "string", "description": "Friend's Riot ID (Name#Tag) when channel is friend." },
+                },
+                "required": ["channel", "message"],
+                "additionalProperties": false,
+            }),
+        )),
+        action(tool_with_input(
+            "set_presence",
+            "Set chat presence",
+            "Sets how friends see you in Riot chat: online, offline (appear offline) or mobile. Needs the Riot Client opened through ValoUtils' XMPP relay.",
+            json!({
+                "type": "object",
+                "properties": { "mode": { "type": "string", "enum": ["online", "offline", "mobile"] } },
+                "required": ["mode"],
+                "additionalProperties": false,
+            }),
+        )),
+        {
+            let mut create = tool(
+                "create_party_code",
+                "Create party code",
+                "Creates an invite code and Riot party link (https://gg.riotgames.com/VAL?joinCode=...) for your current Valorant party, which friends can use to join it. You must be in a party (the game's lobby counts).",
+            );
+            create["annotations"] = json!({
+                "readOnlyHint": false, "destructiveHint": false, "idempotentHint": false, "openWorldHint": false,
+            });
+            create
+        },
+        {
+            let mut join = tool_with_input(
+                "join_party",
+                "Join party by code",
+                "Joins a Valorant party using its invite code (letters and digits, like TUE693) or a Riot party link. You leave your current party to join it.",
+                string_input("code", "The party invite code, or a gg.riotgames.com party link.", true),
+            );
+            join["annotations"] = json!({
+                "readOnlyHint": false, "destructiveHint": false, "idempotentHint": false, "openWorldHint": false,
+            });
+            join
+        },
+        {
+            let mut disable = tool(
+                "disable_party_link",
+                "Disable party link",
+                "Turns off your current party's invite code and party link, so they can no longer be used to join.",
+            );
+            disable["annotations"] = json!({
+                "readOnlyHint": false, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false,
+            });
+            disable
+        },
         {
             let mut client = tool(
                 "open_riot_client",
@@ -175,6 +303,14 @@ fn text_result(value: &Value, is_error: bool) -> Value {
         other => serde_json::to_string_pretty(other).unwrap_or_default(),
     };
     json!({ "content": [{ "type": "text", "text": text }], "isError": is_error })
+}
+
+fn party_failure(error: &crate::riot::error::RiotError) -> String {
+    if error.is_login_required() {
+        LOGIN_MESSAGE.to_string()
+    } else {
+        error.to_string()
+    }
 }
 
 /// Turns a command's `{ success: false, ... }` reply into a readable error.
@@ -268,6 +404,29 @@ pub async fn call_tool(app: &AppHandle, name: &str, arguments: &Value) -> Option
                 value
             })
         }
+        "build_crosshair_code" => {
+            let (code, settings) = crate::crosshair_code::code_from_spec(arguments);
+            text_result(&json!({ "code": code, "settingsApplied": settings }), false)
+        }
+        "get_crosshair_codes" => {
+            let name = arguments
+                .get("name")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|name| !name.is_empty());
+            let reply = match name {
+                Some(name) => super::profiles::settings_profile_view(vec![json!(name)], app.state::<ProfilesStore>()),
+                None => super::profiles::settings_current_view(riot()).await.unwrap_or(Value::Null),
+            };
+            command_result(reply, |value| {
+                let codes = value.get("crosshairCodes").cloned().unwrap_or(json!([]));
+                if codes.as_array().is_some_and(|codes| codes.is_empty()) {
+                    json!("No saved crosshair profiles were found in these settings.")
+                } else {
+                    json!({ "source": name.unwrap_or("current account settings"), "crosshairs": codes })
+                }
+            })
+        }
         "lookup_player" => {
             let query = arguments.get("player").and_then(Value::as_str).unwrap_or_default();
             lookup_player(app, query).await
@@ -322,6 +481,76 @@ pub async fn call_tool(app: &AppHandle, name: &str, arguments: &Value) -> Option
             let reply = super::bloomline::bloomline_get(vec![], riot()).await.unwrap_or(Value::Null);
             let (agents, _) = super::bot_template::content_names().await;
             command_result(reply, |reply| agent_progression(&reply, &agents))
+        }
+        "get_party" => match party_snapshot(app).await {
+            Ok(party) => text_result(&party, false),
+            Err(error) => text_result(&json!(party_failure(&error)), true),
+        },
+        "leave_party" | "start_queue" | "stop_queue" | "change_queue" => {
+            let queue = arguments.get("queue").and_then(Value::as_str).unwrap_or_default();
+            match party_action(app, name, queue).await {
+                Ok(message) => text_result(&json!(message), false),
+                Err(error) => text_result(&json!(party_failure(&error)), true),
+            }
+        }
+        "get_chat_messages" => {
+            let channel = arguments.get("channel").and_then(Value::as_str).unwrap_or_default();
+            let friend = arguments.get("friend").and_then(Value::as_str).unwrap_or_default();
+            let limit = arguments.get("limit").and_then(Value::as_u64).unwrap_or(20).clamp(1, 50) as usize;
+            match chat_messages(app, channel, friend, limit).await {
+                Ok(messages) => text_result(&messages, false),
+                Err(message) => text_result(&json!(message), true),
+            }
+        }
+        "send_chat_message" => {
+            let channel = arguments.get("channel").and_then(Value::as_str).unwrap_or_default();
+            let friend = arguments.get("friend").and_then(Value::as_str).unwrap_or_default();
+            let message = arguments.get("message").and_then(Value::as_str).unwrap_or_default();
+            match send_chat(app, channel, friend, message).await {
+                Ok(sent) => text_result(&json!(sent), false),
+                Err(message) => text_result(&json!(message), true),
+            }
+        }
+        "set_presence" => {
+            let mode = arguments.get("mode").and_then(Value::as_str).unwrap_or_default();
+            let reply = super::presence::presence_status_set(vec![json!(mode)], app.state::<ConfigStore>())
+                .await
+                .unwrap_or(Value::Null);
+            match failure_message(&reply) {
+                Some(message) => text_result(&json!(message), true),
+                None => {
+                    let connected = reply
+                        .pointer("/presence/activeConnections")
+                        .and_then(Value::as_u64)
+                        .unwrap_or(0);
+                    text_result(
+                        &json!(if connected > 0 {
+                            format!("Presence set to {mode}.")
+                        } else {
+                            format!("Presence saved as {mode}. It applies once the Riot Client is opened through ValoUtils' XMPP relay.")
+                        }),
+                        false,
+                    )
+                }
+            }
+        }
+        "create_party_code" => match super::riot_chat::create_party_invite_code(app).await {
+            Ok(code) => text_result(
+                &json!({ "inviteCode": code, "link": super::riot_chat::party_link(&code) }),
+                false,
+            ),
+            Err(error) => text_result(&json!(party_failure(&error)), true),
+        },
+        "disable_party_link" => match super::riot_chat::disable_party_invite_code(app).await {
+            Ok(()) => text_result(&json!("The party link and invite code are turned off."), false),
+            Err(error) => text_result(&json!(party_failure(&error)), true),
+        },
+        "join_party" => {
+            let code = arguments.get("code").and_then(Value::as_str).unwrap_or_default();
+            match super::riot_chat::join_party_by_code(app, code).await {
+                Ok(code) => text_result(&json!(format!("Joined party {code}.")), false),
+                Err(error) => text_result(&json!(party_failure(&error)), true),
+            }
         }
         "open_riot_client" => {
             let reply = super::riot_launch::riot_open_client_with_config(vec![], app.state::<ConfigStore>())
@@ -856,6 +1085,210 @@ async fn battle_pass_summary(reply: &Value) -> Value {
     summary
 }
 
+fn riot_id_from_names(names: &Value, puuid: &str) -> Option<String> {
+    let entry = names.as_array()?.iter().find(|entry| {
+        entry.get("Subject").and_then(Value::as_str).is_some_and(|subject| subject.eq_ignore_ascii_case(puuid))
+    })?;
+    let name = entry.get("GameName").and_then(Value::as_str)?.trim();
+    let tag = entry.get("TagLine").and_then(Value::as_str).unwrap_or_default().trim();
+    (!name.is_empty()).then(|| if tag.is_empty() { name.to_string() } else { format!("{name}#{tag}") })
+}
+
+/// A party document reduced to what a player cares about.
+fn party_summary(party: &Value, party_id: &str, me: &str, names: &Value) -> Value {
+    let members: Vec<Value> = party
+        .get("Members")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .map(|member| {
+            let subject = member.get("Subject").and_then(Value::as_str).unwrap_or_default();
+            let tier = member.get("CompetitiveTier").and_then(Value::as_u64).filter(|tier| *tier > 0);
+            json!({
+                "riotId": riot_id_from_names(names, subject),
+                "isYou": subject.eq_ignore_ascii_case(me),
+                "isOwner": member.get("IsOwner").and_then(Value::as_bool).unwrap_or(false),
+                "rank": tier.map(rank_label),
+                "level": member.pointer("/PlayerIdentity/AccountLevel"),
+                "ready": member.get("IsReady"),
+            })
+        })
+        .collect();
+    let state = party.get("State").and_then(Value::as_str).unwrap_or_default();
+    json!({
+        "partyId": party_id,
+        "state": state,
+        "searching": state.eq_ignore_ascii_case("MATCHMAKING"),
+        "queue": party.pointer("/MatchmakingData/QueueID"),
+        "accessibility": party.get("Accessibility"),
+        "eligibleQueues": party.get("EligibleQueues"),
+        "members": members,
+    })
+}
+
+async fn current_party(api: &crate::riot::api::RiotApiClient) -> Result<(String, Value), crate::riot::error::RiotError> {
+    let player = api.party_get_by_player(&api.puuid).await?;
+    let party_id = player
+        .get("CurrentPartyID")
+        .and_then(Value::as_str)
+        .filter(|id| !id.trim().is_empty())
+        .ok_or_else(|| "You are not in a party. Open Valorant first.".to_string())?
+        .to_string();
+    let party = api.party_get(&party_id).await?;
+    Ok((party_id, party))
+}
+
+async fn party_snapshot(app: &AppHandle) -> Result<Value, crate::riot::error::RiotError> {
+    let riot = app.state::<RiotState>();
+    crate::riot::api::with_api(&riot, |api| async move {
+        let (party_id, party) = current_party(&api).await?;
+        let subjects: Vec<String> = party
+            .get("Members")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|member| member.get("Subject").and_then(Value::as_str).map(str::to_owned))
+            .collect();
+        let names = api.get_names(&subjects).await.unwrap_or(Value::Null);
+        Ok(party_summary(&party, &party_id, &api.puuid, &names))
+    })
+    .await
+}
+
+/// Leave the party, or start, stop or change its queue.
+async fn party_action(app: &AppHandle, action: &str, queue: &str) -> Result<String, crate::riot::error::RiotError> {
+    let riot = app.state::<RiotState>();
+    let (action, queue) = (action.to_string(), queue.trim().to_ascii_lowercase());
+    crate::riot::api::with_api(&riot, |api| {
+        let (action, queue) = (action.clone(), queue.clone());
+        async move {
+            if action == "leave_party" {
+                api.party_leave().await?;
+                return Ok("Left the party.".to_string());
+            }
+            let (party_id, party) = current_party(&api).await?;
+            let selected = party.pointer("/MatchmakingData/QueueID").and_then(Value::as_str).unwrap_or("?").to_string();
+            match action.as_str() {
+                "start_queue" => {
+                    api.party_queue_join(&party_id).await?;
+                    Ok(format!("Searching for a match in {selected}."))
+                }
+                "stop_queue" => {
+                    api.party_queue_leave(&party_id).await?;
+                    Ok("Stopped searching for a match.".to_string())
+                }
+                _ => {
+                    if queue.is_empty() {
+                        return Err("Name a queue, e.g. competitive.".to_string());
+                    }
+                    let eligible: Vec<&str> = party
+                        .get("EligibleQueues")
+                        .and_then(Value::as_array)
+                        .into_iter()
+                        .flatten()
+                        .filter_map(Value::as_str)
+                        .collect();
+                    if !eligible.is_empty() && !eligible.iter().any(|id| id.eq_ignore_ascii_case(&queue)) {
+                        return Err(format!("This party can't enter {queue}. Available: {}.", eligible.join(", ")));
+                    }
+                    api.party_change_queue(&party_id, &queue).await?;
+                    Ok(format!("Queue changed to {queue}."))
+                }
+            }
+        }
+    })
+    .await
+}
+
+fn same_riot_id(a: &str, b: &str) -> bool {
+    let clean = |value: &str| value.chars().filter(|c| !c.is_whitespace()).collect::<String>().to_lowercase();
+    clean(a) == clean(b)
+}
+
+fn chat_reply_failure(reply: &Value) -> Option<String> {
+    failure_message(reply).or_else(|| (!reply.is_object()).then(|| "Chat isn't available right now.".to_string()))
+}
+
+/// Recent lines in one room or friend conversation, newest last.
+async fn chat_messages(app: &AppHandle, channel: &str, friend: &str, limit: usize) -> Result<Value, String> {
+    let reply = super::chat::chat_get(app.clone(), app.state::<RiotState>()).await.unwrap_or(Value::Null);
+    if let Some(message) = chat_reply_failure(&reply) {
+        return Err(message);
+    }
+    let room = |key: &str| reply.pointer(&format!("/rooms/{key}")).and_then(Value::as_str).filter(|cid| !cid.is_empty());
+    let cid = match channel {
+        "party" => room("party"),
+        "team" => room("matchTeam").or_else(|| room("match")),
+        "all" => room("matchAll"),
+        "friend" => reply
+            .get("conversations")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .find(|conversation| {
+                conversation.get("type").and_then(Value::as_str) == Some("chat")
+                    && conversation.get("title").and_then(Value::as_str).is_some_and(|title| same_riot_id(title, friend))
+            })
+            .and_then(|conversation| conversation.get("cid").and_then(Value::as_str)),
+        _ => return Err("channel must be party, team, all or friend.".into()),
+    }
+    .map(str::to_owned)
+    .ok_or_else(|| match channel {
+        "friend" => format!("No conversation with {friend}."),
+        "party" => "You aren't in a party chat right now.".to_string(),
+        _ => format!("There is no {channel} chat right now; it exists during a match."),
+    })?;
+    let root = |value: &str| value.split('@').next().unwrap_or_default().to_ascii_lowercase();
+    let lines: Vec<Value> = reply
+        .get("messages")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|message| message.get("conversationId").and_then(Value::as_str).is_some_and(|id| root(id) == root(&cid)))
+        .map(|message| {
+            json!({
+                "from": message.get("senderName"),
+                "you": message.get("isSelf"),
+                "text": message.get("body"),
+                "time": message.get("timestamp"),
+            })
+        })
+        .collect();
+    let start = lines.len().saturating_sub(limit);
+    Ok(json!({ "channel": channel, "messages": lines[start..] }))
+}
+
+/// Sends `message` as the player to a room, or as a whisper to a friend.
+async fn send_chat(app: &AppHandle, channel: &str, friend: &str, message: &str) -> Result<String, String> {
+    let message = message.trim();
+    if message.is_empty() {
+        return Err("The message is empty.".into());
+    }
+    if channel == "friend" {
+        let riot = app.state::<RiotState>();
+        let friends = crate::riot::client::get_friends(&riot).await.map_err(|error| party_failure(&error))?;
+        let pid = friends
+            .iter()
+            .find(|entry| {
+                let name = entry.get("game_name").and_then(Value::as_str).unwrap_or_default();
+                let tag = entry.get("game_tag").and_then(Value::as_str).unwrap_or_default();
+                same_riot_id(&format!("{name}#{tag}"), friend)
+            })
+            .and_then(|entry| entry.get("pid").and_then(Value::as_str))
+            .ok_or_else(|| format!("{friend} isn't on your friends list."))?;
+        crate::riot::client::send_chat_message(&riot, pid, message, "chat")
+            .await
+            .map_err(|error| party_failure(&error))?;
+        return Ok(format!("Whispered to {friend}."));
+    }
+    let room = crate::riot::models::ChatChannel::parse(channel)
+        .ok_or_else(|| "channel must be party, team, all or friend.".to_string())?;
+    super::riot_chat::post_to_room(room, message.to_string(), app)
+        .await
+        .map_err(|error| party_failure(&error))?;
+    Ok(format!("Sent to {channel} chat."))
+}
+
 /// Resolves a Riot ID or PUUID, then reads that player's profile.
 async fn lookup_player(app: &AppHandle, query: &str) -> Value {
     let riot = || app.state::<RiotState>();
@@ -1258,7 +1691,22 @@ mod tests {
             .filter(|tool| tool["annotations"]["readOnlyHint"] != true)
             .map(|tool| tool["name"].as_str().unwrap().to_owned())
             .collect();
-        assert_eq!(writable, ["open_riot_client", "open_valorant"]);
+        assert_eq!(
+            writable,
+            [
+                "leave_party",
+                "start_queue",
+                "stop_queue",
+                "change_queue",
+                "send_chat_message",
+                "set_presence",
+                "create_party_code",
+                "join_party",
+                "disable_party_link",
+                "open_riot_client",
+                "open_valorant",
+            ]
+        );
         for tool in tool_list() {
             assert_eq!(tool["inputSchema"]["type"], "object");
         }
@@ -1383,5 +1831,38 @@ mod tests {
         assert!(next_tiers(&tiers, 3, 0, 3).is_empty());
         assert_eq!(reward_endpoint("EquippableSkinLevel"), Some("weapons/skinlevels"));
         assert_eq!(reward_endpoint("Unknown"), None);
+    }
+
+    #[test]
+    fn party_summary_names_members_and_queue() {
+        let party = json!({
+            "State": "MATCHMAKING",
+            "Accessibility": "CLOSED",
+            "EligibleQueues": ["competitive", "unrated"],
+            "MatchmakingData": { "QueueID": "competitive" },
+            "Members": [
+                { "Subject": "me", "IsOwner": true, "CompetitiveTier": 21, "IsReady": true,
+                  "PlayerIdentity": { "AccountLevel": 120 } },
+                { "Subject": "duo", "IsOwner": false, "CompetitiveTier": 0, "IsReady": false },
+            ],
+        });
+        let names = json!([
+            { "Subject": "ME", "GameName": "Me", "TagLine": "NA1" },
+            { "Subject": "duo", "GameName": "Duo", "TagLine": "" },
+        ]);
+        let summary = party_summary(&party, "p1", "me", &names);
+        assert_eq!(summary["searching"], true);
+        assert_eq!(summary["queue"], "competitive");
+        assert_eq!(summary["members"][0]["riotId"], "Me#NA1");
+        assert_eq!(summary["members"][0]["isYou"], true);
+        assert_eq!(summary["members"][0]["rank"], "Ascendant 1");
+        assert_eq!(summary["members"][1]["riotId"], "Duo");
+        assert!(summary["members"][1]["rank"].is_null());
+    }
+
+    #[test]
+    fn riot_ids_match_ignoring_case_and_spaces() {
+        assert!(same_riot_id("Some Name#NA1", "somename#na1"));
+        assert!(!same_riot_id("Some#NA1", "Some#EU1"));
     }
 }

@@ -36,6 +36,7 @@ pub mod bloomline;
 pub(crate) mod bot_template;
 pub mod career;
 pub mod chat;
+pub mod deep_link;
 pub mod display;
 pub mod fake_player;
 pub mod friend_profile;

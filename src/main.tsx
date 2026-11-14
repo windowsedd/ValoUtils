@@ -37,6 +37,7 @@ import LiveGame from "@/pages/LiveGame.tsx";
 import { LiveGameProvider } from "@/components/live-game/live-game-session";
 import { SWRConfig } from "swr";
 import { DynamicModalProvider } from "./components/dynamic-modal";
+import { DeepLinkWatcher } from "./components/deep-link-watcher";
 import "./index.css";
 import "./i18n/config";
 
@@ -156,6 +157,7 @@ const AppShell = () => {
 							},
 						]}
 					>
+						<DeepLinkWatcher>
 						<LiveGameProvider>
 							<RiotClientWatcher>
 								<div className="flex flex-col h-screen bg-(--background) overflow-hidden">
@@ -163,6 +165,7 @@ const AppShell = () => {
 								</div>
 							</RiotClientWatcher>
 						</LiveGameProvider>
+						</DeepLinkWatcher>
 					</RouterProvider>
 				</AlertContainer>
 				</DynamicModalProvider>

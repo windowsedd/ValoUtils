@@ -178,7 +178,28 @@
     "unavailable": "지금 이 플레이어 프로필을 불러올 수 없습니다.",
     "lookupDesc": "Riot ID 또는 PUUID로 플레이어의 티어, 액트 기록, 최근 경기를 찾습니다.",
     "inventoryDesc": "계정의 스킨, 액세서리, 완성된 세트를 둘러봅니다.",
-    "allTools": "전체 도구"
+    "allTools": "전체 도구",
+    "crosshair": "크로스헤어 생성기",
+    "crosshairDesc": "원하는 크로스헤어를 설명하면 AI 제공자로 가져올 수 있는 코드를 만듭니다.",
+    "crosshairPrompt": "크로스헤어 설명",
+    "crosshairPlaceholder": "예: 외곽선 없는 작은 청록색 점, 또는 간격 있는 얇은 흰색 십자",
+    "crosshairGenerate": "생성",
+    "crosshairHint": "설정 → AI의 제공자를 사용합니다. 코드는 ValoUtils가 만들어 항상 가져올 수 있습니다.",
+    "crosshairUntitled": "크로스헤어",
+    "crosshairCopy": "코드 복사",
+    "crosshairImport": "발로란트: 설정 → 크로스헤어 → 프로필 코드 가져오기에 붙여 넣으세요.",
+    "crosshairRecent": "최근",
+    "crosshairExamples": {
+      "dot": "외곽선 없는 작은 청록색 점",
+      "classic": "작은 간격의 얇은 흰색 선, 바깥 선 없음",
+      "plus": "검은 외곽선이 있는 두꺼운 초록색 십자",
+      "pink": "가운데 점이 있는 분홍색 크로스헤어"
+    },
+    "crosshairCopyLink": "링크 복사",
+    "crosshairLinkHint": "ValoUtils에서 이 크로스헤어를 여는 valoutils://crosshair 링크입니다.",
+    "crosshairShared": "링크로 열림",
+    "copyPlayerLink": "플레이어 링크 복사",
+    "playerLinkHint": "ValoUtils에서 이 플레이어를 조회하는 valoutils://player 링크입니다."
   },
   "store": {
     "title": "상점",
@@ -524,7 +545,23 @@
     "historyOwner": "계정:",
     "historyAccount": "계정",
     "historyMatchCount_other": "저장된 매치 {{count}}개",
-    "viewSavedChat": "저장된 채팅 보기"
+    "viewSavedChat": "저장된 채팅 보기",
+    "partyCode": "파티 코드",
+    "partyCodeCreate": "초대 코드 만들기",
+    "partyCodeNew": "새 코드",
+    "partyCodePlaceholder": "코드 또는 파티 링크",
+    "partyCodeJoinLabel": "참가할 파티 코드",
+    "partyJoin": "참가",
+    "partyJoined": "{{code}} 파티에 참가했습니다.",
+    "partyCodeLogin": "먼저 Riot Client에 로그인하세요.",
+    "partyCodeFailed": "Riot에서 처리하지 못했습니다. 다시 시도하세요.",
+    "partyLink": "파티 링크",
+    "partyCopyCode": "코드 복사",
+    "partyCopyLink": "파티 링크 복사",
+    "partyLinkDisable": "링크 비활성화",
+    "partyLinkDisabled": "파티 링크와 코드를 비활성화했습니다.",
+    "copyMatchLink": "매치 링크 복사",
+    "matchLinkHint": "ValoUtils에서 이 스코어보드를 여는 valoutils://match 링크입니다."
   },
   "settings": {
     "saveMatchChatHistory": "매치 채팅 기록 저장",
@@ -1074,5 +1111,8 @@
     "privacyLocal": "이 PC(127.0.0.1)에서만 접근할 수 있고, 모든 요청에 비밀 토큰이 필요합니다. 웹 페이지는 연결할 수 없습니다.",
     "privacyNames": "실시간 게임과 스코어보드 도구는 다른 플레이어를 이름 대신 You / Ally N / Enemy N으로 표시합니다. 친구 목록과 플레이어 조회는 용도상 Riot ID를 반환합니다.",
     "privacyRate": "에이전트 호출은 앱과 Riot 요청 한도를 공유합니다. Riot이 요청을 제한하면 도구가 언제 다시 시도할지 알려 줍니다."
+  },
+  "deepLink": {
+    "matchTitle": "매치 스코어보드"
   }
 }

@@ -235,7 +235,7 @@ fn initialize_result(requested: Option<&str>, version: &str) -> Value {
         "protocolVersion": protocol,
         "capabilities": { "tools": { "listChanged": false } },
         "serverInfo": { "name": "valoutils", "title": "ValoUtils", "version": version },
-        "instructions": "Valorant data for the player signed in to the Riot Client on this PC: rank and recent competitive games, the current agent select or match, the store, the battle pass, and saved and current settings. lookup_player finds any player's rank and matches by Riot ID. open_valorant launches the game; every other tool only reads. Riot Client must be running and signed in for account data. Players in a live match are labelled You / Ally N / Enemy N, never by name.",
+        "instructions": "Valorant data for the player signed in to the Riot Client on this PC: rank and recent competitive games, the current agent select or match, the store, the battle pass, and saved and current settings. lookup_player finds any player's rank and matches by Riot ID. Tools that act (marked readOnlyHint false) manage your party, queue, party code/link and chat presence, send chat messages as you, and open the Riot Client or Valorant; confirm with the user before using them. Riot Client must be running and signed in for account data. Players in a live match are labelled You / Ally N / Enemy N, never by name.",
     })
 }
 
