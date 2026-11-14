@@ -2,7 +2,7 @@ import { listenEvent } from "@/util/ipc";
 import { isTauri } from "@tauri-apps/api/core";
 import React, { useEffect } from "react";
 import { useDynamicModal } from "@/components/dynamic-modal.tsx";
-import { Button as NextUIButton } from "@heroui/react";
+import { Button } from "@/components/ui/button";
 
 interface RiotClientWatcherProps {
     children?: React.ReactNode | React.ReactNode[];
@@ -21,12 +21,9 @@ const RiotClientWatcher = ({ children }: RiotClientWatcherProps) => {
                         <span>{message}</span>
                     </div>,
                     footer: (
-                        <NextUIButton
-                            variant={"danger"}
-                            onPress={closeModal}
-                        >
+                        <Button variant="destructive" onClick={closeModal}>
                             Close
-                        </NextUIButton>
+                        </Button>
                     )
                 });
             }; const stopIpcReply1 = listenEvent("riot_client:disconnect", applyResponse);

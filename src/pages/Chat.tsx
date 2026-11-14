@@ -1,7 +1,10 @@
 import type { ChatFriend, ChatMessage, ChatRound, SavedChatMatch } from "@/types/chat";
 import { LoginRequiredPanel } from "@/components/login-required-panel";
+import { invoke } from "@tauri-apps/api/core";
+import { reportIpcError } from "@/util/ipc";
 import { useLiveGameSession } from "@/components/live-game/live-game-session";
-import { localize } from "@/util/valorant-assets";
+import { getMaps, localize, type MapAsset } from "@/util/valorant-assets";
+import { queueLabel } from "@/util/valorant-queues";
 import { useAgentAssets } from "@/util/use-agent-assets";
 import { LuMessageSquare } from "react-icons/lu";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -25,7 +28,9 @@ import { useChatController } from "./chat/use-chat-controller";
 import { DUMMY_BOT_CID, useDummyBotChat } from "./chat/use-dummy-bot-chat";
 import valoUtilsIcon from "../../src-tauri/icons/icon.png";
 import { PlayerCardAvatar } from "./chat/player-card-avatar";
-import { savedMatchMessages } from "./chat/saved-match-history";
+import { matchOutcome, savedMatchList, savedMatchMessages, savedSpeakerRoster } from "./chat/saved-match-history";
+import { ChatHistoryPanel } from "./chat/chat-history-panel";
+import { SavedMatchScoreboard } from "./chat/saved-match-scoreboard";
 import { SavedMatchPicker } from "./chat/saved-match-picker";
 import { useSavedMatchDetails } from "./chat/use-saved-match-details";
 
@@ -62,27 +67,68 @@ const Chat = () => {
 	const selectedConversationTitle =
 		controller.selectedFriendConversation?.title || controller.selectedConversation?.title;
 	const channel = controller.selectedChannel;
+	// History tab: saved match chat, read one room (Team or All) at a time.
+	const [historyOpen, setHistoryOpen] = useState(false);
+	const [historyRoom, setHistoryRoom] = useState<"team" | "all">("team");
 	const [savedSelection, setSavedSelection] = useState<{ owner: string; matchUuid: string } | null>(null);
 	const savedMatches = useSavedMatchDetails(
 		controller.summary.savedMatches ?? EMPTY_SAVED,
 		controller.summary.ownerPuuid,
-		(channel === "team" || channel === "all") && !controller.loginRequired,
+		historyOpen && !controller.loginRequired,
 	);
-	const savedMatch = !controller.loginRequired && savedSelection?.owner === controller.summary.ownerPuuid
-		? savedMatches.find(match => match.matchUuid === savedSelection?.matchUuid)
+	// Opening History shows the newest match until another one is picked.
+	const newestSaved = useMemo(() => savedMatchList(savedMatches, historyRoom)[0]?.matchUuid, [savedMatches, historyRoom]);
+	const selectedSaved =
+		savedSelection && savedSelection.owner === controller.summary.ownerPuuid ? savedSelection.matchUuid : newestSaved;
+	const savedMatch = historyOpen && !controller.loginRequired
+		? savedMatches.find(match => match.matchUuid === selectedSaved)
 		: undefined;
-	const viewingSaved = !!savedMatch && (channel === "team" || channel === "all");
-	const historyMessages = savedMatchMessages(savedMatch, channel);
+	const viewingSaved = !!savedMatch;
+	// Riot ID of the account whose saved history is shown. Read once from the
+	// local Riot Client and kept only if it is the same account as the history.
+	const ownerPuuid = controller.summary.ownerPuuid ?? "";
+	const [historyOwner, setHistoryOwner] = useState<{ puuid: string; name: string } | null>(null);
 	useEffect(() => {
-		if (channel !== "team" && channel !== "all") setSavedSelection(null);
-	}, [channel]);
+		if (!historyOpen || !ownerPuuid || historyOwner?.puuid === ownerPuuid) return;
+		let active = true;
+		invoke<{ sub?: string; acct?: { game_name?: string; tag_line?: string } }>("userinfo_get")
+			.then((info) => {
+				const name = info?.acct?.game_name ? `${info.acct.game_name}#${info.acct.tag_line ?? ""}` : "";
+				const sub = String(info?.sub ?? "").toLowerCase();
+				if (active && name && (!sub || sub === ownerPuuid.toLowerCase())) {
+					setHistoryOwner({ puuid: ownerPuuid, name });
+				}
+			})
+			.catch(() => {});
+		return () => {
+			active = false;
+		};
+	}, [historyOpen, ownerPuuid, historyOwner]);
+	const historyOwnerName = historyOwner?.puuid === ownerPuuid ? historyOwner.name : "";
+	const historyMessages = savedMatchMessages(savedMatch, historyRoom);
+	const savedRoster = useMemo(() => savedSpeakerRoster(savedMatch?.details), [savedMatch?.details]);
+	const [maps, setMaps] = useState<Map<string, MapAsset> | null>(null);
+	useEffect(() => {
+		if (!viewingSaved || maps) return;
+		let cancelled = false;
+		getMaps()
+			.then((loaded) => {
+				if (!cancelled) setMaps(loaded);
+			})
+			.catch(() => {});
+		return () => {
+			cancelled = true;
+		};
+	}, [viewingSaved, maps]);
 	const channelLabels = {
 		friends: t("chat.scopeFriends"),
 		party: t("chat.scopeParty"),
 		team: t("chat.matchTeam"),
 		all: t("chat.matchAll"),
 	};
-	const isFriends = channel === "friends";
+	const isFriends = channel === "friends" && !historyOpen;
+	// The room whose labels the thread uses: the saved room while History is open.
+	const viewChannel = historyOpen ? historyRoom : channel;
 	const botName = "ValoUtils Bot";
 	const bot = useDummyBotChat(isFriends && botOpen, botName);
 	const showBot = isFriends && botOpen;
@@ -98,9 +144,9 @@ const Chat = () => {
 		: controller.conversations;
 	const threadTitle = isFriends
 		? selectedConversationTitle || channelLabels.friends
-		: channelLabels[channel];
+		: channelLabels[viewChannel];
 	const livePlayers = snapshot && snapshot.state !== "idle" ? snapshot.players : [];
-	const roomMembers: ChatRoomMemberView[] = isFriends || viewingSaved
+	const roomMembers: ChatRoomMemberView[] = channel === "friends" || historyOpen
 		? []
 		: chatRoomMembers(livePlayers, channel, snapshot?.state === "party").map((member) => {
 				const agent = member.agentId ? agents.get(member.agentId) : undefined;
@@ -140,8 +186,25 @@ const Chat = () => {
 		controller.setDraft(command.insert);
 		requestAnimationFrame(() => composerRef.current?.focus());
 	};
+	/** Map · mode · result · start time, in place of the raw match ID. */
+	const savedSubtitle = (() => {
+		const details = savedMatch?.details;
+		if (!details) return t("chat.savedReadOnly");
+		const mapKey = details.mapId.toLowerCase();
+		const map = maps?.get(mapKey) ?? maps?.get(mapKey.split("/").filter(Boolean).pop() ?? "");
+		const outcome = matchOutcome(details);
+		const result = outcome
+			? `${t({ win: "chat.outcomeWin", loss: "chat.outcomeLoss", draw: "chat.outcomeDraw" }[outcome])} ${details.roundsWon}–${details.roundsLost}`
+			: "";
+		const started = details.startMillis
+			? new Date(details.startMillis).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
+			: "";
+		return [historyOwnerName, map ? localize(map.name) : "", queueLabel(details.queueId), result, started]
+			.filter(Boolean)
+			.join(" · ");
+	})();
 	const describeSender = (message: ChatMessage): ChatThreadSender => {
-		const identity = chatSenderIdentity(message, viewingSaved ? new Map() : roster);
+		const identity = chatSenderIdentity(message, viewingSaved ? savedRoster : roster);
 		const agent = identity.agentId ? agents.get(identity.agentId) : undefined;
 		const agentName = localize(agent?.name);
 		return {
@@ -160,13 +223,13 @@ const Chat = () => {
 				: ` · ${round.allyScore} : ${round.enemyScore}`;
 		return `${t("chat.roundNumber", { round: round.round })}${score}`;
 	};
-	const emptyLabel = t(
+	const emptyLabel = historyOpen && !viewingSaved ? t("chat.noSavedMatches") : t(
 		{
 			friends: "chat.emptyFriends",
 			party: "chat.emptyParty",
 			team: "chat.emptyTeam",
 			all: "chat.emptyAll",
-		}[channel],
+		}[viewChannel],
 	);
 	const noRoomLabel = t(
 		{
@@ -174,12 +237,12 @@ const Chat = () => {
 			party: "chat.noPartyRoom",
 			team: "chat.noTeamRoom",
 			all: "chat.noAllRoom",
-		}[channel],
+		}[viewChannel],
 	);
-	const matchEnded = viewingSaved || (!isFriends && controller.selectedConversation?.ended === true);
+	const matchEnded = historyOpen || (!isFriends && controller.selectedConversation?.ended === true);
 	const disabledReason = controller.loginRequired
 		? t("chat.loginRequiredDesc")
-		: viewingSaved
+		: historyOpen
 			? t("chat.savedReadOnly")
 		: matchEnded
 			? t("chat.matchEnded")
@@ -190,7 +253,7 @@ const Chat = () => {
 			party: "chat.partyPlaceholder",
 			team: "chat.matchTeamPlaceholder",
 			all: "chat.matchAllPlaceholder",
-		}[channel],
+		}[viewChannel],
 	);
 	// markReadError included so a rejected mark-read is visible rather than
 	// leaving the badge silently hidden.
@@ -213,9 +276,52 @@ const Chat = () => {
 				selected={channel}
 				available={controller.availableChannels}
 				labels={channelLabels}
-				onSelect={controller.selectChannel}
+				onSelect={(next) => {
+					setHistoryOpen(false);
+					controller.selectChannel(next);
+				}}
+				history={{
+					active: historyOpen,
+					label: t("chat.history"),
+					count: savedMatches.length,
+					onOpen: () => {
+						setHistoryOpen(true);
+						invoke("analytics_track", { args: ["chat:history-open"] }).catch(reportIpcError);
+					},
+				}}
 			/>
-			{isFriends ? (
+			{historyOpen ? (
+				<ChatHistoryPanel
+					title={t("chat.savedMatchHistory")}
+					owner={historyOwnerName}
+					room={historyRoom}
+					onRoomChange={setHistoryRoom}
+					labels={{ team: channelLabels.team, all: channelLabels.all, room: t("chat.historyRoom"), owner: t("chat.historyOwner") }}
+				>
+					<SavedMatchPicker
+						matches={savedMatches}
+						channel={historyRoom}
+						selected={savedMatch?.matchUuid ?? null}
+						onSelect={(matchUuid) => setSavedSelection(matchUuid ? { owner: controller.summary.ownerPuuid ?? "", matchUuid } : null)}
+						showCurrent={false}
+						fill
+						labels={{
+							title: t("chat.savedMatchHistory"),
+							current: t("chat.currentChat"),
+							currentHint: t("chat.currentChatHint"),
+							empty: t("chat.noSavedMatches"),
+							search: t("chat.searchSavedMatches"),
+							noResults: t("chat.noSavedMatchResults"),
+							today: t("chat.historyToday"),
+							yesterday: t("chat.historyYesterday"),
+							counts: (team, all) => t("chat.savedMatchCounts", { team, all }),
+							speakers: (count) => t("chat.savedMatchSpeakers", { count }),
+							noMessages: t("chat.savedMatchNoMessages"),
+							outcome: { win: t("chat.outcomeWin"), loss: t("chat.outcomeLoss"), draw: t("chat.outcomeDraw") },
+						}}
+					/>
+				</ChatHistoryPanel>
+			) : channel === "friends" ? (
 				<ChatConversationList
 					conversations={friendConversations}
 					selectedCid={showBot ? null : controller.selectedCid}
@@ -254,28 +360,6 @@ const Chat = () => {
 					channel={channel}
 					title={channelLabels[channel]}
 					available={!!controller.selectedCid && !matchEnded}
-					history={(channel === "team" || channel === "all") ? (
-						<SavedMatchPicker
-							matches={savedMatches}
-							channel={channel}
-							selected={viewingSaved ? savedMatch.matchUuid : null}
-							onSelect={(matchUuid) => setSavedSelection(matchUuid ? { owner: controller.summary.ownerPuuid ?? "", matchUuid } : null)}
-							labels={{
-								title: t("chat.savedMatchHistory"),
-								current: t("chat.currentChat"),
-								currentHint: t("chat.currentChatHint"),
-								empty: t("chat.noSavedMatches"),
-								search: t("chat.searchSavedMatches"),
-								noResults: t("chat.noSavedMatchResults"),
-								today: t("chat.historyToday"),
-								yesterday: t("chat.historyYesterday"),
-								counts: (team, all) => t("chat.savedMatchCounts", { team, all }),
-								speakers: (count) => t("chat.savedMatchSpeakers", { count }),
-								noMessages: t("chat.savedMatchNoMessages"),
-								outcome: { win: t("chat.outcomeWin"), loss: t("chat.outcomeLoss"), draw: t("chat.outcomeDraw") },
-							}}
-						/>
-					) : undefined}
 					members={roomMembers}
 					commands={commandHints}
 					labels={{
@@ -322,8 +406,15 @@ const Chat = () => {
 					</LoginRequiredPanel>
 				) : (
 					<>
+						{viewingSaved && (
+							<SavedMatchScoreboard
+								key={savedMatch.matchUuid}
+								matchUuid={savedMatch.matchUuid}
+								ownerPuuid={controller.summary.ownerPuuid}
+							/>
+						)}
 						<ChatThread
-							conversationId={showBot ? DUMMY_BOT_CID : viewingSaved ? `${savedMatch.matchUuid}:${channel}` : controller.selectedCid}
+							conversationId={showBot ? DUMMY_BOT_CID : viewingSaved ? `${savedMatch.matchUuid}:${historyRoom}` : historyOpen ? null : controller.selectedCid}
 							title={showBot ? botName : threadTitle}
 							icon={
 								showBot ? (
@@ -336,11 +427,11 @@ const Chat = () => {
 									/>
 								) : undefined
 							}
-							subtitle={showBot ? t("chat.dummyBotSubtitle") : viewingSaved ? savedMatch.matchUuid : threadSubtitle}
-							messages={showBot ? bot.messages : viewingSaved ? historyMessages : controller.visibleMessages}
-							systemLines={showBot || viewingSaved ? [] : controller.systemLines}
-							historyLoading={showBot || viewingSaved ? false : controller.historyLoading}
-							historyError={showBot || viewingSaved ? null : controller.historyError}
+							subtitle={showBot ? t("chat.dummyBotSubtitle") : viewingSaved ? savedSubtitle : historyOpen ? t("chat.savedReadOnly") : threadSubtitle}
+							messages={showBot ? bot.messages : historyOpen ? historyMessages : controller.visibleMessages}
+							systemLines={showBot || historyOpen ? [] : controller.systemLines}
+							historyLoading={showBot || historyOpen ? false : controller.historyLoading}
+							historyError={showBot || historyOpen ? null : controller.historyError}
 							translatedByMessageId={controller.translatedByMessageId}
 							translationErrorByMessageId={controller.translationErrorByMessageId}
 							translatingMessageId={controller.translatingMessageId}
@@ -371,7 +462,7 @@ const Chat = () => {
 										: describeSender
 							}
 							notice={
-								!isFriends && controller.selectedCid && !viewingSaved
+								!isFriends && controller.selectedCid && !historyOpen
 									? t("chat.joinedRoom", { room: channelLabels[channel] })
 									: undefined
 							}
@@ -382,7 +473,7 @@ const Chat = () => {
 							}}
 						/>
 						<ChatComposer
-							draft={showBot ? bot.draft : viewingSaved ? "" : controller.draft}
+							draft={showBot ? bot.draft : historyOpen ? "" : controller.draft}
 							disabled={showBot ? false : !controller.selectedCid || matchEnded}
 							disabledReason={disabledReason}
 							sending={showBot ? bot.sending : controller.sending}

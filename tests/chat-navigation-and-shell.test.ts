@@ -46,7 +46,9 @@ describe("Chat navigation and page shell", () => {
     expect(chat).toContain("<ChatFriendsPanel");
     expect(chat).toContain("<ChatChannelRail");
     expect(chat).toContain("<ChatChannelContext");
-    expect(chat).toContain("onSelect={controller.selectChannel}");
+    // Picking a live channel also leaves the History tab.
+    expect(chat).toContain("controller.selectChannel(next)");
+    expect(chat).toContain("<ChatHistoryPanel");
     expect(chat).not.toContain("removeAllListeners");
     expect(chat).not.toContain('send("chat:disconnect")');
   });

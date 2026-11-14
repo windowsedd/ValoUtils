@@ -6,6 +6,7 @@ mod api_docs;
 mod aptabase;
 mod chat_certs;
 mod match_chat_history;
+mod mcp;
 mod client_config;
 mod commands;
 mod fake_player;
@@ -93,6 +94,9 @@ pub fn run() {
             config_defaults.insert("presenceCert".into(), json!("deceive"));
             config_defaults.insert("autoUpdate".into(), json!(true));
             config_defaults.insert("saveMatchChatHistory".into(), json!(false));
+            config_defaults.insert("showPregameEnemies".into(), json!(true));
+            config_defaults.insert("mcpEnabled".into(), json!(false));
+            config_defaults.insert("riotLaunchArgs".into(), json!(""));
             config_defaults.insert("translatorProvider".into(), json!("google"));
             config_defaults.insert("translatorSourceLanguage".into(), json!("auto"));
             config_defaults.insert("translatorTargetLanguage".into(), json!("en"));
@@ -186,6 +190,7 @@ pub fn run() {
             app.manage(commands::matches::MatchCache::default());
             app.manage(commands::matches::MatchTimelineCache::default());
             tauri::async_runtime::spawn(commands::riot_launch::autostart());
+            tauri::async_runtime::spawn(mcp::start_if_enabled(app.handle().clone()));
             commands::chat::ensure_chat_forwarders(app.handle());
             {
                 let handle = app.handle().clone();
@@ -212,6 +217,10 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::app::open_url,
+            commands::mcp::mcp_status,
+            commands::mcp::mcp_tools,
+            commands::mcp::mcp_set_enabled,
+            commands::mcp::mcp_regenerate_token,
             commands::app::version,
             commands::app::clipboard_get,
             commands::app::clipboard_set,

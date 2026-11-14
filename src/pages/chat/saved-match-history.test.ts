@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { matchesNeedingDetails, matchOutcome, relativeDay, savedMatchList, savedMatchMessages, summarizeSavedMatch, withFetchedDetails } from "./saved-match-history";
+import { matchesNeedingDetails, matchOutcome, relativeDay, savedMatchList, savedMatchMessages, savedSenderName, savedSpeakerRoster, summarizeSavedMatch, withFetchedDetails } from "./saved-match-history";
 import type { ChatMessage, SavedChatMatch, SavedMatchDetails } from "@/types/chat";
 
 const match: SavedChatMatch = {
@@ -54,7 +54,7 @@ test("relative day labels today and yesterday only", () => {
 
 const details = (won: boolean | null, roundsWon: number, roundsLost: number): SavedMatchDetails => ({
   mapId: "/Game/Maps/Ascent/Ascent", queueId: "competitive", gameMode: "", agentId: "a",
-  won, roundsWon, roundsLost, startMillis: 5,
+  won, roundsWon, roundsLost, startMillis: 5, speakers: [],
 });
 
 test("outcome reads win, loss, draw, or nothing without a team result", () => {
@@ -75,4 +75,29 @@ test("saved details are kept, fetched ones fill gaps, and only gaps need lookups
 
 test("summary uses the match start time once details exist", () => {
   expect(summarizeSavedMatch({ ...older, details: details(true, 13, 9) }, "team")).toMatchObject({ at: 5 });
+});
+
+test("details saved before speakers were kept are looked up once more and replaced", () => {
+  const { speakers: _, ...withoutSpeakers } = details(true, 13, 9);
+  const stale = { ...older, details: withoutSpeakers };
+  expect(matchesNeedingDetails([stale])).toEqual([stale.matchUuid]);
+  const fresh = { ...details(true, 13, 9), speakers: [{ puuid: "abc", name: "Ally#NA1", agentId: "agent" }] };
+  const [merged] = withFetchedDetails([stale], new Map([[stale.matchUuid, fresh]]));
+  expect(merged!.details).toBe(fresh);
+  expect(withFetchedDetails([stale], new Map())[0]).toBe(stale);
+});
+
+test("saved speakers resolve sender names and agents by PUUID", () => {
+  const roster = savedSpeakerRoster({ ...details(true, 13, 9), speakers: [{ puuid: "ABC", name: "Ally#NA1", agentId: "" }] });
+  expect(roster.get("abc")).toEqual({ name: "Ally#NA1", agentId: null, cardId: null });
+  expect(savedSpeakerRoster(undefined).size).toBe(0);
+});
+
+test("saved line senders use the saved Riot ID and never show a raw PUUID", () => {
+  const puuid = "869d5298-db1d-54cc-bcaf-6c2a8bb1b6a1";
+  const line = { sender: `${puuid}@ap1.pvp.net`, senderName: puuid } as ChatMessage;
+  const withSpeakers = { ...details(true, 13, 9), speakers: [{ puuid, name: "Ally#NA1", agentId: "" }] };
+  expect(savedSenderName(line, withSpeakers)).toBe("Ally#NA1");
+  expect(savedSenderName(line, details(true, 13, 9))).toBe("");
+  expect(savedSenderName({ ...line, senderName: "Named#1" } as ChatMessage, undefined)).toBe("Named#1");
 });

@@ -72,7 +72,9 @@
     "launchFailed": "Launch failed.",
     "riotClientRunningHint": "Riot Client is already open. Close it completely, including the tray icon, then launch again.",
     "launchNormal": "Normal startup",
-    "rateLimited": "Riot is rate-limiting requests. Try again in about {{seconds}}s."
+    "rateLimited": "Riot is rate-limiting requests. Try again in about {{seconds}}s.",
+    "playing": "Playing",
+    "playingHint": "Valorant is running. ValoUtils picks the session up once Riot Client finishes signing in."
   },
   "riotStatus": {
     "connecting": "Connecting...",
@@ -378,6 +380,7 @@
     "ally": "Allies",
     "enemy": "Enemies",
     "enemyRosterUnavailable": "Enemy roster unavailable during Pregame.",
+    "enemyRosterHidden": "Enemy team hidden during agent select. Turn it on in Settings.",
     "winStreak": "W{{count}}",
     "loseStreak": "L{{count}}",
     "winStreakHint": "Win streak {{count}} ({{rr}} RR)",
@@ -512,7 +515,11 @@
     "closeFriends": "Close friends",
     "online": "Online",
     "offline": "Offline",
-    "available": "Available"
+    "available": "Available",
+    "history": "History",
+    "historyRoom": "Room",
+    "scoreboard": "Scoreboard",
+    "historyOwner": "Account:"
   },
   "settings": {
     "saveMatchChatHistory": "Save match chat history",
@@ -539,6 +546,8 @@
     "requestPacing_safe": "Safe",
     "recentMatchCount": "Recent matches per player",
     "recentMatchCountDesc": "How many recent matches player stats are averaged over, up to {{max}}. A higher number is more accurate but sends more requests.",
+    "showPregameEnemies": "Show enemy team in agent select",
+    "showPregameEnemiesDesc": "Show the enemy team's names, ranks and stats in Live Game during agent select, when Riot provides them. Turning this off also skips their requests.",
     "hideTab": "Hide {{tab}} tab",
     "hideTabDesc": "Remove this tab from the main navigation",
     "showLogsTab": "Show Logs tab",
@@ -581,7 +590,9 @@
     "open": "Open",
     "copied": "Copied",
     "reveal": "Show password",
-    "hide": "Hide password"
+    "hide": "Hide password",
+    "launchArgs": "Launch arguments",
+    "launchArgsDesc": "Extra arguments added when ValoUtils or an AI agent launches Valorant through the Riot Client, after --launch-product=valorant --launch-patchline=live. Your own --launch-product or --launch-patchline replaces the default (e.g. --launch-patchline=pbe). Use quotes for spaces. --client-config-url is ignored."
   },
   "settingsViewer": {
     "modalTitle": "Settings — {{name}}",
@@ -1008,5 +1019,61 @@
       "emptyResponse": "AI provider returned no text. Try another model or regenerate.",
       "invalidInput": "Match context is missing or too long."
     }
+  },
+  "mcp": {
+    "section": "AI agents (MCP)",
+    "enable": "Let AI agents use ValoUtils",
+    "enableDesc": "Runs a local MCP server so Claude Code, Claude Desktop, Cursor and other agents can read your rank, matches, live match, store, battle pass and settings, look up players, and open Valorant. Only reachable from this PC, with a secret token.",
+    "running": "Running at",
+    "showToken": "Show token",
+    "hideToken": "Hide token",
+    "regenerate": "New token",
+    "tokenRegenerated": "New token created. Update your agents with the new setup.",
+    "promptTitle": "Prompt for any agent",
+    "promptHint": "Paste this into an agent that can add MCP servers itself.",
+    "agentPrompt": "Connect to my local ValoUtils MCP server and add it as an MCP server named \"valoutils\".\n- Transport: Streamable HTTP\n- URL: {{url}}\n- Header: Authorization: Bearer {{token}}\nThen list its tools. It reads my Valorant rank, recent matches, the live match, store, battle pass and settings, looks up any player by Riot ID, and can open Valorant. Keep the token private.",
+    "claudeCodeTitle": "Claude Code",
+    "claudeCodeHint": "Run this in a terminal.",
+    "claudeDesktopTitle": "Claude Desktop",
+    "claudeDesktopHint": "Add to claude_desktop_config.json (Settings → Developer → Edit Config). Needs Node.js.",
+    "httpTitle": "Cursor, VS Code and other HTTP clients",
+    "httpHint": "Add to the client's MCP config (for example .cursor/mcp.json).",
+    "notRunning": "The server isn't running. Turn it off and on again.",
+    "error": "Could not change the MCP server.",
+    "privacy": "Agents only get data when they call a tool. Anyone with the token on this PC can use it; make a new token if it leaks.",
+    "docs": "Docs"
+  },
+  "mcpDocs": {
+    "title": "MCP docs",
+    "subtitle": "Connect AI agents to ValoUtils and see what they can do.",
+    "connectTitle": "Connect an agent",
+    "intro": "MCP (Model Context Protocol) is an open standard that lets AI agents use tools. ValoUtils runs a small MCP server on this PC so your agent can read your Valorant data and open the game.",
+    "step1": "In Settings → AI agents (MCP), turn on “Let AI agents use ValoUtils”.",
+    "step2": "Copy the setup for your agent (Claude Code command, Claude Desktop JSON, HTTP-client JSON) or paste the agent prompt.",
+    "step3": "Ask your agent about your Valorant account. It calls the tools below when it needs data.",
+    "off": "The MCP server is off. Turn it on in Settings.",
+    "clients": "Works with any MCP client: Claude Code, Claude Desktop, Cursor, VS Code, Windsurf, Cline, Codex CLI, Gemini CLI and others. Web chat apps can't reach it, because it only listens on this PC.",
+    "examplesTitle": "Try asking",
+    "examples": {
+      "rank": "What's my rank and how much RR did I gain this week?",
+      "lastGames": "How did I play in my last 5 matches?",
+      "scoreboard": "Break down the scoreboard of my last match. Who carried?",
+      "live": "Who's the biggest threat on the enemy team right now?",
+      "store": "What's in my store today, and is anything worth buying?",
+      "friends": "Which of my friends are playing Valorant right now?",
+      "lookup": "Look up Name#TAG. What rank are they?",
+      "settings": "Compare my current sensitivity and crosshair with my saved profile.",
+      "launch": "Open Valorant for me."
+    },
+    "toolsTitle": "Tools",
+    "loading": "Loading tools…",
+    "readOnly": "Read-only",
+    "takesAction": "Takes action",
+    "required": "required",
+    "optional": "optional",
+    "privacyTitle": "Privacy and safety",
+    "privacyLocal": "Only reachable from this PC (127.0.0.1), and every request needs your secret token. Web pages can't connect.",
+    "privacyNames": "Live match and scoreboard tools label other players You / Ally N / Enemy N, never by name. Friends and Look up a player do return Riot IDs, because that's what they're for.",
+    "privacyRate": "Agent calls share Riot's request budget with the app. If Riot rate-limits, the tool tells the agent when to try again."
   }
 }

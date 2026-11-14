@@ -173,4 +173,22 @@ const AppShell = () => {
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(<AppShell />);
 
+/** Shortest time the launch splash (index.html) stays up, so it never just flickers. */
+const SPLASH_MIN_MS = 900;
+
+const hideSplash = () => {
+	const splash = document.getElementById("splash");
+	if (!splash) return;
+	const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+	const wait = reduceMotion ? 0 : Math.max(0, SPLASH_MIN_MS - performance.now());
+	window.setTimeout(() => {
+		splash.classList.add("splash-hide");
+		// Removed after the fade; the timer covers a skipped transitionend.
+		window.setTimeout(() => splash.remove(), reduceMotion ? 0 : 400);
+	}, wait);
+};
+
+// Two frames: the first lets React commit, the second lets it paint underneath.
+requestAnimationFrame(() => requestAnimationFrame(hideSplash));
+
 postMessage({ payload: "removeLoading" }, "*");

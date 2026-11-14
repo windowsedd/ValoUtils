@@ -22,20 +22,15 @@ export const navbarLayout = {
     "bg-(--accent) text-(--accent-foreground) shadow-[0_4px_16px_rgba(128,100,233,0.35)]",
   railButtonInactive: "text-(--text-muted) hover:bg-(--surface-hover) hover:text-(--text-primary)",
   railIcon: "grid h-[18px] w-[18px] place-items-center",
-  tooltip:
-    "navbar-motion pointer-events-none fixed z-[60] -translate-y-1/2 whitespace-nowrap rounded-[6px] border border-(--border) bg-(--surface) px-2.5 py-1.5 text-[11px] font-medium text-(--text-primary) shadow-[0_8px_24px_rgba(0,0,0,0.28)] transition-[opacity,transform] duration-100",
-  tooltipVisible: "translate-x-0 opacity-100",
-  tooltipHidden: "translate-x-1 opacity-0",
-  statusTooltip:
-    "navbar-motion pointer-events-none absolute left-full top-1/2 z-[60] ml-3 -translate-y-1/2 translate-x-1 whitespace-nowrap rounded-[6px] border border-(--border) bg-(--surface) px-2.5 py-1.5 text-[11px] font-medium text-(--text-primary) opacity-0 shadow-[0_8px_24px_rgba(0,0,0,0.28)] transition-[opacity,transform] duration-100 group-hover:translate-x-0 group-hover:opacity-100 group-focus-visible:translate-x-0 group-focus-visible:opacity-100",
+  /** Extra classes on the shadcn TooltipContent for rail and status tooltips. */
+  tooltip: "navbar-motion pointer-events-none",
   statusTrigger:
     "press-flat flex h-10 max-w-56 items-center gap-2 rounded-[6px] border border-transparent px-2 text-[12px] text-(--text-secondary) transition-colors hover:border-(--border) hover:bg-(--surface-hover) focus-visible:outline-none focus-visible:border-(--accent) focus-visible:shadow-[0_0_0_2px_var(--accent-soft)]",
   statusTriggerCompact:
     "press-flat group navbar-motion relative grid h-[38px] w-[38px] place-items-center rounded-[12px] border border-transparent text-(--text-muted) outline-none transition-[color,background-color,border-color,box-shadow] duration-150 hover:border-(--border) hover:bg-(--surface-hover) hover:text-(--text-primary) focus-visible:border-(--accent) focus-visible:shadow-[0_0_0_2px_var(--accent-soft)]",
+  /** Classes on the shadcn PopoverContent; Radix places it beside or below the trigger. */
   statusMenu:
-    "absolute right-0 top-11 z-50 w-64 max-w-[calc(100vw-1rem)] rounded-[14px] border border-(--border) bg-(--surface) p-1.5 shadow-[0_16px_40px_rgba(0,0,0,0.45)]",
-  statusMenuCompact:
-    "absolute bottom-0 left-full z-50 ml-4 w-64 max-w-[calc(100vw-5rem)] rounded-[14px] border border-(--border) bg-(--surface) p-1.5 shadow-[0_16px_40px_rgba(0,0,0,0.45)]",
+    "w-64 max-w-[calc(100vw-1rem)] rounded-[14px] p-1.5 shadow-[0_16px_40px_rgba(0,0,0,0.45)]",
   statusMessage:
     "mt-2 flex gap-2 whitespace-normal break-words rounded-[10px] border px-2.5 py-2 text-[11px] leading-4",
 } as const;

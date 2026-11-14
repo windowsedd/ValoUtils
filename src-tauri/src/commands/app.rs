@@ -114,6 +114,8 @@ pub fn config_get_all(store: State<ConfigStore>) -> Value {
         "deeplApiKey": get_or("deeplApiKey", json!("")),
         "hiddenTabs": get_or("hiddenTabs", json!([])),
         "riotRequestPacing": get_or("riotRequestPacing", json!("balanced")),
+        "showPregameEnemies": get_or("showPregameEnemies", json!(true)),
+        "riotLaunchArgs": get_or("riotLaunchArgs", json!("")),
         "recentMatchCount": get_or(
             "recentMatchCount",
             json!(crate::commands::live::RECENT_MATCH_COUNT_DEFAULT),
@@ -128,7 +130,7 @@ pub fn config_set(args: Vec<Value>, store: State<ConfigStore>) -> Value {
         return json!({ "success": false });
     };
     let value = args.get(1).cloned().unwrap_or(Value::Null);
-    if key == "saveMatchChatHistory" {
+    if key == "saveMatchChatHistory" || key == "showPregameEnemies" {
         if !value.is_boolean() {
             return json!({"success": false, "error": "Expected a boolean."});
         }

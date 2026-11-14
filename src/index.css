@@ -8,7 +8,7 @@
 
 @import url("https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..112,400..700&family=Chivo+Mono:wght@400;500;600&display=swap");
 @import "tailwindcss";
-@import "@heroui/styles";
+@import "tw-animate-css";
 
 :root,
 .dark,
@@ -304,36 +304,6 @@ h6 {
 /* ---------------------------------------------------------------------------
  * Compact controls
  * ------------------------------------------------------------------------- */
-.button {
-	height: 28px;
-	min-height: 28px;
-	border-radius: 6px;
-	font-size: 12px;
-	font-weight: 500;
-	padding-inline: 10px;
-	transition:
-		background-color 150ms ease,
-		border-color 150ms ease,
-		color 150ms ease,
-		box-shadow 150ms ease,
-		scale 90ms ease-out;
-}
-
-.button--primary {
-	--button-bg: var(--control);
-	--button-bg-hover: #38383d;
-	--button-bg-pressed: #2a2a2e;
-	--button-fg: var(--text-primary);
-	border: 1px solid var(--border);
-}
-
-.button--secondary,
-.button--tertiary,
-.button--ghost,
-.button--outline {
-	border-radius: 6px;
-}
-
 /* ---------------------------------------------------------------------------
  * Press feedback
  *
@@ -343,8 +313,8 @@ h6 {
  * - `scale`, not `transform: scale()`. Plenty of controls already carry a
  *   translate utility (tooltips sit on `-translate-y-1/2`); writing `transform`
  *   would silently wipe those out. The standalone property composes instead.
- * - HeroUI drives its buttons through React Aria, which sets `data-pressed`
- *   rather than matching `:active`, so both selectors are needed.
+ * - Some controls set `data-pressed` instead of matching `:active`, so both
+ *   selectors are kept.
  *
  * `.press-flat` opts a control out. It exists for the ones that parent an
  * absolutely positioned tooltip — scaling the button would drag the tooltip
@@ -371,62 +341,6 @@ button.press-tile:not(:disabled):not([aria-disabled="true"]):not(.press-flat)[da
 .press-flat:not(:disabled):active,
 .press-flat:not(:disabled)[data-pressed="true"] {
 	background: var(--surface-hover);
-}
-
-.button--danger {
-	border: 1px solid transparent;
-}
-
-.button:focus-visible,
-.button[data-focus-visible="true"] {
-	border-color: var(--accent);
-	box-shadow: 0 0 0 2px var(--accent-soft);
-	outline: none;
-}
-
-.input,
-.textarea,
-.select__trigger {
-	min-height: 28px;
-	height: 28px;
-	border-radius: 6px;
-	font-size: 12px;
-	padding-block: 0;
-	padding-inline: 8px;
-	background: var(--control);
-	border: 1px solid var(--border);
-	color: var(--text-primary);
-	box-shadow: none;
-}
-
-.textarea {
-	height: auto;
-	min-height: 56px;
-	padding-block: 6px;
-}
-
-.input:hover,
-.textarea:hover,
-.select__trigger:hover,
-.input[data-hovered="true"],
-.select__trigger[data-hovered="true"] {
-	background: #38383d;
-	border-color: #3c3c42;
-}
-
-.input:focus,
-.input:focus-visible,
-.textarea:focus,
-.textarea:focus-visible,
-.select__trigger:focus,
-.select__trigger:focus-visible,
-.select__trigger[data-open="true"],
-.input[data-focused="true"],
-.select__trigger[data-focus-visible="true"] {
-	border-color: var(--accent);
-	box-shadow: 0 0 0 2px var(--accent-soft);
-	outline: none;
-	background: var(--control);
 }
 
 input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="hidden"]):not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="image"]):not([type="color"]),
@@ -512,19 +426,6 @@ option {
 }
 
 /* Dropdown menus / overlays */
-.popover,
-.menu,
-.list-box,
-[data-slot="popover"],
-[data-slot="menu"] {
-	background: var(--surface);
-	border: 1px solid var(--border);
-	border-radius: 8px;
-	box-shadow: var(--overlay-shadow);
-}
-
-[data-slot="menu-item"][data-selected="true"],
-[data-slot="list-box-item"][data-selected="true"],
 [aria-selected="true"] {
 	background: var(--accent-soft);
 	color: var(--accent-selected);
@@ -587,20 +488,6 @@ input[type="range"]::-moz-range-thumb {
 	border: none;
 	border-radius: 999px;
 	background: var(--accent);
-}
-
-.switch,
-[data-slot="switch"] {
-	--switch-width: 32px;
-	--switch-height: 18px;
-}
-
-.modal__dialog,
-[data-slot="dialog"] {
-	background: var(--surface);
-	border: 1px solid var(--border);
-	border-radius: 8px;
-	box-shadow: var(--overlay-shadow);
 }
 
 @media (prefers-reduced-motion: reduce) {

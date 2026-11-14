@@ -103,6 +103,17 @@ export type SavedMatchDetails = {
   roundsWon: number;
   roundsLost: number;
   startMillis: number;
+  /** Riot ID and agent of the players who wrote saved lines. Missing in older history. */
+  speakers?: SavedSpeaker[];
+};
+
+export type SavedSpeaker = {
+  /** Lowercase PUUID. */
+  puuid: string;
+  /** `GameName#Tag`, or empty when Riot left it out. */
+  name: string;
+  /** Lowercase agent UUID. */
+  agentId: string;
 };
 
 export type SavedChatMatch = {

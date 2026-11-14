@@ -1,5 +1,5 @@
 use super::live_party::{self, LivePartyHistoryCache, RATE_LIMITED_ERROR};
-use super::pregame_roster::{build_pregame_roster, redact_secrets};
+use super::pregame_roster::{build_pregame_roster, is_enemy, redact_secrets};
 use super::rank_shields::remaining_rank_shields;
 use crate::riot::api::{self, RiotApiClient};
 use crate::riot::client::{self, RiotState};
@@ -560,6 +560,19 @@ fn live_roster_keys(
         party_membership
     );
     (cache_key, public_key)
+}
+
+/// Settings can hide the enemy team during agent select. Hidden enemies are
+/// dropped before enrichment, so their names, ranks and stats are never fetched.
+fn pregame_enemies_hidden(state: LiveState, config: &ConfigStore) -> bool {
+    state == LiveState::PreGame && config.get("showPregameEnemies") == Some(json!(false))
+}
+
+fn drop_hidden_enemies(players: Vec<Value>, hidden: bool) -> Vec<Value> {
+    if !hidden {
+        return players;
+    }
+    players.into_iter().filter(|player| !is_enemy(player)).collect()
 }
 
 fn extract_match_context(state: LiveState, source: &Value, match_id: Option<&str>) -> Value {
@@ -1821,14 +1834,19 @@ pub async fn live_game_fetch(
         }
 
         let match_data = detected.match_data.clone().unwrap_or(Value::Null);
+        let enemies_hidden =
+            pregame_enemies_hidden(detected.state, app.state::<ConfigStore>().inner());
         let raw_players = if detected.state == LiveState::PreGame {
-            build_pregame_roster(
-                &match_data,
-                detected.loadouts.as_ref(),
-                None,
-                &api.puuid,
+            drop_hidden_enemies(
+                build_pregame_roster(
+                    &match_data,
+                    detected.loadouts.as_ref(),
+                    None,
+                    &api.puuid,
+                )
+                .players,
+                enemies_hidden,
             )
-            .players
         } else {
             normalize_raw_players(detected.state, &match_data)
         };
@@ -1879,8 +1897,11 @@ pub async fn live_game_fetch(
             retry_in_seconds.is_some(),
             roster_missing_enrichment(&cache, &raw_players),
         );
-        let match_context =
+        let mut match_context =
             extract_match_context(detected.state, &match_data, detected.match_id.as_deref());
+        if enemies_hidden {
+            match_context["enemiesHidden"] = json!(true);
+        }
         let player_count = players.len();
         let early = finish_live_snapshot(
             &cache,
@@ -1932,13 +1953,16 @@ pub async fn live_game_fetch(
                 None
             };
             let raw_players = if state == LiveState::PreGame {
-                build_pregame_roster(
-                    &match_data,
-                    loadouts.as_ref(),
-                    chat.as_ref(),
-                    &api.puuid,
+                drop_hidden_enemies(
+                    build_pregame_roster(
+                        &match_data,
+                        loadouts.as_ref(),
+                        chat.as_ref(),
+                        &api.puuid,
+                    )
+                    .players,
+                    enemies_hidden,
                 )
-                .players
             } else {
                 raw_players
             };
@@ -2713,6 +2737,18 @@ mod tests {
             loadout_entry_count(&cache.get("pregame-loadouts:m1").unwrap()),
             10
         );
+    }
+
+    #[test]
+    fn hidden_pregame_enemies_are_dropped_and_allies_kept() {
+        let players = vec![
+            json!({ "Subject": "self", "_Side": "ALLY" }),
+            json!({ "Subject": "foe", "_Side": "ENEMY" }),
+            json!({ "Subject": "other-foe", "TeamID": "Enemy" }),
+        ];
+        let kept = drop_hidden_enemies(players.clone(), true);
+        assert_eq!(kept, vec![players[0].clone()]);
+        assert_eq!(drop_hidden_enemies(players.clone(), false), players);
     }
 
     #[test]

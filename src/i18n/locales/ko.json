@@ -72,7 +72,9 @@
     "launchFailed": "실행하지 못했습니다.",
     "riotClientRunningHint": "Riot 클라이언트가 이미 실행 중입니다. 트레이 아이콘까지 완전히 종료한 뒤 다시 실행하세요.",
     "launchNormal": "일반 실행",
-    "rateLimited": "Riot 요청 제한이 적용되었습니다. 약 {{seconds}}초 후 다시 시도하세요."
+    "rateLimited": "Riot 요청 제한이 적용되었습니다. 약 {{seconds}}초 후 다시 시도하세요.",
+    "playing": "플레이 중",
+    "playingHint": "발로란트가 실행 중입니다. Riot Client 로그인이 끝나면 ValoUtils가 세션을 자동으로 가져옵니다."
   },
   "riotStatus": {
     "connecting": "연결 중...",
@@ -375,6 +377,7 @@
     "ally": "아군",
     "enemy": "적군",
     "enemyRosterUnavailable": "요원 선택 중에는 적군 명단을 가져올 수 없습니다.",
+    "enemyRosterHidden": "요원 선택 중 적 팀이 숨겨져 있습니다. 설정에서 켤 수 있습니다.",
     "winStreak": "W{{count}}",
     "loseStreak": "L{{count}}",
     "winStreakHint": "{{count}}연승 ({{rr}} RR)",
@@ -508,7 +511,11 @@
     "closeFriends": "친구 목록 닫기",
     "online": "온라인",
     "offline": "오프라인",
-    "available": "사용 가능"
+    "available": "사용 가능",
+    "history": "기록",
+    "historyRoom": "채팅방",
+    "scoreboard": "스코어보드",
+    "historyOwner": "계정:"
   },
   "settings": {
     "saveMatchChatHistory": "매치 채팅 기록 저장",
@@ -535,6 +542,8 @@
     "requestPacing_safe": "안전하게",
     "recentMatchCount": "플레이어당 최근 매치 수",
     "recentMatchCountDesc": "플레이어 전적을 평균 낼 최근 매치 수입니다(최대 {{max}}). 많을수록 정확하지만 요청도 늘어납니다.",
+    "showPregameEnemies": "요원 선택 중 적 팀 표시",
+    "showPregameEnemiesDesc": "Riot이 제공하는 경우, 요원 선택 중 실시간 게임에 적 팀의 이름, 랭크, 전적을 표시합니다. 끄면 해당 요청도 보내지 않습니다.",
     "hideTab": "{{tab}} 탭 숨기기",
     "hideTabDesc": "메인 탐색 메뉴에서 이 탭을 숨깁니다",
     "showLogsTab": "로그 탭 표시",
@@ -570,7 +579,9 @@
     "open": "열기",
     "copied": "복사됨",
     "reveal": "비밀번호 표시",
-    "hide": "비밀번호 숨기기"
+    "hide": "비밀번호 숨기기",
+    "launchArgs": "실행 인수",
+    "launchArgsDesc": "ValoUtils나 AI 에이전트가 Riot Client로 발로란트를 실행할 때 --launch-product=valorant --launch-patchline=live 뒤에 추가되는 인수입니다. 직접 입력한 --launch-product나 --launch-patchline은 기본값을 대체합니다 (예: --launch-patchline=pbe). 공백이 있으면 따옴표를 쓰세요. --client-config-url은 무시됩니다."
   },
   "settingsViewer": {
     "modalTitle": "설정 — {{name}}",
@@ -996,5 +1007,61 @@
       "emptyResponse": "AI 응답에 텍스트가 없습니다. 다른 모델을 선택하거나 다시 생성하세요.",
       "invalidInput": "경기 정보가 없거나 너무 깁니다."
     }
+  },
+  "mcp": {
+    "section": "AI 에이전트 (MCP)",
+    "enable": "AI 에이전트가 ValoUtils 사용 허용",
+    "enableDesc": "로컬 MCP 서버를 실행해 Claude Code, Claude Desktop, Cursor 등 에이전트가 랭크, 매치, 실시간 게임, 상점, 배틀패스, 설정을 읽고, 플레이어를 조회하고, 발로란트를 실행할 수 있게 합니다. 이 PC에서만 비밀 토큰으로 접근할 수 있습니다.",
+    "running": "실행 중:",
+    "showToken": "토큰 보기",
+    "hideToken": "토큰 숨기기",
+    "regenerate": "새 토큰",
+    "tokenRegenerated": "새 토큰을 만들었습니다. 에이전트 설정을 새로 업데이트하세요.",
+    "promptTitle": "에이전트용 프롬프트",
+    "promptHint": "MCP 서버를 직접 추가할 수 있는 에이전트에 붙여 넣으세요.",
+    "agentPrompt": "내 로컬 ValoUtils MCP 서버에 연결해 \"valoutils\"라는 이름의 MCP 서버로 추가해 줘.\n- 전송 방식: Streamable HTTP\n- URL: {{url}}\n- 헤더: Authorization: Bearer {{token}}\n그다음 도구 목록을 보여 줘. 내 발로란트 랭크, 최근 매치, 실시간 게임, 상점, 배틀패스, 설정을 읽고, Riot ID로 플레이어를 조회하고, 발로란트를 실행할 수 있어. 토큰은 공개하지 마.",
+    "claudeCodeTitle": "Claude Code",
+    "claudeCodeHint": "터미널에서 실행하세요.",
+    "claudeDesktopTitle": "Claude Desktop",
+    "claudeDesktopHint": "claude_desktop_config.json에 추가하세요 (설정 → 개발자 → 구성 편집). Node.js가 필요합니다.",
+    "httpTitle": "Cursor, VS Code 및 기타 HTTP 클라이언트",
+    "httpHint": "클라이언트의 MCP 설정에 추가하세요 (예: .cursor/mcp.json).",
+    "notRunning": "서버가 실행 중이 아닙니다. 껐다가 다시 켜 주세요.",
+    "error": "MCP 서버 설정을 변경하지 못했습니다.",
+    "privacy": "에이전트는 도구를 호출할 때만 데이터를 받습니다. 이 PC에서 토큰을 가진 누구나 사용할 수 있으니, 유출되면 새 토큰을 만드세요.",
+    "docs": "문서"
+  },
+  "mcpDocs": {
+    "title": "MCP 문서",
+    "subtitle": "AI 에이전트를 ValoUtils에 연결하고 할 수 있는 일을 확인하세요.",
+    "connectTitle": "에이전트 연결",
+    "intro": "MCP(Model Context Protocol)는 AI 에이전트가 도구를 사용할 수 있게 하는 개방형 표준입니다. ValoUtils는 이 PC에서 작은 MCP 서버를 실행해 에이전트가 발로란트 데이터를 읽고 게임을 실행할 수 있게 합니다.",
+    "step1": "설정 → AI 에이전트 (MCP)에서 “AI 에이전트가 ValoUtils 사용 허용”을 켜세요.",
+    "step2": "에이전트에 맞는 설정(Claude Code 명령, Claude Desktop JSON, HTTP 클라이언트 JSON)을 복사하거나 에이전트용 프롬프트를 붙여 넣으세요.",
+    "step3": "에이전트에게 발로란트 계정에 대해 물어보세요. 필요할 때 아래 도구를 호출합니다.",
+    "off": "MCP 서버가 꺼져 있습니다. 설정에서 켜세요.",
+    "clients": "모든 MCP 클라이언트에서 작동합니다: Claude Code, Claude Desktop, Cursor, VS Code, Windsurf, Cline, Codex CLI, Gemini CLI 등. 웹 채팅 앱은 이 PC에서만 열려 있는 서버에 연결할 수 없습니다.",
+    "examplesTitle": "이렇게 물어보세요",
+    "examples": {
+      "rank": "내 랭크는? 이번 주에 RR을 얼마나 올렸어?",
+      "lastGames": "최근 5판 성적은 어땠어?",
+      "scoreboard": "지난 매치 스코어보드를 분석해 줘. 누가 캐리했어?",
+      "live": "지금 적 팀에서 가장 위협적인 사람은 누구야?",
+      "store": "오늘 상점에 뭐가 있어? 살 만한 게 있어?",
+      "friends": "지금 발로란트 하는 친구는 누구야?",
+      "lookup": "Name#TAG 조회해 줘. 랭크가 뭐야?",
+      "settings": "현재 감도와 크로스헤어를 저장한 프로필과 비교해 줘.",
+      "launch": "발로란트 실행해 줘."
+    },
+    "toolsTitle": "도구",
+    "loading": "도구 불러오는 중…",
+    "readOnly": "읽기 전용",
+    "takesAction": "동작 실행",
+    "required": "필수",
+    "optional": "선택",
+    "privacyTitle": "개인정보 및 안전",
+    "privacyLocal": "이 PC(127.0.0.1)에서만 접근할 수 있고, 모든 요청에 비밀 토큰이 필요합니다. 웹 페이지는 연결할 수 없습니다.",
+    "privacyNames": "실시간 게임과 스코어보드 도구는 다른 플레이어를 이름 대신 You / Ally N / Enemy N으로 표시합니다. 친구 목록과 플레이어 조회는 용도상 Riot ID를 반환합니다.",
+    "privacyRate": "에이전트 호출은 앱과 Riot 요청 한도를 공유합니다. Riot이 요청을 제한하면 도구가 언제 다시 시도할지 알려 줍니다."
   }
 }

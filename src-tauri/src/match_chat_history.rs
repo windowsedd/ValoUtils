@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::path::Path;
 use std::sync::Mutex;
 
@@ -37,6 +37,27 @@ pub struct MatchDetails {
     rounds_won: u64,
     rounds_lost: u64,
     start_millis: u64,
+    /// Riot ID and agent of each player who wrote a saved line, so the saved
+    /// thread can name them. `None` in history saved before this was kept,
+    /// which makes the lookup run once more to fill it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    speakers: Option<Vec<SavedSpeaker>>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SavedSpeaker {
+    /// Lowercase PUUID, matching the part of a line's `sender` before `@`.
+    puuid: String,
+    /// `GameName#Tag`, or empty when Riot left it out.
+    name: String,
+    /// Lowercase agent UUID.
+    agent_id: String,
+}
+
+/// The PUUID part of a chat `sender`, lowercased.
+fn sender_root(sender: &str) -> String {
+    sender.split('@').next().unwrap_or_default().to_ascii_lowercase()
 }
 
 fn is_match_uuid(uuid: &str) -> bool {
@@ -110,6 +131,33 @@ fn summarize(details: &Value, owner: &str) -> Option<MatchDetails> {
             .get("gameStartMillis")
             .and_then(Value::as_u64)
             .unwrap_or(0),
+        // Every player for now; `store_details` keeps only those who spoke.
+        speakers: Some(
+            details
+                .get("players")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(|player| {
+                    let puuid = text(player, "subject").to_ascii_lowercase();
+                    if puuid.is_empty() {
+                        return None;
+                    }
+                    let game_name = text(player, "gameName");
+                    let tag = text(player, "tagLine");
+                    let name = match (game_name.is_empty(), tag.is_empty()) {
+                        (true, _) => String::new(),
+                        (false, true) => game_name,
+                        (false, false) => format!("{game_name}#{tag}"),
+                    };
+                    Some(SavedSpeaker {
+                        puuid,
+                        name,
+                        agent_id: text(player, "characterId").to_ascii_lowercase(),
+                    })
+                })
+                .collect(),
+        ),
     })
 }
 
@@ -238,21 +286,22 @@ fn lookup_details(path: &Path, owner: &str, uuid: &str) -> Result<DetailsLookup,
         {
             None => DetailsLookup::NotSaved,
             Some(saved) => match &saved.details {
-                Some(details) => DetailsLookup::Saved(details.clone()),
-                None => DetailsLookup::Needed,
+                Some(details) if details.speakers.is_some() => DetailsLookup::Saved(details.clone()),
+                _ => DetailsLookup::Needed,
             },
         },
     )
 }
 
-/// Adds details to a match still saved for `owner`. Returns false (and writes
-/// nothing) when Clear or another account removed it while the request ran.
+/// Adds details to a match still saved for `owner`, keeping only the speakers
+/// who wrote a saved line, and returns what was stored. `None` (and nothing
+/// written) when Clear or another account removed it while the request ran.
 fn store_details(
     path: &Path,
     owner: &str,
     uuid: &str,
     details: &MatchDetails,
-) -> Result<bool, String> {
+) -> Result<Option<MatchDetails>, String> {
     let _guard = FILE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let mut archive = read(path)?;
     let Some(saved) = archive
@@ -260,14 +309,23 @@ fn store_details(
         .get_mut(owner)
         .and_then(|account| account.get_mut(uuid))
     else {
-        return Ok(false);
+        return Ok(None);
     };
-    if saved.details.as_ref() == Some(details) {
-        return Ok(true);
+    let senders: HashSet<String> = saved
+        .messages
+        .iter()
+        .filter_map(|message| message.get("sender").and_then(Value::as_str))
+        .map(sender_root)
+        .collect();
+    let mut details = details.clone();
+    if let Some(speakers) = details.speakers.as_mut() {
+        speakers.retain(|speaker| senders.contains(&speaker.puuid));
     }
-    saved.details = Some(details.clone());
-    write(path, &archive)?;
-    Ok(true)
+    if saved.details.as_ref() != Some(&details) {
+        saved.details = Some(details.clone());
+        write(path, &archive)?;
+    }
+    Ok(Some(details))
 }
 
 fn update(
@@ -339,7 +397,7 @@ pub async fn chat_saved_match_details(
             let document = api.get_match_details(&uuid).await?;
             let details = summarize(&document, &api.puuid)
                 .ok_or_else(|| "Riot has no finished match details yet.".to_string())?;
-            Ok(store_details(&path, &api.puuid, &uuid, &details)?.then_some(details))
+            Ok(store_details(&path, &api.puuid, &uuid, &details)?)
         }
     })
     .await;
@@ -521,8 +579,8 @@ mod tests {
             DetailsLookup::NotSaved
         );
         let details = summarize(&document("Blue"), "me").unwrap();
-        assert!(!store_details(&path, "other", MATCH, &details).unwrap());
-        assert!(store_details(&path, "me", MATCH, &details).unwrap());
+        assert!(store_details(&path, "other", MATCH, &details).unwrap().is_none());
+        let details = store_details(&path, "me", MATCH, &details).unwrap().unwrap();
         assert_eq!(
             lookup_details(&path, "me", MATCH).unwrap(),
             DetailsLookup::Saved(details.clone())
@@ -531,6 +589,38 @@ mod tests {
         let matches = update(&path, "me", &[line("all", "b")], || true).unwrap();
         assert_eq!(matches[0].details.as_ref(), Some(&details));
         assert_eq!(matches[0].messages.len(), 2);
+        std::fs::remove_file(&path).unwrap();
+        std::fs::remove_dir(dir).unwrap();
+    }
+
+    #[test]
+    fn only_players_who_spoke_are_saved_and_older_details_are_looked_up_again() {
+        let dir =
+            std::env::temp_dir().join(format!("valoutils-chat-speakers-{}", std::process::id()));
+        let path = dir.join("history.json");
+        let mut spoken = line("blue", "a");
+        spoken["sender"] = json!("THEM@ap.pvp.net");
+        update(&path, "me", &[spoken], || true).unwrap();
+        let mut document = document("Blue");
+        document["players"][1]["gameName"] = json!("Enemy");
+        document["players"][1]["tagLine"] = json!("NA1");
+        let mut details = summarize(&document, "me").unwrap();
+        assert_eq!(details.speakers.as_ref().unwrap().len(), 2);
+        let stored = store_details(&path, "me", MATCH, &details).unwrap().unwrap();
+        assert_eq!(
+            stored.speakers,
+            Some(vec![SavedSpeaker {
+                puuid: "them".into(),
+                name: "Enemy#NA1".into(),
+                agent_id: "x".into(),
+            }])
+        );
+        // Details saved before speakers were kept count as missing.
+        details.speakers = None;
+        let mut archive = read(&path).unwrap();
+        archive.accounts.get_mut("me").unwrap().get_mut(MATCH).unwrap().details = Some(details);
+        write(&path, &archive).unwrap();
+        assert_eq!(lookup_details(&path, "me", MATCH).unwrap(), DetailsLookup::Needed);
         std::fs::remove_file(&path).unwrap();
         std::fs::remove_dir(dir).unwrap();
     }

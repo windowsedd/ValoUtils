@@ -53,6 +53,8 @@ export const LoginRequiredPanel = ({
 }: LoginRequiredPanelProps) => {
 	const { t } = useTranslation();
 	const [clientRunning, setClientRunning] = useState<boolean | null>(null);
+	/** The game process itself, not just the Riot Client. */
+	const [valorantRunning, setValorantRunning] = useState(false);
 	const [configRunning, setConfigRunning] = useState<boolean | null>(null);
 	/** Which button is in flight, so only that one shows the pending label. */
 	const [launching, setLaunching] = useState<LaunchMode | null>(null);
@@ -78,6 +80,7 @@ const applyStatus = (message: any) => {
 				const data = message;
 				if (!data?.success) return;
 				setConfigRunning(typeof data.running === "boolean" ? data.running : null);
+				setValorantRunning(data.valorantRunning === true);
 				const running = Boolean(data.riotClientRunning);
 				setClientRunning((previous) => {
 					// A client just appeared — the session may already be usable.
@@ -135,6 +138,20 @@ const applyStatus = (message: any) => {
 					onReady={() => { setConfigRunning(true); retry.current?.(); }} />
 
 				<div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+					{valorantRunning ? (
+						// Launching again would only focus the running client, so the two
+						// launch buttons become one status that says the game is up.
+						<button
+							type="button"
+							disabled
+							data-valorant-playing=""
+							className="flex h-8 items-center gap-2 rounded-[6px] border border-(--signal-pos)/40 bg-(--signal-pos)/10 px-3 text-[12px] font-medium text-(--signal-pos) disabled:cursor-default"
+						>
+							<span className="h-2 w-2 rounded-full bg-(--signal-pos) animate-pulse motion-reduce:animate-none" aria-hidden="true" />
+							{t("common.playing")}
+						</button>
+					) : (
+					<>
 					<button
 						type="button"
 						onClick={() => launch("relay")}
@@ -153,13 +170,19 @@ const applyStatus = (message: any) => {
 						<LuPlay className="h-3 w-3" />
 						{launching === "normal" ? t("common.launching") : t("common.launchNormal")}
 					</button>
+					</>
+					)}
 					{children}
 				</div>
 
-				{alreadyRunning && (
-					<p className="mt-2 text-[11px] leading-4 text-(--signal-warn)">
-						{t("common.riotClientRunningHint")}
-					</p>
+				{valorantRunning ? (
+					<p className="mt-2 text-[11px] leading-4 text-(--text-muted)">{t("common.playingHint")}</p>
+				) : (
+					alreadyRunning && (
+						<p className="mt-2 text-[11px] leading-4 text-(--signal-warn)">
+							{t("common.riotClientRunningHint")}
+						</p>
+					)
 				)}
 				{error && (
 					<p role="alert" className="mt-2 text-[11px] leading-4 text-(--signal-neg)">

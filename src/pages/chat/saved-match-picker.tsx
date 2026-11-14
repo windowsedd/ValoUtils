@@ -4,7 +4,7 @@ import type { SavedChatMatch } from "@/types/chat";
 import { useAgentAssets } from "@/util/use-agent-assets";
 import { getMaps, localize, type MapAsset } from "@/util/valorant-assets";
 import { queueLabel } from "@/util/valorant-queues";
-import { matchOutcome, relativeDay, savedMatchList, type MatchOutcome, type SavedMatchSummary } from "./saved-match-history";
+import { matchOutcome, relativeDay, savedMatchList, savedSenderName, type MatchOutcome, type SavedMatchSummary } from "./saved-match-history";
 
 export type SavedMatchPickerLabels = {
 	title: string;
@@ -58,12 +58,18 @@ export const SavedMatchPicker = ({
 	selected,
 	onSelect,
 	labels,
+	showCurrent = true,
+	fill = false,
 }: {
 	matches: readonly SavedChatMatch[];
 	channel: "team" | "all";
 	selected: string | null;
 	onSelect: (matchUuid: string | null) => void;
 	labels: SavedMatchPickerLabels;
+	/** Offer a "Current chat" row that returns to the live room. */
+	showCurrent?: boolean;
+	/** Grow to the panel's height instead of a short scrolling list. */
+	fill?: boolean;
 }) => {
 	const [query, setQuery] = useState("");
 	const list = useMemo(() => savedMatchList(matches, channel, query), [matches, channel, query]);
@@ -85,19 +91,21 @@ export const SavedMatchPicker = ({
 	const agents = useAgentAssets(matches.map((match) => match.details?.agentId));
 
 	return (
-		<section data-saved-match-picker="" aria-label={labels.title} className="flex flex-col px-2 pb-1 pt-2">
+		<section data-saved-match-picker="" aria-label={labels.title} className={`flex flex-col px-2 pb-1 pt-2 ${fill ? "min-h-0 flex-1" : ""}`}>
 			<h3 className="flex items-center justify-between px-2 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-(--text-muted)">
 				<span>{labels.title}</span>
 				<span className="tabular-nums">{matches.length || ""}</span>
 			</h3>
 
-			<button type="button" aria-current={selected === null || undefined} onClick={() => onSelect(null)} className={rowClass(selected === null)}>
-				<span className="flex items-center gap-1.5 text-[12px] font-medium text-(--text-primary)">
-					<LuMessageSquare className="size-3.5 shrink-0 text-(--signal-pos)" />
-					{labels.current}
-				</span>
-				<span className="truncate text-[11px] text-(--text-muted)">{labels.currentHint}</span>
-			</button>
+			{showCurrent && (
+				<button type="button" aria-current={selected === null || undefined} onClick={() => onSelect(null)} className={rowClass(selected === null)}>
+					<span className="flex items-center gap-1.5 text-[12px] font-medium text-(--text-primary)">
+						<LuMessageSquare className="size-3.5 shrink-0 text-(--signal-pos)" />
+						{labels.current}
+					</span>
+					<span className="truncate text-[11px] text-(--text-muted)">{labels.currentHint}</span>
+				</button>
+			)}
 
 			{matches.length === 0 ? (
 				<p className="px-2 pt-2 text-[11px] leading-5 text-(--text-muted)">{labels.empty}</p>
@@ -116,7 +124,7 @@ export const SavedMatchPicker = ({
 							/>
 						</label>
 					)}
-					<div className="mt-1.5 flex max-h-60 flex-col gap-0.5 overflow-y-auto">
+					<div className={`mt-1.5 flex flex-col gap-0.5 overflow-y-auto ${fill ? "min-h-0 flex-1" : "max-h-60"}`}>
 						{list.length === 0 && <p className="px-2 py-2 text-[11px] text-(--text-muted)">{labels.noResults}</p>}
 						{list.map((summary) => {
 							const isSelected = selected === summary.matchUuid;
@@ -136,7 +144,9 @@ export const SavedMatchPicker = ({
 									aria-current={isSelected || undefined}
 									onClick={() => onSelect(summary.matchUuid)}
 									title={summary.matchUuid}
-									className={`relative overflow-hidden ${rowClass(isSelected)}`}
+									// A flex column with max-h would otherwise shrink the cards
+									// (overflow-hidden lets them go below content) instead of scrolling.
+									className={`relative shrink-0 overflow-hidden ${rowClass(isSelected)}`}
 								>
 									{art && (
 										<img
@@ -182,7 +192,7 @@ export const SavedMatchPicker = ({
 									<span className="relative truncate text-[11px] text-(--text-secondary)">
 										{summary.last ? (
 											<>
-												<span className="text-(--text-muted)">{summary.last.senderName || "?"}: </span>
+												<span className="text-(--text-muted)">{savedSenderName(summary.last, details) || "?"}: </span>
 												{summary.last.body}
 											</>
 										) : (

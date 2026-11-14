@@ -45,6 +45,7 @@ pub mod live;
 pub mod logs;
 pub(crate) mod live_party;
 pub mod matches;
+pub mod mcp;
 mod pregame_roster;
 pub mod presence;
 pub mod profiles;

@@ -7,6 +7,7 @@ import {
 	type TranslationProvider,
 } from "@/util/translation-languages";
 import { autocompleteKeyAction } from "./bot-command-autocomplete";
+import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 
 type Props = {
 	value: string;
@@ -24,6 +25,10 @@ type Props = {
  * This renders the list itself so it matches the surrounding chrome, and mirrors
  * the variables popover in the message editor so both autocompletes behave the
  * same way.
+ *
+ * The list sits in a shadcn/ui Popover anchored to the field, so a scrolling
+ * panel cannot clip it and an outside click or Escape closes it, while focus
+ * stays in the text field for typing and arrow keys.
  *
  * The text field stays free-form on purpose: the backend also accepts plain
  * names ("french") and loose forms ("zh_tw"), so the list suggests rather than
@@ -76,15 +81,6 @@ export const BotLanguageCombobox = ({
 		return filtered.length > 0 ? filtered : options;
 	}, [options, query]);
 
-	useEffect(() => {
-		if (!open) return;
-		const close = (event: MouseEvent) => {
-			if (!wrapRef.current?.contains(event.target as Node)) setOpen(false);
-		};
-		document.addEventListener("mousedown", close);
-		return () => document.removeEventListener("mousedown", close);
-	}, [open]);
-
 	// Keep the highlighted row in view while arrowing through ~200 languages.
 	useEffect(() => {
 		if (!open) return;
@@ -99,59 +95,67 @@ export const BotLanguageCombobox = ({
 	};
 
 	return (
-		<div ref={wrapRef} className="relative min-w-0">
-			<div className="relative">
-				<input
-					value={value}
-					onChange={(event) => {
-						onChange(event.currentTarget.value);
-						setActiveIndex(0);
-						setOpen(true);
-					}}
-					onFocus={() => setOpen(true)}
-					onKeyDown={(event) => {
-						if (!open) {
-							if (event.key === "ArrowDown") {
-								setOpen(true);
-								setActiveIndex(0);
-								event.preventDefault();
+		<Popover open={open && matches.length > 0} onOpenChange={(next) => !next && setOpen(false)}>
+			<PopoverAnchor asChild>
+				<div ref={wrapRef} className="relative min-w-0">
+					<input
+						value={value}
+						onChange={(event) => {
+							onChange(event.currentTarget.value);
+							setActiveIndex(0);
+							setOpen(true);
+						}}
+						onFocus={() => setOpen(true)}
+						onKeyDown={(event) => {
+							if (!open) {
+								if (event.key === "ArrowDown") {
+									setOpen(true);
+									setActiveIndex(0);
+									event.preventDefault();
+								}
+								return;
 							}
-							return;
-						}
-						const action = autocompleteKeyAction(event.key, activeIndex, matches.length);
-						if (!action.handled) return;
-						event.preventDefault();
-						setActiveIndex(action.activeIndex);
-						if (action.dismiss) setOpen(false);
-						if (action.commit && matches[action.activeIndex]) {
-							choose(matches[action.activeIndex].code);
-						}
-					}}
-					placeholder={placeholder}
-					role="combobox"
-					aria-expanded={open}
-					aria-autocomplete="list"
-					autoComplete="off"
-					spellCheck={false}
-					className={`${inputClassName} pr-7 font-mono`}
-				/>
-				<button
-					type="button"
-					tabIndex={-1}
-					aria-label={t("dummyBot.customLanguageLabel")}
-					onClick={() => setOpen((current) => !current)}
-					className="absolute inset-y-0 right-0 grid w-7 place-items-center text-(--text-muted) transition-colors hover:text-(--text-primary)"
-				>
-					<LuChevronDown className={`h-3 w-3 transition-transform ${open ? "rotate-180" : ""}`} />
-				</button>
-			</div>
+							const action = autocompleteKeyAction(event.key, activeIndex, matches.length);
+							if (!action.handled) return;
+							event.preventDefault();
+							setActiveIndex(action.activeIndex);
+							if (action.dismiss) setOpen(false);
+							if (action.commit && matches[action.activeIndex]) {
+								choose(matches[action.activeIndex].code);
+							}
+						}}
+						placeholder={placeholder}
+						role="combobox"
+						aria-expanded={open}
+						aria-autocomplete="list"
+						autoComplete="off"
+						spellCheck={false}
+						className={`${inputClassName} pr-7 font-mono`}
+					/>
+					<button
+						type="button"
+						tabIndex={-1}
+						aria-label={t("dummyBot.customLanguageLabel")}
+						onClick={() => setOpen((current) => !current)}
+						className="absolute inset-y-0 right-0 grid w-7 place-items-center text-(--text-muted) transition-colors hover:text-(--text-primary)"
+					>
+						<LuChevronDown className={`h-3 w-3 transition-transform ${open ? "rotate-180" : ""}`} />
+					</button>
+				</div>
+			</PopoverAnchor>
 
-			{open && matches.length > 0 && (
-				<div
-					ref={listRef}
-					role="listbox"
-					className="absolute z-30 mt-1 max-h-56 w-full overflow-y-auto rounded-[6px] border border-(--border) bg-(--surface) p-1 shadow-[0_8px_24px_rgba(0,0,0,0.28)]"
-				>
+			<PopoverContent
+				align="start"
+				sideOffset={4}
+				// Typing continues in the field; the list never takes focus.
+				onOpenAutoFocus={(event) => event.preventDefault()}
+				onCloseAutoFocus={(event) => event.preventDefault()}
+				onInteractOutside={(event) => {
+					if (wrapRef.current?.contains(event.target as Node)) event.preventDefault();
+				}}
+				className="w-(--radix-popover-trigger-width) rounded-[6px] p-1"
+			>
+				<div ref={listRef} role="listbox" className="max-h-56 overflow-y-auto">
 					{matches.map((option, index) => (
 						<button
 							key={option.code}
@@ -175,7 +179,7 @@ export const BotLanguageCombobox = ({
 						</button>
 					))}
 				</div>
-			)}
-		</div>
+			</PopoverContent>
+		</Popover>
 	);
 };
