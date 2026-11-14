@@ -6,12 +6,15 @@ import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { gooeyToast as toast } from "goey-toast";
 import { useTranslation } from "react-i18next";
-import { FaGlobe, FaRocket, FaCode, FaChartBar, FaLanguage, FaKey, FaArrowUpRightFromSquare, FaCopy, FaCheck, FaEye, FaEyeSlash, FaBook, FaComments, FaGaugeHigh, FaListOl } from "react-icons/fa6";
+import { FaGlobe, FaRocket, FaCode, FaChartBar, FaLanguage, FaKey, FaArrowUpRightFromSquare, FaCopy, FaCheck, FaEye, FaEyeSlash, FaBook, FaComments, FaGaugeHigh, FaListOl, FaUserSecret, FaTerminal } from "react-icons/fa6";
 import { LuBot, LuMonitor, LuScrollText, LuSettings } from "react-icons/lu";
 import { DisplaySetting } from "@/components/display-setting";
+import { McpSettings } from "@/components/mcp-settings";
+import { Switch } from "@/components/ui/switch";
 import { PageHeader, PageTabs, SectionCard, pageBodyClass } from "@/components/section-card";
 import { useConfiguredRoutes } from "@/components/router";
 import SwaggerPage from "@/pages/SwaggerPage";
+import McpDocsPage from "@/pages/McpDocsPage";
 import { normalizeHiddenTabs, setTabHidden } from "@/util/navigation-tabs";
 import {
 	displayTranslationLanguage,
@@ -65,6 +68,8 @@ type AppConfig = AiSettings & {
 	showLogsTab: boolean;
 	riotRequestPacing: RiotRequestPacing;
 	recentMatchCount: number;
+	showPregameEnemies: boolean;
+	riotLaunchArgs: string;
 };
 
 const PACING_OPTIONS: RiotRequestPacing[] = ["fast", "balanced", "safe"];
@@ -91,25 +96,7 @@ const Toggle = ({
 	onChange: (v: boolean) => void;
 	disabled?: boolean;
 	label?: string;
-}) => (
-	<button
-		type="button"
-		role="switch"
-		aria-checked={checked}
-		aria-label={label}
-		disabled={disabled}
-		onClick={() => onChange(!checked)}
-		className={`relative inline-flex h-[18px] w-8 shrink-0 cursor-pointer disabled:cursor-wait disabled:opacity-50 rounded-full border border-transparent transition-[background-color,box-shadow] duration-150 focus:outline-none focus-visible:shadow-[0_0_0_2px_var(--accent-soft)] ${
-			checked ? "bg-(--accent)" : "bg-(--control)"
-		}`}
-	>
-		<span
-			className={`pointer-events-none inline-block h-3.5 w-3.5 rounded-full bg-[#d7d7de] shadow-none transition-transform duration-150 ${
-				checked ? "translate-x-[14px]" : "translate-x-[1px]"
-			}`}
-		/>
-	</button>
-);
+}) => <Switch checked={checked} onCheckedChange={onChange} disabled={disabled} aria-label={label} />;
 
 type SettingRowProps = {
 	icon: React.ReactNode;
@@ -156,7 +143,7 @@ const Settings = () => {
 	const [startupEnabled, setStartupEnabled] = useState<boolean | null>(null);
 	const [startupSaving, setStartupSaving] = useState(false);
 	const [historySaving, setHistorySaving] = useState(false);
-	const [view, setView] = useState<"settings" | "api-reference">("settings");
+	const [view, setView] = useState<"settings" | "api-reference" | "mcp-docs">("settings");
 	const [appConfig, setAppConfig] = useState<AppConfig>({
 		aiProvider: "none",
         aiProviders: {},
@@ -176,6 +163,8 @@ const Settings = () => {
 		showLogsTab: false,
 		riotRequestPacing: "balanced",
 		recentMatchCount: 5,
+		showPregameEnemies: true,
+		riotLaunchArgs: "",
 	});
 	const [analytics, setAnalytics] = useState(() => localStorage.getItem("valoutils-analytics") !== "false");
 
@@ -362,6 +351,7 @@ const applyClientInfo = (msg: any) => {
 	};
 
 	if (view === "api-reference") return <SwaggerPage onBack={() => setView("settings")} />;
+	if (view === "mcp-docs") return <McpDocsPage onBack={() => setView("settings")} />;
 
 	return (
 		<div className="h-full flex flex-col animate-fade-in">
@@ -529,6 +519,8 @@ const applyClientInfo = (msg: any) => {
                     </div>
                 </SectionCard>
 
+				<McpSettings onOpenDocs={() => setView("mcp-docs")} />
+
                 <SectionCard id="settings-app" title={t("settings.sectionApp")} accent="#a78bfa">
 					<div className="flex flex-col px-1">
 				<SettingRow icon={<FaComments />} label={t("settings.saveMatchChatHistory")} description={t("settings.saveMatchChatHistoryDesc")}
@@ -657,6 +649,47 @@ const applyClientInfo = (msg: any) => {
 										)
 									}
 									className="w-20 h-7 px-2 rounded-[6px] border border-(--border) bg-(--control) text-[12px] font-mono text-(--text-primary) outline-none focus:border-(--accent) focus:shadow-[0_0_0_2px_var(--accent-soft)]"
+								/>
+							}
+						/>
+
+						<SettingRow
+							icon={<FaTerminal />}
+							label={t("settings.launchArgs")}
+							description={t("settings.launchArgsDesc")}
+							right={
+								<input
+									type="text"
+									spellCheck={false}
+									aria-label={t("settings.launchArgs")}
+									placeholder="--launch-patchline=pbe"
+									value={appConfig.riotLaunchArgs}
+									// Saved when the box loses focus, not on every keystroke.
+									onChange={(event) =>
+										setAppConfig((current) => ({ ...current, riotLaunchArgs: event.target.value }))
+									}
+									onBlur={(event) => {
+										const value = event.target.value.trim();
+										setConfig("riotLaunchArgs", value);
+										invoke("analytics_track", { args: ["riot_launch:args-set", JSON.stringify({ set: value.length > 0 })] }).catch(reportIpcError);
+									}}
+									className="w-56 h-7 px-2 rounded-[6px] border border-(--border) bg-(--control) text-[12px] font-mono text-(--text-primary) outline-none placeholder:text-(--text-muted) focus:border-(--accent) focus:shadow-[0_0_0_2px_var(--accent-soft)]"
+								/>
+							}
+						/>
+
+						<SettingRow
+							icon={<FaUserSecret />}
+							label={t("settings.showPregameEnemies")}
+							description={t("settings.showPregameEnemiesDesc")}
+							right={
+								<Toggle
+									label={t("settings.showPregameEnemies")}
+									checked={appConfig.showPregameEnemies}
+									onChange={(enabled) => {
+										setConfig("showPregameEnemies", enabled);
+										invoke("analytics_track", { args: ["live_game:pregame-enemies", JSON.stringify({ enabled })] }).catch(reportIpcError);
+									}}
 								/>
 							}
 						/>

@@ -4,7 +4,9 @@ import CustomButton from "@/components/button";
 import { useDynamicModal } from "@/components/dynamic-modal";
 import { navbarLayout } from "@/components/navbar-layout";
 import { ParsedSettingsViewer } from "@/components/parsed-settings-viewer";
-import { useCallback,  useEffect, useRef, useState  } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { LuChevronDown, LuEye, LuSmartphone, LuTriangleAlert, LuUser, LuUserX } from "react-icons/lu";
 import { useTranslation } from "react-i18next";
 
@@ -52,7 +54,8 @@ const RiotStatusBar = ({ compact = false }: RiotStatusBarProps) => {
 	const [info, setInfo] = useState<StatusInfo>({ status: "loading" });
 	const [presence, setPresence] = useState<PresenceInfo | null>(null);
 	const [menuOpen, setMenuOpen] = useState(false);
-	const menuRef = useRef<HTMLDivElement>(null);
+	// The compact trigger's tooltip; hidden while the menu is open beside it.
+	const [tooltipOpen, setTooltipOpen] = useState(false);
 	const { showModal, closeModal } = useDynamicModal();
 	const { t } = useTranslation();
 
@@ -111,15 +114,6 @@ const RiotStatusBar = ({ compact = false }: RiotStatusBarProps) => {
 		};
 	}, [applyPresence]);
 
-	useEffect(() => {
-		if (!menuOpen) return;
-		const close = (event: MouseEvent) => {
-			if (!menuRef.current?.contains(event.target as Node)) setMenuOpen(false);
-		};
-		document.addEventListener("mousedown", close);
-		return () => document.removeEventListener("mousedown", close);
-	}, [menuOpen]);
-
 	const setMode = (mode: PresenceMode) => {
 		if (!presence || presence.activeConnections < 1) return;
 		invoke<any>("presence_status_set", { args: [mode] }).then(applyPresence).catch(error => applyPresence({ success: false, error: String(error) }));
@@ -173,46 +167,52 @@ const RiotStatusBar = ({ compact = false }: RiotStatusBarProps) => {
 
 	return (
 		<div
-			ref={menuRef}
 			className="relative select-none whitespace-nowrap"
 			data-status-layout={compact ? "compact" : "full"}
 		>
-			<button
-				type="button"
-				onClick={() => setMenuOpen((open) => !open)}
-				aria-haspopup="menu"
-				aria-expanded={menuOpen}
-				aria-label={compact ? accountLabel : undefined}
-				data-tooltip={compact ? accountLabel : undefined}
-				className={compact ? navbarLayout.statusTriggerCompact : navbarLayout.statusTrigger}
-				title={accountLabel}
-			>
-				{compact ? (
-					<>
-						<span className="grid h-7 w-7 place-items-center rounded-full bg-(--control) text-[15px]" aria-hidden="true">
-							{info.status === "online" ? <LuUser /> : <LuUserX />}
-						</span>
-						<span className={`absolute bottom-1.5 right-1.5 h-2.5 w-2.5 rounded-full border-2 border-(--surface) ${dot[info.status]}`} aria-hidden="true" />
-						{/* Suppressed while the menu is open — it is anchored to the same
-						    corner and would sit on top of the menu's footer text. */}
-						{!menuOpen && (
-							<span className={navbarLayout.statusTooltip} role="tooltip">{accountLabel}</span>
-						)}
-					</>
-				) : (
-					<>
-						<span className={`h-2 w-2 shrink-0 rounded-full ${dot[info.status]}`} />
-						<span className="max-w-28 truncate xl:max-w-40">{accountLabel}</span>
-						<span className={`grid h-6 w-6 shrink-0 place-items-center text-xs ${presence ? presenceColor[presence.mode] : "text-(--text-muted)"}`}>
-							{presence ? presenceIcon[presence.mode] : <LuUserX />}
-						</span>
-						<LuChevronDown className={`h-2.5 w-2.5 shrink-0 text-(--text-muted) transition-transform ${menuOpen ? "rotate-180" : ""}`} />
-					</>
-				)}
-			</button>
+			<Popover open={menuOpen} onOpenChange={setMenuOpen}>
+				<Tooltip open={compact && tooltipOpen && !menuOpen} onOpenChange={setTooltipOpen}>
+					<TooltipTrigger asChild>
+						<PopoverTrigger asChild>
+							<button
+								type="button"
+								aria-label={compact ? accountLabel : undefined}
+								data-tooltip={compact ? accountLabel : undefined}
+								className={compact ? navbarLayout.statusTriggerCompact : navbarLayout.statusTrigger}
+								title={compact ? undefined : accountLabel}
+							>
+								{compact ? (
+									<>
+										<span className="grid h-7 w-7 place-items-center rounded-full bg-(--control) text-[15px]" aria-hidden="true">
+											{info.status === "online" ? <LuUser /> : <LuUserX />}
+										</span>
+										<span className={`absolute bottom-1.5 right-1.5 h-2.5 w-2.5 rounded-full border-2 border-(--surface) ${dot[info.status]}`} aria-hidden="true" />
+									</>
+								) : (
+									<>
+										<span className={`h-2 w-2 shrink-0 rounded-full ${dot[info.status]}`} />
+										<span className="max-w-28 truncate xl:max-w-40">{accountLabel}</span>
+										<span className={`grid h-6 w-6 shrink-0 place-items-center text-xs ${presence ? presenceColor[presence.mode] : "text-(--text-muted)"}`}>
+											{presence ? presenceIcon[presence.mode] : <LuUserX />}
+										</span>
+										<LuChevronDown className={`h-2.5 w-2.5 shrink-0 text-(--text-muted) transition-transform ${menuOpen ? "rotate-180" : ""}`} />
+									</>
+								)}
+							</button>
+						</PopoverTrigger>
+					</TooltipTrigger>
+					<TooltipContent side="right" sideOffset={12} className={navbarLayout.tooltip}>
+						{accountLabel}
+					</TooltipContent>
+				</Tooltip>
 
-			{menuOpen && (
-				<div className={compact ? navbarLayout.statusMenuCompact : navbarLayout.statusMenu} role="menu">
+				<PopoverContent
+					side={compact ? "right" : "bottom"}
+					align="end"
+					sideOffset={compact ? 16 : 6}
+					aria-label={accountLabel}
+					className={navbarLayout.statusMenu}
+				>
 					<div className="flex items-center gap-2.5 px-2 pt-1.5 pb-2.5">
 						<span className="relative grid h-9 w-9 shrink-0 place-items-center rounded-full bg-(--control) text-[16px] text-(--text-secondary)" aria-hidden="true">
 							{info.status === "online" ? <LuUser /> : <LuUserX />}
@@ -247,14 +247,14 @@ const RiotStatusBar = ({ compact = false }: RiotStatusBarProps) => {
 
 					<div className="mt-1 border-t border-(--line) px-1 pt-2.5 pb-1">
 						<p className="px-1 pb-2 text-[10px] font-medium tracking-[0.08em] text-(--text-muted) uppercase">{t("riotStatus.presenceControl")}</p>
-						<div className="grid grid-cols-3 gap-1.5" role="group" aria-label={t("riotStatus.presenceControl")}>
+						<div className="grid grid-cols-3 gap-1.5" role="radiogroup" aria-label={t("riotStatus.presenceControl")}>
 							{(["online", "offline", "mobile"] as PresenceMode[]).map((mode) => {
 								const selected = presence?.mode === mode;
 								return (
 									<button
 										key={mode}
 										type="button"
-										role="menuitemradio"
+										role="radio"
 										aria-checked={selected}
 										disabled={!presence || presence.activeConnections < 1}
 										onClick={() => setMode(mode)}
@@ -284,8 +284,8 @@ const RiotStatusBar = ({ compact = false }: RiotStatusBarProps) => {
 							<span>{presence.lastWarning}</span>
 						</p>
 					)}
-				</div>
-			)}
+				</PopoverContent>
+			</Popover>
 		</div>
 	);
 };

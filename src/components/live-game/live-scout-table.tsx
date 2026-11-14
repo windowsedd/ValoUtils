@@ -396,7 +396,7 @@ export const LiveScoutTable = ({ snapshot, assets, recent, refreshing, refreshEr
 				)}
 				{isPregame && enemyCount === 0 && (
 					<div role="status" className="border-t border-(--signal-warn)/20 bg-(--signal-warn)/8 px-4 py-2 text-[11px] text-(--signal-warn)">
-						{t("liveGame.enemyRosterUnavailable")}
+						{t(snapshot.match?.enemiesHidden ? "liveGame.enemyRosterHidden" : "liveGame.enemyRosterUnavailable")}
 					</div>
 				)}
 				{matchup && (

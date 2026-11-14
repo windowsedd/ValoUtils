@@ -1,75 +1,66 @@
 import React, { createContext, ReactNode, useContext, useState } from "react";
-import { Modal, useOverlayState } from "@heroui/react";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 interface ModalContentProps {
-    title: string;
-    body: React.ReactNode | React.ReactNode[];
-    footer: React.ReactNode | React.ReactNode[];
-    onClose?: () => void;
+	title: string;
+	body: React.ReactNode | React.ReactNode[];
+	footer: React.ReactNode | React.ReactNode[];
+	onClose?: () => void;
 }
 
 interface DynamicModalContextProps {
-    showModal: (content: ModalContentProps) => void;
-    closeModal: () => void;
+	showModal: (content: ModalContentProps) => void;
+	closeModal: () => void;
 }
 
 const DynamicModalContext = createContext<DynamicModalContextProps>({
-    showModal: () => {
-    },
-    closeModal: () => {
-    }
+	showModal: () => {},
+	closeModal: () => {},
 });
 
 export const useDynamicModal = (): DynamicModalContextProps => useContext(DynamicModalContext);
 
+/** One app-wide modal (shadcn/ui Dialog) that pages fill through `showModal`. */
 export const DynamicModalProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-    const [modalContent, setModalContent] = useState<ModalContentProps | null>(null);
-    const [props, setProps] = useState<ModalContentProps | null>(null);
+	const [modalContent, setModalContent] = useState<ModalContentProps | null>(null);
+	const [props, setProps] = useState<ModalContentProps | null>(null);
 
-    const showModal = (content: ModalContentProps) => {
-        setProps(content)
-        setModalContent(content);
-    };
+	const showModal = (content: ModalContentProps) => {
+		setProps(content);
+		setModalContent(content);
+	};
 
-    const closeModal = () => {
-        setModalContent(null);
-        if (props) {
-            if (props.onClose) {
-                props.onClose();
-            }
-            setProps(null);
-        }
-    };
+	const closeModal = () => {
+		setModalContent(null);
+		if (props) {
+			props.onClose?.();
+			setProps(null);
+		}
+	};
 
-    // HeroUI v3 controls overlays via an overlay-state object instead of the
-    // `isOpen`/`onOpenChange` props that NextUI v2 used directly on <Modal>.
-    const state = useOverlayState({
-        isOpen: modalContent !== null,
-        onOpenChange: (open) => {
-            if (!open) {
-                closeModal();
-            }
-        },
-    });
-
-    return (
-        <DynamicModalContext.Provider value={{ showModal, closeModal }}>
-            {children}
-            {modalContent && (
-                <Modal state={state}>
-                    <Modal.Backdrop>
-                        <Modal.Container>
-                            <Modal.Dialog className="w-170 max-w-[92vw] max-h-[85vh] flex flex-col">
-                                <Modal.Header className="flex flex-col gap-1 shrink-0">
-                                    <Modal.Heading>{modalContent.title}</Modal.Heading>
-                                </Modal.Header>
-                                <Modal.Body className="overflow-y-auto flex-1">{modalContent.body}</Modal.Body>
-                                <Modal.Footer className="shrink-0">{modalContent.footer}</Modal.Footer>
-                            </Modal.Dialog>
-                        </Modal.Container>
-                    </Modal.Backdrop>
-                </Modal>
-            )}
-        </DynamicModalContext.Provider>
-    );
+	return (
+		<DynamicModalContext.Provider value={{ showModal, closeModal }}>
+			{children}
+			<Dialog
+				open={modalContent !== null}
+				onOpenChange={(open) => {
+					if (!open) closeModal();
+				}}
+			>
+				{modalContent && (
+					<DialogContent>
+						<DialogHeader>
+							<DialogTitle>{modalContent.title}</DialogTitle>
+							{/* Radix wants a description; the body carries the real content. */}
+							<DialogDescription className="sr-only">{modalContent.title}</DialogDescription>
+						</DialogHeader>
+						<div data-slot="dialog-body" className="min-h-0 flex-1 overflow-y-auto">
+							{modalContent.body}
+						</div>
+						<DialogFooter>{modalContent.footer}</DialogFooter>
+					</DialogContent>
+				)}
+			</Dialog>
+		</DynamicModalContext.Provider>
+	);
 };

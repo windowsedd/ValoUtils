@@ -5,11 +5,15 @@
 //! the exe while one is alive just focuses the existing window and silently
 //! drops the flags, which looks like the feature doing nothing.
 
+use crate::riot::client::RiotState;
+use crate::store::ConfigStore;
 use crate::{client_config, presence_proxy};
 use serde_json::{json, Value};
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::OnceLock;
+use std::time::{Duration, Instant};
+use tauri::{AppHandle, Manager};
 
 const INSTALLS_JSON: &str = r"C:\ProgramData\Riot Games\RiotClientInstalls.json";
 const FALLBACK_EXE: &str = r"C:\Riot Games\Riot Client\RiotClientServices.exe";
@@ -47,21 +51,39 @@ fn riot_client_exe() -> Result<PathBuf, String> {
 
 /// True if any Riot Client process is alive. Uses `tasklist` rather than a
 /// Windows API crate to avoid pulling in a dependency for one check.
-fn riot_client_running() -> bool {
+const RIOT_CLIENT_IMAGE: &str = "riotclientservices.exe";
+/// The game itself; the Riot Client alone doesn't mean anyone is playing.
+const VALORANT_IMAGE: &str = "valorant-win64-shipping.exe";
+
+/// Every running process's image name, lowercased, from one `tasklist` call.
+fn running_images() -> String {
     #[cfg(windows)]
     use std::os::windows::process::CommandExt;
     #[cfg(windows)]
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
     let mut command = Command::new("tasklist");
-    command.args(["/FI", "IMAGENAME eq RiotClientServices.exe", "/NH"]);
+    command.args(["/NH", "/FO", "CSV"]);
     #[cfg(windows)]
     command.creation_flags(CREATE_NO_WINDOW);
 
     command
         .output()
-        .map(|out| String::from_utf8_lossy(&out.stdout).contains("RiotClientServices"))
-        .unwrap_or(false)
+        .map(|out| String::from_utf8_lossy(&out.stdout).to_ascii_lowercase())
+        .unwrap_or_default()
+}
+
+/// Whether `image` (lowercase) appears as a process name in `tasklist` CSV.
+fn image_listed(images: &str, image: &str) -> bool {
+    images.contains(&format!("\"{image}\""))
+}
+
+fn riot_client_running() -> bool {
+    image_listed(&running_images(), RIOT_CLIENT_IMAGE)
+}
+
+pub(crate) fn valorant_running() -> bool {
+    image_listed(&running_images(), VALORANT_IMAGE)
 }
 
 fn parse_launch_target(args: &[Value]) -> (String, String) {
@@ -75,17 +97,132 @@ fn parse_launch_target(args: &[Value]) -> (String, String) {
     (value(0, "valorant"), value(1, "live"))
 }
 
-fn launch_args(product: &str, patchline: &str, config_url: Option<&str>) -> Vec<String> {
-    let mut args = Vec::with_capacity(if config_url.is_some() { 3 } else { 2 });
+/// Splits the Settings → Launch arguments text like a command line:
+/// whitespace separates arguments and double quotes keep spaces inside one.
+pub(crate) fn split_launch_args(text: &str) -> Vec<String> {
+    let mut args = Vec::new();
+    let mut current = String::new();
+    let mut quoted = false;
+    let mut started = false;
+    for ch in text.chars() {
+        match ch {
+            '"' => {
+                quoted = !quoted;
+                started = true;
+            }
+            ch if ch.is_whitespace() && !quoted => {
+                if started {
+                    args.push(std::mem::take(&mut current));
+                    started = false;
+                }
+            }
+            ch => {
+                current.push(ch);
+                started = true;
+            }
+        }
+    }
+    if started {
+        args.push(current);
+    }
+    args
+}
+
+/// The user's extra launch arguments (`riotLaunchArgs`).
+fn configured_extra_args(config: &ConfigStore) -> Vec<String> {
+    config
+        .get("riotLaunchArgs")
+        .and_then(|value| value.as_str().map(split_launch_args))
+        .unwrap_or_default()
+}
+
+/// The product and patchline a launch really asks for, after Launch arguments
+/// had their say (`--launch-patchline=pbe` replaces "live").
+fn effective_target(args: &[String]) -> (String, String) {
+    let value = |flag: &str, fallback: &str| {
+        args.iter()
+            .rev()
+            .find_map(|arg| arg.strip_prefix(flag))
+            .filter(|value| !value.is_empty())
+            .unwrap_or(fallback)
+            .to_string()
+    };
+    (value("--launch-product=", "valorant"), value("--launch-patchline=", "live"))
+}
+
+/// How long a launch is looked after; signing in can take a while.
+const LAUNCH_WATCH: Duration = Duration::from_secs(180);
+const LAUNCH_POLL: Duration = Duration::from_secs(3);
+/// After sign-in, how long the Riot Client gets to start the game by itself.
+const SELF_START_GRACE: Duration = Duration::from_secs(8);
+
+/// The Riot Client only sometimes acts on `--launch-product`; after a sign-in
+/// it often stops on the game's Play page. Once the client is signed in and
+/// has had a moment to start the game itself, ask its local API to launch it
+/// (what the Play button does). Stops as soon as the game process appears.
+fn watch_game_start(app: AppHandle, product: String, patchline: String) {
+    tauri::async_runtime::spawn(async move {
+        let started = Instant::now();
+        let mut signed_in_at: Option<Instant> = None;
+        while started.elapsed() < LAUNCH_WATCH {
+            tokio::time::sleep(LAUNCH_POLL).await;
+            if valorant_running() {
+                log::info!("launch: {product} is running");
+                return;
+            }
+            let riot = app.state::<RiotState>();
+            let Some(signed_in) = signed_in_at else {
+                if crate::riot::client::get_tokens(&riot, true).await.is_ok() {
+                    log::info!("launch: Riot Client signed in; giving it a moment to start {product}");
+                    signed_in_at = Some(Instant::now());
+                }
+                continue;
+            };
+            if signed_in.elapsed() < SELF_START_GRACE {
+                continue;
+            }
+            let path = format!("/product-launcher/v1/products/{product}/patchlines/{patchline}");
+            match crate::riot::client::send_internal_request(&riot, &path, reqwest::Method::POST, None).await {
+                Ok(_) => log::info!("launch: asked Riot Client to start {product} ({patchline})"),
+                Err(error) => log::warn!("launch: Riot Client did not start {product} ({patchline}): {error}"),
+            }
+            return;
+        }
+        log::info!("launch: stopped waiting for {product} after {} s", LAUNCH_WATCH.as_secs());
+    });
+}
+
+/// Riot Client arguments: the relay's config URL, the product and patchline,
+/// then the user's extra arguments. An extra `--launch-product` or
+/// `--launch-patchline` replaces the default one; an extra
+/// `--client-config-url` is dropped because the relay launch sets its own.
+fn launch_args(
+    product: &str,
+    patchline: &str,
+    config_url: Option<&str>,
+    extra: &[String],
+) -> Vec<String> {
+    let extra: Vec<&String> = extra
+        .iter()
+        .filter(|arg| !arg.starts_with("--client-config-url"))
+        .collect();
+    let overridden = |flag: &str| extra.iter().any(|arg| arg.starts_with(flag));
+    let mut args = Vec::with_capacity(3 + extra.len());
     if let Some(url) = config_url {
         args.push(format!("--client-config-url={url}"));
     }
-    args.push(format!("--launch-product={product}"));
-    args.push(format!("--launch-patchline={patchline}"));
+    if !overridden("--launch-product") {
+        args.push(format!("--launch-product={product}"));
+    }
+    if !overridden("--launch-patchline") {
+        args.push(format!("--launch-patchline={patchline}"));
+    }
+    args.extend(extra.into_iter().cloned());
     args
 }
 
 fn spawn_riot(exe: &PathBuf, args: &[String]) -> Result<(), String> {
+    log::info!("launch: {} {}", exe.display(), args.join(" "));
     Command::new(exe)
         .args(args)
         .spawn()
@@ -105,12 +242,14 @@ pub async fn client_config_status() -> Result<Value, ()> {
     let port = client_config::port();
     let running = client_config::is_running() && client_config::verify_ready(port).await.is_ok();
     let presence = presence_proxy::controller().snapshot();
+    let images = running_images();
     Ok(json!({
         "success": true,
         "running": running,
         "port": port,
         "url": format!("http://127.0.0.1:{port}"),
-        "riotClientRunning": riot_client_running(),
+        "riotClientRunning": image_listed(&images, RIOT_CLIENT_IMAGE),
+        "valorantRunning": image_listed(&images, VALORANT_IMAGE),
         "relayRunning": presence.relay_running,
         "relayPort": presence.relay_port,
         "activeConnections": presence.active_connections,
@@ -163,9 +302,14 @@ pub async fn client_config_start() -> Result<Value, ()> {
 ///   --launch-product=valorant --launch-patchline=live
 /// ```
 #[tauri::command]
-pub async fn riot_launch_with_config(args: Vec<Value>) -> Result<Value, ()> {
+pub async fn riot_launch_with_config(
+    args: Vec<Value>,
+    app: AppHandle,
+    config: tauri::State<'_, ConfigStore>,
+) -> Result<Value, ()> {
     let _launch_guard = launch_lock().lock().await;
     let (product, patchline) = parse_launch_target(&args);
+    let extra = configured_extra_args(&config);
 
     let result: Result<Value, String> = async {
         if riot_client_running() {
@@ -179,12 +323,14 @@ pub async fn riot_launch_with_config(args: Vec<Value>) -> Result<Value, ()> {
         let relay_port = start_config_and_relay().await?;
 
         let config_url = format!("http://127.0.0.1:{}", client_config::port());
-        let args = launch_args(&product, &patchline, Some(&config_url));
+        let args = launch_args(&product, &patchline, Some(&config_url), &extra);
         if let Err(error) = spawn_riot(&exe, &args) {
             client_config::stop().await;
             presence_proxy::stop().await;
             return Err(error);
         }
+        let (target_product, target_patchline) = effective_target(&args);
+        watch_game_start(app.clone(), target_product, target_patchline);
 
         Ok(json!({
             "success": true,
@@ -193,6 +339,7 @@ pub async fn riot_launch_with_config(args: Vec<Value>) -> Result<Value, ()> {
             "product": product,
             "patchline": patchline,
             "relayPort": relay_port,
+            "extraArgs": extra,
         }))
     }
     .await;
@@ -201,21 +348,29 @@ pub async fn riot_launch_with_config(args: Vec<Value>) -> Result<Value, ()> {
 }
 
 #[tauri::command]
-pub async fn riot_launch_normal(args: Vec<Value>) -> Result<Value, ()> {
+pub async fn riot_launch_normal(
+    args: Vec<Value>,
+    app: AppHandle,
+    config: tauri::State<'_, ConfigStore>,
+) -> Result<Value, ()> {
     let _launch_guard = launch_lock().lock().await;
     let (product, patchline) = parse_launch_target(&args);
+    let extra = configured_extra_args(&config);
     let result = if riot_client_running() {
         Err("The Riot Client is already running. Close it completely (including the tray icon), then launch again.".into())
     } else {
         riot_client_exe().and_then(|exe| {
-            let args = launch_args(&product, &patchline, None);
+            let args = launch_args(&product, &patchline, None, &extra);
             spawn_riot(&exe, &args)?;
+            let (target_product, target_patchline) = effective_target(&args);
+            watch_game_start(app.clone(), target_product, target_patchline);
             Ok(json!({
                 "success": true,
                 "exe": exe.to_string_lossy(),
                 "product": product,
                 "patchline": patchline,
                 "proxied": false,
+                "extraArgs": extra,
             }))
         })
     };
@@ -244,7 +399,7 @@ mod tests {
 
     #[test]
     fn normal_launch_arguments_omit_client_config() {
-        let args = launch_args("valorant", "live", None);
+        let args = launch_args("valorant", "live", None, &[]);
         assert_eq!(
             args,
             ["--launch-product=valorant", "--launch-patchline=live"]
@@ -256,7 +411,7 @@ mod tests {
 
     #[test]
     fn proxied_launch_arguments_include_client_config() {
-        let args = launch_args("valorant", "live", Some("http://127.0.0.1:8000"));
+        let args = launch_args("valorant", "live", Some("http://127.0.0.1:8000"), &[]);
         assert_eq!(
             args,
             [
@@ -265,5 +420,59 @@ mod tests {
                 "--launch-patchline=live",
             ]
         );
+    }
+
+    #[test]
+    fn extra_arguments_split_like_a_command_line() {
+        assert_eq!(
+            split_launch_args("  --a=1  \"--b=two words\" --c  "),
+            ["--a=1", "--b=two words", "--c"]
+        );
+        assert!(split_launch_args("   ").is_empty());
+    }
+
+    #[test]
+    fn extra_arguments_follow_and_can_replace_the_patchline() {
+        let extra = split_launch_args("--launch-patchline=pbe --allow-multiple-clients");
+        assert_eq!(
+            launch_args("valorant", "live", None, &extra),
+            [
+                "--launch-product=valorant",
+                "--launch-patchline=pbe",
+                "--allow-multiple-clients",
+            ]
+        );
+    }
+
+    #[test]
+    fn extra_client_config_urls_cannot_redirect_the_relay() {
+        let extra = split_launch_args("--client-config-url=http://elsewhere --x");
+        assert_eq!(
+            launch_args("valorant", "live", Some("http://127.0.0.1:8000"), &extra),
+            [
+                "--client-config-url=http://127.0.0.1:8000",
+                "--launch-product=valorant",
+                "--launch-patchline=live",
+                "--x",
+            ]
+        );
+    }
+
+    #[test]
+    fn process_names_match_whole_csv_fields() {
+        let images = "\"riotclientservices.exe\",\"1\"\r\n\"valorant-win64-shipping.exe\",\"2\"\r\n"
+            .to_string();
+        assert!(image_listed(&images, RIOT_CLIENT_IMAGE));
+        assert!(image_listed(&images, VALORANT_IMAGE));
+        assert!(!image_listed("\"notvalorant-win64-shipping.exe.bak\"", VALORANT_IMAGE));
+        assert!(!image_listed("", RIOT_CLIENT_IMAGE));
+    }
+
+    #[test]
+    fn the_watched_target_follows_launch_argument_overrides() {
+        let default = launch_args("valorant", "live", None, &[]);
+        assert_eq!(effective_target(&default), ("valorant".to_string(), "live".to_string()));
+        let pbe = launch_args("valorant", "live", None, &split_launch_args("--launch-patchline=pbe"));
+        assert_eq!(effective_target(&pbe), ("valorant".to_string(), "pbe".to_string()));
     }
 }

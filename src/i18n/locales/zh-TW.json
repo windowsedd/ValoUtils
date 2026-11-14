@@ -72,7 +72,9 @@
 		"launchFailed": "啟動失敗。",
 		"riotClientRunningHint": "Riot Client 已在執行中。請完全關閉（包含系統列圖示）後再重新啟動。",
 		"launchNormal": "正常啟動",
-		"rateLimited": "Riot 暫時限制請求。請約 {{seconds}} 秒後再試。"
+		"rateLimited": "Riot 暫時限制請求。請約 {{seconds}} 秒後再試。",
+		"playing": "遊戲中",
+		"playingHint": "特戰英豪正在執行。Riot Client 完成登入後，ValoUtils 會自動接上工作階段。"
 	},
 	"riotStatus": {
 		"connecting": "連線中...",
@@ -375,6 +377,7 @@
 		"ally": "我方",
 		"enemy": "敵方",
 		"enemyRosterUnavailable": "英雄選擇期間無法取得敵方名單。",
+		"enemyRosterHidden": "英雄選擇期間已隱藏敵方隊伍。可在設定中開啟。",
 		"winStreak": "W{{count}}",
 		"loseStreak": "L{{count}}",
 		"winStreakHint": "連勝 {{count}} 場（{{rr}} RR）",
@@ -508,7 +511,11 @@
 		"closeFriends": "關閉好友列表",
 		"online": "上線",
 		"offline": "離線",
-		"available": "可使用"
+		"available": "可使用",
+		"history": "紀錄",
+		"historyRoom": "聊天室",
+		"scoreboard": "計分板",
+		"historyOwner": "帳號："
 	},
 	"settings": {
 		"saveMatchChatHistory": "儲存對戰聊天紀錄",
@@ -535,6 +542,8 @@
 		"requestPacing_safe": "保守",
 		"recentMatchCount": "每位玩家的近期對戰數",
 		"recentMatchCountDesc": "玩家數據要平均的近期對戰場數，最多 {{max}} 場。場數越多越準確，但請求也越多。",
+		"showPregameEnemies": "英雄選擇時顯示敵方隊伍",
+		"showPregameEnemiesDesc": "在英雄選擇期間，若 Riot 有提供，於即時對戰顯示敵方的名稱、牌位與數據。關閉後也不會送出相關請求。",
 		"hideTab": "隱藏 {{tab}} 分頁",
 		"hideTabDesc": "從主導覽列隱藏此分頁",
 		"showLogsTab": "顯示日誌分頁",
@@ -570,7 +579,9 @@
 		"open": "開啟",
 		"copied": "已複製",
 		"reveal": "顯示密碼",
-		"hide": "隱藏密碼"
+		"hide": "隱藏密碼",
+		"launchArgs": "啟動參數",
+		"launchArgsDesc": "ValoUtils 或 AI 代理透過 Riot Client 啟動特戰英豪時，加在 --launch-product=valorant --launch-patchline=live 後面的額外參數。自行輸入的 --launch-product 或 --launch-patchline 會取代預設值（例如 --launch-patchline=pbe）。有空格時請加引號。--client-config-url 會被忽略。"
 	},
 	"settingsViewer": {
 		"modalTitle": "設定 — {{name}}",
@@ -996,5 +1007,61 @@
 			"emptyResponse": "AI 未回傳文字，請改用其他模型或重新產生。",
 			"invalidInput": "對戰資料缺失或過長。"
 		}
+	},
+	"mcp": {
+		"section": "AI 代理 (MCP)",
+		"enable": "允許 AI 代理使用 ValoUtils",
+		"enableDesc": "執行本機 MCP 伺服器，讓 Claude Code、Claude Desktop、Cursor 等代理讀取你的牌位、對戰、即時對戰、商店、通行證與設定，查詢玩家，並開啟特戰英豪。只能從這台電腦以秘密權杖存取。",
+		"running": "執行中：",
+		"showToken": "顯示權杖",
+		"hideToken": "隱藏權杖",
+		"regenerate": "新權杖",
+		"tokenRegenerated": "已建立新權杖。請以新設定更新你的代理。",
+		"promptTitle": "給代理的提示詞",
+		"promptHint": "貼到能自行新增 MCP 伺服器的代理中。",
+		"agentPrompt": "連線到我的本機 ValoUtils MCP 伺服器，並將它新增為名為「valoutils」的 MCP 伺服器。\n- 傳輸方式：Streamable HTTP\n- URL：{{url}}\n- 標頭：Authorization: Bearer {{token}}\n接著列出它的工具。它能讀取我的特戰英豪牌位、近期對戰、即時對戰、商店、通行證與設定，以 Riot ID 查詢任何玩家，並能開啟特戰英豪。請勿公開權杖。",
+		"claudeCodeTitle": "Claude Code",
+		"claudeCodeHint": "在終端機中執行。",
+		"claudeDesktopTitle": "Claude Desktop",
+		"claudeDesktopHint": "加入 claude_desktop_config.json（設定 → 開發者 → 編輯設定）。需要 Node.js。",
+		"httpTitle": "Cursor、VS Code 與其他 HTTP 用戶端",
+		"httpHint": "加入用戶端的 MCP 設定（例如 .cursor/mcp.json）。",
+		"notRunning": "伺服器未執行。請關閉後再開啟。",
+		"error": "無法變更 MCP 伺服器。",
+		"privacy": "代理只有在呼叫工具時才會取得資料。這台電腦上持有權杖的人都能使用；若外洩請建立新權杖。",
+		"docs": "文件"
+	},
+	"mcpDocs": {
+		"title": "MCP 文件",
+		"subtitle": "將 AI 代理連線到 ValoUtils，並查看它能做什麼。",
+		"connectTitle": "連線代理",
+		"intro": "MCP（Model Context Protocol）是讓 AI 代理使用工具的開放標準。ValoUtils 會在這台電腦上執行小型 MCP 伺服器，讓你的代理讀取特戰英豪資料並開啟遊戲。",
+		"step1": "在 設定 → AI 代理 (MCP) 中開啟「允許 AI 代理使用 ValoUtils」。",
+		"step2": "複製適合你代理的設定（Claude Code 指令、Claude Desktop JSON、HTTP 用戶端 JSON），或貼上給代理的提示詞。",
+		"step3": "向代理詢問你的特戰英豪帳號。需要資料時，它會呼叫下方的工具。",
+		"off": "MCP 伺服器已關閉。請在設定中開啟。",
+		"clients": "適用於任何 MCP 用戶端：Claude Code、Claude Desktop、Cursor、VS Code、Windsurf、Cline、Codex CLI、Gemini CLI 等。網頁聊天應用程式無法連線，因為它只在這台電腦上接聽。",
+		"examplesTitle": "試著問問看",
+		"examples": {
+			"rank": "我的牌位是多少？這週拿了多少 RR？",
+			"lastGames": "我最近 5 場打得如何？",
+			"scoreboard": "分析我上一場的計分板。誰是 carry？",
+			"live": "現在敵隊誰最有威脅？",
+			"store": "今天商店有什麼？有值得買的嗎？",
+			"friends": "哪些朋友正在玩特戰英豪？",
+			"lookup": "查詢 Name#TAG。他是什麼牌位？",
+			"settings": "比較我目前的靈敏度和準星與已儲存的設定檔。",
+			"launch": "幫我開啟特戰英豪。"
+		},
+		"toolsTitle": "工具",
+		"loading": "正在載入工具…",
+		"readOnly": "唯讀",
+		"takesAction": "會執行動作",
+		"required": "必填",
+		"optional": "選填",
+		"privacyTitle": "隱私與安全",
+		"privacyLocal": "只能從這台電腦（127.0.0.1）存取，且每個請求都需要你的秘密權杖。網頁無法連線。",
+		"privacyNames": "即時對戰與計分板工具以 You / Ally N / Enemy N 標示其他玩家，絕不顯示名稱。好友與玩家查詢會傳回 Riot ID，因為這正是它們的用途。",
+		"privacyRate": "代理的呼叫與應用程式共用 Riot 請求額度。若 Riot 限制請求，工具會告訴代理何時再試。"
 	}
 }

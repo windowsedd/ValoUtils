@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { Route } from "@/types/router";
 import { navbarLayout } from "./navbar-layout";
-import { getRailTooltipPosition, NavbarRail } from "./navbar-rail";
+import { NavbarRail } from "./navbar-rail";
 
 const route = (id: string): Route => ({
   id,
@@ -31,7 +31,8 @@ describe("NavbarRail", () => {
     expect(markup).toContain('data-command-rail="compact"');
     expect(markup).toContain('aria-label="profiles"');
     expect(markup).toContain('data-tooltip="profiles"');
-    expect(markup).toContain('role="tooltip"');
+    // shadcn Tooltip: the trigger is the button itself; content mounts on hover/focus.
+    expect(markup).toContain('data-slot="tooltip-trigger"');
     expect(navbarLayout.rail).toContain("w-16");
     expect(navbarLayout.rail).toContain("min-w-16");
     expect(navbarLayout.rail).toContain("max-w-16");
@@ -68,17 +69,11 @@ describe("NavbarRail", () => {
   test("keeps only the middle route list scrollable", () => {
     expect(navbarLayout.railRoutes).toContain("overflow-y-auto");
     expect(navbarLayout.railRoutes).toContain("command-rail-scroll");
-    expect(navbarLayout.tooltip).toContain("fixed");
+    // Radix positions the tooltip; the class list must not fight it.
+    expect(navbarLayout.tooltip).not.toContain("fixed");
     expect(navbarLayout.tooltip).not.toContain("absolute");
     expect(navbarLayout.railButtonActive).toContain("bg-(--accent)");
     expect(navbarLayout.railBottom).not.toContain("overflow");
     expect(navbarLayout.railStatus).not.toContain("overflow");
-  });
-
-  test("positions portaled tooltips beside their rail button", () => {
-    expect(getRailTooltipPosition({ top: 80, right: 56, height: 44 })).toEqual({
-      top: 102,
-      left: 68,
-    });
   });
 });

@@ -64,6 +64,8 @@ export type LiveMatchContext = {
   phase: Exclude<LiveState, "idle">;
   /** Party is searching for a match (or one was just found). */
   inQueue?: boolean;
+  /** Settings hide the enemy team during agent select. */
+  enemiesHidden?: boolean;
 };
 
 export type LiveTeamSummary = {

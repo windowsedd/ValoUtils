@@ -81,13 +81,34 @@ export const withFetchedDetails = (
   fetched: ReadonlyMap<string, SavedMatchDetails>,
 ): SavedChatMatch[] =>
   matches.map(match => {
-    const details = match.details ?? fetched.get(match.matchUuid);
+    // Details saved before speakers were kept are replaced by a fresh lookup.
+    const details = match.details?.speakers ? match.details : (fetched.get(match.matchUuid) ?? match.details);
     return details && details !== match.details ? { ...match, details } : match;
   });
 
 /** Saved matches still missing details, newest saves first. */
 export const matchesNeedingDetails = (matches: readonly SavedChatMatch[]): string[] =>
   matches
-    .filter(match => !match.details)
+    .filter(match => !match.details?.speakers)
     .sort((a, b) => b.updatedAt - a.updatedAt || a.matchUuid.localeCompare(b.matchUuid))
     .map(match => match.matchUuid);
+
+/** Saved speakers keyed by PUUID, in the shape the chat thread resolves senders from. */
+export const savedSpeakerRoster = (details: SavedMatchDetails | null | undefined) =>
+  new Map(
+    (details?.speakers ?? []).map(speaker => [
+      speaker.puuid.toLowerCase(),
+      { name: speaker.name, agentId: speaker.agentId || null, cardId: null },
+    ]),
+  );
+
+const PUUID_LIKE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** A saved line's speaker: their saved Riot ID, else a readable sender name, else "". */
+export const savedSenderName = (message: ChatMessage, details: SavedMatchDetails | null | undefined) => {
+  const id = message.sender.split("@")[0]!.toLowerCase();
+  const speaker = details?.speakers?.find(entry => entry.puuid.toLowerCase() === id);
+  if (speaker?.name) return speaker.name;
+  const labeled = message.senderName.trim();
+  return labeled && !PUUID_LIKE.test(labeled.split("@")[0]!) ? labeled : "";
+};

@@ -20,8 +20,9 @@ describe("RiotStatusBar", () => {
     expect(markup).toContain('aria-label="riotStatus.connecting"');
     expect(markup).toContain('data-tooltip="riotStatus.connecting"');
     expect(markup).not.toContain("max-w-28 truncate");
-    expect(navbarLayout.statusTooltip).toContain("absolute");
-    expect(navbarLayout.statusTooltip).toContain("left-full");
-    expect(navbarLayout.statusTooltip).not.toContain("fixed");
+    expect(markup).toContain('data-slot="tooltip-trigger"');
+    // One button is both the tooltip trigger and the account popover trigger.
+    expect(markup).toContain('aria-haspopup="dialog"');
+    expect(navbarLayout.tooltip).toContain("navbar-motion");
   });
 });

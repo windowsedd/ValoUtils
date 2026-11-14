@@ -42,7 +42,8 @@ describe("navbarLayout", () => {
   });
 
   test("uses the Riot ID as the single account and presence menu trigger", () => {
-    expect(statusBar).toContain('aria-haspopup="menu"');
+    // shadcn Popover owns the open state, aria-haspopup and outside clicks.
+    expect(statusBar).toContain("<PopoverTrigger asChild>");
     expect(statusBar).toContain("info.username");
     expect(statusBar).not.toContain('className="min-w-0 w-7 h-7');
   });

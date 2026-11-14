@@ -557,7 +557,7 @@ fn subject_of(player: &Value) -> Option<String> {
         .map(str::to_string)
 }
 
-fn is_enemy(player: &Value) -> bool {
+pub(crate) fn is_enemy(player: &Value) -> bool {
     player.get("_Side").and_then(Value::as_str) == Some("ENEMY")
         || player.get("TeamID").and_then(Value::as_str) == Some("Enemy")
 }

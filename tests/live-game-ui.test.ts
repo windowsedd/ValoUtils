@@ -62,7 +62,9 @@ describe("Live Match signed-in player marker", () => {
 
   test("pregame roster shows both teams, hidden agents, and fallback copy", () => {
     expect(table).toContain('t("liveGame.pregameRoster"');
-    expect(table).toContain('t("liveGame.enemyRosterUnavailable")');
+    expect(table).toContain('"liveGame.enemyRosterUnavailable"');
+    // Settings can hide the enemy team in agent select; the notice says so.
+    expect(table).toContain('"liveGame.enemyRosterHidden"');
     expect(table).toContain('t("liveGame.hiddenAgent")');
     expect(table).toContain("agentFallback");
     expect(table).toContain("StreakBadge");

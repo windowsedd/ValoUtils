@@ -11,7 +11,16 @@ ValoUtils is a Windows desktop app (Tauri 2 + React + Vite + TypeScript, Rust ba
 - **Tauri 2** — Rust backend, native APIs, IPC via commands/events
 - **React 19 + Vite 8** — frontend (SPA in the system WebView2)
 - **TypeScript 6** (frontend) / **Rust** (backend)
-- **Tailwind CSS v4 + HeroUI v3** — UI components
+- **Tailwind CSS v4 + shadcn/ui** (Radix primitives via `radix-ui`, `tw-animate-css`) — UI components.
+  Components live in `src/components/ui/` (button, dialog, input, label, popover,
+  select, switch, tooltip) and
+  are styled with the app's own CSS variables (`--control`, `--border`, `--accent`…),
+  not shadcn's theme names: `--accent` here is the purple brand colour. `cn()` is in
+  `src/lib/utils.ts`; `components.json` lets `bunx shadcn@latest add <name>` add more
+  (then restyle them the same way). `CustomButton` (`src/components/button.tsx`) wraps
+  the shadcn Button and keeps its `color`/`size`/`isDisabled`/`onPress` props.
+  `SelectMenu` wraps shadcn Select; rail/status tooltips use Tooltip; the account
+  status menu and bot language list use Popover.
 - **SWR** — data fetching in the frontend
 - **tauri-plugin-updater** — auto-update via GitHub Releases (`latest.json`, minisign-signed)
 - **Aptabase** — anonymous analytics (hand-rolled HTTP ingest in `src-tauri/src/aptabase.rs`)
@@ -308,8 +317,12 @@ discard an account-switch batch. This stores captured chat only; Riot cannot
 retrieve old match chat that the app never observed. Private, party and pregame
 chat are excluded. Raw API fields are not saved. Writes replace a temporary JSON
 file and surface errors without overwriting unreadable history.
-The Team/All sidebar picker opens saved matches read-only and lists only the
-signed-in account's history. Each saved match is a card (newest first) with
+The Chat rail's History tab (below Friends/Party/Team/All) opens saved matches
+read-only, newest first, with a Team/All switch; it lists only the signed-in
+account's history. The live Team/All sidebars no longer carry the picker.
+A collapsible Scoreboard bar above a saved thread shows every player's line
+(`MatchScoreboard` + `useMatchDetails`, the Matches page's `match_details` cache),
+fetched only when opened. Each saved match is a card (newest first) with
 its last message time, Team/All line counts, speaker count and the latest line
 in the viewed room; more than three matches adds a message/player search.
 Cards also show map, mode, your agent and the result. `chat_saved_match_details`
@@ -319,6 +332,10 @@ them there and returns them. Only matches the signed-in account has saved can be
 looked up. The Chat page looks up missing details one at a time while Team/All
 is open. A failure, usually a match still in progress, is retried after five
 minutes. Older history without `details` still loads.
+`details.speakers` keeps the Riot ID and agent of each player who wrote a saved
+line (only those players), so the saved thread names senders and shows agent
+icons, and its header shows map · mode · result · start time instead of the
+match ID. Details saved before speakers existed are looked up once more.
 Disabling saves keeps existing history. Clear match
 chat history deletes all accounts' saved chats on this device and disables saving
 so polling cannot restore its backlog. No cloud sync or new dependencies.
@@ -452,6 +469,64 @@ The Events UI also filters incoming entries and their count against the current
 allied roster (including yourself), excluding enemies and unknown players even
 in older snapshots. In core game it uses your Red/Blue team rather than assuming
 a fixed side; entries without a confirmed allied player stay hidden.
+
+### MCP server for AI agents
+
+Settings → AI agents (MCP) turns on a local MCP server (`mcpEnabled`, default
+false) so Claude Code, Claude Desktop (through `mcp-remote`), Cursor, VS Code and
+other MCP clients can use ValoUtils. `src-tauri/src/mcp.rs` serves Streamable
+HTTP with plain JSON replies (no SSE, no sessions) on `127.0.0.1` only, at
+`/mcp`. Port 47823 is tried first, and the port in use is saved as `mcpPort` so
+client configs survive restarts. Every request needs `Authorization: Bearer
+<mcpToken>` (32 random bytes, created on first use, replaceable from Settings).
+Requests with an `Origin` header are refused so web pages can't reach it.
+Tools live in `commands/mcp.rs` and reuse existing commands (same PD client,
+rate budget and auth retry): `get_player_overview`, `get_live_match` (the `.ask`
+context: You / Ally N / Enemy N, no names), `get_store` (skin and bundle names
+from valorant-api.com), `get_battle_pass`, `list_settings_profiles` (names and
+dates only), `get_settings_profile` (decoded settings of a saved profile or the
+current account), `lookup_player` (Riot ID or PUUID → rank and matches, as on
+the Tools page), `get_match_history` (own line per match, up to 10, one
+match-details request each through the Matches cache), `get_match_details`
+(scoreboard with every player labelled You / Ally N / Enemy N; no Riot IDs,
+PUUIDs or party IDs, only a `premadeWithYou` flag), `get_friends` (no PUUIDs,
+notes or party IDs), `get_account_status`, `get_agent_progression` and
+`open_valorant` (the only non-read tool; `mode` "relay" = Launch with XMPP
+relay, the default, or "normal"). Agent and map names
+come from `bot_template::content_names` (cached valorant-api.com catalog).
+Settings shows copyable setups: an agent prompt, a Claude Code command, Claude
+Desktop JSON and HTTP-client JSON. The token is masked on screen. The section's
+Docs button opens `McpDocsPage` (connect steps, example questions, and the live
+tool list from `mcp_tools`).
+Commands: `mcp_status`, `mcp_tools`, `mcp_set_enabled` (`args: [bool]`),
+`mcp_regenerate_token`.
+
+### Playing state
+
+`client_config_status` also returns `valorantRunning` (the
+`VALORANT-Win64-Shipping.exe` process, from the same single `tasklist` call as
+`riotClientRunning`). The login panel then swaps its two launch buttons for a
+green Playing status, and MCP `open_valorant` replies that the game is already
+running instead of trying to launch.
+
+### Launch arguments
+
+Settings → Riot API → Launch arguments (`riotLaunchArgs`, default empty) adds
+extra Riot Client arguments to every Valorant launch: both login-panel buttons
+and MCP `open_valorant`. `split_launch_args` in `commands/riot_launch.rs`
+splits the text like a command line (whitespace, double quotes). The
+arguments follow `--launch-product` / `--launch-patchline`. An extra one of
+those replaces the default (e.g. `--launch-patchline=pbe`), and an extra
+`--client-config-url` is dropped so the relay launch keeps its own.
+
+### Enemy team in agent select
+
+Settings → Riot API → Show enemy team in agent select (`showPregameEnemies`,
+default true). Riot often hides the enemy team in pregame; when it is revealed
+through loadouts, Live Game lists the enemy five. Turning the setting off drops
+enemy players in `live_game_fetch` before enrichment, so no names, ranks or
+stats are requested for them. The snapshot sets `match.enemiesHidden`, and the
+pregame notice then points to Settings instead of saying the roster is unavailable.
 
 ### Open at Windows startup
 

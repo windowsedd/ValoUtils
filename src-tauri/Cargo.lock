@@ -5759,6 +5759,7 @@ dependencies = [
  "native-tls",
  "rcgen",
  "reqwest 0.12.28",
+ "ring",
  "rustls",
  "schannel",
  "serde",

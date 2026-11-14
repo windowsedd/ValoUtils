@@ -289,7 +289,7 @@ fn riot_id(player: &TemplatePlayer) -> Option<String> {
     }
 }
 
-fn rank_label(tier: u64) -> &'static str {
+pub(crate) fn rank_label(tier: u64) -> &'static str {
     match tier {
         3 => "Iron 1",
         4 => "Iron 2",
@@ -622,7 +622,7 @@ fn public_client() -> &'static reqwest::Client {
     CLIENT.get_or_init(reqwest::Client::new)
 }
 
-async fn fetch_public_json(url: &'static str) -> Option<Value> {
+pub(crate) async fn fetch_public_json(url: &str) -> Option<Value> {
     public_client()
         .get(url)
         .send()
@@ -633,6 +633,19 @@ async fn fetch_public_json(url: &'static str) -> Option<Value> {
         .json()
         .await
         .ok()
+}
+
+/// Agent names by lowercase UUID, and map names by lowercase UUID, map path or
+/// its last segment. Cached after the first load; empty when the public catalog
+/// can't be reached in time.
+pub(crate) async fn content_names() -> (HashMap<String, String>, HashMap<String, String>) {
+    let plan = TemplatePlan {
+        needs_content: true,
+        ..TemplatePlan::default()
+    };
+    let deadline = tokio::time::Instant::now() + ASK_CONTEXT_TIMEOUT;
+    let labels = load_content_labels(&plan, deadline).await.unwrap_or_default();
+    (labels.agents, labels.maps)
 }
 
 async fn load_content_labels(

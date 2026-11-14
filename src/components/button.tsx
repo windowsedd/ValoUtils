@@ -1,111 +1,119 @@
-import React, { ComponentProps, useEffect } from "react";
-import { Button as HeroButton } from "@heroui/react";
+import React, { useEffect } from "react";
 import { gooeyToast as toast } from "goey-toast";
-import { PressEvent } from "@react-types/shared";
 import { useTranslation } from "react-i18next";
-import { runButtonAction } from "./button-action";
 import { FaCheck, FaX } from "react-icons/fa6";
+import { Button, type ButtonProps } from "@/components/ui/button";
+import { runButtonAction } from "./button-action";
 
-// HeroUI v3 dropped the `color` prop in favour of `variant`, and renamed
-// `isLoading` -> `isPending`. We keep accepting the old `color` names so callers
-// don't have to change, and translate them to v3 variants here.
+// Built on the shadcn/ui Button. The `color`, `size`, `isDisabled`,
+// `isLoading` and `onPress` props from the HeroUI era are kept so callers
+// don't change; they map onto shadcn variants here.
 type ButtonColor = "default" | "primary" | "secondary" | "danger" | "success";
-type ButtonVariant = ComponentProps<typeof HeroButton>["variant"];
+type ButtonSize = "sm" | "md" | "lg";
+type PressEvent = React.MouseEvent<HTMLButtonElement>;
 
-const colorToVariant: Record<ButtonColor, ButtonVariant> = {
-  default: "primary",
-  primary: "primary",
-  secondary: "secondary",
-  danger: "danger",
-  // v3 has no "success" variant; we render primary + a green override class.
-  success: "primary",
+const colorToVariant: Record<ButtonColor, NonNullable<ButtonProps["variant"]>> = {
+	default: "default",
+	primary: "default",
+	secondary: "secondary",
+	danger: "destructive",
+	success: "success",
+};
+
+const sizeToVariant: Record<ButtonSize, NonNullable<ButtonProps["size"]>> = {
+	sm: "sm",
+	md: "default",
+	lg: "lg",
 };
 
 type CustomButtonProps = {
-  onClickLoading?: (e: PressEvent) => Promise<any>;
-  onClick?: (e: PressEvent) => void;
-  onPress?: (e: PressEvent) => void;
-  toggle?: [boolean, React.Dispatch<React.SetStateAction<boolean>>];
-  color?: ButtonColor;
-  isLoading?: boolean;
-  modalOnError?: boolean;
-  showStatusColor?: boolean;
-  closeModal?: () => void;
-  children?: React.ReactNode;
-} & Omit<ComponentProps<typeof HeroButton>, "color" | "onClick" | "onPress" | "variant" | "children">;
+	onClickLoading?: (e: PressEvent) => Promise<any>;
+	onClick?: (e: PressEvent) => void;
+	onPress?: (e: PressEvent) => void;
+	toggle?: [boolean, React.Dispatch<React.SetStateAction<boolean>>];
+	color?: ButtonColor;
+	size?: ButtonSize;
+	isLoading?: boolean;
+	isDisabled?: boolean;
+	modalOnError?: boolean;
+	showStatusColor?: boolean;
+	closeModal?: () => void;
+	children?: React.ReactNode;
+} & Omit<ButtonProps, "color" | "size" | "onClick" | "variant" | "children" | "pending">;
 
 const CustomButton = ({ modalOnError = true, showStatusColor = false, ...props }: CustomButtonProps) => {
-  const { t } = useTranslation();
-  const pending = React.useRef(false);
-  const [loading, setLoading] = React.useState(false);
-  const [statusIcon, setStatusIcon] = React.useState<React.ReactNode | null>(null);
-  const [btnColor, setBtnColor] = React.useState<ButtonColor>(props.color ?? "primary");
-  useEffect(() => {
-    setBtnColor(props.color ?? "primary");
-  }, [props.color]);
+	const { t } = useTranslation();
+	const pending = React.useRef(false);
+	const [loading, setLoading] = React.useState(false);
+	const [statusIcon, setStatusIcon] = React.useState<React.ReactNode | null>(null);
+	const [btnColor, setBtnColor] = React.useState<ButtonColor>(props.color ?? "primary");
+	useEffect(() => {
+		setBtnColor(props.color ?? "primary");
+	}, [props.color]);
 
-  // Strip our custom props (and the ones we handle explicitly) so the rest can be
-  // safely spread onto the HeroUI Button.
-  const {
-    onClickLoading,
-    onClick,
-    onPress,
-    toggle,
-    color: _color,
-    closeModal: _closeModal,
-    isLoading,
-    className,
-    children,
-    ...rest
-  } = props;
+	// Strip our own props so the rest can be spread onto the shadcn Button.
+	const {
+		onClickLoading,
+		onClick,
+		onPress,
+		toggle,
+		color: _color,
+		size,
+		closeModal: _closeModal,
+		isLoading,
+		isDisabled,
+		disabled,
+		children,
+		...rest
+	} = props;
 
-  const mergedClassName = [className, btnColor === "success" ? "!bg-green-600 !text-white" : ""]
-    .filter(Boolean)
-    .join(" ") || undefined;
-
-  return (
-    <HeroButton
-      variant={colorToVariant[btnColor]}
-      className={mergedClassName}
-      isPending={loading || isLoading}
-      onPress={async (e: PressEvent) => {
-        if (onClickLoading) {
-          if (pending.current || isLoading) return;
-          pending.current = true;
-          setLoading(true);
-          try {
-            const success = await runButtonAction(
-              () => onClickLoading(e),
-              message => { if (modalOnError) toast.error(message); },
-              t("common.actionFailed"),
-            );
-            if (showStatusColor) {
-              setBtnColor(success ? "success" : "danger");
-              setStatusIcon(success ? <FaCheck /> : <FaX />);
-              setTimeout(() => {
-                setBtnColor(props.color ?? "primary");
-                setStatusIcon(null);
-                if (success) props.closeModal?.();
-              }, 1000);
-            }
-          } finally {
-            pending.current = false;
-            setLoading(false);
-          }
-        } else if (onClick) {
-          onClick(e);
-        } else if (onPress) {
-          onPress(e);
-        } else if (toggle) {
-          toggle[1](!toggle[0]);
-        }
-      }}
-      {...rest}
-    >
-      {statusIcon}
-      {children}
-    </HeroButton>
-  );
+	return (
+		<Button
+			type="button"
+			variant={colorToVariant[btnColor]}
+			size={sizeToVariant[size ?? "md"]}
+			pending={loading || isLoading}
+			disabled={disabled || isDisabled}
+			onClick={async (e: PressEvent) => {
+				if (onClickLoading) {
+					if (pending.current || isLoading) return;
+					pending.current = true;
+					setLoading(true);
+					try {
+						const success = await runButtonAction(
+							() => onClickLoading(e),
+							(message) => {
+								if (modalOnError) toast.error(message);
+							},
+							t("common.actionFailed"),
+						);
+						if (showStatusColor) {
+							setBtnColor(success ? "success" : "danger");
+							setStatusIcon(success ? <FaCheck /> : <FaX />);
+							setTimeout(() => {
+								setBtnColor(props.color ?? "primary");
+								setStatusIcon(null);
+								if (success) props.closeModal?.();
+							}, 1000);
+						}
+					} finally {
+						pending.current = false;
+						setLoading(false);
+					}
+				} else if (onClick) {
+					onClick(e);
+				} else if (onPress) {
+					onPress(e);
+				} else if (toggle) {
+					toggle[1](!toggle[0]);
+				}
+			}}
+			{...rest}
+		>
+			{statusIcon}
+			{children}
+		</Button>
+	);
 };
 
 export default CustomButton;

@@ -7,7 +7,8 @@ import { PageHeader, SectionCard, SectionRow, pageBodyClass } from "@/components
 import { SettingsDiffViewer } from "@/components/settings-diff-viewer.tsx";
 import { Profile } from "@/types/profile.ts";
 import formatUnixMillis from "@/util/format-date.ts";
-import { Input, Label, TextField } from "@heroui/react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { useEffect, useState } from "react";
 import { FaEdit } from "react-icons/fa";
 import { FaCodeCompare, FaCopy, FaEye, FaPlus, FaShare, FaTrash, FaTriangleExclamation } from "react-icons/fa6";
@@ -140,10 +141,10 @@ const SettingsProfiles = () => {
 							<span className={"h-px flex-1 bg-white/10"} />
 						</div>
 						<div className={"flex items-end gap-3"}>
-							<TextField className={"flex-1"}>
-								<Label>{t("profiles.shareCode")}</Label>
-								<Input id={"share-code"} placeholder={t("profiles.shareCodePlaceholder")} />
-							</TextField>
+							<div className="flex flex-1 flex-col gap-1.5">
+								<Label htmlFor="share-code">{t("profiles.shareCode")}</Label>
+								<Input id="share-code" placeholder={t("profiles.shareCodePlaceholder")} />
+							</div>
 							<CustomButton
 								className={"shrink-0"}
 								onClickLoading={async () => {
@@ -274,10 +275,10 @@ const SettingsProfiles = () => {
 				title: t("profiles.editProfile"),
 				body: (
 					<div id={"edit-profile-div"}>
-						<TextField defaultValue={profile.name}>
-							<Label>{t("common.name")}</Label>
-							<Input />
-						</TextField>
+						<div className="flex flex-col gap-1.5">
+							<Label htmlFor="edit-profile-name">{t("common.name")}</Label>
+							<Input id="edit-profile-name" defaultValue={profile.name} autoFocus />
+						</div>
 					</div>
 				),
 				footer: (
@@ -446,10 +447,10 @@ const SettingsProfiles = () => {
 						title: t("profiles.shareProfile"),
 						body: (
 							<div className={"pt-4"}>
-								<TextField defaultValue={rawData.code} isReadOnly>
-									<Label>{t("profiles.shareCode")}</Label>
-									<Input />
-								</TextField>
+								<div className="flex flex-col gap-1.5">
+									<Label htmlFor="shared-profile-code">{t("profiles.shareCode")}</Label>
+									<Input id="shared-profile-code" defaultValue={rawData.code} readOnly />
+								</div>
 								<span className={"text-gray-400"}>{t("profiles.shareExpiry")}</span>
 							</div>
 						),
