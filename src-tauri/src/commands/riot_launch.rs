@@ -192,6 +192,42 @@ fn watch_game_start(app: AppHandle, product: String, patchline: String) {
     });
 }
 
+/// Starts the game from a Riot Client that is already open, through its local
+/// API (what its Play button does), rather than refusing and making the player
+/// restart it. Signed in, the game starts now; otherwise once sign-in finishes.
+/// `relayActive` says whether that client is connected through the XMPP relay,
+/// which chat, presence and the bot need; a client opened without ValoUtils
+/// still starts the game, and Restart through relay can add the relay later.
+async fn launch_in_running_client(
+    app: &AppHandle,
+    product: String,
+    patchline: String,
+) -> Result<Value, String> {
+    if valorant_running() {
+        return Err("VALORANT is already running.".into());
+    }
+    let riot = app.state::<RiotState>();
+    let signed_in = crate::riot::client::get_tokens(&riot, true).await.is_ok();
+    if signed_in {
+        let path = format!("/product-launcher/v1/products/{product}/patchlines/{patchline}");
+        crate::riot::client::send_internal_request(&riot, &path, reqwest::Method::POST, None)
+            .await
+            .map_err(|error| format!("The Riot Client did not start {product}: {error}"))?;
+        log::info!("launch: asked the open Riot Client to start {product} ({patchline})");
+    } else {
+        log::info!("launch: Riot Client is open but signed out; starting {product} after sign-in");
+        watch_game_start(app.clone(), product.clone(), patchline.clone());
+    }
+    Ok(json!({
+        "success": true,
+        "runningClient": true,
+        "waitingForSignIn": !signed_in,
+        "relayActive": presence_proxy::controller().snapshot().active_connections > 0,
+        "product": product,
+        "patchline": patchline,
+    }))
+}
+
 /// Riot Client arguments: the relay's config URL, the product and patchline,
 /// then the user's extra arguments. An extra `--launch-product` or
 /// `--launch-patchline` replaces the default one; an extra
@@ -310,10 +346,22 @@ pub async fn riot_launch_with_config(
     let _launch_guard = launch_lock().lock().await;
     let (product, patchline) = parse_launch_target(&args);
     let extra = configured_extra_args(&config);
+    command_result(launch_relay(&app, product, patchline, extra).await)
+}
 
-    let result: Result<Value, String> = async {
+/// The relay launch, for callers already holding the launch lock.
+async fn launch_relay(
+    app: &AppHandle,
+    product: String,
+    patchline: String,
+    extra: Vec<String>,
+) -> Result<Value, String> {
+    {
         if riot_client_running() {
-            return Err("The Riot Client is already running. Close it completely (including the tray icon), then launch again.".into());
+            // Launch arguments can't reach a running client, but a patchline
+            // override still picks what it starts.
+            let (product, patchline) = effective_target(&launch_args(&product, &patchline, None, &extra));
+            return launch_in_running_client(app, product, patchline).await;
         }
 
         let exe = riot_client_exe()?;
@@ -342,9 +390,6 @@ pub async fn riot_launch_with_config(
             "extraArgs": extra,
         }))
     }
-    .await;
-
-    command_result(result)
 }
 
 /// Riot Client arguments for opening the client alone: the relay's config URL
@@ -373,8 +418,12 @@ pub async fn riot_open_client_with_config(
 ) -> Result<Value, ()> {
     let _launch_guard = launch_lock().lock().await;
     let extra = configured_extra_args(&config);
+    command_result(open_client_relay(extra).await)
+}
 
-    let result: Result<Value, String> = async {
+/// Opens the client alone through the relay, for callers holding the launch lock.
+async fn open_client_relay(extra: Vec<String>) -> Result<Value, String> {
+    {
         if riot_client_running() {
             return Err("The Riot Client is already running. Close it completely (including the tray icon), then open it again.".into());
         }
@@ -395,9 +444,6 @@ pub async fn riot_open_client_with_config(
             "extraArgs": extra,
         }))
     }
-    .await;
-
-    command_result(result)
 }
 
 #[tauri::command]
@@ -410,7 +456,8 @@ pub async fn riot_launch_normal(
     let (product, patchline) = parse_launch_target(&args);
     let extra = configured_extra_args(&config);
     let result = if riot_client_running() {
-        Err("The Riot Client is already running. Close it completely (including the tray icon), then launch again.".into())
+        let (product, patchline) = effective_target(&launch_args(&product, &patchline, None, &extra));
+        launch_in_running_client(&app, product, patchline).await
     } else {
         riot_client_exe().and_then(|exe| {
             let args = launch_args(&product, &patchline, None, &extra);
@@ -428,6 +475,140 @@ pub async fn riot_launch_normal(
         })
     };
     command_result(result)
+}
+
+/// Riot Client processes: the services host, its window and helpers.
+const RIOT_CLIENT_IMAGES: &[&str] = &[
+    RIOT_CLIENT_IMAGE,
+    "riot client.exe",
+    "riotclientux.exe",
+    "riotclientuxrender.exe",
+    "riotclientcrashhandler.exe",
+];
+/// The game's launcher stub and the game itself.
+const GAME_IMAGES: &[&str] = &[VALORANT_IMAGE, "valorant.exe"];
+/// How long closed processes get to disappear from `tasklist`.
+const CLOSE_WAIT: Duration = Duration::from_secs(10);
+const CLOSE_POLL: Duration = Duration::from_millis(300);
+
+/// Which of `names` (lowercase image names) are in a `tasklist` listing.
+fn listed_images<'a>(images: &str, names: &[&'a str]) -> Vec<&'a str> {
+    names.iter().copied().filter(|name| image_listed(images, name)).collect()
+}
+
+/// Force-closes every running process in `names` (with its child processes)
+/// and waits until none is left. Returns the images that were running.
+async fn close_processes(names: &[&str], what: &str) -> Result<Vec<String>, String> {
+    #[cfg(windows)]
+    use std::os::windows::process::CommandExt;
+    #[cfg(windows)]
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+    let running = listed_images(&running_images(), names);
+    for image in &running {
+        let mut command = Command::new("taskkill");
+        command.args(["/F", "/T", "/IM", image]);
+        #[cfg(windows)]
+        command.creation_flags(CREATE_NO_WINDOW);
+        // A process already ended by its parent's /T reports "not found"; the
+        // wait below is what decides success.
+        if let Err(error) = command.output() {
+            return Err(format!("Could not run taskkill: {error}"));
+        }
+    }
+    let started = Instant::now();
+    while !listed_images(&running_images(), names).is_empty() {
+        if started.elapsed() > CLOSE_WAIT {
+            return Err(format!(
+                "{what} is still running after {} seconds. Close it from Task Manager.",
+                CLOSE_WAIT.as_secs()
+            ));
+        }
+        tokio::time::sleep(CLOSE_POLL).await;
+    }
+    if !running.is_empty() {
+        log::info!("closed {what}: {}", running.join(", "));
+    }
+    Ok(running.into_iter().map(str::to_owned).collect())
+}
+
+enum CloseOutcome {
+    /// VALORANT is running and closing it wasn't confirmed; nothing was closed.
+    GameRunning,
+    Closed { game: bool, client: bool },
+}
+
+/// Closes VALORANT (only when `close_game`) and then the Riot Client.
+async fn close_riot(close_game: bool, riot: &RiotState) -> Result<CloseOutcome, String> {
+    let game = !listed_images(&running_images(), GAME_IMAGES).is_empty();
+    if game && !close_game {
+        return Ok(CloseOutcome::GameRunning);
+    }
+    if game {
+        close_processes(GAME_IMAGES, "VALORANT").await?;
+    }
+    let client = !close_processes(RIOT_CLIENT_IMAGES, "The Riot Client").await?.is_empty();
+    // The old session's tokens died with the client.
+    crate::riot::client::invalidate_tokens(riot);
+    Ok(CloseOutcome::Closed { game, client })
+}
+
+const GAME_RUNNING_ERROR: &str =
+    "VALORANT is running. Confirm to close the game together with the Riot Client.";
+
+fn game_running_reply() -> Value {
+    json!({ "success": false, "code": "valorantRunning", "error": GAME_RUNNING_ERROR })
+}
+
+/// Whether the caller confirmed closing a running VALORANT (`args[0]`).
+fn close_game_confirmed(args: &[Value]) -> bool {
+    args.first().and_then(Value::as_bool).unwrap_or(false)
+}
+
+/// Force-closes the Riot Client. While VALORANT is running this replies
+/// `code: "valorantRunning"` and closes nothing unless `args[0]` is true.
+#[tauri::command]
+pub async fn riot_client_close(args: Vec<Value>, riot: tauri::State<'_, RiotState>) -> Result<Value, ()> {
+    let _launch_guard = launch_lock().lock().await;
+    Ok(match close_riot(close_game_confirmed(&args), &riot).await {
+        Ok(CloseOutcome::GameRunning) => game_running_reply(),
+        Ok(CloseOutcome::Closed { game, client }) => {
+            json!({ "success": true, "closedGame": game, "closedClient": client })
+        }
+        Err(error) => json!({ "success": false, "error": error }),
+    })
+}
+
+/// A moment for the closed client to let go of its lockfile and ports.
+const RESTART_PAUSE: Duration = Duration::from_millis(1500);
+
+/// Closes the Riot Client (and VALORANT, when confirmed as for
+/// [`riot_client_close`]) and opens it again through the config server and
+/// XMPP relay. VALORANT is relaunched only if it was running.
+#[tauri::command]
+pub async fn riot_client_restart(
+    args: Vec<Value>,
+    app: AppHandle,
+    riot: tauri::State<'_, RiotState>,
+    config: tauri::State<'_, ConfigStore>,
+) -> Result<Value, ()> {
+    let _launch_guard = launch_lock().lock().await;
+    let extra = configured_extra_args(&config);
+    let game = match close_riot(close_game_confirmed(&args), &riot).await {
+        Ok(CloseOutcome::GameRunning) => return Ok(game_running_reply()),
+        Ok(CloseOutcome::Closed { game, .. }) => game,
+        Err(error) => return command_result(Err(error)),
+    };
+    tokio::time::sleep(RESTART_PAUSE).await;
+    let launched = if game {
+        launch_relay(&app, "valorant".into(), "live".into(), extra).await
+    } else {
+        open_client_relay(extra).await
+    };
+    command_result(launched.map(|mut reply| {
+        reply["relaunchedGame"] = json!(game);
+        reply
+    }))
 }
 
 #[tauri::command]
@@ -527,6 +708,16 @@ mod tests {
         assert_eq!(effective_target(&default), ("valorant".to_string(), "live".to_string()));
         let pbe = launch_args("valorant", "live", None, &split_launch_args("--launch-patchline=pbe"));
         assert_eq!(effective_target(&pbe), ("valorant".to_string(), "pbe".to_string()));
+    }
+
+    #[test]
+    fn closing_lists_only_running_riot_and_game_images() {
+        let images = "\"riot client.exe\",\"1\"\r\n\"riotclientservices.exe\",\"2\"\r\n\"vgtray.exe\",\"3\"\r\n";
+        assert_eq!(listed_images(images, RIOT_CLIENT_IMAGES), [RIOT_CLIENT_IMAGE, "riot client.exe"]);
+        assert!(listed_images(images, GAME_IMAGES).is_empty());
+        assert!(close_game_confirmed(&[Value::Bool(true)]));
+        assert!(!close_game_confirmed(&[]));
+        assert_eq!(game_running_reply()["code"], "valorantRunning");
     }
 
     #[test]

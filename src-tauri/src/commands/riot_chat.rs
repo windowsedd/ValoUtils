@@ -650,8 +650,23 @@ async fn current_party_id(api: &crate::riot::api::RiotApiClient) -> Result<Strin
         .to_string())
 }
 
+/// Party codes go through the game's party service, which only answers while
+/// VALORANT itself is running; with just the Riot Client open Riot's replies are
+/// confusing, so say what to do instead.
+pub(crate) const PARTY_NEEDS_GAME: &str =
+    "Open VALORANT first: party codes and links only work while the game is running.";
+
+fn ensure_game_running() -> Result<(), RiotError> {
+    if super::riot_launch::valorant_running() {
+        Ok(())
+    } else {
+        Err(RiotError::Other(PARTY_NEEDS_GAME.into()))
+    }
+}
+
 /// Creates an invite code for the signed-in player's current party.
 pub(crate) async fn create_party_invite_code(app: &AppHandle) -> Result<String, RiotError> {
+    ensure_game_running()?;
     let riot = riot_state(app)?;
     crate::riot::api::with_api(&riot, |api| async move {
         let party_id = current_party_id(&api).await?;
@@ -668,6 +683,7 @@ pub(crate) async fn create_party_invite_code(app: &AppHandle) -> Result<String, 
 
 /// Turns off the current party's invite code and party link.
 pub(crate) async fn disable_party_invite_code(app: &AppHandle) -> Result<(), RiotError> {
+    ensure_game_running()?;
     let riot = riot_state(app)?;
     crate::riot::api::with_api(&riot, |api| async move {
         let party_id = current_party_id(&api).await?;
@@ -685,6 +701,7 @@ pub(crate) async fn join_party_by_code(app: &AppHandle, code: &str) -> Result<St
     else {
         return Err(RiotError::InvalidCommand("Enter a party code.".into()));
     };
+    ensure_game_running()?;
     let riot = riot_state(app)?;
     crate::riot::api::with_api(&riot, |api| {
         let code = code.clone();
@@ -699,6 +716,9 @@ pub(crate) async fn join_party_by_code(app: &AppHandle, code: &str) -> Result<St
 async fn party_error_reply(error: RiotError) -> Value {
     if error.is_login_required() {
         return json!({ "success": false, "code": "loginRequired" });
+    }
+    if error.to_string() == PARTY_NEEDS_GAME {
+        return json!({ "success": false, "code": "valorantNotRunning", "error": PARTY_NEEDS_GAME });
     }
     match super::rate_limited_reply(&error.to_string()).await {
         Some(reply) => reply,
@@ -1636,6 +1656,7 @@ async fn poll_once(
                 if let Err(error) = crate::match_chat_history::capture(
                     &owner,
                     &captured,
+                    crate::match_chat_history::current_roster(app).as_ref(),
                     &app.state::<ConfigStore>(),
                 ) {
                     log::warn!("{error}");

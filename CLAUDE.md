@@ -124,7 +124,8 @@ Rust command conventions:
 | `battlepass:get` | `battlepass_get` | Act battle pass XP/level, owned premium contract ids, and active agent recruitment progress |
 | `bloomline:get` | `bloomline_get` | Read agent progression; optional agent UUID and expected account load equipped stat counters |
 | `chat:saved-match-details` | `chat_saved_match_details` | Map, mode, agent and result for a saved match chat; fetched once and stored in `match-chat-history.json` |
-| `party:code-create` / `party:code-join` / `party:code-disable` | `party_code_create` / `party_code_join` / `party_code_disable` | Create the current party's invite code (`{ success, inviteCode, link }`; the link is Riot's `https://gg.riotgames.com/VAL?joinCode=CODE`), join by code or pasted party link (`args: [code]`), or turn the code and link off (`DELETE /parties/v1/parties/{id}/invitecode`). Shared with `.code create`, `.party join` and MCP `create_party_code` / `join_party` / `disable_party_link`. UI: Chat → Party sidebar |
+| `party:code-create` / `party:code-join` / `party:code-disable` | `party_code_create` / `party_code_join` / `party_code_disable` | Need VALORANT running (`valorantNotRunning` otherwise, checked before any Riot request, for the panel, chat commands and MCP). Create the current party's invite code (`{ success, inviteCode, link }`; the link is Riot's `https://gg.riotgames.com/VAL?joinCode=CODE`), join by code or pasted party link (`args: [code]`), or turn the code and link off (`DELETE /parties/v1/parties/{id}/invitecode`). Shared with `.code create`, `.party join` and MCP `create_party_code` / `join_party` / `disable_party_link`. UI: Chat → Party sidebar |
+| `encounters:get` | `encounters_get` | Everyone from your last 10 matches with how often they were with/against you (`args: [excludeMatchId?]`); see Played before & parties |
 | `chat:command` | `chat_command` | Runs a `.`- or `/`-prefixed command typed in the Chat composer; the raw line is never posted |
 | `live-game:fetch` / `live-game:dump` | `live_game_fetch/dump` | Live match state (polled ~5s) |
 | `chat:get/send/translate/friend-action/disconnect` | `chat_*` | Chat (REST + XMPP) |
@@ -350,6 +351,12 @@ minutes. Older history without `details` still loads.
 line (only those players), so the saved thread names senders and shows agent
 icons, and its header shows map · mode · result · start time instead of the
 match ID. Details saved before speakers existed are looked up once more.
+Capture also names speakers on the spot: each saved match's `speakers`
+(PUUID, Riot ID, agent) is filled from the in-memory Live Game snapshot
+(`match_chat_history::current_roster`, only when its `match.id` is the same
+match), and the Riot ID is added to `names`. No extra requests; incognito
+players keep their agent but not their name. The frontend merges these with
+`details.speakers` (`savedMatchSpeakers`), match-details values winning.
 Disabling saves keeps existing history. Clear match
 chat history deletes all accounts' saved chats on this device and disables saving
 so polling cannot restore its backlog. No cloud sync or new dependencies.
@@ -405,6 +412,25 @@ It reads the stored Live Game roster (one fetch only when that has lapsed) and
 Match analysis sends only anonymized scoreboard stats: `You`, `Ally N`, and
 `Enemy N`. Never send other players' Riot IDs, PUUIDs, or party IDs in match
 analysis. Results stay in Matches state by match ID; Regenerate makes a new call.
+
+### Played before & parties
+
+`commands/encounters.rs` reads your last 10 matches (one match-list request,
+reused 90 s, plus the Matches page's cached scoreboards, fetched one at a time
+through `mcp::scoreboard` only when missing) and tallies each other player's
+`with` / `against` count and last shared match. `encounters_get` serves it to
+the app (`useEncounters` in `src/util/encounters.ts`, same 90 s reuse) and MCP
+rows get `playedBefore` ("with you 2× · against you 1×"). The viewed finished
+match is excluded so it doesn't count itself. `EncounterBadge` shows the total
+on Live Game roster rows and finished-match scoreboard rows (green: with you,
+red: against, amber: both; split in the tooltip).
+Finished scoreboards colour parties like Live Game: players sharing a
+`partyId` with someone else get a "Party N" number (`match-parties.ts`) and the
+`partyColor` edge/label. MCP marks them "🔵 Party 1" (`party_marks`) in
+`get_match_details`, and `get_live_match` turns Live Game's detected "Team N"
+labels into the same marks (`party_mark_for_label`). MCP results also carry
+🟢/🔴/⚪ results, 🟢/🔴 RR (`mark_rr`, applied after summaries read the numbers)
+and ⬆/⬇ rank changes.
 
 ### Add a new IPC channel
 
@@ -502,17 +528,18 @@ rate budget and auth retry): `get_player_overview` (Riot ID, PUUID, region, curr
 peak rank from wins by tier, per-act ranks, net RR), `get_live_match` (the `.ask`
 context: You / Ally N / Enemy N, no names; MCP adds each player's non-default
 skins from Live Game's `loadout.weapons`, skin per weapon UUID, no extra Riot
-requests), `get_store` (skin and bundle names
-from valorant-api.com), `get_battle_pass` (active act/event passes from the valorant-api.com
+requests), `get_store` (skin, bundle and accessory
+names from valorant-api.com; accessories also get a `kind`; buddy/spray levels
+take the parent's name, as level names are internal), `get_battle_pass` (active act/event passes from the valorant-api.com
 contracts, seasons and events catalogs, cached per session: tier, XP, premium,
 days left and the next three rewards by name), `list_settings_profiles` (names and
 dates only), `get_settings_profile` (decoded settings of a saved profile or the
 current account), `lookup_player` (Riot ID or PUUID → rank and matches, as on
 the Tools page), `get_match_history` (own line per match, up to 10, one
 match-details request each through the Matches cache), `get_match_details`
-(scoreboard with every player labelled You / Ally N / Enemy N; no Riot IDs,
-PUUIDs or party IDs, only a `premadeWithYou` flag), `get_friends` (no PUUIDs,
-notes or party IDs), `get_account_status`, `get_agent_progression`; party and queue: `get_party`,
+(scoreboard with every player labelled You / Ally N / Enemy N plus `riotId`
+while `mcpShowNames` is on; never PUUIDs or party IDs), `get_friends` (no PUUIDs or party IDs;
+includes the player's own friend notes, optional `search` over Riot ID and note), `get_account_status`, `get_agent_progression`; party and queue: `get_party`,
 `leave_party`, `start_queue`, `stop_queue`, `change_queue` (GLZ
 `/parties/v1/parties/{id}/matchmaking/join|leave` and `/queue`, checked against
 `EligibleQueues`), `create_party_code`, `join_party`, `disable_party_link`; chat:
@@ -521,17 +548,23 @@ notes or party IDs), `get_account_status`, `get_agent_progression`; party and qu
 `set_presence`; cosmetics and rounds (`commands/mcp_cosmetics.rs`): `get_loadout`
 (equipped skin/chroma/buddy per weapon in armory order, card, title, sprays),
 `get_owned_skins` (skins by weapon from inventory skin levels, other counts),
-`compare_players` (2–5 Riot IDs/PUUIDs/"me", looked up one at a time: rank, RR,
+`find_player` (1–10 Riot ID aliases or PUUIDs → Riot ID + PUUID through the
+local alias lookup, no stat requests), `compare_players` (2–5 Riot IDs/PUUIDs/"me", looked up one at a time: rank, RR,
 peak, act record and win rate, recent net RR), `translate_message` (`chat_translate`
 with the Settings translator), `get_match_timeline` (`matchId`, optional `round`; labels from
 `mcp::player_labels`, same as the scoreboard); launch: `open_riot_client`, `open_valorant` (`mode` "relay" =
-Launch with XMPP relay, the default, or "normal"). Tools that act are marked
+Launch with XMPP relay, the default, or "normal"); `close_riot_client`,
+`restart_riot_client` (see Close / restart Riot Client). Tools that act are marked
 `readOnlyHint: false`. Agent and map names
 come from `bot_template::content_names` (cached valorant-api.com catalog).
 Settings shows copyable setups: an agent prompt, a Claude Code command, Claude
 Desktop JSON and HTTP-client JSON. The token is masked on screen. The section's
 Docs button opens `McpDocsPage` (connect steps, example questions, and the live
 tool list from `mcp_tools`).
+Settings → AI agents → Include player names (`mcpShowNames`, default on)
+adds Riot IDs to `get_live_match` (except players who hid theirs, unless in
+your party), `get_match_details` and `get_match_timeline` labels. `.ask` and
+in-app match analysis stay anonymous regardless.
 Commands: `mcp_status`, `mcp_tools`, `mcp_set_enabled` (`args: [bool]`),
 `mcp_regenerate_token`.
 Tool results are Markdown from `src-tauri/src/mcp_format.rs` (labelled lines,
@@ -539,12 +572,51 @@ tables for lists, identifying columns first, ranks by name, yes/no, tidy numbers
 scores as "7–5"), with the raw object in `structuredContent`; the server
 instructions ask agents to lead with the answer and never paste JSON.
 
+### Watched friends
+
+The Friends page star (`friends_watch_set`, `args: [puuid, watch]`) saves PUUIDs
+in `watchedFriends`. `src-tauri/src/friend_watch.rs` polls `/chat/v4/presences`
+(local Riot Client, no PD budget) every 10 s while the list is non-empty and, on
+a watched friend's INGAME transition, emits an `alert:info` toast plus a Windows
+notification (`tauri-plugin-notification`): "Duo#NA1 started a match ·
+Competitive on Ascent" / "Duo#NA1 won 13–9 on Ascent". The first sighting never
+notifies; the final score is the last presence score seen.
+
 ### Open Riot Client
 
 The login panel's Open Riot Client button (`riot_open_client_with_config`, MCP
 `open_riot_client`) starts the Riot Client through the config server and XMPP
 relay with no `--launch-product`, so chat, presence and the bot work out of
 game. Launch arguments still apply, minus product/patchline/config-URL flags.
+
+### Launching with the Riot Client already open
+
+Both launch commands (and MCP `open_valorant`) no longer refuse a running
+client: `launch_in_running_client` asks it to start the game through
+`POST /product-launcher/v1/products/{product}/patchlines/{patchline}` (its Play
+button), or after sign-in via `watch_game_start` when it is signed out. The
+reply has `runningClient`, `waitingForSignIn` and `relayActive` (the client is
+connected through the XMPP relay). The login panel then shows one Launch
+VALORANT button, and offers Restart through relay only while `relayActive` is
+false; restarting is never needed just to play.
+
+### Close / restart Riot Client
+
+`riot_client_close` force-closes the Riot Client processes (`taskkill /F /T`,
+then waits up to 10 s for `tasklist` to clear) and drops cached tokens.
+`riot_client_restart` closes it and reopens it through the config server and
+XMPP relay; VALORANT is relaunched (relay launch) only if it was running.
+Both take `args: [closeGame]`: while VALORANT runs they close nothing and reply
+`code: "valorantRunning"` unless `closeGame` is true. `RiotClientActions`
+(`src/components/riot-client-actions.tsx`) always confirms Close (one prompt,
+naming VALORANT when `client_config_status` says it runs; Restart asks only
+then) through the app-wide modal and
+reports results as toasts; it appears in the login panel while a client is
+already running and in the account status menu. MCP: `close_riot_client`,
+`restart_riot_client` require `userAsked: true` (agents with a stale tool list
+closed the client just to launch; without it they are refused and pointed at
+`open_valorant`), then close without a prompt; optional `closeGame` closes a
+running VALORANT and is passed on the first call when the user already confirmed.
 
 ### Playing state
 

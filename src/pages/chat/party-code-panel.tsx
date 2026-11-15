@@ -65,6 +65,7 @@ export const PartyCodePanel = () => {
 
 	const failure = (reply: Extract<PartyCodeReply, { success: false }>) => {
 		if (reply.code === "loginRequired") return t("chat.partyCodeLogin");
+		if (reply.code === "valorantNotRunning") return t("chat.partyCodeNeedsGame");
 		const seconds = rateLimitedSeconds(reply);
 		if (seconds !== null) return t("common.rateLimited", { seconds });
 		return reply.error || t("chat.partyCodeFailed");

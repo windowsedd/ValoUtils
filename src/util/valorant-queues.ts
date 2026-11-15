@@ -15,8 +15,12 @@ export const QUEUE_LABELS: Record<string, string> = {
   "": "Custom",
 };
 
-export const queueLabel = (queueId: string | null | undefined) =>
-  QUEUE_LABELS[(queueId ?? "").toLowerCase()] ?? queueId ?? "";
+export const queueLabel = (queueId: string | null | undefined) => {
+  const id = (queueId ?? "").toLowerCase();
+  // Skirmish queues carry their format: skirmish2v2 is "Skirmish 2v2".
+  if (id.startsWith("skirmish")) return `Skirmish ${id.slice("skirmish".length)}`.trim();
+  return QUEUE_LABELS[id] ?? queueId ?? "";
+};
 
 /**
  * Chip styling for a queue — ranked play is the only one that gets colour.

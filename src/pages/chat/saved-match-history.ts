@@ -1,4 +1,4 @@
-import type { ChatChannel, ChatMessage, SavedChatMatch, SavedMatchDetails } from "@/types/chat";
+import type { ChatChannel, ChatMessage, SavedChatMatch, SavedMatchDetails, SavedSpeaker } from "@/types/chat";
 import { channelForCid, mergeChatMessages, messageTime } from "./chat-model";
 
 export const savedMatchMessages = (match: SavedChatMatch | undefined, channel: ChatChannel) => {
@@ -19,6 +19,26 @@ export type SavedMatchSummary = {
   /** Latest line in the channel being viewed, or in either room if it has none. */
   last: ChatMessage | null;
   details: SavedMatchDetails | null;
+  /** Who wrote the saved lines, from [`savedMatchSpeakers`]. */
+  roster: SavedSpeaker[];
+};
+
+/**
+ * Speakers of a saved match: those captured from the Live Game roster, with
+ * match-details values taking over wherever they are filled in.
+ */
+export const savedMatchSpeakers = (match: SavedChatMatch | null | undefined): SavedSpeaker[] => {
+  const byPuuid = new Map<string, SavedSpeaker>();
+  for (const speaker of [...(match?.speakers ?? []), ...(match?.details?.speakers ?? [])]) {
+    const puuid = speaker.puuid.toLowerCase();
+    const known = byPuuid.get(puuid);
+    byPuuid.set(puuid, {
+      puuid,
+      name: speaker.name || known?.name || "",
+      agentId: speaker.agentId || known?.agentId || "",
+    });
+  }
+  return [...byPuuid.values()];
 };
 
 export const summarizeSavedMatch = (
@@ -39,6 +59,7 @@ export const summarizeSavedMatch = (
     speakers: new Set(both.map(message => message.sender).filter(Boolean)).size,
     last,
     details: match.details ?? null,
+    roster: savedMatchSpeakers(match),
   };
 };
 
@@ -95,16 +116,16 @@ export const matchesNeedingDetails = (matches: readonly SavedChatMatch[]): strin
 
 /**
  * Saved speakers keyed by PUUID, in the shape the chat thread resolves senders
- * from. Match-details speakers (with agents) win over the history name list.
+ * from. Saved speakers (with agents) win over the history name list.
  */
 export const savedSpeakerRoster = (
-  details: SavedMatchDetails | null | undefined,
+  speakers: readonly SavedSpeaker[] | undefined,
   names: Readonly<Record<string, string>> = {},
 ) => {
   const roster = new Map<string, { name: string; agentId: string | null; cardId: string | null }>(
     Object.entries(names).map(([puuid, name]) => [puuid.toLowerCase(), { name, agentId: null, cardId: null }]),
   );
-  for (const speaker of details?.speakers ?? []) {
+  for (const speaker of speakers ?? []) {
     roster.set(speaker.puuid.toLowerCase(), {
       name: speaker.name || roster.get(speaker.puuid.toLowerCase())?.name || "",
       agentId: speaker.agentId || null,
@@ -117,16 +138,16 @@ export const savedSpeakerRoster = (
 const PUUID_LIKE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
- * A saved line's speaker: their saved Riot ID (from match details, then the
- * history's name list), else a readable sender name, else "".
+ * A saved line's speaker: their saved Riot ID (from the saved speakers, then
+ * the history's name list), else a readable sender name, else "".
  */
 export const savedSenderName = (
   message: ChatMessage,
-  details: SavedMatchDetails | null | undefined,
+  speakers: readonly SavedSpeaker[] | undefined,
   names: Readonly<Record<string, string>> = {},
 ) => {
   const id = message.sender.split("@")[0]!.toLowerCase();
-  const speaker = details?.speakers?.find(entry => entry.puuid.toLowerCase() === id);
+  const speaker = speakers?.find(entry => entry.puuid.toLowerCase() === id);
   if (speaker?.name) return speaker.name;
   if (names[id]) return names[id];
   const labeled = message.senderName.trim();

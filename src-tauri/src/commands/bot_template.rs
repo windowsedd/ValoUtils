@@ -29,6 +29,8 @@ struct TemplatePlayer {
     is_self: bool,
     in_my_party: bool,
     incognito: bool,
+    /// Live Game's detected party label ("Team 1"), or empty when solo/unknown.
+    party: String,
     /// Skin UUID by weapon UUID (Live Game's `loadout.weapons`), when known.
     weapons: serde_json::Map<String, Value>,
 }
@@ -191,6 +193,11 @@ impl TemplateSnapshot {
                         .get("incognito")
                         .and_then(Value::as_bool)
                         .unwrap_or(false),
+                    party: player
+                        .get("party")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                        .to_string(),
                     weapons: player
                         .pointer("/loadout/weapons")
                         .and_then(Value::as_object)
@@ -340,6 +347,11 @@ fn average_rank(players: &[&TemplatePlayer]) -> Option<String> {
     Some(rank_label(average.round() as u64).to_string())
 }
 
+/// Readable mode for a queue ID ("Competitive", "Unrated"...).
+pub(crate) fn mode_label_public(queue_id: &str) -> String {
+    mode_label(queue_id)
+}
+
 fn mode_label(queue_id: &str) -> String {
     match queue_id.to_ascii_lowercase().as_str() {
         "competitive" => "Competitive".into(),
@@ -359,6 +371,8 @@ fn mode_label(queue_id: &str) -> String {
         "premier" => "Premier".into(),
         // A custom game reports an empty queue id rather than "custom".
         "custom" | "" => "Custom".into(),
+        // Skirmish queues carry their format: skirmish2v2 is "Skirmish 2v2".
+        id if id.starts_with("skirmish") => format!("Skirmish {}", &id["skirmish".len()..]).trim_end().to_string(),
         _ => queue_id.to_string(),
     }
 }
@@ -902,6 +916,10 @@ fn ask_context(
             if ally && !player.is_self {
                 entry["premadeWithYou"] = player.in_my_party.into();
             }
+            // Parties Live Game detected (presence or shared match history).
+            if let Some(party) = super::mcp::party_mark_for_label(&player.party) {
+                entry["party"] = party.into();
+            }
             if let Some(stats) = recent(&player.puuid) {
                 entry["recent"] = serde_json::json!({
                     "matches": stats.get("matches").and_then(Value::as_u64).unwrap_or_default(),
@@ -970,6 +988,36 @@ pub(crate) async fn ask_game_context(app: &AppHandle, with_skins: bool) -> Optio
             }
         }
     }
+    // MCP only, after the user's Include player names setting: Riot IDs, except
+    // players who hid theirs (shown to their own party, as on Live Game).
+    if with_skins && super::mcp::show_names(app) {
+        if let Some(rows) = context["players"].as_array_mut() {
+            for (row, player) in rows.iter_mut().zip(&snapshot.players) {
+                let hidden = player.incognito && !player.in_my_party && !player.is_self;
+                if !hidden && !player.game_name.trim().is_empty() {
+                    row["riotId"] = if player.tag_line.trim().is_empty() {
+                        player.game_name.clone()
+                    } else {
+                        format!("{}#{}", player.game_name, player.tag_line)
+                    }
+                    .into();
+                }
+            }
+        }
+    }
+    // Who you've met in your recent matches (MCP only: may read scoreboards).
+    if with_skins {
+        let met = super::mcp::recent_encounters(app, None).await;
+        if let Some(rows) = context["players"].as_array_mut() {
+            for (row, player) in rows.iter_mut().zip(&snapshot.players) {
+                if !player.is_self {
+                    if let Some(seen) = super::encounters::describe(met.get(&player.puuid)) {
+                        row["playedBefore"] = seen.into();
+                    }
+                }
+            }
+        }
+    }
     // Riot's match APIs carry no live score; the game's own chat presence does.
     if snapshot.state == "coregame" {
         let riot = app.state::<RiotState>();
@@ -1002,8 +1050,8 @@ mod tests {
             "state": "pregame",
             "match": { "mapId": "/Game/Maps/Ascent/Ascent", "queueId": "competitive" },
             "players": [
-                { "puuid": "me", "gameName": "Me", "tagLine": "TW", "teamId": "Ally", "characterId": "sage", "level": 184, "currentTier": 18, "currentRR": 62, "isSelf": true, "incognito": false },
-                { "puuid": "ally", "gameName": "Duo", "tagLine": "TW", "teamId": "Ally", "characterId": "sova", "level": 90, "currentTier": 17, "currentRR": 20, "isSelf": false, "incognito": false },
+                { "puuid": "me", "gameName": "Me", "tagLine": "TW", "teamId": "Ally", "characterId": "sage", "level": 184, "currentTier": 18, "currentRR": 62, "isSelf": true, "incognito": false, "party": "Team 1" },
+                { "puuid": "ally", "gameName": "Duo", "tagLine": "TW", "teamId": "Ally", "characterId": "sova", "level": 90, "currentTier": 17, "currentRR": 20, "isSelf": false, "incognito": false, "party": "Team 1" },
                 { "puuid": "enemy", "gameName": "Enemy", "tagLine": "NA", "teamId": "Enemy", "characterId": "jett", "level": 120, "currentTier": 15, "currentRR": 40, "isSelf": false, "incognito": false },
                 { "puuid": "hidden", "gameName": "Hidden", "tagLine": "EU", "teamId": "Enemy", "characterId": "omen", "level": null, "currentTier": 0, "currentRR": 0, "isSelf": false, "incognito": true }
             ]
@@ -1033,6 +1081,9 @@ mod tests {
         assert_eq!(players[0]["rr"], 62);
         assert!(players[0].get("premadeWithYou").is_none());
         assert_eq!(players[1]["premadeWithYou"], false);
+        assert_eq!(players[0]["party"], "🔵 Party 1");
+        assert_eq!(players[1]["party"], "🔵 Party 1");
+        assert!(players[2].get("party").is_none());
         assert!(players[2].get("premadeWithYou").is_none());
         assert_eq!(players[2]["recent"], json!({ "matches": 5, "kd": 1.24, "winRate": 54.0, "acs": 238.0, "dpr": 151.0 }));
         assert!(players[3].get("rr").is_none() && players[3].get("recent").is_none());
@@ -1090,6 +1141,8 @@ mod tests {
         assert_eq!(mode_label("ggteam"), "Escalation");
         assert_eq!(mode_label("hurm"), "Team Deathmatch");
         assert_eq!(mode_label("deathmatch"), "Deathmatch");
+        assert_eq!(mode_label("skirmish2v2"), "Skirmish 2v2");
+        assert_eq!(mode_label("Skirmish"), "Skirmish");
         assert_eq!(mode_label(""), "Custom");
         // An id we have never seen prints as-is rather than as a wrong guess.
         assert_eq!(mode_label("brandnewmode"), "brandnewmode");

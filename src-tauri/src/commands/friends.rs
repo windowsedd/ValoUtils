@@ -133,6 +133,17 @@ pub(crate) async fn fetch_own_match_score(riot: &RiotState) -> Option<(i64, i64)
     own_match_score(&presences, &puuid)
 }
 
+/// The lowercase PUUID a presence entry belongs to.
+pub(crate) fn presence_puuid(presence: &Value) -> Option<String> {
+    let id = id_root(&first_str([presence.get("puuid"), presence.get("pid")]));
+    (!id.is_empty()).then(|| id.to_ascii_lowercase())
+}
+
+/// [`valorant_presence`] for other modules (friend watching).
+pub(crate) fn valorant_presence_public(presence: &Value) -> Option<Value> {
+    valorant_presence(presence)
+}
+
 /// How much a presence entry is worth when one player has several. Higher wins.
 /// A game presence carries the `private` blob; the `riot_client` launcher entry
 /// carries nothing and must never displace it.
@@ -305,6 +316,25 @@ fn now_iso() -> String {
         .unwrap_or(0);
     let (y, m, d, h, mi, s) = crate::util_time::civil_from_unix_secs(secs);
     format!("{y:04}-{m:02}-{d:02}T{h:02}:{mi:02}:{s:02}Z")
+}
+
+/// Stars or unstars a friend for match notifications (`args: [puuid, watch]`).
+/// Returns the watched PUUIDs.
+#[tauri::command]
+pub fn friends_watch_set(args: Vec<Value>, config: State<'_, crate::store::ConfigStore>) -> Value {
+    let Some(puuid) = args.first().and_then(Value::as_str).map(|id| id_root(id).to_ascii_lowercase()).filter(|id| !id.is_empty()) else {
+        return json!({ "success": false, "error": "No friend given." });
+    };
+    let watch = args.get(1).and_then(Value::as_bool).unwrap_or(true);
+    let mut list = crate::friend_watch::watched(&config);
+    list.retain(|id| *id != puuid);
+    if watch {
+        list.push(puuid);
+    }
+    match config.try_set(crate::friend_watch::CONFIG_KEY, json!(list)) {
+        Ok(()) => json!({ "success": true, "watched": list }),
+        Err(error) => json!({ "success": false, "error": error }),
+    }
 }
 
 #[cfg(test)]

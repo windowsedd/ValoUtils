@@ -23,6 +23,10 @@ import { isMatchPlayerHighlighted } from "./match-player-highlight";
 import { matchPlayerSubtitle } from "./match-player-subtitle";
 import { scoreboardPlayerInteraction } from "./match-scoreboard-selection";
 import { MatchTimelinePanel } from "./match-timeline";
+import { EncounterBadge } from "./encounter-badge";
+import { matchPartyNumbers } from "./match-parties";
+import { partyColor } from "./live-game/party-accent";
+import { encounterFor, useEncounters, type Encounters } from "@/util/encounters";
 
 /** CDN lookups every match view needs. Each getter memoises at module scope. */
 export type MatchAssets = {
@@ -79,10 +83,13 @@ export const useMatchDetails = () => {
 				// it is worth opening the card again rather than showing the
 				// gate's refusal.
 				const throttled = rateLimitedSeconds(res);
+				// Riot Client closed or signed out: say what to do, not the raw error.
 				const message =
-					throttled === null
-						? res.error ?? t("matches.failedToLoad")
-						: t("common.rateLimited", { seconds: throttled });
+					throttled !== null
+						? t("common.rateLimited", { seconds: throttled })
+						: "code" in res && res.code === "loginRequired"
+							? t("matches.loginRequiredDesc")
+							: res.error ?? t("matches.failedToLoad");
 				setErrors((prev) => ({ ...prev, [id]: message }));
 			}
 			setPending((prev) => {
@@ -96,6 +103,13 @@ export const useMatchDetails = () => {
 const ensure = useCallback((matchId: string) => {
 			if (!matchId || details[matchId] || pending.has(matchId)) return;
 			setPending((prev) => new Set(prev).add(matchId));
+			// A retry shows loading again rather than the previous failure.
+			setErrors((prev) => {
+				if (!(matchId in prev)) return prev;
+				const next = { ...prev };
+				delete next[matchId];
+				return next;
+			});
 			invoke<MatchDetailsResponse>("match_details", { args: [matchId] }).then(onMatchDetails).catch(error => onMatchDetails({ success: false, matchId, error: String(error) }));
 		}, [details, pending, onMatchDetails]);
 
@@ -186,8 +200,12 @@ const CopyPuuidButton = ({ puuid, label, copiedLabel }: { puuid: string; label: 
 	);
 };
 
-const ScoreboardRow = ({ player, assets, highlighted, onPlayerSelect, coachLabel, copy }: {
+const ScoreboardRow = ({ player, assets, highlighted, onPlayerSelect, coachLabel, copy, party, partyLabel, encounters }: {
 	player: MatchPlayer;
+	/** Party number when this player queued with others in this match. */
+	party?: number;
+	partyLabel?: string;
+	encounters: Encounters | null;
 	assets: MatchAssets;
 	highlighted: boolean;
 	onPlayerSelect?: (player: MatchPlayer) => void;
@@ -202,18 +220,30 @@ const ScoreboardRow = ({ player, assets, highlighted, onPlayerSelect, coachLabel
 	const content = (
 		<>
 			<span className="w-0.5 self-stretch rounded-full shrink-0" style={{ background: teamColor(player.teamId) }} />
+			{/* Party edge, as in Live Game: only players who queued together get one. */}
+			<span
+				aria-hidden="true"
+				className="-ml-2.5 w-0.5 self-stretch rounded-full shrink-0"
+				style={{ background: party ? partyColor(String(party)) : "transparent" }}
+			/>
 			{agent?.icon ? (
 				<img src={agent.icon} alt={localize(agent.name)} title={localize(agent.name)} className="w-7 h-7 rounded shrink-0" />
 			) : (
 				<span className="h-7 w-7 shrink-0 rounded bg-(--control)" />
 			)}
 			<div className="min-w-0 flex-1">
-				<p className="text-xs font-semibold truncate">
-					<span className={highlighted ? "text-(--text-primary)" : "text-(--text-secondary)"}>{player.gameName || "—"}</span>
-					{player.tagLine && <span className="text-(--text-muted)">#{player.tagLine}</span>}
+				<p className="flex min-w-0 items-center gap-1 text-xs font-semibold">
+					<span className="truncate">
+						<span className={highlighted ? "text-(--text-primary)" : "text-(--text-secondary)"}>{player.gameName || "—"}</span>
+						{player.tagLine && <span className="text-(--text-muted)">#{player.tagLine}</span>}
+					</span>
+					{!player.isSelf && (
+						<EncounterBadge encounter={encounterFor(encounters, player.subject)} recentMatches={encounters?.recentMatches ?? 0} />
+					)}
 				</p>
 				<p className="truncate text-[10px] text-(--text-muted)">
 					{matchPlayerSubtitle(player, agent ? localize(agent.name) : "", coachLabel)}
+					{party && partyLabel && <span style={{ color: partyColor(String(party)) }}> · {partyLabel}</span>}
 				</p>
 			</div>
 			{tierIcon && (
@@ -277,6 +307,9 @@ export const MatchScoreboard = ({
 	copyPuuid?: boolean;
 }) => {
 	const { t } = useTranslation();
+	// Hooks run before the early returns below.
+	const encounters = useEncounters(details?.matchId, Boolean(details));
+	const parties = useMemo(() => matchPartyNumbers(details?.players ?? []), [details]);
 	if (loading) return <p className="px-2 py-3 text-[11px] text-(--text-muted)">{t("matches.loadingDetails")}</p>;
 	if (error) return <p className="px-2 py-3 text-[11px] text-(--signal-neg)">{error}</p>;
 	if (!details) return null;
@@ -335,6 +368,9 @@ export const MatchScoreboard = ({
 						onPlayerSelect={onPlayerSelect}
 						coachLabel={t("matches.coach")}
 						copy={copyPuuid ? { label: t("matches.copyPuuid"), copiedLabel: t("matches.puuidCopied") } : undefined}
+						party={parties.get(player.subject)}
+						partyLabel={parties.has(player.subject) ? t("matches.party", { number: parties.get(player.subject) }) : undefined}
+						encounters={encounters}
 					/>
 				))}
 			</div>

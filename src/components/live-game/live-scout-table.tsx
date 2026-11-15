@@ -9,6 +9,8 @@ import { FaArrowRotateRight, FaChevronDown } from "react-icons/fa6";
 import { LuCrosshair } from "react-icons/lu";
 import { useTranslation } from "react-i18next";
 import { partyColor, rowAccentColor } from "./party-accent";
+import { EncounterBadge } from "@/components/encounter-badge";
+import { encounterFor, useEncounters, type Encounters } from "@/util/encounters";
 import { initialSeasonId } from "./act-rank";
 import { ActRankPanel } from "./act-rank-panel";
 import { buildTeamMatchup } from "./live-game-metrics";
@@ -134,8 +136,10 @@ const SkinCard = ({ weapon, label, assets }: { weapon: WeaponSkin; label: string
 	);
 };
 
-const PlayerRow = ({ player, assets, stats, expanded, onToggle, teamLabel, recentMode, inMatch, agentFallback }: {
+const PlayerRow = ({ player, assets, stats, expanded, onToggle, teamLabel, recentMode, inMatch, agentFallback, encounters }: {
 	player: LivePlayer;
+	/** Who you've met in your recent matches. */
+	encounters: Encounters | null;
 	assets: LiveGameAssets;
 	stats?: RecentStatsState;
 	expanded: boolean;
@@ -195,6 +199,9 @@ const PlayerRow = ({ player, assets, stats, expanded, onToggle, teamLabel, recen
 							<span className="truncate">{displayName}</span>
 							{player.isSelf && <span className="shrink-0 rounded-[5px] border border-(--accent-border) bg-(--accent-soft) px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-(--accent-selected)">{t("liveGame.me")}</span>}
 							<StreakBadge state={stats} />
+							{!player.isSelf && (
+								<EncounterBadge encounter={encounterFor(encounters, player.puuid)} recentMatches={encounters?.recentMatches ?? 0} />
+							)}
 						</p>
 						<p className="text-[10px] text-gray-500 truncate">
 							{agentName || t("liveGame.unavailable")}
@@ -296,6 +303,8 @@ export const LiveScoutTable = ({ snapshot, assets, recent, refreshing, refreshEr
 	const recentMode = queueLabel(snapshot.match?.queueId) || t("liveGame.unavailable");
 	const inMatch = snapshot.state === "coregame" || snapshot.state === "pregame";
 	const isPregame = snapshot.state === "pregame";
+	// Played-before badges: your recent matches, read once per lobby view.
+	const encounters = useEncounters("", inMatch);
 	const allyCount = snapshot.players.filter((player) => player.teamId === "Ally").length;
 	const enemyCount = snapshot.players.filter((player) => player.teamId === "Enemy").length;
 	const agentFallback = isPregame ? t("liveGame.hiddenAgent") : "";
@@ -432,6 +441,7 @@ export const LiveScoutTable = ({ snapshot, assets, recent, refreshing, refreshEr
 									recentMode={recentMode}
 									inMatch={inMatch}
 									agentFallback={agentFallback}
+									encounters={encounters}
 								/>
 							))}
 						</div>

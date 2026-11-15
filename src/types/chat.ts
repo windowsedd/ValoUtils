@@ -122,6 +122,8 @@ export type SavedChatMatch = {
   messages: ChatMessage[];
   /** Saved in match-chat-history.json once match-details has been read. */
   details?: SavedMatchDetails;
+  /** Speakers named from the Live Game roster when their lines were captured. */
+  speakers?: SavedSpeaker[];
 };
 
 export type SavedMatchDetailsResponse =

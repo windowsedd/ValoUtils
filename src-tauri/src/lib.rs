@@ -12,6 +12,7 @@ mod client_config;
 mod commands;
 mod crosshair_code;
 mod fake_player;
+mod friend_watch;
 mod presence_proxy;
 mod riot;
 mod settings_decoder;
@@ -53,6 +54,7 @@ pub fn run() {
         // valoutils:// links; with the single-instance "deep-link" feature a
         // link opened while the app runs is delivered to on_open_url below.
         .plugin(tauri_plugin_deep_link::init())
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_opener::init())
@@ -218,6 +220,7 @@ pub fn run() {
             tauri::async_runtime::spawn(commands::riot_launch::autostart());
             tauri::async_runtime::spawn(mcp::start_if_enabled(app.handle().clone()));
             commands::chat::ensure_chat_forwarders(app.handle());
+            friend_watch::start(app.handle().clone());
             {
                 let handle = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
@@ -298,6 +301,7 @@ pub fn run() {
             commands::live::live_game_stats,
             commands::live::live_game_dump,
             commands::friends::friends_get,
+            commands::friends::friends_watch_set,
             commands::friend_profile::friend_profile_get,
             commands::tools::tools_player_resolve,
             commands::fake_player::fake_player_state,
@@ -306,6 +310,9 @@ pub fn run() {
             commands::riot_launch::riot_launch_normal,
             commands::riot_launch::riot_launch_with_config,
             commands::riot_launch::riot_open_client_with_config,
+            commands::riot_launch::riot_client_close,
+            commands::encounters::encounters_get,
+            commands::riot_launch::riot_client_restart,
             commands::riot_launch::client_config_status,
             commands::riot_launch::client_config_start,
             commands::riot_launch::client_config_stop,

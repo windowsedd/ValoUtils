@@ -1,8 +1,10 @@
 //! Tools for the local MCP server (`crate::mcp`) and the Settings commands
 //! that control it. Each tool reuses an existing command, so it shares that
-//! command's PD client, rate budget and auth retry. All are read-only except
-//! `open_riot_client` and `open_valorant`, which start the Riot Client (and
-//! the game) like the app's launch buttons.
+//! command's PD client, rate budget and auth retry. Tools that act are marked
+//! `readOnlyHint: false`, among them `open_riot_client` / `open_valorant`
+//! (start the Riot Client and the game like the app's launch buttons) and
+//! `close_riot_client` / `restart_riot_client` (force-close it, or close it and
+//! reopen it through the XMPP relay).
 
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, HashMap};
@@ -73,12 +75,12 @@ pub fn tool_list() -> Vec<Value> {
         tool(
             "get_live_match",
             "Live match",
-            "The current agent select or match: map, mode, phase, the live round score during a match (from your chat presence, when Riot shares it), and for each player their agent, rank, RR, peak rank, level, recent form and equipped weapon skins (non-default skins only, e.g. Reaver Vandal). Players are labelled You / Ally N / Enemy N.",
+            "The current agent select or match: map, mode, phase, the live round score during a match (from your chat presence, when Riot shares it), and for each player their agent, rank, RR, peak rank, level, recent form and equipped weapon skins (non-default skins only, e.g. Reaver Vandal), detected parties (\"🔵 Party 1\": players queued together, from presence or shared match history) and playedBefore (how often they were with or against you in your last 10 matches). Players are labelled You / Ally N / Enemy N, with each one's riotId unless the user turned off Include player names (players who hid their name stay hidden).",
         ),
         tool(
             "get_store",
             "Store",
-            "Today's store offers with skin names and prices, every featured bundle (often two at once) with name, price and time left, the Night Market when it's open, accessory offers, and wallet balances (VP, Radianite, Kingdom Credits).",
+            "Today's store offers with skin names and prices, every featured bundle (often two at once) with name, price and time left, the Night Market when it's open, accessory offers (Kingdom Credits) with item name and kind (spray, player card, gun buddy, title, flex), and wallet balances (VP, Radianite, Kingdom Credits).",
         ),
         tool(
             "get_battle_pass",
@@ -147,6 +149,23 @@ pub fn tool_list() -> Vec<Value> {
             string_input("player", "Riot ID like Name#Tag, or a player PUUID.", true),
         ),
         tool_with_input(
+            "find_player",
+            "Find player account",
+            "Resolves accounts without fetching stats: a Riot ID alias (Name#Tag) gives the account's PUUID and exact Riot ID, and a PUUID gives its current Riot ID. Up to 10 at once. Cheap; use lookup_player when rank and matches are wanted. Riot does not expose past names.",
+            json!({
+                "type": "object",
+                "properties": { "players": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "minItems": 1,
+                    "maxItems": 10,
+                    "description": "Riot IDs like Name#Tag, or PUUIDs."
+                } },
+                "required": ["players"],
+                "additionalProperties": false,
+            }),
+        ),
+        tool_with_input(
             "compare_players",
             "Compare players",
             "Compares 2 to 5 players side by side by Riot ID (Name#Tag) or PUUID: current rank and RR, peak rank, this act's wins, losses and win rate, and the net RR over their recent competitive games. Use \"me\" for the signed-in player.",
@@ -193,13 +212,14 @@ pub fn tool_list() -> Vec<Value> {
         tool_with_input(
             "get_match_details",
             "Match scoreboard",
-            "The full scoreboard of one finished match: map, mode, length, result and rounds, and every player's agent, rank, K/D/A, ACS, ADR, headshot % and first bloods. Players are labelled You / Ally N / Enemy N, never by name.",
-            string_input("matchId", "Match ID from get_match_history or get_player_overview.", true),
+            "The full scoreboard of one finished match: map, mode, length, result and rounds, and every player's agent, rank, K/D/A, ACS, ADR, headshot % and first bloods, their party (\"🔵 Party 1\" for players queued together) and playedBefore (with or against you in your other recent matches). Players are labelled You / Ally N / Enemy N, with each one's riotId unless the user turned off Include player names in ValoUtils.",
+            string_input("matchId", "Match ID from get_match_history, get_player_overview or lookup_player (when the user says \"#3\", use that row's matchId).", true),
         ),
-        tool(
+        tool_with_input(
             "get_friends",
             "Friends",
-            "Your Riot friends: who is online, who is in Valorant and what they are doing (queue, map, score, party size), plus their rank and level when Riot shares them, and pending friend requests.",
+            "Your Riot friends: who is online, who is in Valorant and what they are doing (queue, map, score, party size), their rank and level when Riot shares them, the private note you saved on each friend, and pending friend requests. Give search to find friends by name or note text.",
+            string_input("search", "Optional text matched against each friend's Riot ID and your note on them (case-insensitive).", false),
         ),
         tool(
             "get_account_status",
@@ -282,7 +302,7 @@ pub fn tool_list() -> Vec<Value> {
             let mut create = tool(
                 "create_party_code",
                 "Create party code",
-                "Creates an invite code and Riot party link (https://gg.riotgames.com/VAL?joinCode=...) for your current Valorant party, which friends can use to join it. You must be in a party (the game's lobby counts).",
+                "Creates an invite code and Riot party link (https://gg.riotgames.com/VAL?joinCode=...) for your current Valorant party, which friends can use to join it. You must be in a party (the game's lobby counts), and VALORANT must be running; if it isn't, offer open_valorant.",
             );
             create["annotations"] = json!({
                 "readOnlyHint": false, "destructiveHint": false, "idempotentHint": false, "openWorldHint": false,
@@ -293,7 +313,7 @@ pub fn tool_list() -> Vec<Value> {
             let mut join = tool_with_input(
                 "join_party",
                 "Join party by code",
-                "Joins a Valorant party using its invite code (letters and digits, like TUE693) or a Riot party link. You leave your current party to join it.",
+                "Joins a Valorant party using its invite code (letters and digits, like TUE693) or a Riot party link. You leave your current party to join it. VALORANT must be running; if it isn't, offer open_valorant.",
                 string_input("code", "The party invite code, or a gg.riotgames.com party link.", true),
             );
             join["annotations"] = json!({
@@ -305,7 +325,7 @@ pub fn tool_list() -> Vec<Value> {
             let mut disable = tool(
                 "disable_party_link",
                 "Disable party link",
-                "Turns off your current party's invite code and party link, so they can no longer be used to join.",
+                "Turns off your current party's invite code and party link, so they can no longer be used to join. VALORANT must be running.",
             );
             disable["annotations"] = json!({
                 "readOnlyHint": false, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false,
@@ -330,7 +350,7 @@ pub fn tool_list() -> Vec<Value> {
             let mut launch = tool_with_input(
                 "open_valorant",
                 "Open Valorant",
-                "Launches Valorant through the Riot Client, like the app's launch buttons. The default \"relay\" mode is Launch with XMPP relay, which ValoUtils chat, presence and bot commands need; \"normal\" is a plain startup. Fails if the Riot Client is already running; close it completely first.",
+                "Launches Valorant, like the app's launch buttons. If the Riot Client is already open, it starts the game from that client (after sign-in if needed) and mode doesn't matter; don't close or restart the client first. Otherwise it starts the Riot Client: the default \"relay\" mode is Launch with XMPP relay, which ValoUtils chat, presence and bot commands need; \"normal\" is a plain startup.",
                 json!({
                     "type": "object",
                     "properties": { "mode": {
@@ -348,6 +368,64 @@ pub fn tool_list() -> Vec<Value> {
                 "openWorldHint": false,
             });
             launch
+        },
+        {
+            let mut close = tool_with_input(
+                "close_riot_client",
+                "Close Riot Client",
+                "Force-closes the Riot Client (like ending it in Task Manager) right away. Not needed to launch Valorant: open_valorant starts it from an open client. The user asking for it is the confirmation, so do not ask again. Closing a running VALORANT needs closeGame true: pass it straight away when the user already confirmed closing the game, otherwise the tool refuses and you ask once.",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "userAsked": {
+                            "type": "boolean",
+                            "description": "true only when the user explicitly asked for this in the conversation. Launching Valorant never needs it: open_valorant works with the Riot Client open."
+                        },
+                        "closeGame": {
+                            "type": "boolean",
+                            "description": "Also close VALORANT if it is running. Set it on the first call when the user already confirmed closing the game (e.g. \"close it, I confirm\"); otherwise leave it out, and the tool refuses while the game runs."
+                        }
+                    },
+                    "required": ["userAsked"],
+                    "additionalProperties": false,
+                }),
+            );
+            close["annotations"] = json!({
+                "readOnlyHint": false,
+                "destructiveHint": true,
+                "idempotentHint": true,
+                "openWorldHint": false,
+            });
+            close
+        },
+        {
+            let mut restart = tool_with_input(
+                "restart_riot_client",
+                "Restart Riot Client through relay",
+                "Closes the running Riot Client and opens it again through ValoUtils' XMPP relay, so chat, presence and bot commands work. Use it only when the user wants those and the client was started without ValoUtils; it is not needed to launch Valorant, which open_valorant does from an open client. VALORANT is relaunched too if it was running. Closing a running VALORANT needs closeGame true: pass it straight away when the user already confirmed, otherwise the tool refuses and you ask once.",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "userAsked": {
+                            "type": "boolean",
+                            "description": "true only when the user explicitly asked for this in the conversation. Launching Valorant never needs it: open_valorant works with the Riot Client open."
+                        },
+                        "closeGame": {
+                            "type": "boolean",
+                            "description": "Also close VALORANT if it is running. Set it on the first call when the user already confirmed closing the game (e.g. \"close it, I confirm\"); otherwise leave it out, and the tool refuses while the game runs."
+                        }
+                    },
+                    "required": ["userAsked"],
+                    "additionalProperties": false,
+                }),
+            );
+            restart["annotations"] = json!({
+                "readOnlyHint": false,
+                "destructiveHint": true,
+                "idempotentHint": false,
+                "openWorldHint": false,
+            });
+            restart
         },
     ]
 }
@@ -401,6 +479,16 @@ fn command_result(reply: Value, shape: impl FnOnce(Value) -> Value) -> Value {
         None => text_result(&shape(reply), false),
     }
 }
+
+/// Closing or restarting the Riot Client only when the user asked for it.
+/// Agents holding an old tool list (from before an open client could start
+/// the game) closed it just to launch; they call without `userAsked` and get
+/// pointed at `open_valorant` instead.
+fn user_asked(arguments: &Value) -> bool {
+    arguments.get("userAsked").and_then(Value::as_bool) == Some(true)
+}
+
+const NOT_ASKED_MESSAGE: &str = "Not closed: only close or restart the Riot Client when the user asked for it (pass userAsked: true). To launch Valorant, call open_valorant; it starts the game from the open Riot Client.";
 
 /// `None` for a tool name this server doesn't have.
 pub async fn call_tool(app: &AppHandle, name: &str, arguments: &Value) -> Option<Value> {
@@ -509,6 +597,23 @@ pub async fn call_tool(app: &AppHandle, name: &str, arguments: &Value) -> Option
                 }
             })
         }
+        "find_player" => {
+            let queries: Vec<String> = arguments
+                .get("players")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .map(|query| query.trim().to_string())
+                .filter(|query| !query.is_empty())
+                .take(10)
+                .collect();
+            if queries.is_empty() {
+                text_result(&json!("Give at least one Riot ID or PUUID."), true)
+            } else {
+                text_result(&find_players(app, &queries).await, false)
+            }
+        }
         "compare_players" => {
             let mut queries: Vec<String> = arguments
                 .get("players")
@@ -579,15 +684,19 @@ pub async fn call_tool(app: &AppHandle, name: &str, arguments: &Value) -> Option
                 match scoreboard(app, id).await {
                     Ok(reduced) => {
                         let (agents, maps) = super::bot_template::content_names().await;
-                        text_result(&anonymized_scoreboard(&reduced, &agents, &maps), false)
+                        let met = recent_encounters(app, Some(id)).await;
+                        let board = anonymized_scoreboard(&reduced, &agents, &maps, &met, show_names(app));
+                        text_result(&board, false)
                     }
                     Err(message) => text_result(&json!(message), true),
                 }
             }
         }
         "get_friends" => {
+            let search = arguments.get("search").and_then(Value::as_str).unwrap_or_default().trim().to_string();
             let reply = super::friends::friends_get(riot()).await.unwrap_or(Value::Null);
-            command_result(reply, friend_summaries)
+            let (_, maps) = super::bot_template::content_names().await;
+            command_result(reply, |reply| friend_summaries(reply, &search, &maps))
         }
         "get_account_status" => {
             let puuid = crate::riot::client::get_tokens(&riot(), false)
@@ -692,6 +801,40 @@ pub async fn call_tool(app: &AppHandle, name: &str, arguments: &Value) -> Option
                 json!("The Riot Client is opening with the XMPP relay. Sign in there; no game is launched.")
             })
         }
+        "close_riot_client" | "restart_riot_client" if !user_asked(arguments) => {
+            text_result(&json!(NOT_ASKED_MESSAGE), true)
+        }
+        "close_riot_client" => {
+            let close_game = arguments.get("closeGame").and_then(Value::as_bool).unwrap_or(false);
+            let reply = super::riot_launch::riot_client_close(vec![json!(close_game)], app.state::<RiotState>())
+                .await
+                .unwrap_or(Value::Null);
+            command_result(reply, |reply| {
+                json!(match (reply["closedClient"].as_bool() == Some(true), reply["closedGame"].as_bool() == Some(true)) {
+                    (_, true) => "VALORANT and the Riot Client are closed.",
+                    (true, false) => "The Riot Client is closed.",
+                    (false, false) => "The Riot Client was not running.",
+                })
+            })
+        }
+        "restart_riot_client" => {
+            let close_game = arguments.get("closeGame").and_then(Value::as_bool).unwrap_or(false);
+            let reply = super::riot_launch::riot_client_restart(
+                vec![json!(close_game)],
+                app.clone(),
+                app.state::<RiotState>(),
+                app.state::<ConfigStore>(),
+            )
+            .await
+            .unwrap_or(Value::Null);
+            command_result(reply, |reply| {
+                json!(if reply["relaunchedGame"].as_bool() == Some(true) {
+                    "The Riot Client restarted with the XMPP relay and VALORANT is launching again. Loading takes a minute."
+                } else {
+                    "The Riot Client restarted with the XMPP relay. Sign in there if it asks; no game is launched."
+                })
+            })
+        }
         "open_valorant" if super::riot_launch::valorant_running() => {
             text_result(&json!("Valorant is already running."), false)
         }
@@ -704,7 +847,18 @@ pub async fn call_tool(app: &AppHandle, name: &str, arguments: &Value) -> Option
                 super::riot_launch::riot_launch_with_config(target, app.clone(), app.state::<ConfigStore>()).await
             }
             .unwrap_or(Value::Null);
-            command_result(reply, |_| {
+            command_result(reply, |reply| {
+                if reply["runningClient"].as_bool() == Some(true) {
+                    let mut message = String::from(if reply["waitingForSignIn"].as_bool() == Some(true) {
+                        "The Riot Client is open but signed out. Valorant starts once the user signs in there."
+                    } else {
+                        "Valorant is launching from the open Riot Client. Loading takes a minute."
+                    });
+                    if reply["relayActive"].as_bool() != Some(true) {
+                        message.push_str(" That client wasn't opened through ValoUtils' XMPP relay, so chat, presence and bot commands won't work; restart_riot_client fixes that.");
+                    }
+                    return json!(message);
+                }
                 json!(if normal {
                     "Valorant is launching (normal startup, without the XMPP relay). Loading takes a minute, and Riot Client may ask you to sign in."
                 } else {
@@ -757,7 +911,21 @@ async fn match_history(app: &AppHandle, count: u64) -> Value {
             Err(error) => json!({ "matchId": id, "error": error }),
         });
     }
-    text_result(&json!({ "matches": matches }), false)
+    text_result(&json!({ "matches": numbered(matches) }), false)
+}
+
+/// Numbers list rows from 1 (newest first) as `#`, so players can say "open #3"
+/// and agents pass that row's `matchId`.
+fn numbered(rows: Vec<Value>) -> Vec<Value> {
+    rows.into_iter()
+        .enumerate()
+        .map(|(index, mut row)| {
+            if let Some(object) = row.as_object_mut() {
+                object.insert("#".into(), json!(index + 1));
+            }
+            row
+        })
+        .collect()
 }
 
 fn one_decimal(value: Option<&Value>) -> Value {
@@ -843,6 +1011,76 @@ fn stat_line(player: &Value, agents: &HashMap<String, String>) -> serde_json::Ma
     line
 }
 
+/// Coloured markers for agents' Markdown, which has no colours of its own.
+const PARTY_MARKS: [&str; 5] = ["🔵", "🟠", "🟣", "🟡", "🟤"];
+
+/// "🟢 Win", "🔴 Loss" or "⚪ Draw".
+fn result_mark(result: Option<&str>) -> Option<String> {
+    Some(match result? {
+        "win" => "🟢 Win".into(),
+        "loss" => "🔴 Loss".into(),
+        "draw" => "⚪ Draw".into(),
+        other => other.into(),
+    })
+}
+
+/// "🟢 +26", "🔴 -15" or "⚪ 0" for a ranked RR change.
+fn rr_mark(rr: Option<i64>) -> Option<String> {
+    let rr = rr?;
+    Some(match rr.signum() {
+        1 => format!("🟢 +{rr}"),
+        -1 => format!("🔴 {rr}"),
+        _ => "⚪ 0".into(),
+    })
+}
+
+/// The rank after a match, with ⬆ or ⬇ when the tier changed.
+fn rank_move(before: Option<u64>, after: Option<u64>) -> Option<String> {
+    let after = after?;
+    let arrow = match before {
+        Some(before) if after > before => "⬆ ",
+        Some(before) if after < before => "⬇ ",
+        _ => "",
+    };
+    Some(format!("{arrow}{}", rank_label(after)))
+}
+
+/// "🔵 Party 2" for Live Game's party label ("Team 2"); `None` without one.
+pub(super) fn party_mark_for_label(label: &str) -> Option<String> {
+    let number: usize = label.chars().filter(char::is_ascii_digit).collect::<String>().parse().ok()?;
+    let number = number.max(1);
+    Some(format!("{} Party {number}", PARTY_MARKS[(number - 1) % PARTY_MARKS.len()]))
+}
+
+/// "🔵 Party 1" for each player in a party of two or more (by party id, in
+/// order of first appearance); `None` for solo players and unknown ids.
+fn party_marks<'a>(party_ids: impl Iterator<Item = &'a str>) -> Vec<Option<String>> {
+    let ids: Vec<&str> = party_ids.collect();
+    let mut numbers: HashMap<&str, usize> = HashMap::new();
+    ids.iter()
+        .map(|id| {
+            if id.is_empty() || ids.iter().filter(|other| *other == id).count() < 2 {
+                return None;
+            }
+            let next = numbers.len();
+            let number = *numbers.entry(id).or_insert(next);
+            Some(format!("{} Party {}", PARTY_MARKS[number % PARTY_MARKS.len()], number + 1))
+        })
+        .collect()
+}
+
+/// Who you've met in your recent matches, for MCP rows. Empty when it can't be
+/// read in time (signed out, rate limited); the first call may read up to
+/// [`super::encounters::RECENT_MATCHES`] scoreboards.
+pub(super) async fn recent_encounters(app: &AppHandle, exclude: Option<&str>) -> BTreeMap<String, super::encounters::Encounter> {
+    match tokio::time::timeout(ENCOUNTER_TIMEOUT, super::encounters::recent_boards(app)).await {
+        Ok(Ok((owner, boards))) => super::encounters::tally(&owner, &boards, exclude),
+        _ => BTreeMap::new(),
+    }
+}
+
+const ENCOUNTER_TIMEOUT: Duration = Duration::from_secs(20);
+
 /// One line of match history: the signed-in player's own game.
 fn own_match_summary(
     reduced: &Value,
@@ -860,7 +1098,7 @@ fn own_match_summary(
         json!(map_name(maps, reduced.get("mapId").and_then(Value::as_str).unwrap_or_default())),
     );
     summary.insert("mode".into(), json!(mode_name(reduced)));
-    summary.insert("result".into(), json!(result));
+    summary.insert("result".into(), json!(result_mark(result)));
     if result.is_some() {
         summary.insert("score".into(), json!(format!("{mine}-{enemy}")));
     }
@@ -872,7 +1110,26 @@ fn own_match_summary(
 
 /// `You` / `Ally N` / `Enemy N` by lowercase PUUID, numbered by ACS within
 /// each side (as the scoreboard lists them), and the player's own team ID.
-pub(super) fn player_labels(reduced: &Value) -> (HashMap<String, String>, String) {
+/// Whether MCP match tools add players' Riot IDs (Settings → AI agents →
+/// Include player names, `mcpShowNames`; on unless turned off).
+pub(super) fn show_names(app: &AppHandle) -> bool {
+    app.state::<ConfigStore>().get("mcpShowNames") != Some(json!(false))
+}
+
+/// `GameName#Tag` from a reduced scoreboard player; `None` when Riot left it out.
+pub(super) fn riot_id(player: &Value) -> Option<String> {
+    let name = player.get("gameName").and_then(Value::as_str).unwrap_or_default().trim();
+    let tag = player.get("tagLine").and_then(Value::as_str).unwrap_or_default().trim();
+    match (name.is_empty(), tag.is_empty()) {
+        (true, _) => None,
+        (false, true) => Some(name.to_owned()),
+        (false, false) => Some(format!("{name}#{tag}")),
+    }
+}
+
+/// You / Ally N / Enemy N by PUUID (and your team id); with `names`, each label
+/// also carries the Riot ID: "Ally 2 · Name#Tag".
+pub(super) fn player_labels(reduced: &Value, names: bool) -> (HashMap<String, String>, String) {
     let all = players(reduced);
     let text = |player: &Value, key: &str| player.get(key).and_then(Value::as_str).unwrap_or_default().to_owned();
     let is_self = |player: &&Value| player.get("isSelf") == Some(&json!(true));
@@ -893,15 +1150,19 @@ pub(super) fn player_labels(reduced: &Value) -> (HashMap<String, String>, String
     allies.sort_by(by_acs);
     enemies.sort_by(by_acs);
     let id = |player: &Value| text(player, "subject").to_ascii_lowercase();
+    let named = |label: String, player: &Value| match riot_id(player).filter(|_| names) {
+        Some(riot_id) => format!("{label} · {riot_id}"),
+        None => label,
+    };
     let mut labels = HashMap::new();
     if let Some(me) = me {
         labels.insert(id(me), "You".to_string());
     }
     for (index, ally) in allies.iter().enumerate() {
-        labels.insert(id(ally), format!("Ally {}", index + 1));
+        labels.insert(id(ally), named(format!("Ally {}", index + 1), ally));
     }
     for (index, enemy) in enemies.iter().enumerate() {
-        labels.insert(id(enemy), format!("Enemy {}", index + 1));
+        labels.insert(id(enemy), named(format!("Enemy {}", index + 1), enemy));
     }
     (labels, my_team)
 }
@@ -912,6 +1173,8 @@ fn anonymized_scoreboard(
     reduced: &Value,
     agents: &HashMap<String, String>,
     maps: &HashMap<String, String>,
+    met: &BTreeMap<String, super::encounters::Encounter>,
+    names: bool,
 ) -> Value {
     let all = players(reduced);
     let text = |player: &Value, key: &str| {
@@ -936,10 +1199,12 @@ fn anonymized_scoreboard(
     enemies.sort_by(by_acs);
 
     let mut rows = Vec::new();
+    let mut order: Vec<&Value> = Vec::new();
     if let Some(me) = me {
         let mut line = stat_line(me, agents);
         line.insert("player".into(), json!("You"));
-        rows.push(Value::Object(line));
+        rows.push(line);
+        order.push(me);
     }
     for (index, ally) in allies.iter().enumerate() {
         let mut line = stat_line(ally, agents);
@@ -948,13 +1213,37 @@ fn anonymized_scoreboard(
             "premadeWithYou".into(),
             json!(!my_party.is_empty() && text(ally, "partyId") == my_party),
         );
-        rows.push(Value::Object(line));
+        rows.push(line);
+        order.push(ally);
     }
     for (index, enemy) in enemies.iter().enumerate() {
         let mut line = stat_line(enemy, agents);
         line.insert("player".into(), json!(format!("Enemy {}", index + 1)));
-        rows.push(Value::Object(line));
+        rows.push(line);
+        order.push(enemy);
     }
+    // Parties of two or more, numbered in row order, and who you've met before.
+    let party_ids: Vec<String> = order.iter().map(|player| text(player, "partyId")).collect();
+    let parties = party_marks(party_ids.iter().map(String::as_str));
+    let rows: Vec<Value> = rows
+        .into_iter()
+        .zip(&order)
+        .zip(parties)
+        .map(|((mut line, player), party)| {
+            line.insert("party".into(), party.map(Value::String).unwrap_or(Value::Null));
+            if names {
+                line.insert("riotId".into(), riot_id(player).map(Value::String).unwrap_or(Value::Null));
+            }
+            if player.get("isSelf") != Some(&json!(true)) {
+                let seen = met.get(&text(player, "subject").to_ascii_lowercase());
+                line.insert(
+                    "playedBefore".into(),
+                    super::encounters::describe(seen).map(Value::String).unwrap_or(Value::Null),
+                );
+            }
+            Value::Object(line)
+        })
+        .collect();
     let (result, mine, enemy) = team_result(reduced, &my_team);
     json!({
         "matchId": reduced.get("matchId"),
@@ -963,24 +1252,40 @@ fn anonymized_scoreboard(
         "startedAtMillis": reduced.get("startMillis"),
         "lengthMinutes": reduced.get("lengthMillis").and_then(Value::as_u64).map(|ms| ms / 60_000),
         "completionState": reduced.get("completionState"),
-        "result": result,
+        "result": result_mark(result),
         "roundsWon": { "mine": mine, "enemy": enemy },
         "players": rows,
     })
 }
 
 /// Friends without PUUIDs, notes or party IDs; online friends first.
-fn friend_summaries(reply: Value) -> Value {
+/// Whether a friend's Riot ID or the player's note on them contains `search`.
+fn friend_matches(friend: &Value, search: &str) -> bool {
+    if search.is_empty() {
+        return true;
+    }
+    let needle = search.to_lowercase();
+    ["displayName", "note"].iter().any(|key| {
+        friend.get(*key).and_then(Value::as_str).is_some_and(|text| text.to_lowercase().contains(&needle))
+    })
+}
+
+/// `maps` names map ids (`bot_template::content_names`); unknown ones keep the
+/// path's last part.
+fn friend_summaries(reply: Value, search: &str, maps: &HashMap<String, String>) -> Value {
     let text = |value: &Value, key: &str| value.get(key).and_then(Value::as_str).unwrap_or_default().to_owned();
     let mut friends: Vec<Value> = reply
         .get("friends")
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
+        .filter(|friend| friend_matches(friend, search))
         .map(|friend| {
             let online = friend.get("isOnline") == Some(&json!(true));
+            let note = text(friend, "note");
             let mut entry = json!({
                 "riotId": text(friend, "displayName"),
+                "note": if note.trim().is_empty() { Value::Null } else { json!(note.trim()) },
                 "online": online,
                 "status": if online { json!(text(friend, "state")) } else { Value::Null },
                 "lastOnlineMillis": friend.get("lastOnline"),
@@ -989,10 +1294,11 @@ fn friend_summaries(reply: Value) -> Value {
                 let tier = game.get("competitiveTier").and_then(Value::as_u64).filter(|tier| *tier > 0);
                 entry["valorant"] = json!({
                     "state": game.get("sessionLoopState"),
-                    "queue": game.get("queueId"),
+                    "queue": game.get("queueId").and_then(Value::as_str)
+                        .map(super::bot_template::mode_label_public),
                     "map": game.get("matchMap").and_then(Value::as_str)
                         .filter(|map| !map.is_empty())
-                        .and_then(|map| map.rsplit('/').next()),
+                        .map(|map| map_name(maps, map)),
                     "score": match (game.get("allyScore").and_then(Value::as_i64), game.get("enemyScore").and_then(Value::as_i64)) {
                         (Some(ally), Some(enemy)) => json!(format!("{ally}-{enemy}")),
                         _ => Value::Null,
@@ -1188,17 +1494,8 @@ async fn battle_pass_summary(reply: &Value) -> Value {
         let mut lookups = tokio::task::JoinSet::new();
         for (index, (_, tier, _)) in upcoming.iter().enumerate() {
             if let Some(endpoint) = reward_endpoint(&tier.reward_type) {
-                let url = format!("https://valorant-api.com/v1/{endpoint}/{}?language=en-US", tier.reward_uuid.to_ascii_lowercase());
-                lookups.spawn(async move {
-                    let body = fetch_public_json(&url).await;
-                    let name = body.as_ref().and_then(|body| {
-                        body.pointer("/data/displayName")
-                            .or_else(|| body.pointer("/data/titleText"))
-                            .and_then(Value::as_str)
-                            .map(str::to_owned)
-                    });
-                    (index, name)
-                });
+                let path = format!("{endpoint}/{}", tier.reward_uuid.to_ascii_lowercase());
+                lookups.spawn(async move { (index, item_name(path).await) });
             }
         }
         let mut names = vec![None; upcoming.len()];
@@ -1458,6 +1755,32 @@ async fn send_chat(app: &AppHandle, channel: &str, friend: &str, message: &str) 
 }
 
 /// Resolves a Riot ID or PUUID, then reads that player's profile.
+/// Riot ID ↔ PUUID for each query through the Riot Client's alias lookup
+/// (`tools_player_resolve`), one at a time; no PD stat requests.
+async fn find_players(app: &AppHandle, queries: &[String]) -> Value {
+    let mut rows = Vec::with_capacity(queries.len());
+    for query in queries {
+        let reply = super::tools::tools_player_resolve(vec![json!(query)], app.state::<RiotState>())
+            .await
+            .unwrap_or(Value::Null);
+        rows.push(resolved_row(query, &reply));
+    }
+    json!({ "players": rows })
+}
+
+fn resolved_row(query: &str, reply: &Value) -> Value {
+    if let Some(message) = failure_message(reply) {
+        return json!({ "query": query, "found": false, "note": message });
+    }
+    let text = |key: &str| reply.get(key).and_then(Value::as_str).unwrap_or_default();
+    json!({
+        "query": query,
+        "found": true,
+        "riotId": format!("{}#{}", text("gameName"), text("tagLine")),
+        "puuid": text("puuid"),
+    })
+}
+
 /// A player's profile (as `lookup_player` shows it) by Riot ID or PUUID.
 async fn fetch_player_profile(app: &AppHandle, query: &str) -> Result<Value, String> {
     let riot = || app.state::<RiotState>();
@@ -1485,8 +1808,22 @@ async fn fetch_player_profile(app: &AppHandle, query: &str) -> Result<Value, Str
 
 async fn lookup_player(app: &AppHandle, query: &str) -> Value {
     match fetch_player_profile(app, query).await {
-        Ok(profile) => text_result(&profile, false),
+        Ok(mut profile) => {
+            mark_rr(&mut profile["recentMatches"]);
+            text_result(&profile, false)
+        }
         Err(message) => text_result(&json!(message), true),
+    }
+}
+
+/// Swaps each row's numeric `rrEarned` for a coloured `rr` ("🟢 +26") once
+/// nothing else needs the number.
+fn mark_rr(rows: &mut Value) {
+    for row in rows.as_array_mut().into_iter().flatten() {
+        if let Some(row) = row.as_object_mut() {
+            let rr = row.remove("rrEarned").and_then(|rr| rr.as_i64());
+            row.insert("rr".into(), rr_mark(rr).map(Value::String).unwrap_or(Value::Null));
+        }
     }
 }
 
@@ -1556,21 +1893,27 @@ async fn lookup_in_turn(app: &AppHandle, queries: &[String]) -> Vec<Result<Value
 fn player_profile(riot_id: &str, puuid: &str, reply: Value) -> Value {
     let profile = reply.get("profile").cloned().unwrap_or(Value::Null);
     let ranked = |value: Option<&Value>| value.and_then(Value::as_u64).filter(|tier| *tier > 0);
+    // One readable row per match: the id to open it with, the mode, and RR and
+    // ranks only where the match was competitive.
     let matches: Vec<Value> = profile
         .get("matches")
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
         .map(|game| {
-            let mut game = game.clone();
-            for (key, named) in [("tierBefore", "rankBefore"), ("tierAfter", "rankAfter")] {
-                if let Some(tier) = ranked(game.get(key)) {
-                    game[named] = json!(rank_label(tier));
-                }
-            }
-            game
+            json!({
+                "matchId": game.get("matchId"),
+                "mode": super::bot_template::mode_label_public(
+                    game.get("queueId").and_then(Value::as_str).unwrap_or_default(),
+                ),
+                "startedAtMillis": game.get("startMillis"),
+                "rrEarned": game.get("rrEarned"),
+                "rankBefore": ranked(game.get("tierBefore")).map(rank_label),
+                "rankAfter": rank_move(ranked(game.get("tierBefore")), ranked(game.get("tierAfter"))),
+            })
         })
         .collect();
+    let matches = numbered(matches);
     json!({
         "riotId": riot_id,
         "puuid": puuid,
@@ -1615,6 +1958,7 @@ fn player_overview(career: Value, region: Option<&str>) -> Value {
             })
         })
         .collect();
+    let recent = numbered(recent);
     let current_season = career.get("currentSeasonId").and_then(Value::as_str).unwrap_or_default();
     let seasons: Vec<&Value> = career
         .get("competitiveSeasons")
@@ -1681,6 +2025,9 @@ fn player_overview(career: Value, region: Option<&str>) -> Value {
             _ => (up, down),
         }
     });
+    let recent_games = recent.len();
+    let mut recent = Value::Array(recent);
+    mark_rr(&mut recent);
     json!({
         "riotId": career.get("riotId"),
         "puuid": career.get("puuid"),
@@ -1697,7 +2044,7 @@ fn player_overview(career: Value, region: Option<&str>) -> Value {
             "seasonId": season,
         })),
         "recentCompetitiveSummary": {
-            "games": recent.len(),
+            "games": recent_games,
             "rrGained": gains,
             "rrLost": losses,
             "netRr": rr_change,
@@ -1725,6 +2072,25 @@ fn profile_summaries(profiles: Option<&Value>) -> Value {
 }
 
 /// Catalog lookups the store reply needs: (pointer to the id, catalog path).
+/// The accessory shop mixes item kinds; the reward's item type picks the
+/// valorant-api.com endpoint (as in the Store page) and the label shown.
+/// Buddies and sprays are sold as levels.
+const ACCESSORY_TYPES: [(&str, &str, &str); 6] = [
+    ("d5f120f8-ff8c-4aac-92ea-f2b5acbe9475", "sprays", "Spray"),
+    ("290f8769-97c6-492a-a1a8-caacf3d5b325", "sprays/levels", "Spray"),
+    ("3f296c07-64c3-494c-923b-fe692a4fa1bd", "playercards", "Player card"),
+    ("dd3bf334-87f3-40bd-b043-682a57a8dc3a", "buddies/levels", "Gun buddy"),
+    ("de7caa6b-adf7-4588-bbd1-143831e786c6", "playertitles", "Player title"),
+    ("03a572de-4234-31ed-d344-ababa488f981", "flex", "Flex"),
+];
+
+fn accessory_type(item_type_id: &str) -> Option<(&'static str, &'static str)> {
+    ACCESSORY_TYPES
+        .iter()
+        .find(|(id, _, _)| id.eq_ignore_ascii_case(item_type_id))
+        .map(|(_, path, kind)| (*path, *kind))
+}
+
 fn store_name_targets(store: &Value) -> Vec<(String, String)> {
     let mut targets = Vec::new();
     for (list, item) in [("/daily/offers", "itemId"), ("/nightMarket/offers", "itemId")] {
@@ -1743,7 +2109,39 @@ fn store_name_targets(store: &Value) -> Vec<(String, String)> {
             }
         }
     }
+    if let Some(offers) = store.pointer("/accessory/offers").and_then(Value::as_array) {
+        for (index, offer) in offers.iter().enumerate() {
+            let text = |key: &str| offer.get(key).and_then(Value::as_str).unwrap_or_default();
+            if let (Some((path, _)), id) = (accessory_type(text("itemTypeId")), text("itemId")) {
+                if !id.is_empty() {
+                    targets.push((format!("/accessory/offers/{index}"), format!("{path}/{id}")));
+                }
+            }
+        }
+    }
     targets
+}
+
+/// An item's English name from valorant-api.com. Buddy and spray levels carry
+/// internal names ("AggrobotSkateboard"), so they take their parent's name
+/// ("Cruiser Buddy") from the session-cached catalog.
+async fn item_name(path: String) -> Option<String> {
+    for (level, catalog) in [("buddies/levels/", "buddies"), ("sprays/levels/", "sprays")] {
+        if let Some(id) = path.strip_prefix(level) {
+            let catalog = public_catalog(catalog).await;
+            let mut names = super::mcp_cosmetics::catalog_names(catalog.as_deref());
+            if let Some(name) = names.remove(&id.to_ascii_lowercase()).filter(|name| !name.is_empty()) {
+                return Some(name);
+            }
+        }
+    }
+    let body = fetch_public_json(&format!("https://valorant-api.com/v1/{path}?language=en-US")).await?;
+    body.pointer("/data/displayName")
+        .or_else(|| body.pointer("/data/titleText"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .map(str::to_owned)
 }
 
 /// Adds a `name` next to skin and bundle ids. Missing names are left out.
@@ -1754,15 +2152,7 @@ async fn with_item_names(mut store: Value) -> Value {
     paths.dedup();
     let mut workers = tokio::task::JoinSet::new();
     for path in paths {
-        workers.spawn(async move {
-            let url = format!("https://valorant-api.com/v1/{path}?language=en-US");
-            let name = fetch_public_json(&url).await.and_then(|body| {
-                body.pointer("/data/displayName")
-                    .and_then(Value::as_str)
-                    .map(str::to_owned)
-            });
-            (path, name)
-        });
+        workers.spawn(async move { (path.clone(), item_name(path).await) });
     }
     let mut names = BTreeMap::new();
     let _ = tokio::time::timeout(NAME_LOOKUP_TIMEOUT, async {
@@ -1774,6 +2164,19 @@ async fn with_item_names(mut store: Value) -> Value {
     for (pointer, path) in targets {
         if let (Some(name), Some(Value::Object(entry))) = (names.get(&path), store.pointer_mut(&pointer)) {
             entry.insert("name".into(), json!(name));
+        }
+    }
+    // What each accessory is, known without a lookup.
+    if let Some(offers) = store.pointer_mut("/accessory/offers").and_then(Value::as_array_mut) {
+        for offer in offers {
+            let kind = offer
+                .get("itemTypeId")
+                .and_then(Value::as_str)
+                .and_then(accessory_type)
+                .map(|(_, kind)| kind);
+            if let (Some(kind), Some(entry)) = (kind, offer.as_object_mut()) {
+                entry.insert("kind".into(), json!(kind));
+            }
         }
     }
     if let Some(object) = store.as_object_mut() {
@@ -1915,6 +2318,11 @@ mod tests {
             "daily": { "offers": [{ "itemId": "a" }, { "itemId": "" }] },
             "nightMarket": { "offers": [{ "itemId": "b" }] },
             "featuredBundles": [{ "dataAssetId": "c" }, { "dataAssetId": "d" }],
+            "accessory": { "offers": [
+                { "itemId": "e", "itemTypeId": "DD3BF334-87F3-40BD-B043-682A57A8DC3A" },
+                { "itemId": "f", "itemTypeId": "de7caa6b-adf7-4588-bbd1-143831e786c6" },
+                { "itemId": "g", "itemTypeId": "unknown-type" },
+            ] },
         });
         assert_eq!(
             store_name_targets(&store),
@@ -1923,8 +2331,35 @@ mod tests {
                 ("/nightMarket/offers/0".into(), "weapons/skinlevels/b".into()),
                 ("/featuredBundles/0".into(), "bundles/c".into()),
                 ("/featuredBundles/1".into(), "bundles/d".into()),
+                ("/accessory/offers/0".into(), "buddies/levels/e".into()),
+                ("/accessory/offers/1".into(), "playertitles/f".into()),
             ]
         );
+        assert_eq!(accessory_type("d5f120f8-ff8c-4aac-92ea-f2b5acbe9475"), Some(("sprays", "Spray")));
+    }
+
+    #[test]
+    fn markers_colour_results_rr_ranks_and_parties() {
+        assert_eq!(result_mark(Some("loss")).as_deref(), Some("🔴 Loss"));
+        assert_eq!(result_mark(None), None);
+        let mut rows = json!([{ "rrEarned": 26 }, { "rrEarned": -15 }, { "rrEarned": null }]);
+        mark_rr(&mut rows);
+        assert_eq!(rows, json!([{ "rr": "🟢 +26" }, { "rr": "🔴 -15" }, { "rr": null }]));
+        assert_eq!(rank_move(Some(20), Some(19)).as_deref(), Some("⬇ Ascendant 1".replace("Ascendant 1", &rank_label(19)).as_str()));
+        assert_eq!(rank_move(Some(21), Some(21)).as_deref(), Some(rank_label(21)).as_deref());
+        let marks = party_marks(["a", "", "b", "a", "c", "b"].into_iter());
+        assert_eq!(marks, [Some("🔵 Party 1".into()), None, Some("🟠 Party 2".into()), Some("🔵 Party 1".into()), None, Some("🟠 Party 2".into())]);
+    }
+
+    #[test]
+    fn closing_the_riot_client_needs_the_user_to_have_asked() {
+        assert!(!user_asked(&json!({})));
+        assert!(!user_asked(&json!({ "userAsked": false, "closeGame": true })));
+        assert!(user_asked(&json!({ "userAsked": true })));
+        for name in ["close_riot_client", "restart_riot_client"] {
+            let tool = tool_list().into_iter().find(|tool| tool["name"] == name).unwrap();
+            assert_eq!(tool["inputSchema"]["required"], json!(["userAsked"]));
+        }
     }
 
     #[test]
@@ -1948,6 +2383,8 @@ mod tests {
                 "disable_party_link",
                 "open_riot_client",
                 "open_valorant",
+                "close_riot_client",
+                "restart_riot_client",
             ]
         );
         for tool in tool_list() {
@@ -1987,7 +2424,11 @@ mod tests {
     fn scoreboard_is_anonymized_and_ordered() {
         let agents = HashMap::from([("agent-a".to_string(), "Jett".to_string())]);
         let maps = HashMap::from([("/game/maps/ascent/ascent".to_string(), "Ascent".to_string())]);
-        let board = anonymized_scoreboard(&reduced_match(), &agents, &maps);
+        let board = anonymized_scoreboard(&reduced_match(), &agents, &maps, &BTreeMap::new(), false);
+        let named = anonymized_scoreboard(&reduced_match(), &agents, &maps, &BTreeMap::new(), true);
+        assert!(board["players"][1].get("riotId").is_none());
+        assert!(named["players"][1]["riotId"].as_str().is_some_and(|id| id.contains("#TAG")));
+        assert!(named["players"][0]["riotId"].as_str().is_some());
         let text = board.to_string();
         for secret in ["puuid", "Name-", "party-", "TAG"] {
             assert!(!text.contains(secret), "{secret} leaked: {text}");
@@ -2005,7 +2446,7 @@ mod tests {
         assert_eq!(board["players"][0]["rank"], "Ascendant 1");
         assert_eq!(board["players"][0]["adr"], 150.0);
         assert_eq!(board["map"], "Ascent");
-        assert_eq!(board["result"], "win");
+        assert_eq!(board["result"], "🟢 Win");
         assert_eq!(board["lengthMinutes"], 30);
     }
 
@@ -2014,7 +2455,7 @@ mod tests {
         let line = own_match_summary(&reduced_match(), &HashMap::new(), &HashMap::new());
         assert_eq!(line["map"], "Ascent");
         assert_eq!(line["score"], "13-11");
-        assert_eq!(line["result"], "win");
+        assert_eq!(line["result"], "🟢 Win");
         assert_eq!(line["acs"], 250.0);
         assert!(!line.to_string().contains("puuid"));
     }
@@ -2030,11 +2471,19 @@ mod tests {
             ],
             "requests": [{ "puuid": "p3", "displayName": "Req#3", "direction": "incoming" }],
         });
-        let summary = friend_summaries(reply);
+        let maps = HashMap::from([("bonsai".to_string(), "Split".to_string())]);
+        let summary = friend_summaries(reply.clone(), "", &maps);
         let text = summary.to_string();
-        assert!(!text.contains("p1") && !text.contains("party-x") && !text.contains("secret note"));
+        assert!(!text.contains("\"p1\"") && !text.contains("party-x"));
+        // The player's own notes are shown and searchable.
+        assert_eq!(summary["friends"][1]["note"], "secret note");
+        let found = friend_summaries(reply.clone(), "SECRET", &maps);
+        assert_eq!(found["total"], 1);
+        assert_eq!(found["friends"][0]["riotId"], "Off#1");
+        assert_eq!(friend_summaries(reply, "on#2", &maps)["total"], 1);
         assert_eq!(summary["friends"][0]["riotId"], "On#2");
-        assert_eq!(summary["friends"][0]["valorant"]["map"], "Bonsai");
+        assert_eq!(summary["friends"][0]["valorant"]["map"], "Split");
+        assert_eq!(summary["friends"][0]["valorant"]["queue"], "Competitive");
         assert_eq!(summary["friends"][0]["valorant"]["score"], "5-3");
         assert_eq!(summary["online"], 1);
         assert_eq!(summary["requests"][0]["riotId"], "Req#3");
@@ -2049,8 +2498,12 @@ mod tests {
         let profile = player_profile("Them#EU1", "p", reply);
         assert_eq!(profile["currentRank"]["name"], "Ascendant 1");
         assert_eq!(profile["peakRank"]["name"], "Immortal 1");
-        assert_eq!(profile["recentMatches"][0]["rankAfter"], "Ascendant 1");
-        assert!(profile["recentMatches"][1].get("rankBefore").is_none());
+        assert_eq!(profile["recentMatches"][0]["rankAfter"], "⬆ Ascendant 1");
+        assert_eq!(profile["recentMatches"][0]["#"], 1);
+        assert_eq!(profile["recentMatches"][0]["matchId"], "m");
+        assert_eq!(profile["recentMatches"][1]["#"], 2);
+        assert!(profile["recentMatches"][1]["rankBefore"].is_null());
+        assert!(profile["recentMatches"][0].get("tierAfter").is_none());
     }
 
     #[test]
@@ -2127,5 +2580,15 @@ mod tests {
         assert_eq!(row["recentNetRr"], 5);
         let empty = comparison_row(&json!({ "riotId": "New#1" }));
         assert!(empty["actRecord"].is_null() && empty["recentNetRr"].is_null());
+    }
+
+    #[test]
+    fn resolved_rows_show_riot_id_and_puuid_or_the_reason() {
+        let found = resolved_row("me#na1", &json!({ "success": true, "puuid": "p1", "gameName": "Me", "tagLine": "NA1" }));
+        assert_eq!(found["riotId"], "Me#NA1");
+        assert_eq!(found["puuid"], "p1");
+        let missing = resolved_row("Nobody#000", &json!({ "success": false, "code": "playerNotFound", "error": "No Valorant player matched that lookup." }));
+        assert_eq!(missing["found"], false);
+        assert_eq!(missing["note"], "No Valorant player matched that lookup.");
     }
 }

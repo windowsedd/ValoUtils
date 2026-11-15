@@ -47,6 +47,7 @@ pub(crate) fn ensure_chat_forwarders(app: &AppHandle) {
                             if let Err(error) = crate::match_chat_history::capture(
                                 &message.owner_puuid,
                                 std::slice::from_ref(&payload),
+                                crate::match_chat_history::current_roster(&message_app).as_ref(),
                                 &message_app.state::<ConfigStore>(),
                             ) {
                                 log::warn!("{error}");
@@ -1556,6 +1557,7 @@ pub async fn chat_get(app: AppHandle, riot: State<'_, RiotState>) -> Result<Valu
         let (saved_matches, saved_history_error) = match crate::match_chat_history::capture(
             &own_puuid,
             if match_ended { &[] } else { &messages },
+            crate::match_chat_history::current_roster(&app).as_ref(),
             &app.state::<ConfigStore>(),
         ) {
             Ok(matches) => (matches, None),

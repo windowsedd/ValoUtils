@@ -10,8 +10,8 @@ const ACRONYMS: [&str; 12] = ["rr", "xp", "puuid", "id", "acs", "adr", "kd", "dp
 
 /// Fields that identify a row or answer the question, shown first. Everything
 /// else follows alphabetically (serde_json keeps object keys sorted here).
-const LEADING: [&str; 14] = [
-    "player", "riotId", "name", "tier", "agent", "map", "mode", "result", "score",
+const LEADING: [&str; 16] = [
+    "#", "matchId", "player", "riotId", "name", "tier", "agent", "map", "mode", "result", "score",
     "rank", "currentRank", "currentRr", "code", "online",
 ];
 

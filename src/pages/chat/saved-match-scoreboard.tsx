@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { LuCheck, LuChevronDown, LuLink, LuTable2 } from "react-icons/lu";
+import { LuCheck, LuChevronDown, LuLink, LuRotateCw, LuTable2 } from "react-icons/lu";
 import { Button } from "@/components/ui/button";
 import { matchLink } from "@/util/deep-links";
 import { MatchScoreboard, useMatchAssets, useMatchDetails } from "@/components/match-scoreboard";
@@ -92,6 +92,12 @@ export const SavedMatchScoreboard = ({ matchUuid, ownerPuuid }: { matchUuid: str
 						highlightPuuid={ownerPuuid ?? undefined}
 						copyPuuid
 					/>
+					{errors[matchUuid] && (
+						<Button size="sm" variant="outline" className="ml-2" onClick={() => ensure(matchUuid)}>
+							<LuRotateCw aria-hidden="true" />
+							{t("chat.retryHistory")}
+						</Button>
+					)}
 				</div>
 			)}
 		</section>

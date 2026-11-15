@@ -671,7 +671,7 @@ pub async fn match_details(
                 reply["matchId"] = json!(match_id);
                 reply
             }
-            None => json!({ "success": false, "matchId": match_id, "error": e }),
+            None => json!({ "success": false, "matchId": match_id, "code": e.code(), "error": e }),
         },
     })
 }
