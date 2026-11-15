@@ -1,7 +1,7 @@
 {
 	"$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
 	"productName": "ValoUtils",
-	"version": "1.0.15",
+	"version": "1.0.16",
 	"identifier": "com.windowsedd.valoutils",
 	"build": {
 		"frontendDist": "../dist",
@@ -50,7 +50,9 @@
 	"plugins": {
 		"deep-link": {
 			"desktop": {
-				"schemes": ["valoutils"]
+				"schemes": [
+					"valoutils"
+				]
 			}
 		},
 		"updater": {
