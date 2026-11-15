@@ -102,6 +102,79 @@ pub struct SavedMatch {
     /// Filled once from match-details after the match ends; absent until then.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     details: Option<MatchDetails>,
+    /// Riot ID and agent of each speaker, taken from the Live Game roster
+    /// when their line was captured, so saved chat names them without a
+    /// match-details request (or a signed-in account).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    speakers: Vec<SavedSpeaker>,
+}
+
+/// The Live Game roster for one match, as captured lines are matched against it.
+#[derive(Clone, Debug, Default)]
+pub struct LiveRoster {
+    match_uuid: String,
+    players: Vec<SavedSpeaker>,
+}
+
+/// Players of a pregame or coregame Live Game snapshot. Incognito players keep
+/// their agent but not their name, as Riot hides it in game.
+fn live_roster(snapshot: &Value) -> Option<LiveRoster> {
+    if !matches!(snapshot.get("state").and_then(Value::as_str), Some("pregame" | "coregame")) {
+        return None;
+    }
+    let match_uuid = snapshot.pointer("/match/id")?.as_str()?.to_ascii_lowercase();
+    if !is_match_uuid(&match_uuid) {
+        return None;
+    }
+    let text = |player: &Value, key: &str| {
+        player.get(key).and_then(Value::as_str).unwrap_or_default().trim().to_string()
+    };
+    let players = snapshot
+        .get("players")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|player| {
+            let puuid = text(player, "puuid").to_ascii_lowercase();
+            if puuid.is_empty() {
+                return None;
+            }
+            let incognito = player.get("incognito").and_then(Value::as_bool).unwrap_or(false);
+            let (game_name, tag) = (text(player, "gameName"), text(player, "tagLine"));
+            let name = match (incognito || game_name.is_empty(), tag.is_empty()) {
+                (true, _) => String::new(),
+                (false, true) => game_name,
+                (false, false) => format!("{game_name}#{tag}"),
+            };
+            let agent_id = text(player, "characterId").to_ascii_lowercase();
+            (!name.is_empty() || !agent_id.is_empty()).then_some(SavedSpeaker { puuid, name, agent_id })
+        })
+        .collect();
+    Some(LiveRoster { match_uuid, players })
+}
+
+/// The roster Live Game last resolved, while it is recent.
+pub fn current_roster(app: &tauri::AppHandle) -> Option<LiveRoster> {
+    use tauri::Manager;
+    live_roster(&app.state::<crate::commands::live::LiveCache>().recent_snapshot()?)
+}
+
+/// Adds or fills in one speaker; known values are never blanked.
+fn remember_speaker(speakers: &mut Vec<SavedSpeaker>, player: &SavedSpeaker) -> bool {
+    let Some(known) = speakers.iter_mut().find(|known| known.puuid == player.puuid) else {
+        speakers.push(player.clone());
+        return true;
+    };
+    let mut changed = false;
+    if !player.name.is_empty() && known.name != player.name {
+        known.name = player.name.clone();
+        changed = true;
+    }
+    if !player.agent_id.is_empty() && known.agent_id != player.agent_id {
+        known.agent_id = player.agent_id.clone();
+        changed = true;
+    }
+    changed
 }
 
 /// What the history picker shows for a saved match, kept in the JSON so the
@@ -258,7 +331,7 @@ fn match_uuid(cid: &str) -> Option<String> {
 }
 
 impl Archive {
-    fn capture(&mut self, owner: &str, messages: &[Value]) -> bool {
+    fn capture(&mut self, owner: &str, messages: &[Value], roster: Option<&LiveRoster>) -> bool {
         if owner.is_empty() {
             return false;
         }
@@ -281,7 +354,21 @@ impl Archive {
                     updated_at: 0,
                     messages: Vec::new(),
                     details: None,
+                    speakers: Vec::new(),
                 });
+            let speaker = roster
+                .filter(|roster| roster.match_uuid == saved.match_uuid)
+                .and_then(|roster| {
+                    let sender = message.get("sender").and_then(Value::as_str).map(sender_root)?;
+                    roster.players.iter().find(|player| player.puuid == sender)
+                });
+            if let Some(speaker) = speaker {
+                changed |= remember_speaker(&mut saved.speakers, speaker);
+                if !speaker.name.is_empty() && !self.names.contains_key(&speaker.puuid) {
+                    self.names.insert(speaker.puuid.clone(), speaker.name.clone());
+                    changed = true;
+                }
+            }
             let mut message = message.clone();
             if let Some(object) = message.as_object_mut() {
                 object.remove("_raw");
@@ -414,12 +501,13 @@ fn update(
     path: &Path,
     owner: &str,
     messages: &[Value],
+    roster: Option<&LiveRoster>,
     enabled: impl FnOnce() -> bool,
 ) -> Result<Vec<SavedMatch>, String> {
     let _guard = FILE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let mut archive = read(path)?;
     // Check under FILE_LOCK, so an in-flight capture cannot undo Clear history.
-    if enabled() && archive.capture(owner, messages) {
+    if enabled() && archive.capture(owner, messages, roster) {
         write(path, &archive)?;
     }
     let mut matches: Vec<_> = archive
@@ -436,15 +524,19 @@ fn update(
     Ok(matches)
 }
 
+/// Saves captured Team/All lines, naming their speakers from `roster`
+/// ([`current_roster`]) when it belongs to the same match.
 pub fn capture(
     owner: &str,
     messages: &[Value],
+    roster: Option<&LiveRoster>,
     config: &crate::store::ConfigStore,
 ) -> Result<Vec<SavedMatch>, String> {
     update(
         &crate::store::user_data_dir().join("match-chat-history.json"),
         owner,
         messages,
+        roster,
         || config.get("saveMatchChatHistory") == Some(serde_json::json!(true)),
     )
 }
@@ -618,11 +710,68 @@ mod tests {
             "body": id, "sender": "player", "timestamp": "1", "scope": "match"})
     }
 
+    const SPEAKER: &str = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+    fn snapshot(state: &str, match_id: &str, players: Value) -> Value {
+        json!({"success": true, "state": state, "match": {"id": match_id}, "players": players})
+    }
+    fn spoken_by(id: &str, sender: &str) -> Value {
+        let mut message = line("all", id);
+        message["sender"] = json!(format!("{sender}@ap1.pvp.net"));
+        message
+    }
+
+    #[test]
+    fn live_roster_keeps_names_and_agents_but_hides_incognito_names() {
+        let roster = live_roster(&snapshot("coregame", &MATCH.to_uppercase(), json!([
+            {"puuid": SPEAKER.to_uppercase(), "gameName": "Duo", "tagLine": "NA1", "characterId": "AGENT-1"},
+            {"puuid": "p2", "gameName": "Hidden", "tagLine": "X", "incognito": true, "characterId": "agent-2"},
+            {"puuid": "p3", "gameName": "", "characterId": null},
+        ])))
+        .unwrap();
+        assert_eq!(roster.match_uuid, MATCH);
+        assert_eq!(roster.players, vec![
+            SavedSpeaker { puuid: SPEAKER.into(), name: "Duo#NA1".into(), agent_id: "agent-1".into() },
+            SavedSpeaker { puuid: "p2".into(), name: String::new(), agent_id: "agent-2".into() },
+        ]);
+        assert!(live_roster(&snapshot("party", MATCH, json!([]))).is_none());
+        assert!(live_roster(&snapshot("coregame", "not-a-match", json!([]))).is_none());
+    }
+
+    #[test]
+    fn capture_saves_speaker_names_and_agents_from_the_same_match_only() {
+        let roster = live_roster(&snapshot("coregame", MATCH, json!([
+            {"puuid": SPEAKER, "gameName": "Duo", "tagLine": "NA1", "characterId": ""},
+            {"puuid": "silent", "gameName": "Quiet", "tagLine": "1", "characterId": "agent-9"},
+        ])))
+        .unwrap();
+        let mut archive = Archive::default();
+        assert!(archive.capture("me", &[spoken_by("a", SPEAKER)], Some(&roster)));
+        let saved = &archive.accounts["me"][MATCH];
+        assert_eq!(saved.speakers, vec![SavedSpeaker { puuid: SPEAKER.into(), name: "Duo#NA1".into(), agent_id: String::new() }]);
+        assert_eq!(archive.names[SPEAKER], "Duo#NA1");
+
+        // A later roster fills the agent in on a line already saved, without blanking the name.
+        let mut later = roster.clone();
+        later.players[0] = SavedSpeaker { puuid: SPEAKER.into(), name: String::new(), agent_id: "agent-1".into() };
+        assert!(archive.capture("me", &[spoken_by("a", SPEAKER)], Some(&later)));
+        assert_eq!(archive.accounts["me"][MATCH].speakers[0].name, "Duo#NA1");
+        assert_eq!(archive.accounts["me"][MATCH].speakers[0].agent_id, "agent-1");
+        assert!(!archive.capture("me", &[spoken_by("a", SPEAKER)], Some(&later)));
+
+        // Another match's roster is never applied.
+        let mut other = roster.clone();
+        other.match_uuid = "99999999-2222-3333-4444-555555555555".into();
+        let mut fresh = Archive::default();
+        fresh.capture("me", &[spoken_by("a", SPEAKER)], Some(&other));
+        assert!(fresh.accounts["me"][MATCH].speakers.is_empty());
+        assert!(fresh.names.is_empty());
+    }
+
     #[test]
     fn groups_team_and_all_by_match_uuid_without_duplicates() {
         let mut archive = Archive::default();
-        archive.capture("me", &[line("blue", "a"), line("all", "b")]);
-        archive.capture("me", &[line("blue", "a")]);
+        archive.capture("me", &[line("blue", "a"), line("all", "b")], None);
+        archive.capture("me", &[line("blue", "a")], None);
         assert_eq!(archive.accounts["me"].len(), 1);
         assert_eq!(archive.accounts["me"][MATCH].messages.len(), 2);
         assert_eq!(archive.accounts["me"][MATCH].match_uuid, MATCH);
@@ -638,18 +787,18 @@ mod tests {
             "invalid-blue@ares-coregame.ap",
             "11111111-2222-3333-4444-555555555555-blue@ares-pregame.ap",
         ] {
-            archive.capture("me", &[json!({"id": "a", "conversationId": cid})]);
+            archive.capture("me", &[json!({"id": "a", "conversationId": cid})], None);
         }
         assert!(archive.accounts.is_empty());
-        archive.capture("", &[line("blue", "a")]);
+        archive.capture("", &[line("blue", "a")], None);
         assert!(archive.accounts.is_empty());
     }
 
     #[test]
     fn saved_json_survives_reload_and_keeps_accounts_separate() {
         let mut archive = Archive::default();
-        archive.capture("me", &[line("blue", "a")]);
-        archive.capture("other", &[line("red", "b")]);
+        archive.capture("me", &[line("blue", "a")], None);
+        archive.capture("other", &[line("red", "b")], None);
         let restored: Archive =
             serde_json::from_str(&serde_json::to_string(&archive).unwrap()).unwrap();
         assert_eq!(restored.accounts["me"][MATCH].messages[0]["body"], "a");
@@ -661,11 +810,11 @@ mod tests {
         let mut archive = Archive::default();
         let mut first = line("blue", "a");
         first["senderName"] = json!("");
-        archive.capture("me", &[first]);
+        archive.capture("me", &[first], None);
         let mut alias = line("blue", "a");
         alias["conversationId"] = json!(format!("{MATCH}-blue@ares-coregame.ap"));
         alias["senderName"] = json!("Name#TAG");
-        archive.capture("me", &[alias]);
+        archive.capture("me", &[alias], None);
         assert_eq!(archive.accounts["me"][MATCH].messages.len(), 1);
         assert_eq!(
             archive.accounts["me"][MATCH].messages[0]["senderName"],
@@ -678,21 +827,21 @@ mod tests {
         let dir =
             std::env::temp_dir().join(format!("valoutils-chat-history-{}", std::process::id()));
         let path = dir.join("history.json");
-        assert!(update(&path, "me", &[line("blue", "a")], || false)
+        assert!(update(&path, "me", &[line("blue", "a")], None, || false)
             .unwrap()
             .is_empty());
         assert!(!path.exists());
-        update(&path, "me", &[line("blue", "a")], || true).unwrap();
+        update(&path, "me", &[line("blue", "a")], None, || true).unwrap();
         assert_eq!(
-            update(&path, "me", &[line("all", "b")], || false).unwrap()[0]
+            update(&path, "me", &[line("all", "b")], None, || false).unwrap()[0]
                 .messages
                 .len(),
             1
         );
-        assert!(update(&path, "other", &[], || false).unwrap().is_empty());
+        assert!(update(&path, "other", &[], None, || false).unwrap().is_empty());
         assert!(!path.with_extension("json.tmp").exists());
         std::fs::write(&path, "broken JSON").unwrap();
-        assert!(update(&path, "me", &[line("blue", "a")], || true).is_err());
+        assert!(update(&path, "me", &[line("blue", "a")], None, || true).is_err());
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "broken JSON");
         std::fs::remove_file(path).unwrap();
         std::fs::remove_dir(dir).unwrap();
@@ -739,7 +888,7 @@ mod tests {
         let dir =
             std::env::temp_dir().join(format!("valoutils-chat-details-{}", std::process::id()));
         let path = dir.join("history.json");
-        update(&path, "me", &[line("blue", "a")], || true).unwrap();
+        update(&path, "me", &[line("blue", "a")], None, || true).unwrap();
         assert_eq!(
             lookup_details(&path, "me", MATCH).unwrap(),
             DetailsLookup::Needed
@@ -756,7 +905,7 @@ mod tests {
             DetailsLookup::Saved(details.clone())
         );
         // A later chat capture keeps the details.
-        let matches = update(&path, "me", &[line("all", "b")], || true).unwrap();
+        let matches = update(&path, "me", &[line("all", "b")], None, || true).unwrap();
         assert_eq!(matches[0].details.as_ref(), Some(&details));
         assert_eq!(matches[0].messages.len(), 2);
         std::fs::remove_file(&path).unwrap();
@@ -770,7 +919,7 @@ mod tests {
         let path = dir.join("history.json");
         let mut spoken = line("blue", "a");
         spoken["sender"] = json!("THEM@ap.pvp.net");
-        update(&path, "me", &[spoken], || true).unwrap();
+        update(&path, "me", &[spoken], None, || true).unwrap();
         let mut document = document("Blue");
         document["players"][1]["gameName"] = json!("Enemy");
         document["players"][1]["tagLine"] = json!("NA1");
@@ -822,7 +971,7 @@ mod tests {
         };
         // A capture was queued while enabled, but Clear disabled it before its write.
         enabled.store(false, Ordering::SeqCst);
-        assert!(update(&path, "me", &[line("blue", "a")], current_setting)
+        assert!(update(&path, "me", &[line("blue", "a")], None, current_setting)
             .unwrap()
             .is_empty());
         assert!(!path.exists());
@@ -835,7 +984,7 @@ mod tests {
         let mut archive = Archive::default();
         let mut spoken = line("blue", "a");
         spoken["sender"] = json!(format!("{SPEAKER}@ap1.pvp.net"));
-        archive.capture(OWNER, &[spoken]);
+        archive.capture(OWNER, &[spoken], None);
         assert_eq!(archive.unnamed(), [OWNER, SPEAKER]);
         archive.names.extend(names_from_reply(&json!([
             { "Subject": OWNER.to_uppercase(), "GameName": "Me", "TagLine": "NA1" },

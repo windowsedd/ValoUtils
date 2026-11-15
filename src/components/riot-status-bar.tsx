@@ -7,6 +7,7 @@ import { ParsedSettingsViewer } from "@/components/parsed-settings-viewer";
 import { useCallback, useEffect, useState } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { RiotClientActions } from "@/components/riot-client-actions";
 import { LuChevronDown, LuEye, LuSmartphone, LuTriangleAlert, LuUser, LuUserX } from "react-icons/lu";
 import { useTranslation } from "react-i18next";
 
@@ -283,6 +284,19 @@ const RiotStatusBar = ({ compact = false }: RiotStatusBarProps) => {
 							<LuTriangleAlert className="mt-px shrink-0" aria-hidden="true" />
 							<span>{presence.lastWarning}</span>
 						</p>
+					)}
+
+					{info.status === "online" && (
+						<div className="mt-1 border-t border-(--line) px-1 pt-2.5 pb-1">
+							<p className="px-1 pb-1.5 text-[10px] font-medium tracking-[0.08em] text-(--text-muted) uppercase">{t("riotClient.section")}</p>
+							<RiotClientActions
+								from="statusMenu"
+								layout="menu"
+								// Already on the relay: a restart would change nothing.
+								actions={presence && presence.activeConnections > 0 ? ["close"] : ["restart", "close"]}
+								onDone={() => setMenuOpen(false)}
+							/>
+						</div>
 					)}
 				</PopoverContent>
 			</Popover>

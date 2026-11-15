@@ -70,13 +70,37 @@
     "launchWithRelay": "Launch with XMPP relay",
     "launching": "Launching…",
     "launchFailed": "Launch failed.",
-    "riotClientRunningHint": "Riot Client is already open. Close it completely, including the tray icon, then launch again.",
+    "riotClientRunningHint": "Riot Client is open without ValoUtils' relay. VALORANT can still start from it; restart it through the relay for chat, presence and the bot.",
+    "launchValorant": "Launch VALORANT",
+    "launchFromClient": "VALORANT is starting from the open Riot Client.",
+    "launchAfterSignIn": "Sign in to the Riot Client; VALORANT starts right after.",
     "launchNormal": "Normal startup",
     "rateLimited": "Riot is rate-limiting requests. Try again in about {{seconds}}s.",
     "playing": "Playing",
     "playingHint": "Valorant is running. ValoUtils picks the session up once Riot Client finishes signing in.",
     "openRiotClient": "Open Riot Client",
     "openRiotClientHint": "Starts only the Riot Client, through the XMPP relay, without launching Valorant."
+  },
+  "riotClient": {
+    "section": "Riot Client",
+    "restart": "Restart through relay",
+    "restarting": "Restarting…",
+    "restartHint": "Closes the Riot Client and opens it again through ValoUtils' XMPP relay, so chat, presence and bot commands work. VALORANT is relaunched if it was running.",
+    "close": "Close Riot Client",
+    "closing": "Closing…",
+    "closeHint": "Force-closes the Riot Client, like ending it in Task Manager.",
+    "confirmCloseTitle": "Close Riot Client?",
+    "confirmCloseBody": "ValoUtils loses the Riot session until the client is opened again: chat, Live Game and the bot stop until then.",
+    "confirmTitle": "Close VALORANT too?",
+    "confirmBody": "VALORANT is running. Closing the Riot Client closes the game as well, and a match in progress is abandoned, which can bring a penalty.",
+    "confirmClose": "Close VALORANT and Riot Client",
+    "confirmRestart": "Close VALORANT and restart",
+    "closed": "Riot Client closed.",
+    "closedBoth": "VALORANT and Riot Client closed.",
+    "notRunning": "Riot Client wasn't running.",
+    "restarted": "Riot Client restarted through the XMPP relay.",
+    "restartedGame": "Riot Client restarted through the XMPP relay. VALORANT is launching again.",
+    "failed": "Could not close the Riot Client."
   },
   "riotStatus": {
     "connecting": "Connecting...",
@@ -163,7 +187,9 @@
     "profileNoMatches": "No recent matches found for this mode",
     "profileModeFilter": "Filter matches by mode",
     "profileAllModes": "All Modes",
-    "profileUnknownMap": "Unknown Map"
+    "profileUnknownMap": "Unknown Map",
+    "watch": "Watch: notify me when their match starts and ends",
+    "unwatch": "Stop watching"
   },
   "tools": {
     "title": "Tools",
@@ -558,6 +584,7 @@
     "partyCodeJoinLabel": "Party code to join",
     "partyJoin": "Join",
     "partyJoined": "Joined party {{code}}.",
+    "partyCodeNeedsGame": "Open VALORANT first: party codes and links only work while the game is running.",
     "partyCodeLogin": "Sign in to the Riot Client first.",
     "partyCodeFailed": "Riot didn't accept that. Try again.",
     "partyLink": "Party link",
@@ -937,7 +964,14 @@
     "aboutTitle": "About this spec",
     "aboutBody": "The Riot Client is built from plugins, and each one registers its own endpoints on the local HTTP server — roughly 790 paths across 96 groups. Most are undocumented internals that Riot can change or remove in any patch. ValoUtils itself uses only a handful of them."
   },
+  "encounters": {
+    "with": "With you {{count}}×",
+    "against": "Against you {{count}}×",
+    "scope": "in your last {{count}} matches",
+    "label": "Played before: {{detail}}"
+  },
   "matches": {
+    "party": "Party {{number}}",
     "title": "Matches",
     "count": "{{count}} games",
     "recentMatches": "Recent matches",
@@ -1072,6 +1106,8 @@
   "mcp": {
     "section": "AI agents (MCP)",
     "enable": "Let AI agents use ValoUtils",
+    "showNames": "Include player names in match tools",
+    "showNamesDesc": "Agents see each player's Riot ID next to You / Ally / Enemy in live matches, scoreboards and round timelines. Players who hid their name stay hidden. Off keeps match tools anonymous.",
     "enableDesc": "Runs a local MCP server so Claude Code, Claude Desktop, Cursor and other agents can read your rank, matches, live match, store, battle pass and settings, look up players, and open Valorant. Only reachable from this PC, with a secret token.",
     "running": "Running at",
     "showToken": "Show token",

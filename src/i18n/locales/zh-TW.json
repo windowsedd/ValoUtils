@@ -70,13 +70,37 @@
 		"launchWithRelay": "使用 XMPP 轉送啟動",
 		"launching": "啟動中…",
 		"launchFailed": "啟動失敗。",
-		"riotClientRunningHint": "Riot Client 已在執行中。請完全關閉（包含系統列圖示）後再重新啟動。",
+		"riotClientRunningHint": "Riot Client 未透過 ValoUtils 中繼開啟。仍可直接啟動特戰英豪；若要使用聊天、狀態與機器人，請透過中繼重新啟動。",
+		"launchValorant": "啟動特戰英豪",
+		"launchFromClient": "正在從已開啟的 Riot Client 啟動特戰英豪。",
+		"launchAfterSignIn": "請登入 Riot Client，登入後會立即啟動特戰英豪。",
 		"launchNormal": "正常啟動",
 		"rateLimited": "Riot 暫時限制請求。請約 {{seconds}} 秒後再試。",
 		"playing": "遊戲中",
 		"playingHint": "特戰英豪正在執行。Riot Client 完成登入後，ValoUtils 會自動接上工作階段。",
 		"openRiotClient": "開啟 Riot Client",
 		"openRiotClientHint": "只透過 XMPP 中繼開啟 Riot Client，不啟動特戰英豪。"
+	},
+	"riotClient": {
+		"section": "Riot Client",
+		"restart": "透過中繼重新啟動",
+		"restarting": "正在重新啟動…",
+		"restartHint": "關閉 Riot Client，並透過 ValoUtils 的 XMPP 中繼重新開啟，讓聊天、狀態與機器人指令正常運作。若特戰英豪原本在執行，也會重新啟動。",
+		"close": "關閉 Riot Client",
+		"closing": "正在關閉…",
+		"closeHint": "強制關閉 Riot Client，效果如同在工作管理員中結束工作。",
+		"confirmCloseTitle": "要關閉 Riot Client 嗎？",
+		"confirmCloseBody": "在重新開啟用戶端之前，ValoUtils 會失去 Riot 工作階段，聊天、即時對戰與機器人都會停止運作。",
+		"confirmTitle": "也要關閉特戰英豪嗎？",
+		"confirmBody": "特戰英豪正在執行。關閉 Riot Client 也會關閉遊戲，進行中的對戰會視為中離，可能受到處罰。",
+		"confirmClose": "關閉特戰英豪與 Riot Client",
+		"confirmRestart": "關閉特戰英豪並重新啟動",
+		"closed": "已關閉 Riot Client。",
+		"closedBoth": "已關閉特戰英豪與 Riot Client。",
+		"notRunning": "Riot Client 原本就未執行。",
+		"restarted": "已透過 XMPP 中繼重新啟動 Riot Client。",
+		"restartedGame": "已透過 XMPP 中繼重新啟動 Riot Client，正在重新啟動特戰英豪。",
+		"failed": "無法關閉 Riot Client。"
 	},
 	"riotStatus": {
 		"connecting": "連線中...",
@@ -162,7 +186,9 @@
 		"profileNoMatches": "此模式沒有近期對戰",
 		"profileModeFilter": "依模式篩選對戰",
 		"profileAllModes": "所有模式",
-		"profileUnknownMap": "未知地圖"
+		"profileUnknownMap": "未知地圖",
+		"watch": "關注：對戰開始與結束時通知我",
+		"unwatch": "停止關注"
 	},
 	"tools": {
 		"title": "工具",
@@ -553,6 +579,7 @@
 		"partyCodeJoinLabel": "要加入的隊伍代碼",
 		"partyJoin": "加入",
 		"partyJoined": "已加入隊伍 {{code}}。",
+		"partyCodeNeedsGame": "請先開啟特戰英豪：只有在遊戲執行時才能使用隊伍代碼與連結。",
 		"partyCodeLogin": "請先登入 Riot Client。",
 		"partyCodeFailed": "Riot 未接受此操作，請再試一次。",
 		"partyLink": "隊伍連結",
@@ -925,7 +952,14 @@
 		"aboutTitle": "關於此規格",
 		"aboutBody": "Riot 客戶端由外掛組成，每個外掛都會在本機 HTTP 伺服器註冊自己的端點 — 共 96 個群組、約 790 個路徑。其中多數是未公開的內部 API，Riot 可能在任何版本更新中變更或移除。ValoUtils 只使用其中少數幾個。"
 	},
+	"encounters": {
+		"with": "同隊 {{count}} 次",
+		"against": "對手 {{count}} 次",
+		"scope": "（最近 {{count}} 場）",
+		"label": "曾經遇過：{{detail}}"
+	},
 	"matches": {
+		"party": "隊伍 {{number}}",
 		"title": "對戰紀錄",
 		"count": "{{count}} 場",
 		"recentMatches": "最近對戰",
@@ -1059,6 +1093,8 @@
 	"mcp": {
 		"section": "AI 代理 (MCP)",
 		"enable": "允許 AI 代理使用 ValoUtils",
+		"showNames": "在對戰工具中顯示玩家名稱",
+		"showNamesDesc": "代理程式會在即時對戰、記分板與回合時間軸中，於你 / 隊友 / 敵人旁看到每位玩家的 Riot ID。隱藏名稱的玩家仍會保持隱藏。關閉時對戰工具維持匿名。",
 		"enableDesc": "執行本機 MCP 伺服器，讓 Claude Code、Claude Desktop、Cursor 等代理讀取你的牌位、對戰、即時對戰、商店、通行證與設定，查詢玩家，並開啟特戰英豪。只能從這台電腦以秘密權杖存取。",
 		"running": "執行中：",
 		"showToken": "顯示權杖",

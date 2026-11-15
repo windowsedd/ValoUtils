@@ -28,7 +28,7 @@ import { useChatController } from "./chat/use-chat-controller";
 import { DUMMY_BOT_CID, useDummyBotChat } from "./chat/use-dummy-bot-chat";
 import valoUtilsIcon from "../../src-tauri/icons/icon.png";
 import { PlayerCardAvatar } from "./chat/player-card-avatar";
-import { matchOutcome, savedMatchList, savedMatchMessages, savedSpeakerRoster } from "./chat/saved-match-history";
+import { matchOutcome, savedMatchList, savedMatchMessages, savedMatchSpeakers, savedSpeakerRoster } from "./chat/saved-match-history";
 import { ChatHistoryPanel } from "./chat/chat-history-panel";
 import { SavedMatchScoreboard } from "./chat/saved-match-scoreboard";
 import { useSavedHistoryAccounts } from "./chat/use-saved-history-accounts";
@@ -118,8 +118,8 @@ const Chat = () => {
 		(historyOwner?.puuid === ownerPuuid && history.owner === ownerPuuid ? historyOwner.name : "");
 	const historyMessages = savedMatchMessages(savedMatch, historyRoom);
 	const savedRoster = useMemo(
-		() => savedSpeakerRoster(savedMatch?.details, history.names),
-		[savedMatch?.details, history.names],
+		() => savedSpeakerRoster(savedMatchSpeakers(savedMatch), history.names),
+		[savedMatch, history.names],
 	);
 	const [maps, setMaps] = useState<Map<string, MapAsset> | null>(null);
 	useEffect(() => {

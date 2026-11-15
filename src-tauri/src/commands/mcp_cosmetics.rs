@@ -84,7 +84,7 @@ pub(crate) fn equipped_skins(
 }
 
 /// Display names by UUID, including nested levels (buddies, sprays).
-fn catalog_names(catalog: Option<&Value>) -> HashMap<String, String> {
+pub(super) fn catalog_names(catalog: Option<&Value>) -> HashMap<String, String> {
     let mut names = HashMap::new();
     for item in catalog.and_then(|c| c.get("data")).and_then(Value::as_array).into_iter().flatten() {
         let name = text(item, "displayName").to_string();
@@ -258,8 +258,9 @@ fn timeline_summary(
     round: Option<u64>,
     agents: &HashMap<String, String>,
     weapons: &WeaponNames,
+    names: bool,
 ) -> Value {
-    let (labels, my_team) = player_labels(reduced);
+    let (labels, my_team) = player_labels(reduced, names);
     let agent_of: HashMap<String, String> = players(reduced)
         .into_iter()
         .map(|player| {
@@ -365,7 +366,8 @@ pub(super) async fn get_match_timeline(app: &AppHandle, match_id: &str, round: O
     }
     let timeline = reply.get("timeline").cloned().unwrap_or(Value::Null);
     let ((agents, _), weapon_catalog) = tokio::join!(content_names(), public_catalog("weapons"));
-    Ok(timeline_summary(&reduced, &timeline, round, &agents, &weapon_names(weapon_catalog.as_deref())))
+    let names = super::mcp::show_names(app);
+    Ok(timeline_summary(&reduced, &timeline, round, &agents, &weapon_names(weapon_catalog.as_deref()), names))
 }
 
 #[cfg(test)]
@@ -440,15 +442,15 @@ mod tests {
         ] });
         let agents = HashMap::from([("jett".to_string(), "Jett".to_string()), ("sage".to_string(), "Sage".to_string())]);
         let names = weapon_names(Some(&catalog()));
-        let summary = timeline_summary(&reduced, &timeline, None, &agents, &names);
+        let summary = timeline_summary(&reduced, &timeline, None, &agents, &names, false);
         assert_eq!(summary["rounds"][0]["winner"], "Your team");
         assert_eq!(summary["rounds"][0]["firstBlood"], "You (Jett) → Enemy 1 (Sage)");
         assert_eq!(summary["rounds"][1]["score"], "1–1");
         assert_eq!(summary["rounds"][1]["spike"], "planted A");
-        let detail = timeline_summary(&reduced, &timeline, Some(1), &agents, &names);
+        let detail = timeline_summary(&reduced, &timeline, Some(1), &agents, &names, false);
         assert_eq!(detail["kills"][0]["weapon"], "Vandal");
         assert_eq!(detail["kills"][0]["time"], "0:31");
-        let plant = timeline_summary(&reduced, &timeline, Some(2), &agents, &names);
+        let plant = timeline_summary(&reduced, &timeline, Some(2), &agents, &names, false);
         assert_eq!(plant["spikePlant"], "Enemy 1 (Sage) planted A at 1:05");
         assert!(!summary.to_string().contains("foe"));
     }

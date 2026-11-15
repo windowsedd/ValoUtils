@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { FaBook, FaCheck, FaCopy, FaEye, FaEyeSlash, FaPlug, FaRotate } from "react-icons/fa6";
+import { FaBook, FaCheck, FaCopy, FaEye, FaEyeSlash, FaIdCard, FaPlug, FaRotate } from "react-icons/fa6";
 import { gooeyToast as toast } from "goey-toast";
 import { reportIpcError } from "@/util/ipc";
 import { SectionCard } from "@/components/section-card";
@@ -52,6 +52,27 @@ export const McpSettings = ({ onOpenDocs }: { onOpenDocs: () => void }) => {
 	const [busy, setBusy] = useState(false);
 	const [reveal, setReveal] = useState(false);
 	const [copied, setCopied] = useState<string | null>(null);
+	/** `mcpShowNames`: Riot IDs in match tools. On unless turned off. */
+	const [showNames, setShowNames] = useState(true);
+	useEffect(() => {
+		let active = true;
+		invoke<{ mcpShowNames?: boolean }>("config_get_all")
+			.then((config) => {
+				if (active) setShowNames(config?.mcpShowNames !== false);
+			})
+			.catch(() => {});
+		return () => {
+			active = false;
+		};
+	}, []);
+	const changeShowNames = (value: boolean) => {
+		setShowNames(value);
+		invoke("config_set", { args: ["mcpShowNames", value] }).catch((error) => {
+			setShowNames(!value);
+			reportIpcError(error);
+		});
+		invoke("analytics_track", { args: ["mcp:show-names", JSON.stringify({ value })] }).catch(reportIpcError);
+	};
 
 	useEffect(() => {
 		let active = true;
@@ -155,6 +176,19 @@ export const McpSettings = ({ onOpenDocs }: { onOpenDocs: () => void }) => {
 						aria-label={t("mcp.enable")}
 					/>
 				</div>
+
+				{enabled && (
+					<div className="flex items-center justify-between gap-4 py-2.5 border-b border-(--line)">
+						<div className="flex items-start gap-3 min-w-0">
+							<FaIdCard className="text-(--text-muted) mt-0.5 shrink-0 text-[13px]" />
+							<div className="min-w-0">
+								<p className="text-[12px] font-medium text-(--text-primary)">{t("mcp.showNames")}</p>
+								<p className="text-[11px] text-(--text-muted) mt-0.5">{t("mcp.showNamesDesc")}</p>
+							</div>
+						</div>
+						<Switch checked={showNames} onCheckedChange={changeShowNames} aria-label={t("mcp.showNames")} />
+					</div>
+				)}
 
 				{enabled && real && shown && (
 					<>

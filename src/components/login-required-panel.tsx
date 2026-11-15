@@ -1,5 +1,7 @@
 import { reportIpcError } from "@/util/ipc";
 import { ClientConfigWakeButton } from "./client-config-wake-button";
+import { RiotClientActions } from "./riot-client-actions";
+import { Button } from "./ui/button";
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback,  useEffect, useRef, useState, type ReactNode  } from "react";
 import { LuMonitor, LuPlay } from "react-icons/lu";
@@ -58,9 +60,13 @@ export const LoginRequiredPanel = ({
 	/** The game process itself, not just the Riot Client. */
 	const [valorantRunning, setValorantRunning] = useState(false);
 	const [configRunning, setConfigRunning] = useState<boolean | null>(null);
+	/** The running client is connected through the XMPP relay. */
+	const [relayActive, setRelayActive] = useState(false);
 	/** Which button is in flight, so only that one shows the pending label. */
 	const [launching, setLaunching] = useState<LaunchMode | null>(null);
 	const [error, setError] = useState<string | null>(null);
+	/** What a launch through an already-open client is doing. */
+	const [notice, setNotice] = useState<string | null>(null);
 	// Held in a ref so a caller passing an inline arrow doesn't restart the poll
 	// on every render.
 	const retry = useRef(onRetry);
@@ -71,6 +77,11 @@ export const LoginRequiredPanel = ({
 			try {
 				const data = message;
 				setError(data?.success ? null : data?.error || t("common.launchFailed"));
+				setNotice(
+					data?.success && data.runningClient
+						? t(data.waitingForSignIn ? "common.launchAfterSignIn" : "common.launchFromClient")
+						: null,
+				);
 			} catch {
 				setError(t("common.launchFailed"));
 			}
@@ -83,6 +94,7 @@ const applyStatus = (message: any) => {
 				if (!data?.success) return;
 				setConfigRunning(typeof data.running === "boolean" ? data.running : null);
 				setValorantRunning(data.valorantRunning === true);
+				setRelayActive(Number(data.activeConnections) > 0);
 				const running = Boolean(data.riotClientRunning);
 				setClientRunning((previous) => {
 					// A client just appeared — the session may already be usable.
@@ -120,6 +132,7 @@ const applyStatus = (message: any) => {
 	const launch = (mode: LaunchMode) => {
 		setLaunching(mode);
 		setError(null);
+		setNotice(null);
 		invoke<any>(LAUNCH_CHANNEL[mode], { args: ["valorant", "live"] }).then(applyLaunch).catch(error => applyLaunch({ success: false, error: String(error) }));
 		invoke("analytics_track", { args: ["riot_launch", JSON.stringify({ from: "loginRequired", mode })] }).catch(reportIpcError);
 	};
@@ -152,6 +165,13 @@ const applyStatus = (message: any) => {
 							<span className="h-2 w-2 rounded-full bg-(--signal-pos) animate-pulse motion-reduce:animate-none" aria-hidden="true" />
 							{t("common.playing")}
 						</button>
+					) : alreadyRunning ? (
+						// An open client starts the game itself (its Play button), so
+						// relay vs normal no longer applies and nothing needs a restart.
+						<Button variant="accent" size="lg" pending={launching === "relay"} disabled={busy} onClick={() => launch("relay")}>
+							{launching !== "relay" && <LuPlay aria-hidden="true" />}
+							{launching === "relay" ? t("common.launching") : t("common.launchValorant")}
+						</Button>
 					) : (
 					<>
 					<button
@@ -190,11 +210,22 @@ const applyStatus = (message: any) => {
 				{valorantRunning ? (
 					<p className="mt-2 text-[11px] leading-4 text-(--text-muted)">{t("common.playingHint")}</p>
 				) : (
-					alreadyRunning && (
+					alreadyRunning &&
+					!relayActive && (
 						<p className="mt-2 text-[11px] leading-4 text-(--signal-warn)">
 							{t("common.riotClientRunningHint")}
 						</p>
 					)
+				)}
+				{notice && <p className="mt-2 text-[11px] leading-4 text-(--text-secondary)">{notice}</p>}
+				{/* A client ValoUtils didn't start can't be repointed at the relay;
+				    restarting through it is optional, only for chat/presence/bot. */}
+				{alreadyRunning && (
+					<RiotClientActions
+						from="loginRequired"
+						actions={relayActive ? ["close"] : ["restart", "close"]}
+						className="mt-2"
+					/>
 				)}
 				{error && (
 					<p role="alert" className="mt-2 text-[11px] leading-4 text-(--signal-neg)">

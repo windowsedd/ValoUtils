@@ -116,6 +116,7 @@ pub fn config_get_all(store: State<ConfigStore>) -> Value {
         "riotRequestPacing": get_or("riotRequestPacing", json!("balanced")),
         "showPregameEnemies": get_or("showPregameEnemies", json!(true)),
         "riotLaunchArgs": get_or("riotLaunchArgs", json!("")),
+        "watchedFriends": get_or("watchedFriends", json!([])),
         "recentMatchCount": get_or(
             "recentMatchCount",
             json!(crate::commands::live::RECENT_MATCH_COUNT_DEFAULT),

@@ -195,7 +195,7 @@ export const SavedMatchPicker = ({
 									<span className="relative truncate text-[11px] text-(--text-secondary)">
 										{summary.last ? (
 											<>
-												<span className="text-(--text-muted)">{savedSenderName(summary.last, details, names) || "?"}: </span>
+												<span className="text-(--text-muted)">{savedSenderName(summary.last, summary.roster, names) || "?"}: </span>
 												{summary.last.body}
 											</>
 										) : (

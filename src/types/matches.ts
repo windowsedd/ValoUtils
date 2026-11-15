@@ -80,7 +80,7 @@ export type MatchListResponse =
 
 export type MatchDetailsResponse =
   | { success: true; match: MatchDetails; cached: boolean }
-  | { success: false; matchId?: string; error: string }
+  | { success: false; matchId?: string; error: string; code?: string }
   | (RateLimitedFailure & { matchId?: string });
 
 /** A point in game units; project it with `minimapPoint` before drawing. */

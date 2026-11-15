@@ -16,7 +16,10 @@ import {
 } from "@/components/friends/friend-identity";
 import { useTranslation } from "react-i18next";
 import { FaMagnifyingGlass } from "react-icons/fa6";
-import { LuUsers } from "react-icons/lu";
+import { LuStar, LuUsers } from "react-icons/lu";
+import { reportIpcError } from "@/util/ipc";
+import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 const POLL_MS = 10000;
 
@@ -95,6 +98,29 @@ const Friends = () => {
 	const [loading, setLoading] = useState(true);
 	const [live, setLive] = useState(false);
 	const [selectedFriend, setSelectedFriend] = useState<Friend | null>(null);
+	// Starred friends get a notification when a match starts and ends.
+	const [watched, setWatched] = useState<Set<string>>(new Set());
+	useEffect(() => {
+		let active = true;
+		invoke<{ watchedFriends?: string[] }>("config_get_all")
+			.then((config) => {
+				if (active) setWatched(new Set((config.watchedFriends ?? []).map((id) => id.toLowerCase())));
+			})
+			.catch(() => {});
+		return () => {
+			active = false;
+		};
+	}, []);
+	const toggleWatch = (friend: Friend) => {
+		const puuid = friend.puuid.toLowerCase();
+		const watch = !watched.has(puuid);
+		invoke<{ success: boolean; watched?: string[]; error?: string }>("friends_watch_set", { args: [puuid, watch] })
+			.then((reply) => {
+				if (reply.success) setWatched(new Set(reply.watched ?? []));
+			})
+			.catch(reportIpcError);
+		invoke("analytics_track", { args: ["friends:watch", JSON.stringify({ watch })] }).catch(reportIpcError);
+	};
 	const [profileCache, setProfileCache] = useState<Record<string, FriendProfileData>>({});
 	const listScrollRef = useRef<HTMLDivElement>(null);
 	const savedScrollTopRef = useRef(0);
@@ -239,12 +265,15 @@ const applyFriends = (message: any) => {
 		const winning = hasScore && v!.allyScore! > v!.enemyScore!;
 		const losing = hasScore && v!.allyScore! < v!.enemyScore!;
 
+		const isWatched = !!friend.puuid && watched.has(friend.puuid.toLowerCase());
+		const watchLabel = isWatched ? t("friends.unwatch") : t("friends.watch");
+
 		return (
+			<div key={friend.puuid || friend.displayName} className="group flex items-center gap-1">
 			<button
 				type="button"
 				onClick={() => openFriend(friend)}
-				key={friend.puuid || friend.displayName}
-				className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:shadow-[0_0_0_2px_var(--accent-soft)] ${inParty ? "hover:bg-white/4" : "bg-white/2 hover:bg-white/6"}`}
+				className={`flex min-w-0 flex-1 items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:shadow-[0_0_0_2px_var(--accent-soft)] ${inParty ? "hover:bg-white/4" : "bg-white/2 hover:bg-white/6"}`}
 			>
 				<Avatar friend={friend} cards={cards} tiers={tiers} />
 				<div className="min-w-0 flex-1">
@@ -275,6 +304,27 @@ const applyFriends = (message: any) => {
 				</div>
 				<span className={`text-xs shrink-0 ${presence.className}`}>{presence.label}</span>
 			</button>
+			{friend.puuid && (
+				<Tooltip>
+					<TooltipTrigger asChild>
+						<Button
+							variant="ghost"
+							size="icon"
+							data-watch-friend={isWatched ? "on" : "off"}
+							aria-pressed={isWatched}
+							aria-label={watchLabel}
+							onClick={() => toggleWatch(friend)}
+							className={`press-flat transition-[opacity,color,background-color] focus-visible:opacity-100 group-hover:opacity-100 ${
+								isWatched ? "text-(--signal-warn) opacity-100 hover:text-(--signal-warn)" : "text-(--text-muted) opacity-0"
+							}`}
+						>
+							<LuStar className={isWatched ? "fill-current" : ""} aria-hidden="true" />
+						</Button>
+					</TooltipTrigger>
+					<TooltipContent side="left">{watchLabel}</TooltipContent>
+				</Tooltip>
+			)}
+			</div>
 		);
 	};
 
