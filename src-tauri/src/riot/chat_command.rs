@@ -264,7 +264,7 @@ pub fn parse_party_command(input: &str) -> Result<PartyCommand, RiotError> {
             Ok(PartyCommand::CreateCode)
         } else {
             Err(RiotError::InvalidCommand(
-                "Usage: .code create or /code create.".into(),
+                "Usage: /code create (. works too).".into(),
             ))
         };
     }
@@ -287,7 +287,7 @@ pub fn parse_party_command(input: &str) -> Result<PartyCommand, RiotError> {
         }
     }
     Err(RiotError::InvalidCommand(
-        "Usage: .party join <code> or .party leave (also /party). Example: /party join TUE693."
+        "Usage: /party join <code> or /party leave (. works too). Example: /party join TUE693."
             .into(),
     ))
 }
@@ -310,7 +310,7 @@ pub(crate) fn command_rest<'a>(input: &'a str, command: &str) -> Option<&'a str>
 /// `.ascii`, the three channel names are always a destination, never prompt text.
 pub fn parse_ai_command(input: &str) -> Result<(Option<ChatChannel>, String), RiotError> {
     let rest = command_rest(input, "ai")
-        .ok_or_else(|| RiotError::InvalidCommand("Commands must start with .ai.".into()))?;
+        .ok_or_else(|| RiotError::InvalidCommand("Commands must start with /ai.".into()))?;
     let (first, remainder) = rest.split_once(char::is_whitespace).unwrap_or((rest, ""));
     let channel = match first.to_ascii_lowercase().as_str() {
         "party" => Some(ChatChannel::Party),
@@ -325,7 +325,7 @@ pub fn parse_ai_command(input: &str) -> Result<(Option<ChatChannel>, String), Ri
     };
     if prompt.is_empty() {
         return Err(RiotError::InvalidCommand(
-            "Usage: .ai {party|team|all} <prompt>, e.g. .ai team hype us up.".into(),
+            "Usage: /ai {party|team|all} <prompt>, e.g. /ai team hype us up.".into(),
         ));
     }
     Ok((channel, prompt.to_string()))
@@ -335,7 +335,7 @@ pub fn parse_ask_command(input: &str) -> Result<String, RiotError> {
     match command_rest(input, "ask") {
         Some(question) if !question.is_empty() => Ok(question.to_string()),
         _ => Err(RiotError::InvalidCommand(
-            "Usage: .ask <question>, e.g. .ask how do I counter Raze?".into(),
+            "Usage: /ask <question>, e.g. /ask how do I counter Raze?".into(),
         )),
     }
 }
@@ -355,7 +355,7 @@ pub fn parse_history_translate_command(
 ) -> Result<HistoryTranslateCommand, RiotError> {
     let Some(rest) = history_translate_rest(input) else {
         return Err(RiotError::InvalidCommand(
-            "Commands must start with .tran or .translate.".into(),
+            "Commands must start with /tran or /translate.".into(),
         ));
     };
 
@@ -379,7 +379,7 @@ pub fn parse_history_translate_command(
             continue;
         }
         return Err(RiotError::InvalidCommand(format!(
-            "Unknown .tran argument '{raw}'. Use .tran [n] or .tran {{channel}} [n]."
+            "Unknown /tran argument '{raw}'. Use /tran [n] or /tran {{channel}} [n]."
         )));
     }
 
@@ -438,7 +438,7 @@ pub fn parse_quick_command(input: &str) -> Option<QuickCommand> {
 /// Bot DM sent when a command is typed in a group room instead of whispered.
 pub fn group_command_hint(body: &str) -> String {
     format!(
-        "Commands only run when you whisper them to me, not in party, pregame, team or all chat (.tran .who .rr .last do). Not sent: {}",
+        "Commands only run when you whisper them to me, not in party, pregame, team or all chat (/tran /who /rr /last /met do). Not sent: {}",
         body.trim()
     )
 }
@@ -508,7 +508,7 @@ pub fn parse_translation_command_with_fallback(
     let trimmed = input.trim_start();
     if !is_translation_command(trimmed) {
         return Err(RiotError::InvalidCommand(
-            "Commands must start with .send.".into(),
+            "Commands must start with /send.".into(),
         ));
     }
     parse_dot_send(&trimmed[5..], provider, default_language)
@@ -565,7 +565,7 @@ fn parse_dot_send(
         (default.clone(), default, after_channel.to_string())
     } else {
         return Err(RiotError::InvalidCommand(format!(
-            "Unknown language '{first}'. Use .send {{channel}} {{language}} {{message}}."
+            "Unknown language '{first}'. Use /send {{channel}} {{language}} {{message}}."
         )));
     };
 

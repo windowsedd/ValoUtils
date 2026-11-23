@@ -13,7 +13,7 @@ pub fn help_text() -> &'static str {
     // themselves, so this has to stay one short ASCII line. $help is the one
     // command left out: this line is already its answer, and listing it costs
     // the room .ascii needs. The Dummy Bot page still documents every command.
-    "$online $offline $mobile $enable $disable $status .send .tran .dodge .ascii"
+    "$online $offline $mobile $enable $disable $status /send /tran /dodge /ascii"
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -99,10 +99,10 @@ mod tests {
     fn help_text_lists_presence_commands_and_the_translate_command() {
         let help = help_text();
         assert!(help.contains("$online"));
-        assert!(help.contains(".send"));
-        assert!(help.contains(".tran"));
-        assert!(help.contains(".dodge"));
-        assert!(help.contains(".ascii"));
+        assert!(help.contains("/send"));
+        assert!(help.contains("/tran"));
+        assert!(help.contains("/dodge"));
+        assert!(help.contains("/ascii"));
         // $help is deliberately absent: this line is the answer to it, and the
         // HUD width below leaves no room for a token that teaches nothing.
         assert!(!help.contains("$help"));

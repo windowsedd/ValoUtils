@@ -934,7 +934,7 @@ async fn prepare_ai_command(
     let (explicit, prompt) = chat_command::parse_ai_command(line)?;
     let Some(channel) = explicit else {
         return Err(RiotError::InvalidCommand(
-            "Name a channel to post: .ai {party|team|all} <prompt>.".into(),
+            "Name a channel to post: /ai {party|team|all} <prompt>.".into(),
         ));
     };
     let text = ai_chat_line(crate::ai::prompts::BOT_LINE, &prompt, 200).await?;

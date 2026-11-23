@@ -62,7 +62,7 @@ pub const INK: char = '█';
 /// texture rather than dead space.
 pub const BACKGROUND: char = '░';
 
-const USAGE: &str = "Usage: .ascii {team|all|party} <text> or .ascii <text>.";
+const USAGE: &str = "Usage: /ascii {team|all|party} <text> or /ascii <text>.";
 
 /// A parsed `.ascii` line.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -190,7 +190,7 @@ fn parse_destination(token: &str) -> Option<ChatChannel> {
 pub fn parse_ascii_command(input: &str) -> Result<AsciiCommand, RiotError> {
     let Some(rest) = ascii_rest(input) else {
         return Err(RiotError::InvalidCommand(
-            "Commands must start with .ascii.".into(),
+            "Commands must start with /ascii.".into(),
         ));
     };
 
@@ -581,7 +581,7 @@ mod tests {
         // ".ascii team" is "send to Team with nothing to draw", not "draw TEAM".
         for input in [".ascii team", ".ascii all", ".ascii party", ".ascii"] {
             let error = parse_ascii_command(input).unwrap_err().to_string();
-            assert!(error.contains("Usage: .ascii"), "{input}: {error}");
+            assert!(error.contains("Usage: /ascii"), "{input}: {error}");
         }
     }
 
@@ -601,7 +601,7 @@ mod tests {
     #[test]
     fn rejects_empty_and_unsupported_input() {
         let empty = parse_ascii_command(".ascii   ").unwrap_err().to_string();
-        assert!(empty.contains("Usage: .ascii"), "{empty}");
+        assert!(empty.contains("Usage: /ascii"), "{empty}");
 
         let unsupported = parse_ascii_command(".ascii gg@").unwrap_err().to_string();
         assert!(unsupported.contains("'@' cannot be drawn"), "{unsupported}");

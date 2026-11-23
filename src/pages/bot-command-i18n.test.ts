@@ -36,6 +36,12 @@ const commandReference = [
   "partyLeaveDesc",
   "codeCreateSyntax",
   "codeCreateDesc",
+  "whoSyntax",
+  "whoDesc",
+  "rrSyntax",
+  "rrDesc",
+  "lastSyntax",
+  "lastDesc",
 ] as const;
 
 const at = (value: unknown, path: string): unknown =>
@@ -61,12 +67,12 @@ describe("bot command locale contract", () => {
       }
     });
 
-    test(`${name} documents the built-in .ascii command`, () => {
+    test(`${name} documents the built-in commands with the / prefix`, () => {
       for (const key of commandReference) {
         expect(at(locale.dummyBot, key), `${name}: dummyBot.${key}`).toBeTruthy();
       }
-      expect(locale.dummyBot.asciiSyntax).toBe(".ascii {team|all|party} <text>");
-		expect(locale.dummyBot.asciiExample).toBe(".ascii hk gay");
+      expect(locale.dummyBot.asciiSyntax).toBe("/ascii {team|all|party} <text>");
+      expect(locale.dummyBot.asciiExample).toBe("/ascii hk gay");
     });
   }
 });
