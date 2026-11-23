@@ -423,7 +423,11 @@ players hidden outside your party); `.rr` reads the saved career, fetching only 
 it is stale; `.last` reads the newest match through the Matches cache plus RR from
 the saved career; `.met` (`bot_template::met_lines`) lists lobby players from the
 "Played before" tally of your last 10 matches. The UI shows `/` as the default
-prefix (`.` still works). Replies are short plain lines (no emoji, max 80 chars) and are
+prefix (`.` still works); whispers to the bot and the in-app bot chat need no prefix
+(`chat_command::dm_command_line` turns "who" into "/who"), room chat always does.
+`/help [command]` (also `.help`, `$help`, and `help` in whispers;
+`chat_command::help_lines`) lists the commands or explains one, from rooms too.
+Replies are short plain lines (no emoji, max 80 chars) and are
 whispered one message per line, since Valorant collapses whisper newlines. They are
 not reserved names: a saved custom trigger called `.who`/`.rr`/`.last` wins. The REST poller ignores the player's own
 lines, so without the relay such a line is posted as ordinary chat.

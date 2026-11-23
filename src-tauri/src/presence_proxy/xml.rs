@@ -21,6 +21,8 @@ pub enum BotCommand {
     Party,
     /// `.who`, `.rr` or `.last`: answered in several short whispers.
     Quick(crate::riot::chat_command::QuickCommand),
+    /// `/help [command]` (also `$help`): answered in several short whispers.
+    HelpTopic(Option<String>),
     Unknown,
     Consume,
 }
@@ -229,7 +231,11 @@ pub fn parse_bot_message(stanza: &str) -> Result<Option<(String, BotCommand)>, S
     let Some(body) = root.get_child("body").and_then(Element::get_text) else {
         return Ok(Some((jid.clone(), BotCommand::Consume)));
     };
-    let command = if crate::riot::chat_command::is_history_translate_command(&body) {
+    // Whispers to the bot need no prefix: "who" runs as "/who".
+    let body = crate::riot::chat_command::dm_command_line(&body);
+    let command = if let Some(topic) = crate::riot::chat_command::parse_help_command(&body) {
+        BotCommand::HelpTopic(topic)
+    } else if crate::riot::chat_command::is_history_translate_command(&body) {
         BotCommand::TranslateHistory
     } else if crate::riot::chat_command::is_translation_command(&body) {
         BotCommand::Translate
@@ -958,9 +964,10 @@ mod tests {
             r#"<message xmlns="jabber:client" id="riot-1" to="{jid}" type="chat"><body>help</body><active xmlns="http://jabber.org/protocol/chatstates"/></message>"#
         );
 
+        // A bare "help" whisper is the multi-line /help overview.
         assert_eq!(
             parse_bot_message(&stanza).unwrap(),
-            Some((jid, BotCommand::Help))
+            Some((jid, BotCommand::HelpTopic(None)))
         );
     }
 

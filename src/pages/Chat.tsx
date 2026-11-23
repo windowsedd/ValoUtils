@@ -188,6 +188,7 @@ const Chat = () => {
 		{ insert: "/rr", syntax: t("dummyBot.rrSyntax"), description: t("chat.cmdRr") },
 		{ insert: "/last", syntax: t("dummyBot.lastSyntax"), description: t("chat.cmdLast") },
 		{ insert: "/met", syntax: t("dummyBot.metSyntax"), description: t("chat.cmdMet") },
+		{ insert: "/help ", syntax: t("dummyBot.helpSyntax"), description: t("chat.cmdHelp") },
 		{ insert: "/party join ", syntax: t("dummyBot.partyJoinSyntax"), description: t("dummyBot.partyJoinDesc") },
 		{ insert: "/party leave", syntax: t("dummyBot.partyLeaveSyntax"), description: t("dummyBot.partyLeaveDesc") },
 		{ insert: "/code create", syntax: t("dummyBot.codeCreateSyntax"), description: t("dummyBot.codeCreateDesc") },

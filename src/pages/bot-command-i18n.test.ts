@@ -44,6 +44,8 @@ const commandReference = [
   "lastDesc",
   "metSyntax",
   "metDesc",
+  "helpSyntax",
+  "helpDesc",
 ] as const;
 
 const at = (value: unknown, path: string): unknown =>

@@ -309,6 +309,18 @@ async fn client_to_remote(
                     // `$offline` and friends typed in a group room: applied like a
                     // whisper to the bot and never posted, so teammates don't see
                     // them and presence actually changes.
+                    if let Some(topic) = outgoing_live_groupchat(stanza)
+                        .and_then(|body| crate::riot::chat_command::parse_help_command(&body))
+                    {
+                        // `/help` in a room: never posted, answered privately.
+                        for line in crate::riot::chat_command::help_lines(topic.as_deref()) {
+                            if let Err(error) = crate::presence_proxy::send_bot_direct(&line) {
+                                log::warn!("Help reply could not be delivered: {error:?}");
+                                break;
+                            }
+                        }
+                        continue;
+                    }
                     if let Some(body) = outgoing_group_presence_command(stanza) {
                         let reply = crate::presence_proxy::apply_command(crate::fake_player::parse_command(&body));
                         if let Err(error) = crate::presence_proxy::send_bot_direct(&reply) {
@@ -346,16 +358,26 @@ async fn client_to_remote(
                         if let Some((bot_jid, command)) = parse_bot_message(stanza).map_err(|error| format!("Bot command parse failed: {error}"))? {
                             if command != BotCommand::Consume {
                                 reply_sequence += 1;
-                                let body = bot_message_body(stanza).unwrap_or_default();
-                                crate::fake_player::record_message(&body, true);
-                                if let BotCommand::Quick(quick) = command {
+                                let typed = bot_message_body(stanza).unwrap_or_default();
+                                crate::fake_player::record_message(&typed, true);
+                                // The prefix is optional in whispers: "who" runs as "/who".
+                                let body = crate::riot::chat_command::dm_command_line(&typed);
+                                let multi_line = match &command {
+                                    BotCommand::Quick(quick) => Some(
+                                        crate::commands::quick_stats::reply_lines(
+                                            *quick,
+                                            crate::presence_proxy::app_handle(),
+                                        )
+                                        .await,
+                                    ),
+                                    BotCommand::HelpTopic(topic) => {
+                                        Some(crate::riot::chat_command::help_lines(topic.as_deref()))
+                                    }
+                                    _ => None,
+                                };
+                                if let Some(lines) = multi_line {
                                     // Valorant collapses newlines in a whisper, so
                                     // each line goes out as its own message.
-                                    let lines = crate::commands::quick_stats::reply_lines(
-                                        quick,
-                                        crate::presence_proxy::app_handle(),
-                                    )
-                                    .await;
                                     let version = bot_version.lock().await.clone();
                                     for (index, line) in lines.iter().enumerate() {
                                         if index > 0 {

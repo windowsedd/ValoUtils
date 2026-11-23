@@ -445,6 +445,8 @@ pub enum ComposerCommand {
     Party(String),
     /// `.who`, `.rr` or `.last` — read-only answers shown only to the player.
     Quick(chat_command::QuickCommand),
+    /// `/help [command]`.
+    Help(Option<String>),
     Unknown,
 }
 
@@ -473,6 +475,9 @@ pub fn classify_composer_command(
     }
     if chat_command::is_party_command(trimmed) {
         return ComposerCommand::Party(trimmed.to_string());
+    }
+    if let Some(topic) = chat_command::parse_help_command(trimmed) {
+        return ComposerCommand::Help(topic);
     }
     let expanded = chat_command::expand_custom_command(trimmed, commands)
         .unwrap_or_else(|| trimmed.to_string());
@@ -571,6 +576,7 @@ pub(crate) async fn run_composer_command(
         // Private by default: the answer is shown only under the composer.
         ComposerCommand::Ai(line) | ComposerCommand::Ask(line) => ai_command_reply(&line).await,
         ComposerCommand::Quick(quick) => Ok(super::quick_stats::reply_lines(quick, Some(&app)).await.join("\n")),
+        ComposerCommand::Help(topic) => Ok(chat_command::help_lines(topic.as_deref()).join("\n")),
         ComposerCommand::Unknown => return Err(format!("Unknown command '{}'.", input.trim())),
     };
     outcome.map_err(|error| error.to_string())
