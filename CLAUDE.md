@@ -401,7 +401,9 @@ is the only form that posts, to the named room.
 Commands run only when whispered to the Dummy Bot or typed in the Chat composer.
 Chat commands accept `.` or `/`, including saved custom triggers (both prefixes
 resolve to the same trigger). Autocomplete preserves the typed prefix. Presence
-commands keep their `$` prefix. `.party join <code>` (also quoted, e.g.
+commands keep their `$` prefix; typed in party/pregame/team/all chat (`$` form
+only) the relay swallows them, applies them like a whisper and the bot whispers
+the reply (`outgoing_group_presence_command`). `.party join <code>` (also quoted, e.g.
 `/party join "TUE693"`) joins by invite code; `.party leave` removes only the
 signed-in player; `.code create` generates the current party's invite code and
 returns it privately. These use the shared authenticated GLZ client and auth

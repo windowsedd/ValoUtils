@@ -306,6 +306,16 @@ async fn client_to_remote(
                         continue;
                     };
                     crate::presence_proxy::record_live_chat(stanza);
+                    // `$offline` and friends typed in a group room: applied like a
+                    // whisper to the bot and never posted, so teammates don't see
+                    // them and presence actually changes.
+                    if let Some(body) = outgoing_group_presence_command(stanza) {
+                        let reply = crate::presence_proxy::apply_command(crate::fake_player::parse_command(&body));
+                        if let Err(error) = crate::presence_proxy::send_bot_direct(&reply) {
+                            log::warn!("Presence command reply could not be delivered: {error:?}");
+                        }
+                        continue;
+                    }
                     // Commands typed in a group room never reach it. The read-only
                     // ones with private answers (.tran, .who, .rr, .last) run from
                     // there; everything else only works when whispered to the bot.
@@ -745,6 +755,16 @@ fn run_room_translation(command: String) {
     });
 }
 
+/// A presence command (`$online`, `$offline`, `$mobile`, `$enable`,
+/// `$disable`, `$status`, `$help`) typed into a party, pregame, team or all
+/// room. Only the `$` form: a bare "online" there is ordinary chat.
+fn outgoing_group_presence_command(stanza: &str) -> Option<String> {
+    let body = outgoing_live_groupchat(stanza)?;
+    let body = body.trim();
+    (body.starts_with('$') && crate::presence_proxy::xml::parse_bot_command(body).is_some())
+        .then(|| body.to_string())
+}
+
 /// Runs `.who`, `.rr` or `.last` typed in a group room and whispers each line
 /// from the Dummy Bot. Spawned so it never holds up the relay loop.
 fn run_room_quick(command: crate::riot::chat_command::QuickCommand) {
@@ -830,6 +850,24 @@ mod tests {
         let source = include_str!("relay.rs");
         assert!(source.contains("translate_bot_command_on_connection"));
         assert!(!source.contains(concat!("outbound", ".try_recv()")));
+    }
+
+    #[test]
+    fn presence_commands_typed_in_a_room_are_caught() {
+        for room in ["party@ares-parties.ap", "match-blue@ares-pregame.ap1.pvp.net", "match-all@ares-coregame.ap1.pvp.net"] {
+            for body in ["$offline", "$ONLINE", " $mobile ", "$status", "$help", "$disable"] {
+                let stanza = format!(r#"<message to="{room}" type="groupchat"><body>{body}</body></message>"#);
+                assert_eq!(outgoing_group_presence_command(&stanza).as_deref(), Some(body.trim()), "{room} {body}");
+            }
+        }
+    }
+
+    #[test]
+    fn plain_words_and_other_dollar_lines_stay_chat() {
+        for body in ["online", "offline", "$gg", "$5 eco", "I'm $offline later"] {
+            let stanza = format!(r#"<message to="party@ares-parties.ap" type="groupchat"><body>{body}</body></message>"#);
+            assert_eq!(outgoing_group_presence_command(&stanza), None, "{body}");
+        }
     }
 
     #[test]
