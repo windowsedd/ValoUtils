@@ -1,3 +1,13 @@
+//! Match history + per-match scoreboards.
+//!
+//! Two endpoints back this:
+//!   * `/match-history/v1/history/<puuid>` — a thin list of
+//!     `{MatchID, GameStartTime, QueueID}`, cheap enough to load on open.
+//!   * `/match-details/v1/matches/<id>` — the full match. These are **large**
+//!     (830 KB+ for a competitive game, most of it `roundResults`), so details
+//!     are fetched lazily when a match is expanded, reduced to a scoreboard
+//!     here, and cached — the frontend never sees the raw document.
+
 use crate::riot::error::RiotError;
 use crate::riot::api::{self, RiotApiClient};
 use crate::riot::client::RiotState;
@@ -5,16 +15,6 @@ use serde_json::{json, Value};
 use std::collections::{HashMap, VecDeque};
 use std::sync::Mutex;
 use tauri::State;
-
-/// Match history + per-match scoreboards.
-///
-/// Two endpoints back this:
-///   * `/match-history/v1/history/<puuid>` — a thin list of
-///     `{MatchID, GameStartTime, QueueID}`, cheap enough to load on open.
-///   * `/match-details/v1/matches/<id>` — the full match. These are **large**
-///     (830 KB+ for a competitive game, most of it `roundResults`), so details
-///     are fetched lazily when a match is expanded, reduced to a scoreboard
-///     here, and cached — the frontend never sees the raw document.
 
 /// Normalized details, keyed by `<puuid>:<matchId>`. Matches are immutable once
 /// played, so entries never need invalidating — but the reduction bakes in an
@@ -39,12 +39,12 @@ const TIMELINE_CACHE_LIMIT: usize = 40;
 
 impl MatchTimelineCache {
     fn get(&self, match_id: &str) -> Option<Value> {
-        self.0.lock().unwrap().0.get(&match_id.to_ascii_lowercase()).cloned()
+        self.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner).0.get(&match_id.to_ascii_lowercase()).cloned()
     }
 
     fn insert(&self, match_id: &str, timeline: Value) {
         let key = match_id.to_ascii_lowercase();
-        let mut guard = self.0.lock().unwrap();
+        let mut guard = self.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let (entries, order) = &mut *guard;
         if entries.insert(key.clone(), timeline).is_none() {
             order.push_back(key);
@@ -557,7 +557,7 @@ pub async fn match_summaries(
     let mut delivered = Vec::new();
     for match_id in ids {
         let key = cache_key(&api.puuid, &match_id);
-        let cached = cache.0.lock().unwrap().get(&key).cloned();
+        let cached = cache.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner).get(&key).cloned();
         let reduced = match cached {
             Some(hit) => hit,
             None => {
@@ -589,7 +589,7 @@ pub async fn match_summaries(
                 cache
                     .0
                     .lock()
-                    .unwrap()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
                     .insert(cache_key(&api.puuid, &match_id), reduced.clone());
                 reduced
             }
@@ -630,7 +630,7 @@ pub async fn match_details(
     if let Some(hit) = cache
         .0
         .lock()
-        .unwrap()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
         .get(&cache_key(&own_puuid, &match_id))
         .cloned()
     {
@@ -662,7 +662,7 @@ pub async fn match_details(
             cache
                 .0
                 .lock()
-                .unwrap()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .insert(cache_key(&own_puuid, &match_id), reduced.clone());
             json!({ "success": true, "match": reduced, "cached": false })
         }

@@ -40,7 +40,7 @@ static SERVER: Mutex<Server> = Mutex::new(Server {
 });
 
 pub fn running_port() -> Option<u16> {
-    SERVER.lock().unwrap().port
+    SERVER.lock().unwrap_or_else(std::sync::PoisonError::into_inner).port
 }
 
 /// A fresh 32-byte random token, base64url without padding.
@@ -104,7 +104,7 @@ pub async fn start(app: &AppHandle) -> Result<u16, String> {
             log::error!("MCP server stopped: {error}");
         }
     });
-    let mut server = SERVER.lock().unwrap();
+    let mut server = SERVER.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     // Another start may have won while this one was binding.
     if let Some(running) = server.port {
         task.abort();
@@ -119,7 +119,7 @@ pub async fn start(app: &AppHandle) -> Result<u16, String> {
 }
 
 pub fn stop() {
-    let mut server = SERVER.lock().unwrap();
+    let mut server = SERVER.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     if let Some(task) = server.task.take() {
         task.abort();
         log::info!("MCP server stopped");

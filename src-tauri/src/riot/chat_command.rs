@@ -85,7 +85,7 @@ pub fn is_reserved_custom_trigger(raw: &str) -> bool {
 }
 
 pub fn find_custom_command(input: &str, commands: &[CustomBotCommand]) -> Option<CustomBotCommand> {
-    let first = input.trim().split_whitespace().next()?;
+    let first = input.split_whitespace().next()?;
     let wanted = normalize_custom_trigger(first);
     if wanted.is_empty() || is_reserved_custom_trigger(&wanted) {
         return None;
@@ -1199,7 +1199,7 @@ mod tests {
         };
 
         assert_eq!(
-            find_custom_command(".scout", &[command.clone()]),
+            find_custom_command(".scout", std::slice::from_ref(&command)),
             Some(command)
         );
         assert!(find_custom_command(".send", &[]).is_none());

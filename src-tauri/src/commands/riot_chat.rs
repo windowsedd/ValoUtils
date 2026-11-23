@@ -656,8 +656,8 @@ async fn current_party_id(api: &crate::riot::api::RiotApiClient) -> Result<Strin
 pub(crate) const PARTY_NEEDS_GAME: &str =
     "Open VALORANT first: party codes and links only work while the game is running.";
 
-fn ensure_game_running() -> Result<(), RiotError> {
-    if super::riot_launch::valorant_running() {
+async fn ensure_game_running() -> Result<(), RiotError> {
+    if super::riot_launch::valorant_running_async().await {
         Ok(())
     } else {
         Err(RiotError::Other(PARTY_NEEDS_GAME.into()))
@@ -666,7 +666,7 @@ fn ensure_game_running() -> Result<(), RiotError> {
 
 /// Creates an invite code for the signed-in player's current party.
 pub(crate) async fn create_party_invite_code(app: &AppHandle) -> Result<String, RiotError> {
-    ensure_game_running()?;
+    ensure_game_running().await?;
     let riot = riot_state(app)?;
     crate::riot::api::with_api(&riot, |api| async move {
         let party_id = current_party_id(&api).await?;
@@ -683,7 +683,7 @@ pub(crate) async fn create_party_invite_code(app: &AppHandle) -> Result<String, 
 
 /// Turns off the current party's invite code and party link.
 pub(crate) async fn disable_party_invite_code(app: &AppHandle) -> Result<(), RiotError> {
-    ensure_game_running()?;
+    ensure_game_running().await?;
     let riot = riot_state(app)?;
     crate::riot::api::with_api(&riot, |api| async move {
         let party_id = current_party_id(&api).await?;
@@ -701,7 +701,7 @@ pub(crate) async fn join_party_by_code(app: &AppHandle, code: &str) -> Result<St
     else {
         return Err(RiotError::InvalidCommand("Enter a party code.".into()));
     };
-    ensure_game_running()?;
+    ensure_game_running().await?;
     let riot = riot_state(app)?;
     crate::riot::api::with_api(&riot, |api| {
         let code = code.clone();
@@ -1370,18 +1370,14 @@ async fn deliver_translated_line(
     body: &str,
     app: Option<&AppHandle>,
 ) -> Result<(), RiotError> {
-    let sent = if crate::presence_proxy::send_group_through_game(channel, live_cid, body) {
-        true
-    } else if client.send_to_cid(rest_cid, body).await.is_ok() {
-        true
-    } else {
+    // Game relay first, then the REST chat API, then the app's own XMPP socket.
+    if !crate::presence_proxy::send_group_through_game(channel, live_cid, body)
+        && client.send_to_cid(rest_cid, body).await.is_err()
+    {
         send_via_xmpp(app, channel, body).await?;
-        true
-    };
-    if sent {
-        if let Some(app) = app {
-            emit_sent_chat_message(app, live_cid, body, channel);
-        }
+    }
+    if let Some(app) = app {
+        emit_sent_chat_message(app, live_cid, body, channel);
     }
     Ok(())
 }
@@ -1991,6 +1987,10 @@ async fn dispatch(app: &AppHandle, message: &ChatMessage, memory: &mut PollMemor
     emit_polled_chat_message(app, message, false);
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "internal helper over independent message fields; a parameter struct would only rename them"
+)]
 fn frontend_chat_message_json(
     conversation_id: &str,
     id: &str,
@@ -2565,7 +2565,7 @@ mod tests {
         };
 
         assert_eq!(
-            classify_composer_command(".scout", &[command.clone()]),
+            classify_composer_command(".scout", std::slice::from_ref(&command)),
             ComposerCommand::Custom(command)
         );
     }

@@ -91,18 +91,18 @@ impl LivePartyHistoryCache {
         if match_id.is_empty() {
             return;
         }
-        let mut current = self.live_match.lock().unwrap();
+        let mut current = self.live_match.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         if *current == match_id {
             return;
         }
         *current = match_id;
-        self.histories.lock().unwrap().clear();
-        self.history_documents.lock().unwrap().clear();
+        self.histories.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clear();
+        self.history_documents.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clear();
     }
 
     fn get_history_document_at(&self, puuid: &str, now: Instant) -> Option<Value> {
         let key = puuid.to_ascii_lowercase();
-        let mut documents = self.history_documents.lock().unwrap();
+        let mut documents = self.history_documents.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let entry = documents.get(&key)?;
         if now.duration_since(entry.inserted_at) > HISTORY_TTL {
             documents.remove(&key);
@@ -113,7 +113,7 @@ impl LivePartyHistoryCache {
 
     fn put_history_document_at(&self, puuid: &str, document: Value, now: Instant) {
         let key = puuid.to_ascii_lowercase();
-        let mut documents = self.history_documents.lock().unwrap();
+        let mut documents = self.history_documents.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         documents.retain(|_, entry| now.duration_since(entry.inserted_at) <= HISTORY_TTL);
         if !documents.contains_key(&key) && documents.len() >= MAX_HISTORY_CACHE_ENTRIES {
             if let Some(oldest) = documents
@@ -135,7 +135,7 @@ impl LivePartyHistoryCache {
 
     fn get_history_at(&self, puuid: &str, now: Instant) -> Option<Vec<String>> {
         let key = puuid.to_ascii_lowercase();
-        let mut histories = self.histories.lock().unwrap();
+        let mut histories = self.histories.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let entry = histories.get(&key)?;
         if now.duration_since(entry.inserted_at) > HISTORY_TTL {
             histories.remove(&key);
@@ -146,7 +146,7 @@ impl LivePartyHistoryCache {
 
     fn put_history_at(&self, puuid: &str, matches: Vec<String>, now: Instant) {
         let key = puuid.to_ascii_lowercase();
-        let mut histories = self.histories.lock().unwrap();
+        let mut histories = self.histories.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         histories.retain(|_, entry| now.duration_since(entry.inserted_at) <= HISTORY_TTL);
         if !histories.contains_key(&key) && histories.len() >= MAX_HISTORY_CACHE_ENTRIES {
             if let Some(oldest) = histories
@@ -167,7 +167,7 @@ impl LivePartyHistoryCache {
     }
 
     fn get_match_at(&self, match_id: &str, now: Instant) -> Option<Value> {
-        let mut matches = self.matches.lock().unwrap();
+        let mut matches = self.matches.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let entry = matches.get(match_id)?;
         if now.duration_since(entry.inserted_at) > MATCH_TTL {
             matches.remove(match_id);
@@ -177,7 +177,7 @@ impl LivePartyHistoryCache {
     }
 
     fn put_match_at(&self, match_id: &str, details: Value, now: Instant) {
-        let mut matches = self.matches.lock().unwrap();
+        let mut matches = self.matches.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         if !matches.contains_key(match_id) && matches.len() >= MAX_MATCH_CACHE_ENTRIES {
             if let Some(oldest) = matches
                 .iter()
@@ -649,6 +649,10 @@ fn resolve_sources(
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "internal helper over independent lookups; a parameter struct would only rename them"
+)]
 pub(super) async fn resolve_live_parties(
     api: &RiotApiClient,
     roster: &[String],

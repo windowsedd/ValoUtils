@@ -174,7 +174,8 @@ For Rust work in `src-tauri/`, load the project skill `rust-best-practices`
 (`.claude/skills/rust-best-practices`, Apollo's Rust handbook): no
 `unwrap()`/`expect()` outside tests (poisoned locks use
 `unwrap_or_else(PoisonError::into_inner)`), borrow over clone, `?` for errors,
-and keep `cargo clippy --all-targets` clean for new code.
+no blocking work (e.g. `tasklist`) on the async runtime (`spawn_blocking`), and
+`cargo clippy --all-targets -- -D warnings` must stay clean (CI enforces it).
 
 ## Build / Release
 
@@ -182,6 +183,7 @@ and keep `cargo clippy --all-targets` clean for new code.
 - Signing: minisign keypair. Public key is embedded in `tauri.conf.json`; the private key (`src-tauri/valoutils.key`, gitignored) must be set as the `TAURI_SIGNING_PRIVATE_KEY` repo secret for CI signing
 - Auto-updater checks on launch and hourly (gated by the `autoUpdate` config flag), endpoint: `releases/latest/download/latest.json`
 - No portable `.exe` target (electron-builder-only feature); NSIS installer only
+- Rust checks: `.github/workflows/rust-checks.yml` runs `cargo clippy --all-targets --locked -- -D warnings` and `cargo test --lib --locked` on PRs, on pushes to `master` touching `src-tauri/`, and on demand (a placeholder `dist/` satisfies `generate_context!`). Lint levels live in `[lints]` in `src-tauri/Cargo.toml`; silence a lint only with `#[expect(lint, reason = "...")]`
 
 ## Valorant / Riot API Reference
 

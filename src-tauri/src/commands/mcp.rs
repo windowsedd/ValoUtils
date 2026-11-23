@@ -835,10 +835,10 @@ pub async fn call_tool(app: &AppHandle, name: &str, arguments: &Value) -> Option
                 })
             })
         }
-        "open_valorant" if super::riot_launch::valorant_running() => {
-            text_result(&json!("Valorant is already running."), false)
-        }
         "open_valorant" => {
+            if super::riot_launch::valorant_running_async().await {
+                return Some(text_result(&json!("Valorant is already running."), false));
+            }
             let target = vec![json!("valorant"), json!("live")];
             let normal = arguments.get("mode").and_then(Value::as_str) == Some("normal");
             let reply = if normal {
@@ -2345,8 +2345,8 @@ mod tests {
         let mut rows = json!([{ "rrEarned": 26 }, { "rrEarned": -15 }, { "rrEarned": null }]);
         mark_rr(&mut rows);
         assert_eq!(rows, json!([{ "rr": "🟢 +26" }, { "rr": "🔴 -15" }, { "rr": null }]));
-        assert_eq!(rank_move(Some(20), Some(19)).as_deref(), Some("⬇ Ascendant 1".replace("Ascendant 1", &rank_label(19)).as_str()));
-        assert_eq!(rank_move(Some(21), Some(21)).as_deref(), Some(rank_label(21)).as_deref());
+        assert_eq!(rank_move(Some(20), Some(19)).as_deref(), Some(format!("⬇ {}", rank_label(19)).as_str()));
+        assert_eq!(rank_move(Some(21), Some(21)).as_deref(), Some(rank_label(21)));
         let marks = party_marks(["a", "", "b", "a", "c", "b"].into_iter());
         assert_eq!(marks, [Some("🔵 Party 1".into()), None, Some("🟠 Party 2".into()), Some("🔵 Party 1".into()), None, Some("🟠 Party 2".into())]);
     }

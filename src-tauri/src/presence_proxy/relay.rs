@@ -85,7 +85,7 @@ async fn bind_listener() -> Result<tokio::net::TcpListener, String> {
 pub async fn start() -> Result<u16, String> {
     let _start_guard = start_lock().lock().await;
     {
-        let mut active = runtime().lock().unwrap();
+        let mut active = runtime().lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         match active.as_ref() {
             Some(relay) if !relay.handle.inner().is_finished() => return Ok(relay.port),
             // The accept task ended: forget it so this start brings it back.
@@ -132,7 +132,7 @@ pub async fn start() -> Result<u16, String> {
             }
         }
     });
-    *runtime().lock().unwrap() = Some(RelayRuntime { handle, port });
+    *runtime().lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(RelayRuntime { handle, port });
     crate::presence_proxy::controller().set_relay_port(Some(port));
     Ok(port)
 }
@@ -239,6 +239,10 @@ async fn handle_socket(socket: TcpStream, acceptor: TlsAcceptor) -> Result<(), S
     result
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the relay loop owns these per-connection handles; bundling them adds a type used once"
+)]
 async fn client_to_remote(
     mut read: ReadHalf<LocalTls>,
     local_write: Arc<AsyncMutex<WriteHalf<LocalTls>>>,
@@ -696,7 +700,7 @@ fn outgoing_group_command(stanza: &str) -> Option<String> {
 }
 
 pub async fn stop() {
-    let active = runtime().lock().unwrap().take();
+    let active = runtime().lock().unwrap_or_else(std::sync::PoisonError::into_inner).take();
     if let Some(active) = active {
         active.handle.abort();
         let _ = active.handle.await;

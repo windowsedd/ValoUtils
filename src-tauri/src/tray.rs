@@ -114,11 +114,8 @@ fn on_menu(app: &AppHandle, id: &str) {
 fn launch_valorant(app: &AppHandle) {
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
-        // `tasklist` blocks; menu events arrive on the UI thread.
-        let running = tauri::async_runtime::spawn_blocking(crate::commands::riot_launch::valorant_running)
-            .await
-            .unwrap_or(false);
-        if running {
+        // Off the UI thread: menu events arrive there and `tasklist` blocks.
+        if crate::commands::riot_launch::valorant_running_async().await {
             notify(&app, "VALORANT is already running.");
             return;
         }

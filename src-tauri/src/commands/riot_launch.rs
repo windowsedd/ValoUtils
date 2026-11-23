@@ -86,6 +86,19 @@ pub(crate) fn valorant_running() -> bool {
     image_listed(&running_images(), VALORANT_IMAGE)
 }
 
+/// [`running_images`] off the async runtime: `tasklist` is a child process
+/// that takes 50–150 ms, which would otherwise hold a Tokio worker.
+async fn running_images_async() -> String {
+    tauri::async_runtime::spawn_blocking(running_images)
+        .await
+        .unwrap_or_default()
+}
+
+/// [`valorant_running`] for async callers.
+pub(crate) async fn valorant_running_async() -> bool {
+    image_listed(&running_images_async().await, VALORANT_IMAGE)
+}
+
 fn parse_launch_target(args: &[Value]) -> (String, String) {
     let value = |index: usize, fallback: &str| {
         args.get(index)
@@ -166,7 +179,7 @@ fn watch_game_start(app: AppHandle, product: String, patchline: String) {
         let mut signed_in_at: Option<Instant> = None;
         while started.elapsed() < LAUNCH_WATCH {
             tokio::time::sleep(LAUNCH_POLL).await;
-            if valorant_running() {
+            if valorant_running_async().await {
                 log::info!("launch: {product} is running");
                 return;
             }
@@ -203,7 +216,7 @@ async fn launch_in_running_client(
     product: String,
     patchline: String,
 ) -> Result<Value, String> {
-    if valorant_running() {
+    if valorant_running_async().await {
         return Err("VALORANT is already running.".into());
     }
     let riot = app.state::<RiotState>();
@@ -278,7 +291,7 @@ pub async fn client_config_status() -> Result<Value, ()> {
     let port = client_config::port();
     let running = client_config::is_running() && client_config::verify_ready(port).await.is_ok();
     let presence = presence_proxy::controller().snapshot();
-    let images = running_images();
+    let images = running_images_async().await;
     let riot_client_running = image_listed(&images, RIOT_CLIENT_IMAGE);
     let relay_client_lost = presence_proxy::relay_client_lost(
         riot_client_running,
@@ -512,7 +525,7 @@ async fn close_processes(names: &[&str], what: &str) -> Result<Vec<String>, Stri
     #[cfg(windows)]
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
-    let running = listed_images(&running_images(), names);
+    let running = listed_images(&running_images_async().await, names);
     for image in &running {
         let mut command = Command::new("taskkill");
         command.args(["/F", "/T", "/IM", image]);
@@ -525,7 +538,7 @@ async fn close_processes(names: &[&str], what: &str) -> Result<Vec<String>, Stri
         }
     }
     let started = Instant::now();
-    while !listed_images(&running_images(), names).is_empty() {
+    while !listed_images(&running_images_async().await, names).is_empty() {
         if started.elapsed() > CLOSE_WAIT {
             return Err(format!(
                 "{what} is still running after {} seconds. Close it from Task Manager.",
@@ -548,7 +561,7 @@ enum CloseOutcome {
 
 /// Closes VALORANT (only when `close_game`) and then the Riot Client.
 async fn close_riot(close_game: bool, riot: &RiotState) -> Result<CloseOutcome, String> {
-    let game = !listed_images(&running_images(), GAME_IMAGES).is_empty();
+    let game = !listed_images(&running_images_async().await, GAME_IMAGES).is_empty();
     if game && !close_game {
         return Ok(CloseOutcome::GameRunning);
     }

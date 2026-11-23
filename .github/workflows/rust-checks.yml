@@ -1,0 +1,52 @@
+name: Rust checks
+
+# Clippy (warnings are errors) and the backend unit tests. Releases stay in
+# build.yml, which runs only on version tags.
+on:
+  pull_request:
+    paths: ['src-tauri/**', '.github/workflows/rust-checks.yml']
+  push:
+    branches: [master]
+    paths: ['src-tauri/**', '.github/workflows/rust-checks.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rust-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      # tauri::generate_context! needs frontendDist (../dist) to exist at
+      # compile time; these checks don't need the real frontend.
+      - name: Placeholder frontend
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Set-Content -Path dist/index.html -Value '<!doctype html>'
+
+      - name: Clippy
+        working-directory: src-tauri
+        run: cargo clippy --all-targets --locked -- -D warnings
+
+      - name: Unit tests
+        working-directory: src-tauri
+        run: cargo test --lib --locked

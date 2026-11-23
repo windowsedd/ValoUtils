@@ -85,13 +85,13 @@ impl DocumentCache {
     }
 
     fn get_at(&self, key: &str, now: Instant) -> Option<Value> {
-        let entries = self.entries.lock().unwrap();
+        let entries = self.entries.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let (stored_at, document) = entries.get(key)?;
         (now.duration_since(*stored_at) < self.ttl).then(|| document.clone())
     }
 
     fn put_at(&self, key: &str, document: Value, now: Instant) {
-        let mut entries = self.entries.lock().unwrap();
+        let mut entries = self.entries.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         entries.retain(|_, (stored_at, _)| now.duration_since(*stored_at) < self.ttl);
         entries.insert(key.to_string(), (now, document));
     }
@@ -411,21 +411,21 @@ pub(crate) const SNAPSHOT_FALLBACK_TTL: Duration = Duration::from_secs(90);
 
 impl LiveCache {
     fn bump_refresh_generation(&self) -> u64 {
-        let mut generation = self.refresh_generation.lock().unwrap();
+        let mut generation = self.refresh_generation.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         *generation += 1;
         *generation
     }
 
     fn current_refresh_generation(&self) -> u64 {
-        *self.refresh_generation.lock().unwrap()
+        *self.refresh_generation.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     fn store_snapshot(&self, payload: &Value, now: Instant) {
-        *self.last_snapshot.lock().unwrap() = Some((now, payload.clone()));
+        *self.last_snapshot.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some((now, payload.clone()));
     }
 
     pub(crate) fn recent_snapshot_at(&self, now: Instant) -> Option<Value> {
-        let guard = self.last_snapshot.lock().unwrap();
+        let guard = self.last_snapshot.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let (stored_at, payload) = guard.as_ref()?;
         (now.duration_since(*stored_at) < SNAPSHOT_FALLBACK_TTL).then(|| payload.clone())
     }
@@ -457,7 +457,7 @@ impl LiveStatsCache {
         let prefix = format!("{}:{}:", puuid.to_lowercase(), queue_id.to_lowercase());
         self.values
             .lock()
-            .unwrap()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .iter()
             .filter(|(key, _)| key.starts_with(&prefix))
             .max_by_key(|(_, stats)| stats["matches"].as_u64().unwrap_or_default())
@@ -506,6 +506,10 @@ fn assemble_live_payload(
     })
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "builds one roster row from many independent lookups; a struct would only rename them"
+)]
 fn finish_live_snapshot(
     cache: &LiveCache,
     state: LiveState,
@@ -524,7 +528,7 @@ fn finish_live_snapshot(
     apply_party_membership(&mut players, premade);
     let (_, public_roster_key) =
         live_roster_keys(state, match_id, party_id, roster_key, party_membership);
-    let events = cache.agent_locks.lock().unwrap().events_for(match_id);
+    let events = cache.agent_locks.lock().unwrap_or_else(std::sync::PoisonError::into_inner).events_for(match_id);
     let payload = assemble_live_payload(
         state,
         &public_roster_key,
@@ -897,7 +901,7 @@ async fn fresh_pregame_player(
     cache: &LiveCache,
 ) -> Result<Option<Value>, String> {
     let now = Instant::now();
-    if let Some((stored_at, document)) = cache.pregame_player.lock().unwrap().clone() {
+    if let Some((stored_at, document)) = cache.pregame_player.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone() {
         if pregame_player_is_fresh(stored_at, now) {
             return Ok(Some(document));
         }
@@ -906,17 +910,17 @@ async fn fresh_pregame_player(
     match safe_get_player(|| api.pregame_get_player(puuid)).await {
         Ok(Some(document)) => {
             if document.get("MatchID").and_then(Value::as_str).is_some() {
-                *cache.pregame_player.lock().unwrap() = Some((now, document.clone()));
+                *cache.pregame_player.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some((now, document.clone()));
             }
             Ok(Some(document))
         }
         Ok(None) => {
-            *cache.pregame_player.lock().unwrap() = None;
-            *cache.pregame_match.lock().unwrap() = None;
+            *cache.pregame_player.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+            *cache.pregame_match.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = None;
             Ok(None)
         }
         Err(error) if rate_gate::is_rate_limited_error(&error) => {
-            if let Some((_, document)) = cache.pregame_player.lock().unwrap().clone() {
+            if let Some((_, document)) = cache.pregame_player.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone() {
                 return Ok(Some(document));
             }
             Err(RATE_LIMITED_ERROR.to_string())
@@ -934,7 +938,7 @@ async fn fresh_pregame_match(
     match_id: &str,
 ) -> Result<Value, String> {
     let now = Instant::now();
-    if let Some((stored_at, stored_id, document)) = cache.pregame_match.lock().unwrap().clone() {
+    if let Some((stored_at, stored_id, document)) = cache.pregame_match.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone() {
         if pregame_match_is_fresh(stored_at, &stored_id, match_id, now) {
             return Ok(document);
         }
@@ -942,12 +946,12 @@ async fn fresh_pregame_match(
 
     match api.pregame_get_match(match_id).await {
         Ok(document) => {
-            *cache.pregame_match.lock().unwrap() =
+            *cache.pregame_match.lock().unwrap_or_else(std::sync::PoisonError::into_inner) =
                 Some((now, match_id.to_string(), document.clone()));
             Ok(document)
         }
         Err(error) if rate_gate::is_rate_limited_error(&error) => {
-            if let Some((_, stored_id, document)) = cache.pregame_match.lock().unwrap().clone() {
+            if let Some((_, stored_id, document)) = cache.pregame_match.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone() {
                 if stored_id.eq_ignore_ascii_case(match_id) {
                     return Ok(document);
                 }
@@ -1329,7 +1333,7 @@ fn players_from_raw(
 /// only matters to Live Game while that is true: once everything has loaded,
 /// the hold belongs to other screens and must not flag this one.
 fn roster_missing_enrichment(cache: &LiveCache, raw_players: &[Value]) -> bool {
-    let stored = cache.enrichment.lock().unwrap();
+    let stored = cache.enrichment.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     raw_players
         .iter()
         .map(raw_puuid)
@@ -1351,6 +1355,10 @@ fn live_rate_warning(
     (enrichment_rate_limited || (cooldown_active && missing_enrichment)).then_some(RATE_LIMITED_ERROR)
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "internal helper over independent lookups; a parameter struct would only rename them"
+)]
 async fn enrich_players(
     api: &RiotApiClient,
     raw_players: &[Value],
@@ -1374,7 +1382,7 @@ async fn enrich_players(
     let mut enrichments = HashMap::new();
     let mut refresh_puuids = Vec::new();
     {
-        let stored = cache.enrichment.lock().unwrap();
+        let stored = cache.enrichment.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         for puuid in &puuids {
             let normalized = puuid.to_ascii_lowercase();
             if let Some(entry) = stored.get(&normalized).cloned() {
@@ -1505,7 +1513,7 @@ async fn enrich_players(
             cache
                 .enrichment
                 .lock()
-                .unwrap()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .insert(normalized.clone(), entry.clone());
             enrichments.insert(normalized, entry);
         }
@@ -1760,7 +1768,7 @@ async fn detect_state(
             let locks = cache
                 .agent_locks
                 .lock()
-                .unwrap()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .observe(match_id, &roster.players);
             for (player, agent) in locks {
                 log::info!("Agent lock observed: match={match_id} player={player} agent={agent}");
@@ -1874,8 +1882,8 @@ pub async fn live_game_fetch(
         sorted_roster.sort_by_key(|puuid| puuid.to_ascii_lowercase());
         let roster_key = sorted_roster.join(",").to_ascii_lowercase();
         let continuity_labels =
-            if cache.continuity_roster.lock().unwrap().as_deref() == Some(roster_key.as_str()) {
-                cache.continuity_labels.lock().unwrap().clone()
+            if cache.continuity_roster.lock().unwrap_or_else(std::sync::PoisonError::into_inner).as_deref() == Some(roster_key.as_str()) {
+                cache.continuity_labels.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone()
             } else {
                 HashMap::new()
             };
@@ -1989,8 +1997,8 @@ pub async fn live_game_fetch(
             sorted_roster.sort_by_key(|puuid| puuid.to_ascii_lowercase());
             let roster_key = sorted_roster.join(",").to_ascii_lowercase();
             let continuity_labels =
-                if cache.continuity_roster.lock().unwrap().as_deref() == Some(roster_key.as_str()) {
-                    cache.continuity_labels.lock().unwrap().clone()
+                if cache.continuity_roster.lock().unwrap_or_else(std::sync::PoisonError::into_inner).as_deref() == Some(roster_key.as_str()) {
+                    cache.continuity_labels.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone()
                 } else {
                     continuity_labels
                 };
@@ -2084,8 +2092,8 @@ pub async fn live_game_fetch(
             }
             let party_membership = party_resolution.partition_key(&roster);
             let party_labels = party_resolution.anonymous_labels(&roster);
-            *cache.continuity_roster.lock().unwrap() = Some(roster_key.clone());
-            *cache.continuity_labels.lock().unwrap() = party_labels.clone();
+            *cache.continuity_roster.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(roster_key.clone());
+            *cache.continuity_labels.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = party_labels.clone();
             let retry_in_seconds = party_history_cache.cooldown_seconds().await;
             let warning = live_rate_warning(
                 enrichment_rate_limited,
@@ -2186,7 +2194,7 @@ async fn fetch_recent_stats(
             queue_id.to_lowercase(),
             match_ids.join(",")
         );
-        if let Some(cached) = cache.lock().unwrap().get(&cache_key).cloned() {
+        if let Some(cached) = cache.lock().unwrap_or_else(std::sync::PoisonError::into_inner).get(&cache_key).cloned() {
             return Ok(cached);
         }
 
@@ -2220,7 +2228,7 @@ async fn fetch_recent_stats(
         attach_rank_shields(&mut stats, competitive_updates.as_ref());
         let normalized_matches = stats["matches"].as_u64().unwrap_or_default() as usize;
         if should_cache_recent_stats(expected_matches, matches.len(), normalized_matches) {
-            cache.lock().unwrap().insert(cache_key, stats.clone());
+            cache.lock().unwrap_or_else(std::sync::PoisonError::into_inner).insert(cache_key, stats.clone());
         }
         Ok(stats)
     }
@@ -2513,6 +2521,13 @@ pub async fn live_game_dump(app: AppHandle, riot: State<'_, RiotState>) -> Resul
         format!("Live dump saved to {}", file_path.to_string_lossy()),
     );
     Ok(json!({ "success": true, "filePath": file_path.to_string_lossy() }))
+}
+
+fn chrono_millis() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
 }
 
 #[cfg(test)]
@@ -3389,7 +3404,7 @@ mod tests {
     fn cached_recent_stats_match_player_and_queue_without_fetching() {
         let cache = LiveStatsCache::default();
         {
-            let mut values = cache.values.lock().unwrap();
+            let mut values = cache.values.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             values.insert("p1:competitive:m1,m2".into(), json!({ "matches": 2 }));
             values.insert("p1:competitive:m1,m2,m3".into(), json!({ "matches": 3 }));
             values.insert("p1:unrated:m4".into(), json!({ "matches": 1 }));
@@ -3572,11 +3587,4 @@ mod tests {
 
         assert_eq!(result, Err(PUBLIC_UNAVAILABLE_ERROR.to_string()));
     }
-}
-
-fn chrono_millis() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() as i64)
-        .unwrap_or(0)
 }

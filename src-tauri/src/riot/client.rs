@@ -44,7 +44,7 @@ pub fn get_riot_client_info(state: &RiotState) -> Result<RiotClientInfo, RiotErr
         .map_err(RiotError::from_lockfile_io)?;
 
     {
-        let cache = state.lockfile_cache.lock().unwrap();
+        let cache = state.lockfile_cache.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         if let Some((info, cached_modified)) = cache.as_ref() {
             if *cached_modified == modified {
                 return Ok(info.clone());
@@ -62,7 +62,7 @@ pub fn get_riot_client_info(state: &RiotState) -> Result<RiotClientInfo, RiotErr
         protocol: parsed.protocol.clone(),
     };
 
-    *state.lockfile_cache.lock().unwrap() = Some((info.clone(), modified));
+    *state.lockfile_cache.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some((info.clone(), modified));
     Ok(info)
 }
 
@@ -91,8 +91,8 @@ pub async fn send_internal_request(
             if !error.is_login_required() {
                 return Err(error);
             }
-            *state.lockfile_cache.lock().unwrap() = None;
-            *state.tokens_cache.lock().unwrap() = None;
+            *state.lockfile_cache.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+            *state.tokens_cache.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = None;
             return Err(error);
         }
     };
@@ -101,8 +101,8 @@ pub async fn send_internal_request(
     if !status.is_success() {
         let error = classify_local_http(status.as_u16(), &text);
         if error.is_login_required() {
-            *state.lockfile_cache.lock().unwrap() = None;
-            *state.tokens_cache.lock().unwrap() = None;
+            *state.lockfile_cache.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+            *state.tokens_cache.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = None;
         }
         return Err(error);
     }
@@ -167,7 +167,7 @@ pub async fn get_tokens(state: &RiotState, skip_cache: bool) -> Result<Value, Ri
     const MIN_REMAINING_SECS: i64 = 120;
 
     if !skip_cache {
-        let cache = state.tokens_cache.lock().unwrap();
+        let cache = state.tokens_cache.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         if let Some((tokens, cached_at)) = cache.as_ref() {
             let fresh_enough = cached_at.elapsed() < CACHE_TTL;
             let still_valid = access_token_ttl(tokens)
@@ -180,13 +180,13 @@ pub async fn get_tokens(state: &RiotState, skip_cache: bool) -> Result<Value, Ri
     }
     let tokens =
         send_internal_request(state, "/entitlements/v1/token", reqwest::Method::GET, None).await?;
-    *state.tokens_cache.lock().unwrap() = Some((tokens.clone(), std::time::Instant::now()));
+    *state.tokens_cache.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some((tokens.clone(), std::time::Instant::now()));
     Ok(tokens)
 }
 
 /// Drop cached tokens so the next call re-reads them from the Riot Client.
 pub fn invalidate_tokens(state: &RiotState) {
-    *state.tokens_cache.lock().unwrap() = None;
+    *state.tokens_cache.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = None;
 }
 
 pub async fn get_user_info(state: &RiotState) -> Result<Value, RiotError> {

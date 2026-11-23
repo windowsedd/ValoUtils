@@ -775,7 +775,7 @@ mod tests {
         assert_eq!(archive.accounts["me"].len(), 1);
         assert_eq!(archive.accounts["me"][MATCH].messages.len(), 2);
         assert_eq!(archive.accounts["me"][MATCH].match_uuid, MATCH);
-        assert!(archive.accounts.get("other").is_none());
+        assert!(!archive.accounts.contains_key("other"));
     }
 
     #[test]

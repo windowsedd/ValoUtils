@@ -58,7 +58,7 @@ fn messages() -> &'static Mutex<VecDeque<FakePlayerMessage>> {
 pub fn record_message(body: impl Into<String>, is_self: bool) {
     static SEQUENCE: AtomicU64 = AtomicU64::new(0);
     let sequence = SEQUENCE.fetch_add(1, Ordering::Relaxed) + 1;
-    let mut transcript = messages().lock().unwrap();
+    let mut transcript = messages().lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     transcript.push_back(FakePlayerMessage {
         id: format!("fake-player-{sequence}"),
         body: body.into(),
@@ -71,12 +71,12 @@ pub fn record_message(body: impl Into<String>, is_self: bool) {
 }
 
 pub fn transcript() -> Vec<FakePlayerMessage> {
-    messages().lock().unwrap().iter().cloned().collect()
+    messages().lock().unwrap_or_else(std::sync::PoisonError::into_inner).iter().cloned().collect()
 }
 
 #[cfg(test)]
 fn clear_transcript() {
-    messages().lock().unwrap().clear();
+    messages().lock().unwrap_or_else(std::sync::PoisonError::into_inner).clear();
 }
 
 fn now_iso_millis() -> String {

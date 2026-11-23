@@ -184,6 +184,30 @@ async fn write_response(
     stream.flush().await
 }
 
+/// Scalar viewer, pointed at the `/openapi.json` route by relative URL — the
+/// page holds no spec content of its own.
+const REFERENCE_PAGE: &str = r#"<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Riot Client API</title>
+  <style>body{margin:0}</style>
+</head>
+<body>
+  <div id="app"></div>
+  <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
+  <script>
+    Scalar.createApiReference('#app', {
+      url: '/openapi.json',
+      forceDarkModeState: 'dark',
+      hideDarkModeToggle: true,
+      hideClientButton: true,
+      hideTestRequestButton: true,
+    })
+  </script>
+</body>
+</html>"#;
+
 #[cfg(test)]
 mod tests {
     //! Covers the hand-rolled HTTP framing/parsing. The route table itself is
@@ -240,27 +264,3 @@ mod tests {
         assert!(path.is_none());
     }
 }
-
-/// Scalar viewer, pointed at the `/openapi.json` route by relative URL — the
-/// page holds no spec content of its own.
-const REFERENCE_PAGE: &str = r#"<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <title>Riot Client API</title>
-  <style>body{margin:0}</style>
-</head>
-<body>
-  <div id="app"></div>
-  <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
-  <script>
-    Scalar.createApiReference('#app', {
-      url: '/openapi.json',
-      forceDarkModeState: 'dark',
-      hideDarkModeToggle: true,
-      hideClientButton: true,
-      hideTestRequestButton: true,
-    })
-  </script>
-</body>
-</html>"#;

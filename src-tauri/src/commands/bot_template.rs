@@ -277,7 +277,7 @@ impl ContentLabels {
                 map.get("mapUrl").and_then(Value::as_str),
                 map.get("mapUrl")
                     .and_then(Value::as_str)
-                    .and_then(|value| value.split('/').filter(|part| !part.is_empty()).next_back()),
+                    .and_then(|value| value.split('/').rfind(|part| !part.is_empty())),
             ]
             .into_iter()
             .flatten()
@@ -549,9 +549,7 @@ fn values_from_context(
         let map_key = snapshot.map_id.to_ascii_lowercase();
         let fallback = snapshot
             .map_id
-            .split('/')
-            .filter(|part| !part.is_empty())
-            .next_back()
+            .split('/').rfind(|part| !part.is_empty())
             .unwrap_or(snapshot.map_id.as_str());
         values.insert(
             "map".into(),

@@ -34,7 +34,7 @@ pub(super) struct Lease {
 }
 impl Drop for Lease {
     fn drop(&mut self) {
-        let mut state = self.hub.0.lock().unwrap();
+        let mut state = self.hub.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         state.connections.remove(&self.id);
         state
             .pending
@@ -44,7 +44,7 @@ impl Drop for Lease {
 struct Request<'a>(&'a Hub, String);
 impl Drop for Request<'_> {
     fn drop(&mut self) {
-        self.0 .0.lock().unwrap().pending.remove(&self.1);
+        self.0 .0.lock().unwrap_or_else(std::sync::PoisonError::into_inner).pending.remove(&self.1);
     }
 }
 fn same_room(a: &str, b: &str) -> bool {
@@ -63,7 +63,7 @@ fn same_room(a: &str, b: &str) -> bool {
 impl Hub {
     pub fn register(self: &Arc<Self>) -> (Lease, mpsc::Receiver<Packet>) {
         let (sender, receiver) = mpsc::channel(32);
-        let mut state = self.0.lock().unwrap();
+        let mut state = self.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         state.sequence += 1;
         let id = state.sequence;
         state.connections.insert(
@@ -83,12 +83,12 @@ impl Hub {
         )
     }
     pub fn reset(&self) {
-        let mut state = self.0.lock().unwrap();
+        let mut state = self.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         state.connections.clear();
         state.pending.clear();
     }
     pub fn is_pending(&self, id: &str) -> bool {
-        self.0.lock().unwrap().pending.contains_key(id)
+        self.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner).pending.contains_key(id)
     }
     // Record immediately before forwarding, so a fast server reply cannot race a join.
     // A failed write tears down the connection lease and removes these routes.
@@ -96,7 +96,7 @@ impl Hub {
         let Ok(root) = Element::parse(stanza.as_bytes()) else {
             return;
         };
-        let mut state = self.0.lock().unwrap();
+        let mut state = self.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let Some(route) = state.connections.get_mut(&connection) else {
             return;
         };
@@ -131,7 +131,7 @@ impl Hub {
             return;
         };
         let (room, nick) = from.split_once('/').unwrap_or((from, ""));
-        let mut state = self.0.lock().unwrap();
+        let mut state = self.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let Some(route) = state.connections.get_mut(&connection) else {
             return;
         };
@@ -211,7 +211,7 @@ impl Hub {
     }
     pub async fn send(&self, cid: &str, body: &str) -> Result<(), String> {
         let (receiver, id) = {
-            let mut state = self.0.lock().unwrap();
+            let mut state = self.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             let mut candidates: Vec<_> = state
                 .connections
                 .iter()
@@ -298,7 +298,7 @@ mod tests {
     }
     fn join(hub: &Hub, id: u64) {
         hub.outgoing(id, &format!(r#"<presence to="{ROOM}/me"/>"#));
-        hub.incoming(id, &format!(r#"<presence from="party@ares-parties.ap1.pvp.net/me"><x xmlns="http://jabber.org/protocol/muc#user"><status code="110"/></x></presence>"#));
+        hub.incoming(id, r#"<presence from="party@ares-parties.ap1.pvp.net/me"><x xmlns="http://jabber.org/protocol/muc#user"><status code="110"/></x></presence>"#);
     }
     #[tokio::test]
     async fn gui_group_send_is_not_disabled_by_an_unrelated_relay_connection() {
@@ -315,7 +315,7 @@ mod tests {
             hub.incoming(native.id, &format!(r#"<message from="{ROOM}/me" type="groupchat" id="{}"><body>hello</body></message>"#, packet.id));
         }}
         assert!(sending.await.is_ok());
-        assert!(hub.0.lock().unwrap().pending.is_empty());
+        assert!(hub.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner).pending.is_empty());
     }
     #[tokio::test]
     async fn gui_chat_requires_confirmed_room_and_rejects_stale_or_ambiguous_routes() {
@@ -356,7 +356,7 @@ mod tests {
                 drop(native);
             }
             assert!(sending.await.is_err());
-            assert!(hub.0.lock().unwrap().pending.is_empty());
+            assert!(hub.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner).pending.is_empty());
         }
     }
 
@@ -385,7 +385,7 @@ mod tests {
         assert!(hub
             .0
             .lock()
-            .unwrap()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .connections
             .contains_key(&new_connection.id));
     }

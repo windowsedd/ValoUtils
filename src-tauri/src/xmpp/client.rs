@@ -270,9 +270,9 @@ async fn read_stanza(read: &mut ReadHalf<Stream>) -> Result<String, String> {
 
 fn is_balanced(xml: &str) -> bool {
     let mut depth: i32 = 0;
-    let mut chars = xml.char_indices().peekable();
+    let chars = xml.char_indices().peekable();
     let mut saw_any = false;
-    while let Some((i, c)) = chars.next() {
+    for (i, c) in chars {
         if c != '<' {
             continue;
         }
@@ -458,6 +458,10 @@ fn build_presence_stanza() -> String {
 /// Background read loop + presence keep-alive, mirroring `_mainLoop()`. Only
 /// dispatches `groupchat` message stanzas into the shared buffer (capped at
 /// 200) — ValoUtils doesn't use presence/roster/friend events.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "connection setup takes independent session values; a parameter struct would only rename them"
+)]
 async fn run_background(
     mut read: ReadHalf<Stream>,
     alive: Arc<AtomicBool>,
@@ -549,7 +553,7 @@ fn handle_incoming_stanza(
             round: ChatRound::current(),
         };
         {
-            let mut buffer = messages.lock().unwrap();
+            let mut buffer = messages.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             if buffer.iter().any(|item| item.id == message.id) {
                 continue;
             }
@@ -635,7 +639,7 @@ mod tests {
             "Self#NA1",
         );
 
-        assert_eq!(messages.lock().unwrap().len(), 1);
+        assert_eq!(messages.lock().unwrap_or_else(std::sync::PoisonError::into_inner).len(), 1);
         let published = receiver.try_recv().unwrap();
         assert_eq!(published.id, "m-1");
         assert_eq!(published.owner_puuid, "self");
@@ -697,7 +701,7 @@ mod tests {
             presence_receiver.try_recv().unwrap(),
             crate::xmpp::presence::PresenceSignal::Available { generation: 5, .. }
         ));
-        assert!(messages.lock().unwrap().is_empty());
+        assert!(messages.lock().unwrap_or_else(std::sync::PoisonError::into_inner).is_empty());
     }
 }
 

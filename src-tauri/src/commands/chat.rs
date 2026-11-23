@@ -90,11 +90,9 @@ fn arg(args: &[Value], index: usize) -> Option<String> {
 }
 
 fn pick_string<'a>(values: impl IntoIterator<Item = Option<&'a str>>) -> String {
-    for v in values {
-        if let Some(s) = v {
-            if !s.trim().is_empty() {
-                return s.to_string();
-            }
+    for s in values.into_iter().flatten() {
+        if !s.trim().is_empty() {
+            return s.to_string();
         }
     }
     String::new()
@@ -1248,13 +1246,13 @@ fn normalize_messages(
                 ]
                 .map(|v| v.and_then(|v| v.as_str())),
             );
-            let sender_root = id_root(&if !sender.is_empty() {
-                sender.clone()
-            } else {
-                pick_string(
+            let sender_root = if sender.is_empty() {
+                id_root(&pick_string(
                     [message.get("pid"), message.get("PID")].map(|v| v.and_then(|v| v.as_str())),
-                )
-            });
+                ))
+            } else {
+                id_root(&sender)
+            };
             let is_self = !own_puuid.is_empty() && sender_root == id_root(own_puuid);
             let timestamp = pick_string(
                 [
@@ -1825,7 +1823,7 @@ async fn mark_conversation_read(
     } else {
         listed
             .as_ref()
-            .map(|item| conversation_last_mid(item))
+            .map(conversation_last_mid)
             .unwrap_or_default()
     };
     if resolved_mid.is_empty() || resolved_mid == cid {

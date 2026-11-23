@@ -194,7 +194,7 @@ fn name_cache() -> &'static Mutex<HashMap<String, CachedName>> {
 /// normalising it here would leave every cached player nameless.
 fn take_cached_names(puuids: &[String]) -> (Vec<Value>, Vec<String>) {
     let now = Instant::now();
-    let mut cache = name_cache().lock().unwrap();
+    let mut cache = name_cache().lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     cache.retain(|_, entry| now.duration_since(entry.cached_at) <= NAME_CACHE_TTL);
 
     let mut known = Vec::new();
@@ -219,7 +219,7 @@ fn take_cached_names(puuids: &[String]) -> (Vec<Value>, Vec<String>) {
 
 fn remember_names(response: &Value) {
     let now = Instant::now();
-    let mut cache = name_cache().lock().unwrap();
+    let mut cache = name_cache().lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     for entry in response.as_array().into_iter().flatten() {
         let Some(subject) = entry.get("Subject").and_then(|v| v.as_str()) else {
             continue;
@@ -930,7 +930,7 @@ mod tests {
         ]));
         name_cache()
             .lock()
-            .unwrap()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .get_mut("stale-e")
             .expect("just cached")
             .cached_at -= NAME_CACHE_TTL + Duration::from_secs(1);

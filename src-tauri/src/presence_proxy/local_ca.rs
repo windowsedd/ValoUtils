@@ -165,6 +165,8 @@ fn install_cache_file(temporary: &Path, path: &Path) -> Result<(), String> {
         .encode_wide()
         .chain(std::iter::once(0))
         .collect::<Vec<_>>();
+    // SAFETY: `source` and `destination` are NUL-terminated UTF-16 buffers
+    // that outlive the call, and MoveFileExW only reads them.
     let succeeded = unsafe {
         MoveFileExW(
             source.as_ptr(),

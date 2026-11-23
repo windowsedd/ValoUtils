@@ -116,14 +116,14 @@ impl PresenceController {
         }
     }
     pub fn state(&self) -> MaskingState {
-        self.inner.lock().unwrap().masking
+        self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner).masking
     }
     pub fn mode(&self) -> PresenceMode {
         self.state().mode
     }
     fn mutate(&self, update: impl FnOnce(&mut MaskingState)) {
         let state = {
-            let mut inner = self.inner.lock().unwrap();
+            let mut inner = self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             update(&mut inner.masking);
             inner.masking
         };
@@ -182,28 +182,28 @@ impl PresenceController {
         }
     }
     pub fn set_upstream(&self, target: UpstreamTarget) {
-        self.inner.lock().unwrap().upstream = Some(target);
+        self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner).upstream = Some(target);
     }
     pub fn cert(&self) -> &'static ChatCertIdentity {
-        self.inner.lock().unwrap().cert
+        self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner).cert
     }
     fn set_cert(&self, cert: &'static ChatCertIdentity) {
-        self.inner.lock().unwrap().cert = cert;
+        self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner).cert = cert;
     }
     pub fn upstream(&self) -> Option<UpstreamTarget> {
-        self.inner.lock().unwrap().upstream.clone()
+        self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner).upstream.clone()
     }
     pub fn set_relay_port(&self, port: Option<u16>) {
-        self.inner.lock().unwrap().relay_port = port;
+        self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner).relay_port = port;
     }
     pub fn relay_port(&self) -> Option<u16> {
-        self.inner.lock().unwrap().relay_port
+        self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner).relay_port
     }
     pub fn connection_opened(&self) {
-        self.inner.lock().unwrap().active_connections += 1;
+        self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner).active_connections += 1;
     }
     pub fn connection_closed(&self) {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         inner.active_connections = inner.active_connections.saturating_sub(1);
         if inner.active_connections == 0 {
             if let Ok(mut transcript) = live_chat().lock() {
@@ -216,7 +216,7 @@ impl PresenceController {
     }
     pub fn reset_chat_session(&self) {
         gui_chat_hub().reset();
-        self.inner.lock().unwrap().active_connections = 0;
+        self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner).active_connections = 0;
         if let Ok(mut transcript) = live_chat().lock() {
             transcript.clear();
         }
@@ -225,16 +225,16 @@ impl PresenceController {
         }
     }
     pub fn capture_presence(&self, stanza: String) {
-        self.inner.lock().unwrap().last_presence = Some(stanza);
+        self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner).last_presence = Some(stanza);
     }
     pub fn last_presence(&self) -> Option<String> {
-        self.inner.lock().unwrap().last_presence.clone()
+        self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner).last_presence.clone()
     }
     pub fn set_warning(&self, warning: Option<String>) {
-        self.inner.lock().unwrap().last_warning = warning;
+        self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner).last_warning = warning;
     }
     pub fn snapshot(&self) -> PresenceSnapshot {
-        let inner = self.inner.lock().unwrap();
+        let inner = self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         PresenceSnapshot {
             enabled: inner.masking.enabled,
             mode: inner.masking.mode,
