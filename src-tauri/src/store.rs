@@ -37,11 +37,11 @@ impl Store {
     }
 
     pub fn get(&self, key: &str) -> Option<Value> {
-        self.data.lock().unwrap().get(key).cloned()
+        self.data.lock().unwrap_or_else(std::sync::PoisonError::into_inner).get(key).cloned()
     }
 
     pub fn set(&self, key: &str, value: Value) {
-        let mut data = self.data.lock().unwrap();
+        let mut data = self.data.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         data.insert(key.to_string(), value);
         let _ = fs::write(
             &self.path,
@@ -50,7 +50,7 @@ impl Store {
     }
 
     pub fn try_set(&self, key: &str, value: Value) -> Result<(), String> {
-        let mut data = self.data.lock().unwrap();
+        let mut data = self.data.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let mut next = data.clone();
         next.insert(key.to_string(), value);
         let bytes = serde_json::to_vec(&next).map_err(|e| e.to_string())?;

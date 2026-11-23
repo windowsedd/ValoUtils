@@ -174,11 +174,22 @@ const applyStatus = (message: any) => {
 						</Button>
 					) : (
 					<>
+					{/* Default: the Riot Client alone (through the relay); opening the game is opt-in. */}
+					<button
+						type="button"
+						onClick={() => launch("client")}
+						disabled={busy || alreadyRunning}
+						title={t("common.openRiotClientHint")}
+						className="flex h-8 items-center gap-1.5 rounded-[6px] border border-(--accent-border) bg-(--accent-soft) px-3 text-[12px] font-medium text-(--accent-selected) transition-colors hover:bg-(--accent-soft-hover) disabled:cursor-not-allowed disabled:opacity-40"
+					>
+						<LuMonitor className="h-3 w-3" />
+						{launching === "client" ? t("common.launching") : t("common.openRiotClient")}
+					</button>
 					<button
 						type="button"
 						onClick={() => launch("relay")}
 						disabled={busy || alreadyRunning}
-						className="flex h-8 items-center gap-1.5 rounded-[6px] border border-(--accent-border) bg-(--accent-soft) px-3 text-[12px] font-medium text-(--accent-selected) transition-colors hover:bg-(--accent-soft-hover) disabled:cursor-not-allowed disabled:opacity-40"
+						className="flex h-8 items-center gap-1.5 rounded-[6px] border border-(--border) bg-(--control) px-3 text-[12px] font-medium text-(--text-primary) transition-colors hover:bg-(--surface-hover) disabled:cursor-not-allowed disabled:opacity-40"
 					>
 						<LuPlay className="h-3 w-3" />
 						{launching === "relay" ? t("common.launching") : t("common.launchWithRelay")}
@@ -191,16 +202,6 @@ const applyStatus = (message: any) => {
 					>
 						<LuPlay className="h-3 w-3" />
 						{launching === "normal" ? t("common.launching") : t("common.launchNormal")}
-					</button>
-					<button
-						type="button"
-						onClick={() => launch("client")}
-						disabled={busy || alreadyRunning}
-						title={t("common.openRiotClientHint")}
-						className="flex h-8 items-center gap-1.5 rounded-[6px] border border-(--border) bg-(--control) px-3 text-[12px] font-medium text-(--text-primary) transition-colors hover:bg-(--surface-hover) disabled:cursor-not-allowed disabled:opacity-40"
-					>
-						<LuMonitor className="h-3 w-3" />
-						{launching === "client" ? t("common.launching") : t("common.openRiotClient")}
 					</button>
 					</>
 					)}

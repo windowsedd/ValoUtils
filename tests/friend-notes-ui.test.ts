@@ -14,6 +14,7 @@ describe("Friends note wiring", () => {
 
   test("shows notes for accepted rows and hides them for requests", () => {
     expect(friendsPage).toContain("<FriendIdentity person={friend} showNote />");
-    expect(friendsPage).toContain('showNote={"isOnline" in person}');
+    // Request rows have their own renderer and never show a note.
+    expect(friendsPage).toContain("<FriendIdentity person={request} showNote={false} />");
   });
 });

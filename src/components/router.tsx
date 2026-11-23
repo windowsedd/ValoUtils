@@ -5,6 +5,7 @@ import { Route } from "@/types/router";
 import RiotStatusBar from "@/components/riot-status-bar";
 import { NavbarRail } from "@/components/navbar-rail";
 import { RouteErrorBoundary } from "@/components/route-error-boundary";
+import { PlayerPageOverlay } from "@/components/player-page-overlay";
 import { useTranslation } from "react-i18next";
 import { partitionNavbarRoutes } from "@/util/navbar-routes";
 import {
@@ -169,8 +170,10 @@ const Router = () => {
 				statusControl={<RiotStatusBar compact />}
 			/>
 			<main className="min-w-0 flex-1 py-2.5 pr-2.5 pl-2" data-page-frame="sheet">
-				<div className="page-sheet h-full overflow-hidden rounded-[16px] border border-(--border) bg-(--background)">
+				<div className="page-sheet relative h-full overflow-hidden rounded-[16px] border border-(--border) bg-(--background)">
 					<div className="h-full overflow-y-auto">{page}</div>
+					{/* View profile pages sit over the page, which stays mounted for Back. */}
+					<PlayerPageOverlay key={selectedId} />
 				</div>
 			</main>
 		</div>

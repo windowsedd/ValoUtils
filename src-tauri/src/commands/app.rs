@@ -102,7 +102,7 @@ pub fn config_get_all(store: State<ConfigStore>) -> Value {
         // Every key the frontend reads has to be listed here — this is an
         // allowlist, not a passthrough of the whole store.
         "presenceEnabled": get_or("presenceEnabled", json!(true)),
-        "presenceMode": get_or("presenceMode", json!("offline")),
+        "presenceMode": get_or("presenceMode", json!("online")),
         "presenceStartup": get_or("presenceStartup", json!("last")),
         "presenceMucEnabled": get_or("presenceMucEnabled", json!(true)),
         "presenceCert": get_or("presenceCert", json!("deceive")),

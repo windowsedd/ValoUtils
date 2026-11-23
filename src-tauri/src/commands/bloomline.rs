@@ -161,9 +161,9 @@ mod tests {
                 Some(json!({"Subject":"first","Bonsais":[]})),
             ))
         };
-        let tokens = async { Ok(json!({"subject": *owner.lock().unwrap()})) };
+        let tokens = async { Ok(json!({"subject": *owner.lock().unwrap_or_else(std::sync::PoisonError::into_inner)})) };
         let (result, ()) = tokio::join!(confirmed_bloomline(request, tokens, None), async {
-            *owner.lock().unwrap() = "second";
+            *owner.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = "second";
             release.send(()).unwrap();
         },);
         assert_eq!(

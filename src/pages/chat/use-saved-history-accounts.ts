@@ -11,6 +11,7 @@ export type SavedHistoryAccount = {
 };
 
 type AccountsReply = { success: true; accounts: SavedHistoryAccount[] } | { success: false; error?: string };
+type RemoveReply = { success: true; removed: boolean } | { success: false; error?: string };
 type HistoryReply =
 	| { success: true; owner: string; matches: SavedChatMatch[]; names: Record<string, string> }
 	| { success: false; error?: string };
@@ -31,6 +32,9 @@ export const useSavedHistoryAccounts = (
 	const [accounts, setAccounts] = useState<SavedHistoryAccount[]>([]);
 	const [chosen, setChosen] = useState<string | null>(null);
 	const [loaded, setLoaded] = useState<{ owner: string; matches: SavedChatMatch[]; names: Record<string, string> } | null>(null);
+	// Removed here: hidden at once, before the next chat poll drops them too.
+	const [removed, setRemoved] = useState<ReadonlySet<string>>(new Set());
+	const [version, setVersion] = useState(0);
 	const liveCount = liveMatches.length;
 
 	// New saves change the list, so it is reread when the live count moves.
@@ -45,7 +49,7 @@ export const useSavedHistoryAccounts = (
 		return () => {
 			active = false;
 		};
-	}, [open, signedInOwner, liveCount]);
+	}, [open, signedInOwner, liveCount, version]);
 
 	const known = (puuid: string | null) => !!puuid && accounts.some((account) => account.puuid === puuid);
 	const owner =
@@ -68,15 +72,29 @@ export const useSavedHistoryAccounts = (
 		return () => {
 			active = false;
 		};
-	}, [open, owner, accounts]);
+	}, [open, owner, accounts, version]);
 
 	const data = loaded?.owner === owner ? loaded : null;
+	const visible = (list: readonly SavedChatMatch[]) =>
+		removed.size === 0 ? list : list.filter((match) => !removed.has(`${owner}:${match.matchUuid}`));
+
+	/** Deletes one saved match chat of the shown account on this PC. */
+	const remove = async (matchUuid: string): Promise<RemoveReply> => {
+		const reply = await invoke<RemoveReply>("chat_saved_history_remove", { args: [owner, matchUuid] });
+		if (reply.success) {
+			setRemoved((current) => new Set(current).add(`${owner}:${matchUuid}`));
+			setVersion((current) => current + 1);
+		}
+		return reply;
+	};
+
 	return {
 		accounts,
 		owner,
 		setOwner: setChosen,
 		isLive,
-		matches: isLive ? liveMatches : (data?.matches ?? EMPTY),
+		matches: visible(isLive ? liveMatches : (data?.matches ?? EMPTY)),
+		remove,
 		names: data?.names ?? {},
 	};
 };

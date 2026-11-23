@@ -1,5 +1,8 @@
 use std::net::Ipv4Addr;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
+use tauri::Manager;
+
+use crate::store::ConfigStore;
 use std::sync::{Arc, Mutex, OnceLock};
 use tokio::io::{AsyncReadExt, AsyncWriteExt, ReadHalf, WriteHalf};
 use tokio::net::TcpStream;
@@ -35,25 +38,89 @@ fn start_lock() -> &'static AsyncMutex<()> {
     START_LOCK.get_or_init(|| AsyncMutex::new(()))
 }
 
+/// The relay port of this session, so a restarted relay comes back where the
+/// running Riot Client expects it.
+static LAST_PORT: AtomicU16 = AtomicU16::new(0);
+
+/// The Riot Client reads `chat.port` once, at launch. A relay that came back on
+/// another port would leave that client reconnecting to a dead port (offline,
+/// no commands) until it restarts, so reuse the last port: this session's, or
+/// the one saved as `relayPort` for a client that outlived the previous app.
+fn preferred_port() -> u16 {
+    match LAST_PORT.load(Ordering::Relaxed) {
+        0 => crate::presence_proxy::app_handle()
+            .and_then(|app| app.state::<ConfigStore>().get("relayPort"))
+            .and_then(|value| value.as_u64())
+            .and_then(|port| u16::try_from(port).ok())
+            .unwrap_or(0),
+        port => port,
+    }
+}
+
+fn remember_port(port: u16) {
+    LAST_PORT.store(port, Ordering::Relaxed);
+    if let Some(app) = crate::presence_proxy::app_handle() {
+        let config = app.state::<ConfigStore>();
+        if config.get("relayPort").and_then(|value| value.as_u64()) != Some(u64::from(port)) {
+            config.set("relayPort", serde_json::json!(port));
+        }
+    }
+}
+
+async fn bind_listener() -> Result<tokio::net::TcpListener, String> {
+    let preferred = preferred_port();
+    if preferred != 0 {
+        match tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, preferred)).await {
+            Ok(listener) => return Ok(listener),
+            Err(error) => log::warn!(
+                "XMPP relay port {preferred} is taken ({error}); a Riot Client opened earlier must restart through ValoUtils to reconnect"
+            ),
+        }
+    }
+    tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+        .await
+        .map_err(|error| format!("Could not bind the XMPP relay: {error}"))
+}
+
 pub async fn start() -> Result<u16, String> {
     let _start_guard = start_lock().lock().await;
-    if let Some(active) = runtime().lock().unwrap().as_ref() {
-        return Ok(active.port);
+    {
+        let mut active = runtime().lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        match active.as_ref() {
+            Some(relay) if !relay.handle.inner().is_finished() => return Ok(relay.port),
+            // The accept task ended: forget it so this start brings it back.
+            Some(relay) => {
+                log::warn!(
+                    "XMPP relay on port {} had stopped; restarting it",
+                    relay.port
+                );
+                *active = None;
+            }
+            None => {}
+        }
     }
     let acceptor = local_acceptor().await?;
-    let listener = tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
-        .await
-        .map_err(|error| format!("Could not bind the XMPP relay: {error}"))?;
+    let listener = bind_listener().await?;
     let port = listener
         .local_addr()
         .map_err(|error| error.to_string())?
         .port();
+    remember_port(port);
     let handle = tauri::async_runtime::spawn(async move {
         let mut connections = tokio::task::JoinSet::new();
         loop {
             tokio::select! {
                 accepted = listener.accept() => {
-                    let Ok((socket, _)) = accepted else { break };
+                    // One failed accept (a client that reset mid-handshake, a
+                    // momentary resource limit) must not take the relay down.
+                    let (socket, _) = match accepted {
+                        Ok(pair) => pair,
+                        Err(error) => {
+                            log::warn!("XMPP relay accept failed: {error}");
+                            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+                            continue;
+                        }
+                    };
                     let acceptor = acceptor.clone();
                     connections.spawn(async move {
                         if let Err(error) = handle_socket(socket, acceptor).await {
@@ -65,7 +132,7 @@ pub async fn start() -> Result<u16, String> {
             }
         }
     });
-    *runtime().lock().unwrap() = Some(RelayRuntime { handle, port });
+    *runtime().lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(RelayRuntime { handle, port });
     crate::presence_proxy::controller().set_relay_port(Some(port));
     Ok(port)
 }
@@ -104,6 +171,9 @@ async fn handle_socket(socket: TcpStream, acceptor: TlsAcceptor) -> Result<(), S
         .accept(socket)
         .await
         .map_err(|error| format!("Local XMPP TLS failed: {error}"))?;
+    // A completed local handshake means this Riot Client is pointed at the
+    // relay, even if forwarding fails below.
+    crate::presence_proxy::remember_relay_client();
     let target = crate::presence_proxy::controller()
         .upstream()
         .ok_or_else(|| {
@@ -169,6 +239,10 @@ async fn handle_socket(socket: TcpStream, acceptor: TlsAcceptor) -> Result<(), S
     result
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the relay loop owns these per-connection handles; bundling them adds a type used once"
+)]
 async fn client_to_remote(
     mut read: ReadHalf<LocalTls>,
     local_write: Arc<AsyncMutex<WriteHalf<LocalTls>>>,
@@ -232,12 +306,51 @@ async fn client_to_remote(
                         continue;
                     };
                     crate::presence_proxy::record_live_chat(stanza);
-                    // Commands typed in a group room never reach it and never
-                    // run: they only work when whispered to the Dummy Bot.
+                    // `$offline` and friends typed in a group room: applied like a
+                    // whisper to the bot and never posted, so teammates don't see
+                    // them and presence actually changes.
+                    if let Some(topic) = outgoing_live_groupchat(stanza)
+                        .and_then(|body| crate::riot::chat_command::parse_help_command(&body))
+                    {
+                        // `/help` in a room: never posted, answered privately.
+                        for line in crate::riot::chat_command::help_lines(topic.as_deref()) {
+                            if let Err(error) = crate::presence_proxy::send_bot_direct(&line) {
+                                log::warn!("Help reply could not be delivered: {error:?}");
+                                break;
+                            }
+                        }
+                        continue;
+                    }
+                    if let Some(body) = outgoing_group_presence_command(stanza) {
+                        let reply = crate::presence_proxy::apply_command(crate::fake_player::parse_command(&body));
+                        if let Err(error) = crate::presence_proxy::send_bot_direct(&reply) {
+                            log::warn!("Presence command reply could not be delivered: {error:?}");
+                        }
+                        continue;
+                    }
+                    // Commands typed in a group room never reach it. The read-only
+                    // ones with private answers (.tran, .who, .rr, .last) run from
+                    // there; everything else only works when whispered to the bot.
                     if let Some(body) = outgoing_group_command(stanza) {
-                        let hint = crate::riot::chat_command::group_command_hint(&body);
-                        if let Err(error) = crate::presence_proxy::send_bot_direct(&hint) {
-                            log::warn!("Group command hint could not be delivered: {error:?}");
+                        let tran = crate::presence_proxy::xml::group_muc_target(stanza).and_then(|(room, _, _)| {
+                            crate::riot::chat_command::history_translate_for_room(&body, room)
+                        });
+                        // A saved custom trigger with the same name wins.
+                        let quick = crate::riot::chat_command::parse_quick_command(&body).filter(|_| {
+                            !crate::commands::riot_chat::is_prefixed_custom_trigger(
+                                &body,
+                                crate::presence_proxy::app_handle(),
+                            )
+                        });
+                        match (tran, quick) {
+                            (Some(command), _) => run_room_translation(command),
+                            (None, Some(quick)) => run_room_quick(quick),
+                            (None, None) => {
+                                let hint = crate::riot::chat_command::group_command_hint(&body);
+                                if let Err(error) = crate::presence_proxy::send_bot_direct(&hint) {
+                                    log::warn!("Group command hint could not be delivered: {error:?}");
+                                }
+                            }
                         }
                         continue;
                     }
@@ -245,8 +358,44 @@ async fn client_to_remote(
                         if let Some((bot_jid, command)) = parse_bot_message(stanza).map_err(|error| format!("Bot command parse failed: {error}"))? {
                             if command != BotCommand::Consume {
                                 reply_sequence += 1;
-                                let body = bot_message_body(stanza).unwrap_or_default();
-                                crate::fake_player::record_message(&body, true);
+                                let typed = bot_message_body(stanza).unwrap_or_default();
+                                crate::fake_player::record_message(&typed, true);
+                                // The prefix is optional in whispers: "who" runs as "/who".
+                                let body = crate::riot::chat_command::dm_command_line(&typed);
+                                let multi_line = match &command {
+                                    BotCommand::Quick(quick) => Some(
+                                        crate::commands::quick_stats::reply_lines(
+                                            *quick,
+                                            crate::presence_proxy::app_handle(),
+                                        )
+                                        .await,
+                                    ),
+                                    BotCommand::HelpTopic(topic) => {
+                                        Some(crate::riot::chat_command::help_lines(topic.as_deref()))
+                                    }
+                                    _ => None,
+                                };
+                                if let Some(lines) = multi_line {
+                                    // Valorant collapses newlines in a whisper, so
+                                    // each line goes out as its own message.
+                                    let version = bot_version.lock().await.clone();
+                                    for (index, line) in lines.iter().enumerate() {
+                                        if index > 0 {
+                                            reply_sequence += 1;
+                                        }
+                                        crate::fake_player::record_message(line, false);
+                                        for client_frame in bot_command_frames(
+                                            account_domain,
+                                            version.as_deref(),
+                                            &bot_jid,
+                                            line,
+                                            reply_sequence,
+                                        ) {
+                                            write_frame(&local_write, client_frame.as_bytes()).await?;
+                                        }
+                                    }
+                                    continue;
+                                }
                                 let reply = if command == BotCommand::Translate {
                                     translate_bot_command_on_connection(&body, &remote_write).await
                                 } else if command == BotCommand::TranslateHistory {
@@ -612,6 +761,47 @@ fn outgoing_live_groupchat(stanza: &str) -> Option<String> {
     Some(crate::presence_proxy::xml::parse_groupchat_line(stanza)?.body)
 }
 
+/// Runs a `.tran` typed in a group room and whispers the result from the
+/// Dummy Bot. Spawned so slow translation never holds up the relay loop.
+fn run_room_translation(command: String) {
+    tauri::async_runtime::spawn(async move {
+        let reply = crate::commands::riot_chat::execute_history_translation(
+            &command,
+            crate::presence_proxy::app_handle(),
+        )
+        .await
+        .unwrap_or_else(|error| error.to_string());
+        if let Err(error) = crate::presence_proxy::send_bot_direct(&reply) {
+            log::warn!("Room .tran reply could not be delivered: {error:?}");
+        }
+    });
+}
+
+/// A presence command (`$online`, `$offline`, `$mobile`, `$enable`,
+/// `$disable`, `$status`, `$help`) typed into a party, pregame, team or all
+/// room. Only the `$` form: a bare "online" there is ordinary chat.
+fn outgoing_group_presence_command(stanza: &str) -> Option<String> {
+    let body = outgoing_live_groupchat(stanza)?;
+    let body = body.trim();
+    (body.starts_with('$') && crate::presence_proxy::xml::parse_bot_command(body).is_some())
+        .then(|| body.to_string())
+}
+
+/// Runs `.who`, `.rr` or `.last` typed in a group room and whispers each line
+/// from the Dummy Bot. Spawned so it never holds up the relay loop.
+fn run_room_quick(command: crate::riot::chat_command::QuickCommand) {
+    tauri::async_runtime::spawn(async move {
+        let lines =
+            crate::commands::quick_stats::reply_lines(command, crate::presence_proxy::app_handle()).await;
+        for line in lines {
+            if let Err(error) = crate::presence_proxy::send_bot_direct(&line) {
+                log::warn!("Room {command:?} reply could not be delivered: {error:?}");
+                break;
+            }
+        }
+    });
+}
+
 /// A command line typed into a party, pregame, team or all room: a built-in
 /// `.` or `/` command or a prefixed custom trigger. Bare trigger words such as `gg`
 /// stay ordinary chat.
@@ -626,7 +816,7 @@ fn outgoing_group_command(stanza: &str) -> Option<String> {
 }
 
 pub async fn stop() {
-    let active = runtime().lock().unwrap().take();
+    let active = runtime().lock().unwrap_or_else(std::sync::PoisonError::into_inner).take();
     if let Some(active) = active {
         active.handle.abort();
         let _ = active.handle.await;
@@ -682,6 +872,24 @@ mod tests {
         let source = include_str!("relay.rs");
         assert!(source.contains("translate_bot_command_on_connection"));
         assert!(!source.contains(concat!("outbound", ".try_recv()")));
+    }
+
+    #[test]
+    fn presence_commands_typed_in_a_room_are_caught() {
+        for room in ["party@ares-parties.ap", "match-blue@ares-pregame.ap1.pvp.net", "match-all@ares-coregame.ap1.pvp.net"] {
+            for body in ["$offline", "$ONLINE", " $mobile ", "$status", "$help", "$disable"] {
+                let stanza = format!(r#"<message to="{room}" type="groupchat"><body>{body}</body></message>"#);
+                assert_eq!(outgoing_group_presence_command(&stanza).as_deref(), Some(body.trim()), "{room} {body}");
+            }
+        }
+    }
+
+    #[test]
+    fn plain_words_and_other_dollar_lines_stay_chat() {
+        for body in ["online", "offline", "$gg", "$5 eco", "I'm $offline later"] {
+            let stanza = format!(r#"<message to="party@ares-parties.ap" type="groupchat"><body>{body}</body></message>"#);
+            assert_eq!(outgoing_group_presence_command(&stanza), None, "{body}");
+        }
     }
 
     #[test]

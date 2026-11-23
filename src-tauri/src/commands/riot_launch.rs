@@ -86,6 +86,19 @@ pub(crate) fn valorant_running() -> bool {
     image_listed(&running_images(), VALORANT_IMAGE)
 }
 
+/// [`running_images`] off the async runtime: `tasklist` is a child process
+/// that takes 50–150 ms, which would otherwise hold a Tokio worker.
+async fn running_images_async() -> String {
+    tauri::async_runtime::spawn_blocking(running_images)
+        .await
+        .unwrap_or_default()
+}
+
+/// [`valorant_running`] for async callers.
+pub(crate) async fn valorant_running_async() -> bool {
+    image_listed(&running_images_async().await, VALORANT_IMAGE)
+}
+
 fn parse_launch_target(args: &[Value]) -> (String, String) {
     let value = |index: usize, fallback: &str| {
         args.get(index)
@@ -166,7 +179,7 @@ fn watch_game_start(app: AppHandle, product: String, patchline: String) {
         let mut signed_in_at: Option<Instant> = None;
         while started.elapsed() < LAUNCH_WATCH {
             tokio::time::sleep(LAUNCH_POLL).await;
-            if valorant_running() {
+            if valorant_running_async().await {
                 log::info!("launch: {product} is running");
                 return;
             }
@@ -203,7 +216,7 @@ async fn launch_in_running_client(
     product: String,
     patchline: String,
 ) -> Result<Value, String> {
-    if valorant_running() {
+    if valorant_running_async().await {
         return Err("VALORANT is already running.".into());
     }
     let riot = app.state::<RiotState>();
@@ -278,13 +291,23 @@ pub async fn client_config_status() -> Result<Value, ()> {
     let port = client_config::port();
     let running = client_config::is_running() && client_config::verify_ready(port).await.is_ok();
     let presence = presence_proxy::controller().snapshot();
-    let images = running_images();
+    let images = running_images_async().await;
+    let riot_client_running = image_listed(&images, RIOT_CLIENT_IMAGE);
+    // Only a signed-in client has a chat connection to lose, so the sign-in
+    // check (cached tokens) runs last and only when the rest already match.
+    let relay_client_lost = presence_proxy::relay_client_lost(
+        riot_client_running,
+        presence.active_connections,
+        crate::riot::lockfile::read().ok().map(|lockfile| lockfile.pid),
+        presence_proxy::relay_client_pid(),
+    ) && riot_client_signed_in().await;
     Ok(json!({
         "success": true,
         "running": running,
         "port": port,
         "url": format!("http://127.0.0.1:{port}"),
-        "riotClientRunning": image_listed(&images, RIOT_CLIENT_IMAGE),
+        "riotClientRunning": riot_client_running,
+        "relayClientLost": relay_client_lost,
         "valorantRunning": image_listed(&images, VALORANT_IMAGE),
         "relayRunning": presence.relay_running,
         "relayPort": presence.relay_port,
@@ -297,6 +320,16 @@ pub async fn client_config_status() -> Result<Value, ()> {
         "certHost": presence.cert_host,
         "lastWarning": presence.last_warning,
     }))
+}
+
+/// Whether the Riot Client is signed in. At its sign-in screen there is no
+/// chat connection at all, so no relay connection is expected then.
+async fn riot_client_signed_in() -> bool {
+    use tauri::Manager;
+    let Some(riot) = presence_proxy::app_handle().and_then(|app| app.try_state::<RiotState>()) else {
+        return false;
+    };
+    crate::riot::client::get_tokens(&riot, false).await.is_ok()
 }
 
 async fn start_config_and_relay() -> Result<u16, String> {
@@ -504,7 +537,7 @@ async fn close_processes(names: &[&str], what: &str) -> Result<Vec<String>, Stri
     #[cfg(windows)]
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
-    let running = listed_images(&running_images(), names);
+    let running = listed_images(&running_images_async().await, names);
     for image in &running {
         let mut command = Command::new("taskkill");
         command.args(["/F", "/T", "/IM", image]);
@@ -517,7 +550,7 @@ async fn close_processes(names: &[&str], what: &str) -> Result<Vec<String>, Stri
         }
     }
     let started = Instant::now();
-    while !listed_images(&running_images(), names).is_empty() {
+    while !listed_images(&running_images_async().await, names).is_empty() {
         if started.elapsed() > CLOSE_WAIT {
             return Err(format!(
                 "{what} is still running after {} seconds. Close it from Task Manager.",
@@ -540,7 +573,7 @@ enum CloseOutcome {
 
 /// Closes VALORANT (only when `close_game`) and then the Riot Client.
 async fn close_riot(close_game: bool, riot: &RiotState) -> Result<CloseOutcome, String> {
-    let game = !listed_images(&running_images(), GAME_IMAGES).is_empty();
+    let game = !listed_images(&running_images_async().await, GAME_IMAGES).is_empty();
     if game && !close_game {
         return Ok(CloseOutcome::GameRunning);
     }

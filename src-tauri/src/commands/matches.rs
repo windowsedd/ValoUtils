@@ -1,20 +1,20 @@
+//! Match history + per-match scoreboards.
+//!
+//! Two endpoints back this:
+//!   * `/match-history/v1/history/<puuid>` — a thin list of
+//!     `{MatchID, GameStartTime, QueueID}`, cheap enough to load on open.
+//!   * `/match-details/v1/matches/<id>` — the full match. These are **large**
+//!     (830 KB+ for a competitive game, most of it `roundResults`), so details
+//!     are fetched lazily when a match is expanded, reduced to a scoreboard
+//!     here, and cached — the frontend never sees the raw document.
+
 use crate::riot::error::RiotError;
 use crate::riot::api::{self, RiotApiClient};
 use crate::riot::client::RiotState;
 use serde_json::{json, Value};
-use std::collections::{HashMap, VecDeque};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::sync::Mutex;
 use tauri::State;
-
-/// Match history + per-match scoreboards.
-///
-/// Two endpoints back this:
-///   * `/match-history/v1/history/<puuid>` — a thin list of
-///     `{MatchID, GameStartTime, QueueID}`, cheap enough to load on open.
-///   * `/match-details/v1/matches/<id>` — the full match. These are **large**
-///     (830 KB+ for a competitive game, most of it `roundResults`), so details
-///     are fetched lazily when a match is expanded, reduced to a scoreboard
-///     here, and cached — the frontend never sees the raw document.
 
 /// Normalized details, keyed by `<puuid>:<matchId>`. Matches are immutable once
 /// played, so entries never need invalidating — but the reduction bakes in an
@@ -39,12 +39,12 @@ const TIMELINE_CACHE_LIMIT: usize = 40;
 
 impl MatchTimelineCache {
     fn get(&self, match_id: &str) -> Option<Value> {
-        self.0.lock().unwrap().0.get(&match_id.to_ascii_lowercase()).cloned()
+        self.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner).0.get(&match_id.to_ascii_lowercase()).cloned()
     }
 
     fn insert(&self, match_id: &str, timeline: Value) {
         let key = match_id.to_ascii_lowercase();
-        let mut guard = self.0.lock().unwrap();
+        let mut guard = self.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let (entries, order) = &mut *guard;
         if entries.insert(key.clone(), timeline).is_none() {
             order.push_back(key);
@@ -156,6 +156,54 @@ fn aggregate_damage(round_results: &[Value]) -> HashMap<String, Damage> {
         }
     }
     totals
+}
+
+/// Head-to-head between players, for a player's duel view: per directed pair
+/// (`from` → `to`, lowercase PUUIDs) the kills and damage one dealt the other,
+/// and each round's opening kill. A few hundred numbers in place of the raw
+/// round results, which stay in the backend.
+fn aggregate_duels(round_results: &[Value]) -> Value {
+    let lower = |value: Option<&Value>| value.and_then(Value::as_str).unwrap_or_default().trim().to_ascii_lowercase();
+    // (from, to) -> (kills, damage)
+    let mut pairs: BTreeMap<(String, String), (u64, u64)> = BTreeMap::new();
+    let mut openings = Vec::new();
+    for round in round_results {
+        let Some(player_stats) = round.get("playerStats").and_then(Value::as_array) else {
+            continue;
+        };
+        let mut first: Option<(u64, String, String)> = None;
+        for stat in player_stats {
+            let subject = lower(stat.get("subject"));
+            for hit in stat.get("damage").and_then(Value::as_array).into_iter().flatten() {
+                let receiver = lower(hit.get("receiver"));
+                let amount = hit.get("damage").and_then(Value::as_u64).unwrap_or(0);
+                if !subject.is_empty() && !receiver.is_empty() && receiver != subject && amount > 0 {
+                    pairs.entry((subject.clone(), receiver)).or_default().1 += amount;
+                }
+            }
+            for kill in stat.get("kills").and_then(Value::as_array).into_iter().flatten() {
+                let killer = Some(lower(kill.get("killer"))).filter(|id| !id.is_empty()).unwrap_or_else(|| subject.clone());
+                let victim = lower(kill.get("victim"));
+                if killer.is_empty() || victim.is_empty() || killer == victim {
+                    continue;
+                }
+                pairs.entry((killer.clone(), victim.clone())).or_default().0 += 1;
+                if let Some(time) = kill_time_millis(kill) {
+                    if first.as_ref().is_none_or(|(earliest, _, _)| time < *earliest) {
+                        first = Some((time, killer, victim));
+                    }
+                }
+            }
+        }
+        if let Some((_, killer, victim)) = first {
+            openings.push(json!({ "killer": killer, "victim": victim }));
+        }
+    }
+    let pairs: Vec<Value> = pairs
+        .into_iter()
+        .map(|((from, to), (kills, damage))| json!({ "from": from, "to": to, "kills": kills, "damage": damage }))
+        .collect();
+    json!({ "pairs": pairs, "openings": openings })
 }
 
 /// Match details omit `gameName`/`tagLine` for most players, so resolve the
@@ -334,6 +382,7 @@ fn reduce_match(
         "rounds": round_results.len(),
         "teams": teams,
         "players": players,
+        "duels": aggregate_duels(&round_results),
     })
 }
 
@@ -557,7 +606,7 @@ pub async fn match_summaries(
     let mut delivered = Vec::new();
     for match_id in ids {
         let key = cache_key(&api.puuid, &match_id);
-        let cached = cache.0.lock().unwrap().get(&key).cloned();
+        let cached = cache.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner).get(&key).cloned();
         let reduced = match cached {
             Some(hit) => hit,
             None => {
@@ -589,7 +638,7 @@ pub async fn match_summaries(
                 cache
                     .0
                     .lock()
-                    .unwrap()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
                     .insert(cache_key(&api.puuid, &match_id), reduced.clone());
                 reduced
             }
@@ -630,7 +679,7 @@ pub async fn match_details(
     if let Some(hit) = cache
         .0
         .lock()
-        .unwrap()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
         .get(&cache_key(&own_puuid, &match_id))
         .cloned()
     {
@@ -662,7 +711,7 @@ pub async fn match_details(
             cache
                 .0
                 .lock()
-                .unwrap()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .insert(cache_key(&own_puuid, &match_id), reduced.clone());
             json!({ "success": true, "match": reduced, "cached": false })
         }
@@ -775,6 +824,41 @@ mod tests {
         let observer = &reduced["players"][0];
         assert_eq!(observer["role"], "player");
         assert_eq!(observer["teamId"], "Neutral");
+    }
+
+    #[test]
+    fn duels_count_kills_damage_and_openings_per_pair() {
+        let round = |stats: Value| json!({ "playerStats": stats });
+        let rounds = vec![
+            round(json!([
+                { "subject": "Me", "damage": [{ "receiver": "Foe", "damage": 150 }],
+                  "kills": [{ "killer": "Me", "victim": "Foe", "killTimeSinceRoundStartMillis": 9000 }] },
+                { "subject": "Foe", "damage": [{ "receiver": "Me", "damage": 40 }],
+                  "kills": [{ "killer": "Foe", "victim": "Ally", "killTimeSinceRoundStartMillis": 4000 }] },
+            ])),
+            round(json!([
+                { "subject": "Foe", "damage": [{ "receiver": "Me", "damage": 140 }],
+                  "kills": [{ "killer": "Foe", "victim": "Me", "killTimeSinceRoundStartMillis": 2000 }] },
+            ])),
+        ];
+        let duels = aggregate_duels(&rounds);
+        let pair = |from: &str, to: &str| {
+            duels["pairs"].as_array().unwrap().iter().find(|p| p["from"] == from && p["to"] == to).cloned()
+        };
+        assert_eq!(pair("me", "foe").unwrap(), json!({ "from": "me", "to": "foe", "kills": 1, "damage": 150 }));
+        assert_eq!(pair("foe", "me").unwrap(), json!({ "from": "foe", "to": "me", "kills": 1, "damage": 180 }));
+        assert_eq!(
+            duels["openings"],
+            json!([{ "killer": "foe", "victim": "ally" }, { "killer": "foe", "victim": "me" }])
+        );
+    }
+
+    #[test]
+    fn duels_skip_self_damage_and_rounds_without_kills() {
+        let rounds = vec![json!({ "playerStats": [
+            { "subject": "Me", "damage": [{ "receiver": "Me", "damage": 30 }], "kills": [] }
+        ] })];
+        assert_eq!(aggregate_duels(&rounds), json!({ "pairs": [], "openings": [] }));
     }
 
     #[test]

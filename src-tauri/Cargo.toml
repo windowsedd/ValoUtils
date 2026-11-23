@@ -15,6 +15,17 @@ name = "app_lib"
 # Windows-only: the staticlib/cdylib outputs are only needed for mobile builds.
 crate-type = ["rlib"]
 
+# Lints checked by `cargo clippy` locally and in CI (.github/workflows/rust-checks.yml,
+# which adds -D warnings). Silence a lint with #[expect(lint, reason = "...")],
+# never #[allow], so stale exceptions are reported.
+[lints.rust]
+unsafe_op_in_unsafe_fn = "warn"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+redundant_clone = "warn"
+needless_collect = "warn"
+
 [build-dependencies]
 tauri-build = { version = "2.6.3", features = [] }
 
@@ -22,7 +33,7 @@ tauri-build = { version = "2.6.3", features = [] }
 serde_json = { version = "1.0", features = ["arbitrary_precision"] }
 serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
-tauri = { version = "2.11.3", features = ["devtools"] }
+tauri = { version = "2.11.3", features = ["devtools", "tray-icon"] }
 tauri-plugin-log = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-clipboard-manager = "2"
@@ -47,6 +58,7 @@ tokio-native-tls = "0.3"
 x509-parser = "0.18"
 windowsedd-valorant-api = "0.2"
 ring = "0.17"
+qrcode = { version = "0.14", default-features = false, features = ["svg"] }
 
 [target.'cfg(windows)'.dependencies]
 schannel = "0.1"

@@ -430,19 +430,18 @@ fn normalize_player(player: &Value, source: &str, side: &str) -> Value {
 
 fn player_richness(player: &Value) -> u32 {
     let mut score = 0;
-    if player.get("PlayerIdentity").is_some()
-        && player
-            .pointer("/PlayerIdentity/AccountLevel")
-            .and_then(Value::as_u64)
-            .unwrap_or(0)
-            > 0
-    {
-        score += 2;
-    } else if player.get("PlayerIdentity").is_some()
-        && player.get("_Source").and_then(Value::as_str) != Some("Loadouts")
-        && player.get("_Source").and_then(Value::as_str) != Some("TeamMatchToken")
-        && player.get("_Source").and_then(Value::as_str) != Some("Chat")
-    {
+    // An identity counts when it has a real account level, or when it came
+    // from a source other than the thin Loadouts/TeamMatchToken/Chat entries.
+    let has_level = player
+        .pointer("/PlayerIdentity/AccountLevel")
+        .and_then(Value::as_u64)
+        .unwrap_or(0)
+        > 0;
+    let thin_source = matches!(
+        player.get("_Source").and_then(Value::as_str),
+        Some("Loadouts" | "TeamMatchToken" | "Chat")
+    );
+    if player.get("PlayerIdentity").is_some() && (has_level || !thin_source) {
         score += 2;
     }
     if player

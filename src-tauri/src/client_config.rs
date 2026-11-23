@@ -64,20 +64,24 @@ fn server() -> &'static Mutex<Server> {
 
 /// Keep the selected port after stopping so a wake can restore Riot's URL.
 pub fn port() -> u16 {
-    server().lock().unwrap().port
+    server().lock().unwrap_or_else(std::sync::PoisonError::into_inner).port
 }
 
-fn upstream_client() -> &'static reqwest::Client {
+/// The shared client for Riot's config server, built on first use. A build
+/// failure is returned to the request rather than crashing the app.
+fn upstream_client() -> Result<&'static reqwest::Client, String> {
     static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
-    CLIENT.get_or_init(|| {
-        reqwest::Client::builder()
-            .build()
-            .expect("failed to build config proxy client")
-    })
+    if let Some(client) = CLIENT.get() {
+        return Ok(client);
+    }
+    let client = reqwest::Client::builder()
+        .build()
+        .map_err(|error| format!("could not create the config proxy client: {error}"))?;
+    Ok(CLIENT.get_or_init(|| client))
 }
 
 pub fn is_running() -> bool {
-    server().lock().unwrap().task.is_some()
+    server().lock().unwrap_or_else(std::sync::PoisonError::into_inner).task.is_some()
 }
 
 fn app() -> Router {
@@ -137,7 +141,7 @@ pub async fn start(port: u16) -> Result<(), String> {
         }
     });
 
-    *server().lock().unwrap() = Server {
+    *server().lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Server {
         port,
         task: Some(handle),
     };
@@ -163,7 +167,7 @@ pub async fn start_verified(mut preferred_port: u16) -> Result<(), String> {
 }
 
 pub async fn stop() {
-    let previous = server().lock().unwrap().task.take();
+    let previous = server().lock().unwrap_or_else(std::sync::PoisonError::into_inner).task.take();
     if let Some(handle) = previous {
         handle.abort();
         // Release the socket before a subsequent wake tries to reuse it.
@@ -201,7 +205,7 @@ async fn forward(request: Request) -> Result<Response, String> {
         .map_err(|e| format!("reading request body: {e}"))?;
 
     let url = format!("{UPSTREAM}{path_and_query}");
-    let mut outbound = upstream_client().request(method, &url);
+    let mut outbound = upstream_client()?.request(method, &url);
     for (name, value) in headers.iter() {
         if !SKIP_REQUEST_HEADERS.contains(&name.as_str()) {
             outbound = outbound.header(name, value);
@@ -308,7 +312,7 @@ fn decode_pas_affinity(token: &str) -> Result<String, String> {
 }
 
 async fn resolve_affinity(authorization: &HeaderValue) -> Result<String, String> {
-    let response = upstream_client()
+    let response = upstream_client()?
         .get(PAS_CHAT_URL)
         .header("authorization", authorization.clone())
         .send()
@@ -352,7 +356,7 @@ async fn patch_response(
         return body;
     };
     if let Some(upstream) = patched.upstream {
-        crate::presence_proxy::controller().set_upstream(upstream);
+        crate::presence_proxy::remember_upstream(upstream);
     }
     serde_json::to_vec(&patched.json).unwrap_or(body)
 }
@@ -373,7 +377,7 @@ mod tests {
         start_verified(port).await.unwrap();
         stop().await;
         // A finished task must not prevent a stopped server from waking again.
-        server().lock().unwrap().task = Some(tauri::async_runtime::spawn(async {}));
+        server().lock().unwrap_or_else(std::sync::PoisonError::into_inner).task = Some(tauri::async_runtime::spawn(async {}));
         assert!(is_running());
         assert!(verify_ready(port).await.is_err());
         start_verified(port).await.unwrap();

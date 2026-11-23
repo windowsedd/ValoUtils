@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { LuCheck, LuChevronDown, LuLink, LuRotateCw, LuTable2 } from "react-icons/lu";
 import { Button } from "@/components/ui/button";
-import { matchLink } from "@/util/deep-links";
+import { matchLink, openPlayerPage } from "@/util/deep-links";
 import { MatchScoreboard, useMatchAssets, useMatchDetails } from "@/components/match-scoreboard";
 import { reportIpcError } from "@/util/ipc";
 
@@ -90,6 +90,7 @@ export const SavedMatchScoreboard = ({ matchUuid, ownerPuuid }: { matchUuid: str
 						loading={!match && !errors[matchUuid]}
 						error={errors[matchUuid]}
 						highlightPuuid={ownerPuuid ?? undefined}
+						onPlayerSelect={openPlayerPage}
 						copyPuuid
 					/>
 					{errors[matchUuid] && (

@@ -564,7 +564,7 @@ mod tests {
 
     impl MockRiot {
         fn requests(&self) -> Vec<RecordedRequest> {
-            self.requests.lock().unwrap().clone()
+            self.requests.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone()
         }
 
         fn posts(&self) -> Vec<RecordedRequest> {
@@ -605,7 +605,7 @@ mod tests {
                     .await
                     .unwrap_or_default();
 
-                log.lock().unwrap().push(RecordedRequest {
+                log.lock().unwrap_or_else(std::sync::PoisonError::into_inner).push(RecordedRequest {
                     method: method.clone(),
                     path: path.clone(),
                     query: query.clone(),
@@ -1100,7 +1100,7 @@ mod tests {
         let generation = Arc::new(Mutex::new(0u8));
         let seen = generation.clone();
         let mock = spawn_mock(move |_method, path, query| {
-            let gen = *seen.lock().unwrap();
+            let gen = *seen.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             match path {
                 "/chat/v6/conversations/ares-coregame" | "/chat/v6/conversations" => {
                     let cid = if gen == 0 {
@@ -1111,7 +1111,7 @@ mod tests {
                     (200, conversations(&[cid]))
                 }
                 "/chat/v6/messages" if query.contains("cid=") => {
-                    *seen.lock().unwrap() = 1;
+                    *seen.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = 1;
                     (404, json!({ "message": "not_found" }).to_string())
                 }
                 "/chat/v6/messages" => (500, json!({ "message": "must not fallback" }).to_string()),
@@ -1176,7 +1176,7 @@ mod tests {
         let generation = Arc::new(Mutex::new(0u8));
         let seen = generation.clone();
         let mock = spawn_mock(move |_method, path, _query| {
-            let cid = if *seen.lock().unwrap() == 0 {
+            let cid = if *seen.lock().unwrap_or_else(std::sync::PoisonError::into_inner) == 0 {
                 "match-a-blue@ares-coregame.eu1.pvp.net"
             } else {
                 "match-b-blue@ares-coregame.eu1.pvp.net"
@@ -1192,7 +1192,7 @@ mod tests {
             client.resolve_cid(ChatChannel::Team).await.unwrap(),
             "match-a-blue@ares-coregame.eu1.pvp.net"
         );
-        *generation.lock().unwrap() = 1;
+        *generation.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = 1;
         assert_eq!(
             client.resolve_cid(ChatChannel::Team).await.unwrap(),
             "match-b-blue@ares-coregame.eu1.pvp.net"

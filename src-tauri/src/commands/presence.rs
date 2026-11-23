@@ -51,7 +51,7 @@ pub async fn presence_status_set(
         "muc" => args
             .get(1)
             .and_then(Value::as_bool)
-            .map(|value| crate::presence_proxy::change_connect_to_muc(value))
+            .map(crate::presence_proxy::change_connect_to_muc)
             .ok_or_else(|| "MUC requires a boolean second argument.".to_string()),
         "startup" => {
             let value = args

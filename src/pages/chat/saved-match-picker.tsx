@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { LuHistory, LuMessageSquare, LuSearch } from "react-icons/lu";
+import { LuCheck, LuHistory, LuMessageSquare, LuSearch, LuTrash2 } from "react-icons/lu";
 import type { SavedChatMatch } from "@/types/chat";
 import { useAgentAssets } from "@/util/use-agent-assets";
 import { getMaps, localize, type MapAsset } from "@/util/valorant-assets";
@@ -19,6 +19,12 @@ export type SavedMatchPickerLabels = {
 	speakers: (count: number) => string;
 	noMessages: string;
 	outcome: Record<MatchOutcome, string>;
+	/** Remove labels; only used with `onRemove`. */
+	remove?: string;
+	select?: string;
+	cancel?: string;
+	selectAll?: string;
+	removeSelected?: (count: number) => string;
 };
 
 const OUTCOME_CLASS: Record<MatchOutcome, string> = {
@@ -61,6 +67,7 @@ export const SavedMatchPicker = ({
 	showCurrent = true,
 	fill = false,
 	names,
+	onRemove,
 }: {
 	matches: readonly SavedChatMatch[];
 	channel: "team" | "all";
@@ -73,9 +80,28 @@ export const SavedMatchPicker = ({
 	fill?: boolean;
 	/** Riot IDs by lowercase PUUID, for speakers match details don't name. */
 	names?: Readonly<Record<string, string>>;
+	/** Shows a Remove button on each card (bottom right) and a Select mode with checkboxes. */
+	onRemove?: (matchUuids: string[]) => void;
 }) => {
 	const [query, setQuery] = useState("");
 	const list = useMemo(() => savedMatchList(matches, channel, query), [matches, channel, query]);
+	// Select mode: cards become checkboxes, removed together from the bar below.
+	const [picking, setPicking] = useState(false);
+	const [checked, setChecked] = useState<ReadonlySet<string>>(new Set());
+	// Only matches still listed count (removed ones drop out of `matches`).
+	const checkedNow = matches.filter((match) => checked.has(match.matchUuid)).map((match) => match.matchUuid);
+	const allChecked = list.length > 0 && list.every((summary) => checked.has(summary.matchUuid));
+	const toggle = (matchUuid: string) =>
+		setChecked((current) => {
+			const next = new Set(current);
+			if (!next.delete(matchUuid)) next.add(matchUuid);
+			return next;
+		});
+	const stopPicking = () => {
+		setPicking(false);
+		setChecked(new Set());
+	};
+	if (picking && matches.length === 0) stopPicking();
 	const now = Date.now();
 	const [maps, setMaps] = useState<Map<string, MapAsset>>(new Map());
 	const hasDetails = matches.some((match) => match.details);
@@ -97,7 +123,20 @@ export const SavedMatchPicker = ({
 		<section data-saved-match-picker="" aria-label={labels.title} className={`flex flex-col px-2 pb-1 pt-2 ${fill ? "min-h-0 flex-1" : ""}`}>
 			<h3 className="flex items-center justify-between px-2 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-(--text-muted)">
 				<span>{labels.title}</span>
-				<span className="tabular-nums">{matches.length || ""}</span>
+				<span className="flex items-center gap-2">
+					<span className="tabular-nums">{matches.length || ""}</span>
+					{onRemove && matches.length > 0 && (
+						<button
+							type="button"
+							data-saved-match-select=""
+							aria-pressed={picking}
+							onClick={() => (picking ? stopPicking() : setPicking(true))}
+							className="rounded-[4px] px-1 py-0.5 text-[10px] font-semibold normal-case tracking-normal text-(--text-secondary) outline-none transition-colors hover:bg-(--surface-hover) hover:text-(--text-primary) focus-visible:shadow-[0_0_0_2px_var(--accent-soft)]"
+						>
+							{picking ? labels.cancel : labels.select}
+						</button>
+					)}
+				</span>
 			</h3>
 
 			{showCurrent && (
@@ -139,17 +178,21 @@ export const SavedMatchPicker = ({
 							const mode = details ? queueLabel(details.queueId) : "";
 							const heading = [mapName, mode].filter(Boolean).join(" · ");
 							const art = map?.listViewIcon;
+							const isChecked = checked.has(summary.matchUuid);
 							return (
+								// The card and its Remove button are siblings: a button can't hold a button.
+								<div key={summary.matchUuid} className="group relative shrink-0">
 								<button
-									key={summary.matchUuid}
 									type="button"
 									data-saved-match={summary.matchUuid}
-									aria-current={isSelected || undefined}
-									onClick={() => onSelect(summary.matchUuid)}
+									aria-current={(!picking && isSelected) || undefined}
+									role={picking ? "checkbox" : undefined}
+									aria-checked={picking ? isChecked : undefined}
+									onClick={() => (picking ? toggle(summary.matchUuid) : onSelect(summary.matchUuid))}
 									title={summary.matchUuid}
 									// A flex column with max-h would otherwise shrink the cards
 									// (overflow-hidden lets them go below content) instead of scrolling.
-									className={`relative shrink-0 overflow-hidden ${rowClass(isSelected)}`}
+									className={`relative shrink-0 overflow-hidden ${rowClass(picking ? isChecked : isSelected)}`}
 								>
 									{art && (
 										<img
@@ -160,6 +203,16 @@ export const SavedMatchPicker = ({
 										/>
 									)}
 									<span className="relative flex items-center gap-2">
+										{picking && (
+											<span
+												aria-hidden="true"
+												className={`grid size-4 shrink-0 place-items-center rounded-[4px] border ${
+													isChecked ? "border-(--accent) bg-(--accent) text-white" : "border-(--border) bg-(--control)"
+												}`}
+											>
+												{isChecked && <LuCheck className="size-3" />}
+											</span>
+										)}
 										{agent?.icon ? (
 											<img
 												src={agent.icon}
@@ -202,11 +255,47 @@ export const SavedMatchPicker = ({
 											labels.noMessages
 										)}
 									</span>
-									<span className="relative text-[10px] tabular-nums text-(--text-muted)">{labels.counts(summary.team, summary.all)}</span>
+									<span className={`relative text-[10px] tabular-nums text-(--text-muted) ${onRemove && !picking ? "pr-7" : ""}`}>
+										{labels.counts(summary.team, summary.all)}
+									</span>
 								</button>
+								{onRemove && !picking && (
+									<button
+										type="button"
+										data-remove-saved-match={summary.matchUuid}
+										aria-label={labels.remove}
+										title={labels.remove}
+										onClick={() => onRemove([summary.matchUuid])}
+										className="absolute bottom-1.5 right-1.5 grid size-6 place-items-center rounded-[6px] text-(--text-muted) opacity-40 outline-none transition-[opacity,color,background-color] duration-150 hover:bg-(--surface-hover) hover:text-(--signal-neg) hover:opacity-100 focus-visible:opacity-100 focus-visible:shadow-[0_0_0_2px_var(--accent-soft)] group-hover:opacity-100"
+									>
+										<LuTrash2 className="size-3.5" />
+									</button>
+								)}
+								</div>
 							);
 						})}
 					</div>
+					{picking && onRemove && (
+						<div className="mt-1.5 flex items-center gap-2 border-t border-(--line) px-1 pt-2">
+							<button
+								type="button"
+								onClick={() => setChecked(allChecked ? new Set() : new Set(list.map((summary) => summary.matchUuid)))}
+								className="h-7 rounded-[6px] px-2 text-[11px] font-medium text-(--text-secondary) outline-none transition-colors hover:bg-(--surface-hover) hover:text-(--text-primary) focus-visible:shadow-[0_0_0_2px_var(--accent-soft)]"
+							>
+								{labels.selectAll}
+							</button>
+							<button
+								type="button"
+								data-remove-saved-matches=""
+								disabled={checkedNow.length === 0}
+								onClick={() => onRemove(checkedNow)}
+								className="ml-auto flex h-7 items-center gap-1.5 rounded-[6px] border border-(--signal-neg)/40 px-2.5 text-[11px] font-medium text-(--signal-neg) outline-none transition-colors hover:bg-(--signal-neg)/10 focus-visible:shadow-[0_0_0_2px_var(--accent-soft)] disabled:cursor-not-allowed disabled:opacity-40"
+							>
+								<LuTrash2 className="size-3.5" aria-hidden="true" />
+								{labels.removeSelected?.(checkedNow.length)}
+							</button>
+						</div>
+					)}
 				</>
 			)}
 		</section>

@@ -1,21 +1,21 @@
+//! Friends list for the Friends tab.
+//!
+//! Three local Riot Client endpoints feed this:
+//!   * `/chat/v4/friends`        — the roster (name, tag, region, last seen)
+//!   * `/chat/v4/friendrequests` — pending invites, `subscription` marks direction
+//!   * `/chat/v4/presences`      — who is online, plus a base64 `private` blob
+//!     carrying the VALORANT-specific detail (queue, session state, live score,
+//!     party, player card, competitive tier).
+//!
+//! Presences only exist for online players, so a friend with no matching
+//! presence entry is offline — that is the only reliable offline signal here.
+
 use crate::riot::error::RiotError;
 use crate::riot::client::{self as riot_client, RiotState};
 use base64::Engine;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use tauri::State;
-
-/// Friends list for the Friends tab.
-///
-/// Three local Riot Client endpoints feed this:
-///   * `/chat/v4/friends`        — the roster (name, tag, region, last seen)
-///   * `/chat/v4/friendrequests` — pending invites, `subscription` marks direction
-///   * `/chat/v4/presences`      — who is online, plus a base64 `private` blob
-///     carrying the VALORANT-specific detail (queue, session state, live score,
-///     party, player card, competitive tier).
-///
-/// Presences only exist for online players, so a friend with no matching
-/// presence entry is offline — that is the only reliable offline signal here.
 
 fn first_str<'a>(values: impl IntoIterator<Item = Option<&'a Value>>) -> String {
     for value in values {
@@ -92,9 +92,17 @@ fn valorant_presence(presence: &Value) -> Option<Value> {
         "partySize": blob.get("partySize").and_then(|v| v.as_i64()),
         "maxPartySize": blob.get("maxPartySize").and_then(|v| v.as_i64()),
         "isIdle": blob.get("isIdle").and_then(|v| v.as_bool()).unwrap_or(false),
-        "playerCardId": first_str([player.get("playerCardId")]),
-        "competitiveTier": player.get("competitiveTier").and_then(|v| v.as_i64()),
-        "accountLevel": player.get("accountLevel").and_then(|v| v.as_i64()),
+        // Current clients nest these under playerPresenceData; older ones put
+        // them at the blob root (as the Chat friend list also reads them).
+        "playerCardId": first_str([player.get("playerCardId"), blob.get("playerCardId")]),
+        "competitiveTier": player
+            .get("competitiveTier")
+            .or_else(|| blob.get("competitiveTier"))
+            .and_then(|v| v.as_i64()),
+        "accountLevel": player
+            .get("accountLevel")
+            .or_else(|| blob.get("accountLevel"))
+            .and_then(|v| v.as_i64()),
     }))
 }
 

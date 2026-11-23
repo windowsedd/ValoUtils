@@ -1,6 +1,6 @@
 import { formatDpr } from "@/components/match-dpr";
 import { MatchScoreboard, useMatchAssets, useMatchDetails } from "@/components/match-scoreboard";
-import { useMatchPlayerProfileModal } from "@/components/match-player-profile-modal";
+import { openPlayerPage } from "@/util/deep-links";
 import { SectionCard, SectionRow } from "@/components/section-card";
 import type { FriendMatch } from "@/types/friend-profile";
 import { localize } from "@/util/valorant-assets";
@@ -29,8 +29,7 @@ export const FriendMatchHistory = ({
 	const { t } = useTranslation();
 	const { details, errors, pending, ensure, prefetch } = useMatchDetails();
 	const assets = useMatchAssets(Object.values(details));
-	const openPlayerProfileModal = useMatchPlayerProfileModal(assets);
-	const openMatchPlayerProfile = playerProfilesEnabled ? openPlayerProfileModal : undefined;
+	const openMatchPlayerProfile = playerProfilesEnabled ? openPlayerPage : undefined;
 	const [expanded, setExpanded] = useState<Set<string>>(new Set());
 	const [queue, setQueue] = useState("all");
 	const queues = useMemo(() => availableFriendQueues(matches), [matches]);

@@ -14,9 +14,18 @@ import {
 } from "@/util/valorant-assets";
 import { tierName } from "@/util/valorant-ranks";
 import { useAgentAssets } from "@/util/use-agent-assets";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { LuCheck, LuCopy } from "react-icons/lu";
+import { LuCheck, LuCopy, LuFingerprint, LuIdCard } from "react-icons/lu";
+import { MatchPlayerDuels } from "./match-player-duels";
+import { gooeyToast as toast } from "goey-toast";
+import {
+	ContextMenu,
+	ContextMenuContent,
+	ContextMenuItem,
+	ContextMenuLabel,
+	ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import { MatchAccuracy } from "./match-accuracy-panel";
 import { formatDpr } from "./match-dpr";
 import { isMatchPlayerHighlighted } from "./match-player-highlight";
@@ -200,8 +209,22 @@ const CopyPuuidButton = ({ puuid, label, copiedLabel }: { puuid: string; label: 
 	);
 };
 
-const ScoreboardRow = ({ player, assets, highlighted, onPlayerSelect, coachLabel, copy, party, partyLabel, encounters }: {
+/** Labels for the row's right-click menu. */
+type RowMenuLabels = {
+	copyRiotId: string;
+	riotIdCopied: (riotId: string) => string;
+	copyPuuid: string;
+	puuidCopied: string;
+	viewProfile: string;
+};
+
+const ScoreboardRow = ({ player, assets, highlighted, expanded = false, onPlayerSelect, onProfile, coachLabel, copy, menu, party, partyLabel, encounters }: {
 	player: MatchPlayer;
+	/** Its duels are open below it. */
+	expanded?: boolean;
+	menu: RowMenuLabels;
+	/** Opens the player's profile (right-click menu), where the page offers one. */
+	onProfile?: (player: MatchPlayer) => void;
 	/** Party number when this player queued with others in this match. */
 	party?: number;
 	partyLabel?: string;
@@ -259,14 +282,53 @@ const ScoreboardRow = ({ player, assets, highlighted, onPlayerSelect, coachLabel
 		</>
 	);
 	const className = `flex w-full items-center gap-3 rounded-lg px-2 py-1.5 text-left transition-colors ${
-		highlighted ? "bg-(--accent-soft)" : "hover:bg-(--surface-hover)"
+		highlighted ? "bg-(--accent-soft)" : expanded ? "bg-(--surface-hover)" : "hover:bg-(--surface-hover)"
 	}`;
+
+	const riotId = player.gameName ? (player.tagLine ? `${player.gameName}#${player.tagLine}` : player.gameName) : "";
+	const copyValue = (value: string, done: string, event: string) => {
+		invoke("clipboard_set", { args: [value] })
+			.then(() => toast.success(done))
+			.catch(reportIpcError);
+		invoke("analytics_track", { args: [event] }).catch(reportIpcError);
+	};
+	/** Right click (or the context-menu key) copies the Riot ID or PUUID. */
+	const withMenu = (unit: React.ReactElement) =>
+		!riotId && !player.subject ? (
+			unit
+		) : (
+			<ContextMenu>
+				<ContextMenuTrigger asChild>{unit}</ContextMenuTrigger>
+				<ContextMenuContent>
+					<ContextMenuLabel>{riotId || player.subject}</ContextMenuLabel>
+					{onProfile && player.subject && (
+						<ContextMenuItem onSelect={() => onProfile(player)}>
+							<LuIdCard aria-hidden="true" />
+							{menu.viewProfile}
+						</ContextMenuItem>
+					)}
+					{riotId && (
+						<ContextMenuItem onSelect={() => copyValue(riotId, menu.riotIdCopied(riotId), "scoreboard:copy-riot-id")}>
+							<LuCopy aria-hidden="true" />
+							{menu.copyRiotId}
+						</ContextMenuItem>
+					)}
+					{player.subject && (
+						<ContextMenuItem onSelect={() => copyValue(player.subject, menu.puuidCopied, "scoreboard:copy-puuid")}>
+							<LuFingerprint aria-hidden="true" />
+							{menu.copyPuuid}
+						</ContextMenuItem>
+					)}
+				</ContextMenuContent>
+			</ContextMenu>
+		);
 
 	const row = interaction.selectable ? (
 		<button
 			type="button"
 			onClick={interaction.activate}
 			aria-label={interaction.label}
+			aria-expanded={expanded}
 			className={`${className} cursor-pointer hover:bg-(--surface-hover) focus-visible:outline-none focus-visible:shadow-[inset_0_0_0_2px_var(--accent-soft)]`}
 		>
 			{content}
@@ -274,13 +336,13 @@ const ScoreboardRow = ({ player, assets, highlighted, onPlayerSelect, coachLabel
 	) : (
 		<div className={className}>{content}</div>
 	);
-	if (!copy || !player.subject) return row;
+	if (!copy || !player.subject) return withMenu(row);
 	// The copy button sits beside the row, never inside a row that is itself a button.
-	return (
+	return withMenu(
 		<div className="group flex items-center gap-1">
 			<div className="min-w-0 flex-1">{row}</div>
 			<CopyPuuidButton puuid={player.subject} label={copy.label} copiedLabel={copy.copiedLabel} />
-		</div>
+		</div>,
 	);
 };
 
@@ -310,11 +372,19 @@ export const MatchScoreboard = ({
 	// Hooks run before the early returns below.
 	const encounters = useEncounters(details?.matchId, Boolean(details));
 	const parties = useMemo(() => matchPartyNumbers(details?.players ?? []), [details]);
+	// Left click opens a player's duels right under their row (click again to
+	// close). Scoped to the match, so another match starts closed.
+	const [open, setOpen] = useState<{ matchId: string; puuid: string } | null>(null);
 	if (loading) return <p className="px-2 py-3 text-[11px] text-(--text-muted)">{t("matches.loadingDetails")}</p>;
 	if (error) return <p className="px-2 py-3 text-[11px] text-(--signal-neg)">{error}</p>;
 	if (!details) return null;
 
+	const openPuuid = open?.matchId === details.matchId ? open.puuid : null;
 	const self = details.players.find((player) => isMatchPlayerHighlighted(player, highlightPuuid));
+	const togglePlayer = (player: MatchPlayer) => {
+		const puuid = player.subject.toLowerCase();
+		setOpen(openPuuid === puuid ? null : { matchId: details.matchId, puuid });
+	};
 	// Deathmatch gives each player their own "team", so a Red/Blue scoreline
 	// would be meaningless there.
 	const scoreTeams = details.teams.filter((team) => team.teamId === "Red" || team.teamId === "Blue");
@@ -359,20 +429,54 @@ export const MatchScoreboard = ({
 					<span className="w-12 text-right shrink-0">{t("matches.hs")}</span>
 					{copyPuuid && <span className="w-6 shrink-0" aria-hidden="true" />}
 				</div>
-				{details.players.map((player) => (
+				{details.players.map((player) => {
+					const expanded = openPuuid === player.subject.toLowerCase();
+					return (
+					<Fragment key={player.subject}>
 					<ScoreboardRow
-						key={player.subject}
 						player={player}
 						assets={assets}
 						highlighted={isMatchPlayerHighlighted(player, highlightPuuid)}
-						onPlayerSelect={onPlayerSelect}
+						expanded={expanded}
+						onPlayerSelect={togglePlayer}
+						onProfile={onPlayerSelect}
 						coachLabel={t("matches.coach")}
 						copy={copyPuuid ? { label: t("matches.copyPuuid"), copiedLabel: t("matches.puuidCopied") } : undefined}
+						menu={{
+							copyRiotId: t("matches.copyRiotId"),
+							riotIdCopied: (riotId) => t("matches.riotIdCopied", { riotId }),
+							copyPuuid: t("matches.copyPuuid"),
+							puuidCopied: t("matches.puuidCopied"),
+							viewProfile: t("matches.viewProfile"),
+						}}
 						party={parties.get(player.subject)}
 						partyLabel={parties.has(player.subject) ? t("matches.party", { number: parties.get(player.subject) }) : undefined}
 						encounters={encounters}
 					/>
-				))}
+					{expanded && (
+						<div className="mb-1 ml-5 mt-0.5 rounded-lg bg-(--surface) px-2 py-2">
+							<MatchPlayerDuels
+								details={details}
+								player={player}
+								assets={assets}
+								action={
+									onPlayerSelect && (
+										<button
+											type="button"
+											onClick={() => onPlayerSelect(player)}
+											className="flex h-6 shrink-0 items-center gap-1.5 rounded-[6px] border border-(--border) bg-(--control) px-2 text-[11px] font-medium text-(--text-secondary) outline-none transition-colors hover:bg-(--surface-hover) hover:text-(--text-primary) focus-visible:shadow-[0_0_0_2px_var(--accent-soft)]"
+										>
+											<LuIdCard className="size-3.5" aria-hidden="true" />
+											{t("matches.viewProfile")}
+										</button>
+									)
+								}
+							/>
+						</div>
+					)}
+					</Fragment>
+					);
+				})}
 			</div>
 
 			{details.rounds > 0 && (

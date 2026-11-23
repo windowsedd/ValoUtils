@@ -175,7 +175,7 @@ fn language_alias(wanted: &str) -> Option<&'static str> {
 /// text instead of becoming a language.
 fn primary_language_subtag(input: &str) -> Option<&str> {
     let input = input.trim();
-    let mut parts = input.split(|c: char| matches!(c, '-' | '_' | '/'));
+    let mut parts = input.split(['-', '_', '/']);
     let primary = parts.next()?;
     if !is_ascii_alpha_len(primary, 2, 3) {
         return None;

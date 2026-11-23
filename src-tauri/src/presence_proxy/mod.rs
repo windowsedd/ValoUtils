@@ -116,14 +116,14 @@ impl PresenceController {
         }
     }
     pub fn state(&self) -> MaskingState {
-        self.inner.lock().unwrap().masking
+        self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner).masking
     }
     pub fn mode(&self) -> PresenceMode {
         self.state().mode
     }
     fn mutate(&self, update: impl FnOnce(&mut MaskingState)) {
         let state = {
-            let mut inner = self.inner.lock().unwrap();
+            let mut inner = self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             update(&mut inner.masking);
             inner.masking
         };
@@ -182,28 +182,28 @@ impl PresenceController {
         }
     }
     pub fn set_upstream(&self, target: UpstreamTarget) {
-        self.inner.lock().unwrap().upstream = Some(target);
+        self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner).upstream = Some(target);
     }
     pub fn cert(&self) -> &'static ChatCertIdentity {
-        self.inner.lock().unwrap().cert
+        self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner).cert
     }
     fn set_cert(&self, cert: &'static ChatCertIdentity) {
-        self.inner.lock().unwrap().cert = cert;
+        self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner).cert = cert;
     }
     pub fn upstream(&self) -> Option<UpstreamTarget> {
-        self.inner.lock().unwrap().upstream.clone()
+        self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner).upstream.clone()
     }
     pub fn set_relay_port(&self, port: Option<u16>) {
-        self.inner.lock().unwrap().relay_port = port;
+        self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner).relay_port = port;
     }
     pub fn relay_port(&self) -> Option<u16> {
-        self.inner.lock().unwrap().relay_port
+        self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner).relay_port
     }
     pub fn connection_opened(&self) {
-        self.inner.lock().unwrap().active_connections += 1;
+        self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner).active_connections += 1;
     }
     pub fn connection_closed(&self) {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         inner.active_connections = inner.active_connections.saturating_sub(1);
         if inner.active_connections == 0 {
             if let Ok(mut transcript) = live_chat().lock() {
@@ -216,7 +216,7 @@ impl PresenceController {
     }
     pub fn reset_chat_session(&self) {
         gui_chat_hub().reset();
-        self.inner.lock().unwrap().active_connections = 0;
+        self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner).active_connections = 0;
         if let Ok(mut transcript) = live_chat().lock() {
             transcript.clear();
         }
@@ -225,16 +225,16 @@ impl PresenceController {
         }
     }
     pub fn capture_presence(&self, stanza: String) {
-        self.inner.lock().unwrap().last_presence = Some(stanza);
+        self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner).last_presence = Some(stanza);
     }
     pub fn last_presence(&self) -> Option<String> {
-        self.inner.lock().unwrap().last_presence.clone()
+        self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner).last_presence.clone()
     }
     pub fn set_warning(&self, warning: Option<String>) {
-        self.inner.lock().unwrap().last_warning = warning;
+        self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner).last_warning = warning;
     }
     pub fn snapshot(&self) -> PresenceSnapshot {
-        let inner = self.inner.lock().unwrap();
+        let inner = self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         PresenceSnapshot {
             enabled: inner.masking.enabled,
             mode: inner.masking.mode,
@@ -524,6 +524,103 @@ pub fn app_handle() -> Option<&'static AppHandle> {
     APP_HANDLE.get()
 }
 
+/// Uses the Riot chat server the Riot Client's config named and saves it as
+/// `relayUpstream`. The client reads its config once, at launch, so after
+/// ValoUtils restarts the saved target is all the relay has to forward a
+/// reconnecting client to.
+pub fn remember_upstream(target: UpstreamTarget) {
+    if let Some(app) = app_handle() {
+        use tauri::Manager;
+        let saved = upstream_json(&target);
+        let config = app.state::<crate::store::ConfigStore>();
+        if config.get("relayUpstream").as_ref() != Some(&saved) {
+            config.set("relayUpstream", saved);
+        }
+    }
+    controller().set_upstream(target);
+}
+
+/// Records the Riot Client that just connected to the relay by its lockfile
+/// pid (`relayClientPid`). Saved, not kept in memory: after ValoUtils restarts,
+/// the same pid still running with no relay connection means that client lost
+/// its chat, while a client opened without ValoUtils has another pid.
+pub fn remember_relay_client() {
+    let Ok(lockfile) = crate::riot::lockfile::read() else {
+        return;
+    };
+    if let Some(app) = app_handle() {
+        use tauri::Manager;
+        let config = app.state::<crate::store::ConfigStore>();
+        if config.get("relayClientPid").and_then(|v| v.as_i64()) != Some(lockfile.pid) {
+            config.set("relayClientPid", serde_json::json!(lockfile.pid));
+        }
+    }
+}
+
+/// The pid saved by [`remember_relay_client`].
+pub fn relay_client_pid() -> Option<i64> {
+    use tauri::Manager;
+    app_handle()?
+        .state::<crate::store::ConfigStore>()
+        .get("relayClientPid")?
+        .as_i64()
+}
+
+/// Whether the Riot Client running now (by lockfile pid) is one that used the
+/// relay before but has no relay connection: it shows offline and chat
+/// commands don't work until it reconnects or restarts through ValoUtils.
+pub fn relay_client_lost(
+    riot_client_running: bool,
+    active_connections: usize,
+    running_pid: Option<i64>,
+    relay_pid: Option<i64>,
+) -> bool {
+    riot_client_running
+        && active_connections == 0
+        && running_pid.is_some()
+        && running_pid == relay_pid
+}
+
+/// Restores the saved target at startup, unless a fresh client config
+/// already set one.
+pub fn restore_upstream(saved: &serde_json::Value) {
+    let Some(target) = upstream_from_json(saved) else {
+        return;
+    };
+    let controller = controller();
+    if controller.upstream().is_none() {
+        log::info!(
+            "XMPP relay: forwarding to saved Riot chat server {}",
+            target.host
+        );
+        controller.set_upstream(target);
+    }
+}
+
+fn upstream_json(target: &UpstreamTarget) -> serde_json::Value {
+    serde_json::json!({ "host": target.host, "port": target.port, "affinity": target.affinity })
+}
+
+/// Only Riot's own chat servers are accepted back from the config file.
+fn upstream_from_json(saved: &serde_json::Value) -> Option<UpstreamTarget> {
+    let host = saved.get("host")?.as_str()?.trim().to_ascii_lowercase();
+    let riot_host = host.ends_with(".riotgames.com")
+        && host
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-');
+    let port = u16::try_from(saved.get("port")?.as_u64()?)
+        .ok()
+        .filter(|port| *port != 0)?;
+    riot_host.then(|| UpstreamTarget {
+        host,
+        port,
+        affinity: saved
+            .get("affinity")
+            .and_then(|v| v.as_str())
+            .map(str::to_owned),
+    })
+}
+
 pub fn change_mode(mode: PresenceMode) {
     controller().set_mode_and_enable(mode);
     persist_and_emit();
@@ -754,5 +851,53 @@ mod tests {
             "Presence masking is now disabled."
         );
         assert!(!controller.snapshot().enabled);
+    }
+
+    mod upstream_tests {
+        use super::*;
+
+        #[test]
+        fn saved_upstream_round_trips_and_rejects_non_riot_hosts() {
+            let target = UpstreamTarget {
+                host: "na2.chat.si.riotgames.com".into(),
+                port: 5223,
+                affinity: Some("na1".into()),
+            };
+            assert_eq!(upstream_from_json(&upstream_json(&target)), Some(target));
+            for bad in [
+                serde_json::json!({ "host": "evil.example", "port": 5223 }),
+                serde_json::json!({ "host": "x.riotgames.com.evil.example", "port": 5223 }),
+                serde_json::json!({ "host": "na2.chat.si.riotgames.com", "port": 0 }),
+                serde_json::json!({ "host": "na2.chat.si.riotgames.com" }),
+                serde_json::json!(null),
+            ] {
+                assert_eq!(upstream_from_json(&bad), None, "{bad}");
+            }
+        }
+    }
+
+    mod relay_client_tests {
+        use super::super::relay_client_lost;
+
+        #[test]
+        fn same_client_without_a_relay_connection_is_lost() {
+            assert!(relay_client_lost(true, 0, Some(42), Some(42)));
+        }
+
+        #[test]
+        fn connected_client_is_not_lost() {
+            assert!(!relay_client_lost(true, 1, Some(42), Some(42)));
+        }
+
+        #[test]
+        fn client_opened_without_valoutils_is_not_lost() {
+            assert!(!relay_client_lost(true, 0, Some(7), Some(42)));
+        }
+
+        #[test]
+        fn closed_or_unknown_client_is_not_lost() {
+            assert!(!relay_client_lost(false, 0, Some(42), Some(42)));
+            assert!(!relay_client_lost(true, 0, None, None));
+        }
     }
 }

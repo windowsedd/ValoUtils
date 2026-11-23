@@ -35,6 +35,10 @@ import { useSavedHistoryAccounts } from "./chat/use-saved-history-accounts";
 import { PartyCodePanel } from "./chat/party-code-panel";
 import { SavedMatchPicker } from "./chat/saved-match-picker";
 import { useSavedMatchDetails } from "./chat/use-saved-match-details";
+import { onWhisper, takeWhisper } from "@/util/deep-links";
+import { useDynamicModal } from "@/components/dynamic-modal";
+import { Button } from "@/components/ui/button";
+import { gooeyToast as toast } from "goey-toast";
 
 /** Stable empty list, so the details hook doesn't see a new array on every render. */
 const EMPTY_SAVED: SavedChatMatch[] = [];
@@ -71,6 +75,24 @@ const Chat = () => {
 	const channel = controller.selectedChannel;
 	// History tab: saved match chat, read one room (Team or All) at a time.
 	const [historyOpen, setHistoryOpen] = useState(false);
+	// Friends → Whisper parks a PUUID; open that friend's chat once the list has them.
+	const [whisperPuuid, setWhisperPuuid] = useState<string | null>(() => takeWhisper());
+	useEffect(() => onWhisper(() => setWhisperPuuid(takeWhisper())), []);
+	useEffect(() => {
+		if (!whisperPuuid) return;
+		const friend = controller.friends.find((item) => item.puuid.split("@")[0].toLowerCase() === whisperPuuid);
+		if (!friend) {
+			// A search typed earlier could hide them; the full list loads with the next poll.
+			if (controller.friendSearch) controller.setFriendSearch("");
+			return;
+		}
+		setWhisperPuuid(null);
+		setHistoryOpen(false);
+		setBotOpen(false);
+		controller.selectChannel("friends");
+		// With no conversation yet, select them so the friend menu offers Message.
+		if (!controller.openFriendChat(friend)) setSelectedFriendPuuid(friend.puuid);
+	}, [whisperPuuid, controller]);
 	const [historyRoom, setHistoryRoom] = useState<"team" | "all">("team");
 	const [savedSelection, setSavedSelection] = useState<{ owner: string; matchUuid: string } | null>(null);
 	const savedMatches = useSavedMatchDetails(
@@ -93,6 +115,48 @@ const Chat = () => {
 		? historyMatches.find(match => match.matchUuid === selectedSaved)
 		: undefined;
 	const viewingSaved = !!savedMatch;
+	const { showModal, closeModal } = useDynamicModal();
+	/** Asks once, then deletes saved match chats one by one; the view moves to the newest. */
+	const removeSavedMatches = (matchUuids: string[]) => {
+		const count = matchUuids.length;
+		if (count === 0) return;
+		const remove = async () => {
+			closeModal();
+			invoke("analytics_track", { args: ["chat:history-remove", JSON.stringify({ count })] }).catch(reportIpcError);
+			let removed = 0;
+			let failure = "";
+			for (const matchUuid of matchUuids) {
+				try {
+					const reply = await history.remove(matchUuid);
+					if (reply.success) {
+						removed += 1;
+						if (selectedSaved === matchUuid) setSavedSelection(null);
+					} else failure ||= reply.error || "";
+				} catch (error) {
+					reportIpcError(error);
+					failure ||= String(error);
+				}
+			}
+			if (removed < count) toast.error(failure || t("chat.removeSavedFailed"));
+			if (removed > 0) toast.success(count === 1 ? t("chat.removeSavedDone") : t("chat.removeSavedManyDone", { count: removed }));
+		};
+		showModal({
+			title: count === 1 ? t("chat.removeSavedTitle") : t("chat.removeSavedManyTitle", { count }),
+			body: (
+				<p className="text-[12px] leading-5 text-(--text-secondary)">
+					{count === 1 ? t("chat.removeSavedBody") : t("chat.removeSavedManyBody")}
+				</p>
+			),
+			footer: [
+				<Button key="cancel" variant="secondary" onClick={closeModal}>
+					{t("common.cancel")}
+				</Button>,
+				<Button key="remove" variant="destructive" onClick={() => void remove()}>
+					{t("chat.removeSaved")}
+				</Button>,
+			],
+		});
+	};
 	// Riot ID of the account whose saved history is shown. Read once from the
 	// local Riot Client and kept only if it is the same account as the history.
 	const ownerPuuid = controller.summary.ownerPuuid ?? "";
@@ -178,15 +242,20 @@ const Chat = () => {
 			? `${channelLabels[channel]} · ${t("chat.playerCount", { count: roomMembers.length })}`
 			: channelLabels[channel];
 	const commandHints: ComposerCommandHint[] = [
-		{ insert: ".ai ", syntax: t("dummyBot.aiSyntax"), description: t("chat.cmdAi") },
-		{ insert: ".ask ", syntax: t("dummyBot.askSyntax"), description: t("chat.cmdAsk") },
-		{ insert: ".send ", syntax: t("dummyBot.translateSyntax"), description: t("chat.cmdSend") },
-		{ insert: ".tran ", syntax: ".tran [n]", description: t("chat.cmdTran") },
-		{ insert: ".ascii ", syntax: t("dummyBot.asciiSyntax"), description: t("chat.cmdAscii") },
-		{ insert: ".dodge", syntax: t("dummyBot.dodgeSyntax"), description: t("chat.cmdDodge") },
-		{ insert: ".party join ", syntax: t("dummyBot.partyJoinSyntax"), description: t("dummyBot.partyJoinDesc") },
-		{ insert: ".party leave", syntax: t("dummyBot.partyLeaveSyntax"), description: t("dummyBot.partyLeaveDesc") },
-		{ insert: ".code create", syntax: t("dummyBot.codeCreateSyntax"), description: t("dummyBot.codeCreateDesc") },
+		{ insert: "/ai ", syntax: t("dummyBot.aiSyntax"), description: t("chat.cmdAi") },
+		{ insert: "/ask ", syntax: t("dummyBot.askSyntax"), description: t("chat.cmdAsk") },
+		{ insert: "/send ", syntax: t("dummyBot.translateSyntax"), description: t("chat.cmdSend") },
+		{ insert: "/tran ", syntax: "/tran [n]", description: t("chat.cmdTran") },
+		{ insert: "/ascii ", syntax: t("dummyBot.asciiSyntax"), description: t("chat.cmdAscii") },
+		{ insert: "/dodge", syntax: t("dummyBot.dodgeSyntax"), description: t("chat.cmdDodge") },
+		{ insert: "/who", syntax: t("dummyBot.whoSyntax"), description: t("chat.cmdWho") },
+		{ insert: "/rr", syntax: t("dummyBot.rrSyntax"), description: t("chat.cmdRr") },
+		{ insert: "/last", syntax: t("dummyBot.lastSyntax"), description: t("chat.cmdLast") },
+		{ insert: "/met", syntax: t("dummyBot.metSyntax"), description: t("chat.cmdMet") },
+		{ insert: "/help ", syntax: t("dummyBot.helpSyntax"), description: t("chat.cmdHelp") },
+		{ insert: "/party join ", syntax: t("dummyBot.partyJoinSyntax"), description: t("dummyBot.partyJoinDesc") },
+		{ insert: "/party leave", syntax: t("dummyBot.partyLeaveSyntax"), description: t("dummyBot.partyLeaveDesc") },
+		{ insert: "/code create", syntax: t("dummyBot.codeCreateSyntax"), description: t("dummyBot.codeCreateDesc") },
 	];
 	const formatDay = (time: number) => {
 		const date = new Date(time);
@@ -334,6 +403,7 @@ const Chat = () => {
 						onSelect={(matchUuid) => setSavedSelection(matchUuid ? { owner: history.owner, matchUuid } : null)}
 						showCurrent={false}
 						fill
+						onRemove={removeSavedMatches}
 						labels={{
 							title: t("chat.savedMatchHistory"),
 							current: t("chat.currentChat"),
@@ -347,6 +417,11 @@ const Chat = () => {
 							speakers: (count) => t("chat.savedMatchSpeakers", { count }),
 							noMessages: t("chat.savedMatchNoMessages"),
 							outcome: { win: t("chat.outcomeWin"), loss: t("chat.outcomeLoss"), draw: t("chat.outcomeDraw") },
+							remove: t("chat.removeSaved"),
+							select: t("chat.selectSaved"),
+							cancel: t("common.cancel"),
+							selectAll: t("chat.selectAllSaved"),
+							removeSelected: (count) => t("chat.removeSelected", { count }),
 						}}
 					/>
 				</ChatHistoryPanel>

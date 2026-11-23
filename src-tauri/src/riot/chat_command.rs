@@ -74,6 +74,7 @@ pub fn is_reserved_custom_trigger(raw: &str) -> bool {
             | ".ascii"
             | ".party"
             | ".code"
+            | ".help"
             | "$online"
             | "$offline"
             | "$mobile"
@@ -85,7 +86,7 @@ pub fn is_reserved_custom_trigger(raw: &str) -> bool {
 }
 
 pub fn find_custom_command(input: &str, commands: &[CustomBotCommand]) -> Option<CustomBotCommand> {
-    let first = input.trim().split_whitespace().next()?;
+    let first = input.split_whitespace().next()?;
     let wanted = normalize_custom_trigger(first);
     if wanted.is_empty() || is_reserved_custom_trigger(&wanted) {
         return None;
@@ -264,7 +265,7 @@ pub fn parse_party_command(input: &str) -> Result<PartyCommand, RiotError> {
             Ok(PartyCommand::CreateCode)
         } else {
             Err(RiotError::InvalidCommand(
-                "Usage: .code create or /code create.".into(),
+                "Usage: /code create (. works too).".into(),
             ))
         };
     }
@@ -287,7 +288,7 @@ pub fn parse_party_command(input: &str) -> Result<PartyCommand, RiotError> {
         }
     }
     Err(RiotError::InvalidCommand(
-        "Usage: .party join <code> or .party leave (also /party). Example: /party join TUE693."
+        "Usage: /party join <code> or /party leave (. works too). Example: /party join TUE693."
             .into(),
     ))
 }
@@ -310,7 +311,7 @@ pub(crate) fn command_rest<'a>(input: &'a str, command: &str) -> Option<&'a str>
 /// `.ascii`, the three channel names are always a destination, never prompt text.
 pub fn parse_ai_command(input: &str) -> Result<(Option<ChatChannel>, String), RiotError> {
     let rest = command_rest(input, "ai")
-        .ok_or_else(|| RiotError::InvalidCommand("Commands must start with .ai.".into()))?;
+        .ok_or_else(|| RiotError::InvalidCommand("Commands must start with /ai.".into()))?;
     let (first, remainder) = rest.split_once(char::is_whitespace).unwrap_or((rest, ""));
     let channel = match first.to_ascii_lowercase().as_str() {
         "party" => Some(ChatChannel::Party),
@@ -325,7 +326,7 @@ pub fn parse_ai_command(input: &str) -> Result<(Option<ChatChannel>, String), Ri
     };
     if prompt.is_empty() {
         return Err(RiotError::InvalidCommand(
-            "Usage: .ai {party|team|all} <prompt>, e.g. .ai team hype us up.".into(),
+            "Usage: /ai {party|team|all} <prompt>, e.g. /ai team hype us up.".into(),
         ));
     }
     Ok((channel, prompt.to_string()))
@@ -335,7 +336,7 @@ pub fn parse_ask_command(input: &str) -> Result<String, RiotError> {
     match command_rest(input, "ask") {
         Some(question) if !question.is_empty() => Ok(question.to_string()),
         _ => Err(RiotError::InvalidCommand(
-            "Usage: .ask <question>, e.g. .ask how do I counter Raze?".into(),
+            "Usage: /ask <question>, e.g. /ask how do I counter Raze?".into(),
         )),
     }
 }
@@ -355,7 +356,7 @@ pub fn parse_history_translate_command(
 ) -> Result<HistoryTranslateCommand, RiotError> {
     let Some(rest) = history_translate_rest(input) else {
         return Err(RiotError::InvalidCommand(
-            "Commands must start with .tran or .translate.".into(),
+            "Commands must start with /tran or /translate.".into(),
         ));
     };
 
@@ -379,7 +380,7 @@ pub fn parse_history_translate_command(
             continue;
         }
         return Err(RiotError::InvalidCommand(format!(
-            "Unknown .tran argument '{raw}'. Use .tran [n] or .tran {{channel}} [n]."
+            "Unknown /tran argument '{raw}'. Use /tran [n] or /tran {{channel}} [n]."
         )));
     }
 
@@ -411,15 +412,157 @@ pub fn is_builtin_command(body: &str) -> bool {
         || is_ai_command(body)
         || is_ask_command(body)
         || is_party_command(body)
+        || parse_quick_command(body).is_some()
+        || parse_help_command(body).is_some()
         || crate::riot::ascii_art::is_ascii_command(body)
+}
+
+/// Built-in command names, so a whisper to the bot can leave out the prefix.
+const BUILTIN_NAMES: [&str; 14] = [
+    "send", "tran", "translate", "dodge", "ascii", "ai", "ask", "party", "code", "who", "rr",
+    "last", "met", "help",
+];
+
+/// A bot whisper (or the in-app bot chat) as a command line: there the prefix is
+/// optional, so "who" or "tran 3" runs as "/who" or "/tran 3". Lines with a
+/// prefix, and lines that don't start with a built-in name, are unchanged.
+/// Room chat never goes through this, so plain words there stay chat.
+pub fn dm_command_line(body: &str) -> String {
+    let trimmed = body.trim();
+    if trimmed.starts_with(['.', '/', '$']) {
+        return trimmed.to_string();
+    }
+    let first = trimmed.split_whitespace().next().unwrap_or_default().to_ascii_lowercase();
+    if BUILTIN_NAMES.contains(&first.as_str()) {
+        format!("/{trimmed}")
+    } else {
+        trimmed.to_string()
+    }
+}
+
+/// `/help`, `.help` or `$help`, with an optional command to explain:
+/// `Some(None)` for the overview, `Some(Some("tran"))` for one command.
+pub fn parse_help_command(input: &str) -> Option<Option<String>> {
+    let trimmed = input.trim();
+    let line = match trimmed.strip_prefix('$') {
+        Some(rest) => format!("/{rest}"),
+        None => trimmed.to_string(),
+    };
+    let rest = command_rest(&line, "help")?;
+    Some(rest.split_whitespace().next().map(|topic| {
+        topic.trim_start_matches(['.', '/', '$']).to_ascii_lowercase()
+    }))
+}
+
+/// What `/help` explains: every name that leads to an entry, and its lines.
+/// Lines stay under 80 characters, since each one is its own whisper.
+const HELP_TOPICS: &[(&[&str], &[&str])] = &[
+    (&["who"], &["/who", "Everyone in agent select or the match: rank, RR, peak, party, form."]),
+    (&["met"], &["/met", "Who here was in your last 10 matches, and with or against you."]),
+    (&["rr"], &["/rr", "Your rank and RR, peak, this act's record and recent RR changes."]),
+    (&["last"], &["/last", "Your last match: result, score, map, agent, K/D/A, ACS and RR."]),
+    (&["tran", "translate"], &[
+        "/tran [room] [n] [language]",
+        "Privately translates the last n chat lines (default: the room you're in).",
+        "Example: /tran 5   or   /tran party 3 en",
+    ]),
+    (&["send"], &[
+        "/send <room> <language> <message>",
+        "Translates your message and posts it to party, pregame, team or all.",
+        "Example: /send team ko gl hf",
+    ]),
+    (&["ask"], &["/ask <question>", "Asks your AI provider. Only you see the answer."]),
+    (&["ai"], &[
+        "/ai [party|team|all] <prompt>",
+        "Writes a line with your AI provider: posted to the room you name,",
+        "or shown only to you without one.",
+    ]),
+    (&["ascii"], &[
+        "/ascii [party|team|all] <text>",
+        "Big block letters: posted to the room you name, or a private preview.",
+    ]),
+    (&["dodge"], &["/dodge", "Leaves agent select. Only runs when whispered to me."]),
+    (&["party"], &["/party join <code or link>   /party leave", "Joins a party by invite code, or leaves your party."]),
+    (&["code"], &["/code create", "Creates your party's invite code and link, sent only to you."]),
+    (&["online", "offline", "mobile", "status", "enable", "disable", "presence"], &[
+        "$online  $offline  $mobile  $status",
+        "Sets how friends see you. $enable / $disable turn the masking on or off.",
+    ]),
+    (&["help"], &["/help [command]", "Lists commands, or explains one: /help tran"]),
+];
+
+const HELP_OVERVIEW: &[&str] = &[
+    "Commands (when you whisper me, the / is optional):",
+    "Match: /who /met /rr /last /tran",
+    "Chat: /send /ask /ai /ascii",
+    "Party: /party join|leave /code create /dodge",
+    "Presence: $online $offline $mobile $status",
+    "In party/team/all chat: /tran /who /met /rr /last /help and $ commands.",
+    "Details: /help <command>, e.g. /help tran",
+];
+
+/// The `/help` answer: the overview, or the lines for one command.
+pub fn help_lines(topic: Option<&str>) -> Vec<String> {
+    let lines: &[&str] = match topic {
+        None => HELP_OVERVIEW,
+        Some(topic) => match HELP_TOPICS.iter().find(|(names, _)| names.contains(&topic)) {
+            Some((_, lines)) => lines,
+            None => return vec![format!("No command called '{topic}'. Try /help.")],
+        },
+    };
+    lines.iter().map(|line| (*line).to_string()).collect()
+}
+
+/// Read-only answers about you and the match, always private: `/who` (the
+/// lobby), `/rr` (rank and recent RR), `/last` (your last match) and `/met`
+/// (who in the lobby you have played with or against recently).
+///
+/// Not reserved: players saved custom triggers with these names (a `.last`
+/// that runs `.tran team 3` is common) before they existed, so a saved trigger
+/// wins wherever both match.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QuickCommand {
+    Who,
+    Rr,
+    Last,
+    Met,
+}
+
+pub fn parse_quick_command(input: &str) -> Option<QuickCommand> {
+    [
+        ("who", QuickCommand::Who),
+        ("rr", QuickCommand::Rr),
+        ("last", QuickCommand::Last),
+        ("met", QuickCommand::Met),
+    ]
+        .into_iter()
+        .find(|(name, _)| command_rest(input, name).is_some())
+        .map(|(_, command)| command)
 }
 
 /// Bot DM sent when a command is typed in a group room instead of whispered.
 pub fn group_command_hint(body: &str) -> String {
     format!(
-        "Commands only run when you whisper them to me, not in party, pregame, team or all chat. Not sent: {}",
+        "Commands only run when you whisper them to me, not in party, pregame, team or all chat (/tran /who /rr /last /met do). Not sent: {}",
         body.trim()
     )
+}
+
+/// A `.tran`/`.translate` typed into a group room, as the command to run.
+///
+/// Only history translation runs from a room: it reads chat and answers in a
+/// private whisper, so unlike `.dodge` or `.send` a stray line can't act on the
+/// match. Without a room of its own it translates the room it was typed in.
+/// Returns `None` for every other line.
+pub fn history_translate_for_room(body: &str, room: ChatChannel) -> Option<String> {
+    let rest = history_translate_rest(body)?;
+    let names_room = rest.split_whitespace().any(|word| ChatChannel::parse(word).is_some());
+    let command = if names_room {
+        format!(".tran {rest}")
+    } else {
+        format!(".tran {} {rest}", room.as_str())
+    };
+    Some(command.trim_end().to_string())
 }
 
 pub fn is_skippable_history_line(body: &str) -> bool {
@@ -470,7 +613,7 @@ pub fn parse_translation_command_with_fallback(
     let trimmed = input.trim_start();
     if !is_translation_command(trimmed) {
         return Err(RiotError::InvalidCommand(
-            "Commands must start with .send.".into(),
+            "Commands must start with /send.".into(),
         ));
     }
     parse_dot_send(&trimmed[5..], provider, default_language)
@@ -527,7 +670,7 @@ fn parse_dot_send(
         (default.clone(), default, after_channel.to_string())
     } else {
         return Err(RiotError::InvalidCommand(format!(
-            "Unknown language '{first}'. Use .send {{channel}} {{language}} {{message}}."
+            "Unknown language '{first}'. Use /send {{channel}} {{language}} {{message}}."
         )));
     };
 
@@ -1199,10 +1342,105 @@ mod tests {
         };
 
         assert_eq!(
-            find_custom_command(".scout", &[command.clone()]),
+            find_custom_command(".scout", std::slice::from_ref(&command)),
             Some(command)
         );
         assert!(find_custom_command(".send", &[]).is_none());
+    }
+
+    #[test]
+    fn whispers_run_commands_without_a_prefix() {
+        assert_eq!(dm_command_line("who"), "/who");
+        assert_eq!(dm_command_line("  Tran 3 ko "), "/Tran 3 ko");
+        assert_eq!(dm_command_line("help rr"), "/help rr");
+    }
+
+    #[test]
+    fn whispers_keep_prefixed_and_ordinary_lines() {
+        for line in ["/who", ".tran 2", "$offline", "online", "gg", "whoever"] {
+            assert_eq!(dm_command_line(line), line, "{line}");
+        }
+    }
+
+    #[test]
+    fn help_takes_any_prefix_and_an_optional_command() {
+        assert_eq!(parse_help_command("/help"), Some(None));
+        assert_eq!(parse_help_command("$help"), Some(None));
+        assert_eq!(parse_help_command(".HELP /Tran"), Some(Some("tran".into())));
+        assert_eq!(parse_help_command("$help $offline"), Some(Some("offline".into())));
+        assert_eq!(parse_help_command("help"), None);
+        assert_eq!(parse_help_command("/helpme"), None);
+    }
+
+    #[test]
+    fn help_explains_commands_by_name_or_alias() {
+        assert_eq!(help_lines(Some("who"))[0], "/who");
+        assert_eq!(help_lines(Some("translate"))[0], "/tran [room] [n] [language]");
+        assert_eq!(help_lines(Some("offline"))[0], "$online  $offline  $mobile  $status");
+        assert_eq!(help_lines(Some("nope")), ["No command called 'nope'. Try /help."]);
+        assert_eq!(help_lines(None)[0], "Commands (when you whisper me, the / is optional):");
+    }
+
+    #[test]
+    fn every_help_line_fits_one_whisper() {
+        let topics = HELP_TOPICS.iter().flat_map(|(names, _)| names.iter().map(|name| Some(*name)));
+        for topic in std::iter::once(None).chain(topics) {
+            for line in help_lines(topic) {
+                assert!(line.chars().count() <= 80, "{topic:?}: {line}");
+            }
+        }
+    }
+
+    #[test]
+    fn every_builtin_name_has_help() {
+        for name in BUILTIN_NAMES {
+            assert!(!help_lines(Some(name))[0].starts_with("No command"), "{name}");
+        }
+    }
+
+    #[test]
+    fn quick_commands_parse_with_either_prefix() {
+        assert_eq!(parse_quick_command(".who"), Some(QuickCommand::Who));
+        assert_eq!(parse_quick_command("/RR"), Some(QuickCommand::Rr));
+        assert_eq!(parse_quick_command(".last"), Some(QuickCommand::Last));
+        assert_eq!(parse_quick_command("/met"), Some(QuickCommand::Met));
+        assert!(is_builtin_command("/who"));
+        // Saved triggers named like them keep working.
+        assert!(!is_reserved_custom_trigger("last"));
+    }
+
+    #[test]
+    fn quick_commands_need_the_whole_word() {
+        for body in [".whoami", ".rrr", ".lastmatch", "/meta", "who", "rr"] {
+            assert_eq!(parse_quick_command(body), None, "{body}");
+        }
+    }
+
+    #[test]
+    fn tran_typed_in_a_room_translates_that_room() {
+        assert_eq!(
+            history_translate_for_room(".tran 3", ChatChannel::Pregame).as_deref(),
+            Some(".tran pregame 3")
+        );
+        assert_eq!(
+            history_translate_for_room("/translate", ChatChannel::Team).as_deref(),
+            Some(".tran team")
+        );
+    }
+
+    #[test]
+    fn tran_that_names_a_room_keeps_it() {
+        assert_eq!(
+            history_translate_for_room(".tran party 2 ko", ChatChannel::Pregame).as_deref(),
+            Some(".tran party 2 ko")
+        );
+    }
+
+    #[test]
+    fn other_commands_typed_in_a_room_do_not_run() {
+        for body in [".dodge", ".send team none hi", ".ai gl", ".tranx", "hello"] {
+            assert_eq!(history_translate_for_room(body, ChatChannel::Pregame), None, "{body}");
+        }
     }
 
     #[test]

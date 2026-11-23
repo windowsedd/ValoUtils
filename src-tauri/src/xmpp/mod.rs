@@ -55,7 +55,7 @@ impl PresenceRuntime {
         self.settle_token.fetch_add(1, Ordering::AcqRel);
         self.roster_generation.store(0, Ordering::Release);
         let snapshot = {
-            let mut reducer = self.reducer.lock().unwrap();
+            let mut reducer = self.reducer.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             reducer.begin_generation(generation);
             reducer.snapshot()
         };
@@ -65,7 +65,7 @@ impl PresenceRuntime {
 
     fn apply_signal(&self, signal: PresenceSignal) -> bool {
         let snapshot = {
-            let mut reducer = self.reducer.lock().unwrap();
+            let mut reducer = self.reducer.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             if !reducer.apply(signal) {
                 return false;
             }
@@ -77,7 +77,7 @@ impl PresenceRuntime {
 
     fn mark_ready(&self, generation: u64) {
         let snapshot = {
-            let mut reducer = self.reducer.lock().unwrap();
+            let mut reducer = self.reducer.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             if !reducer.mark_ready(generation) {
                 return;
             }
@@ -87,7 +87,7 @@ impl PresenceRuntime {
     }
 
     fn snapshot(&self) -> PresenceSnapshot {
-        self.reducer.lock().unwrap().snapshot()
+        self.reducer.lock().unwrap_or_else(std::sync::PoisonError::into_inner).snapshot()
     }
 }
 
@@ -535,7 +535,7 @@ pub async fn get_xmpp_messages() -> Vec<ChatMessage> {
     };
     let own_puuid = state_guard.own_puuid.clone();
     let own_display_name = state_guard.own_display_name.clone();
-    let mut messages = handle.messages.lock().unwrap().clone();
+    let mut messages = handle.messages.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone();
     for m in messages.iter_mut() {
         m.is_self = m.sender == own_puuid;
         if m.is_self {
@@ -552,7 +552,7 @@ pub async fn get_xmpp_messages() -> Vec<ChatMessage> {
 async fn push_own_message(state_guard: &mut Inner, room: &str, message: &str, scope: &str) {
     let handle = &state_guard.handle;
     if let Some(handle) = handle {
-        let mut buf = handle.messages.lock().unwrap();
+        let mut buf = handle.messages.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         buf.push_back(ChatMessage {
             owner_puuid: state_guard.own_puuid.clone(),
             id: format!("{room}:{}:{}", state_guard.own_puuid, chrono_millis()),

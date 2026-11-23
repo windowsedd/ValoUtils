@@ -13,7 +13,7 @@ pub fn help_text() -> &'static str {
     // themselves, so this has to stay one short ASCII line. $help is the one
     // command left out: this line is already its answer, and listing it costs
     // the room .ascii needs. The Dummy Bot page still documents every command.
-    "$online $offline $mobile $enable $disable $status .send .tran .dodge .ascii"
+    "$online $offline $mobile $enable $disable $status /send /tran /dodge /ascii"
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -58,7 +58,7 @@ fn messages() -> &'static Mutex<VecDeque<FakePlayerMessage>> {
 pub fn record_message(body: impl Into<String>, is_self: bool) {
     static SEQUENCE: AtomicU64 = AtomicU64::new(0);
     let sequence = SEQUENCE.fetch_add(1, Ordering::Relaxed) + 1;
-    let mut transcript = messages().lock().unwrap();
+    let mut transcript = messages().lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     transcript.push_back(FakePlayerMessage {
         id: format!("fake-player-{sequence}"),
         body: body.into(),
@@ -71,12 +71,12 @@ pub fn record_message(body: impl Into<String>, is_self: bool) {
 }
 
 pub fn transcript() -> Vec<FakePlayerMessage> {
-    messages().lock().unwrap().iter().cloned().collect()
+    messages().lock().unwrap_or_else(std::sync::PoisonError::into_inner).iter().cloned().collect()
 }
 
 #[cfg(test)]
 fn clear_transcript() {
-    messages().lock().unwrap().clear();
+    messages().lock().unwrap_or_else(std::sync::PoisonError::into_inner).clear();
 }
 
 fn now_iso_millis() -> String {
@@ -99,10 +99,10 @@ mod tests {
     fn help_text_lists_presence_commands_and_the_translate_command() {
         let help = help_text();
         assert!(help.contains("$online"));
-        assert!(help.contains(".send"));
-        assert!(help.contains(".tran"));
-        assert!(help.contains(".dodge"));
-        assert!(help.contains(".ascii"));
+        assert!(help.contains("/send"));
+        assert!(help.contains("/tran"));
+        assert!(help.contains("/dodge"));
+        assert!(help.contains("/ascii"));
         // $help is deliberately absent: this line is the answer to it, and the
         // HUD width below leaves no room for a token that teaches nothing.
         assert!(!help.contains("$help"));

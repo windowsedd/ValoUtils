@@ -2,8 +2,9 @@
 .env.local
 electron-builder.env
 
-# Claude Code memory and temp
-.claude/
+# Claude Code memory and temp (project skills in .claude/skills are shared)
+.claude/*
+!.claude/skills/
 .tmp/
 
 # IDE / build artifacts

@@ -443,6 +443,10 @@ pub enum ComposerCommand {
     Ask(String),
     /// Join/leave a party or create its invite code; replies stay private.
     Party(String),
+    /// `.who`, `.rr` or `.last` — read-only answers shown only to the player.
+    Quick(chat_command::QuickCommand),
+    /// `/help [command]`.
+    Help(Option<String>),
     Unknown,
 }
 
@@ -472,6 +476,9 @@ pub fn classify_composer_command(
     if chat_command::is_party_command(trimmed) {
         return ComposerCommand::Party(trimmed.to_string());
     }
+    if let Some(topic) = chat_command::parse_help_command(trimmed) {
+        return ComposerCommand::Help(topic);
+    }
     let expanded = chat_command::expand_custom_command(trimmed, commands)
         .unwrap_or_else(|| trimmed.to_string());
     if chat_command::is_history_translate_command(&expanded) {
@@ -486,6 +493,8 @@ pub fn classify_composer_command(
         ComposerCommand::Ai(expanded)
     } else if chat_command::is_ask_command(&expanded) {
         ComposerCommand::Ask(expanded)
+    } else if let Some(quick) = chat_command::parse_quick_command(&expanded) {
+        ComposerCommand::Quick(quick)
     } else {
         ComposerCommand::Unknown
     }
@@ -566,6 +575,8 @@ pub(crate) async fn run_composer_command(
         }
         // Private by default: the answer is shown only under the composer.
         ComposerCommand::Ai(line) | ComposerCommand::Ask(line) => ai_command_reply(&line).await,
+        ComposerCommand::Quick(quick) => Ok(super::quick_stats::reply_lines(quick, Some(&app)).await.join("\n")),
+        ComposerCommand::Help(topic) => Ok(chat_command::help_lines(topic.as_deref()).join("\n")),
         ComposerCommand::Unknown => return Err(format!("Unknown command '{}'.", input.trim())),
     };
     outcome.map_err(|error| error.to_string())
@@ -656,8 +667,8 @@ async fn current_party_id(api: &crate::riot::api::RiotApiClient) -> Result<Strin
 pub(crate) const PARTY_NEEDS_GAME: &str =
     "Open VALORANT first: party codes and links only work while the game is running.";
 
-fn ensure_game_running() -> Result<(), RiotError> {
-    if super::riot_launch::valorant_running() {
+async fn ensure_game_running() -> Result<(), RiotError> {
+    if super::riot_launch::valorant_running_async().await {
         Ok(())
     } else {
         Err(RiotError::Other(PARTY_NEEDS_GAME.into()))
@@ -666,7 +677,7 @@ fn ensure_game_running() -> Result<(), RiotError> {
 
 /// Creates an invite code for the signed-in player's current party.
 pub(crate) async fn create_party_invite_code(app: &AppHandle) -> Result<String, RiotError> {
-    ensure_game_running()?;
+    ensure_game_running().await?;
     let riot = riot_state(app)?;
     crate::riot::api::with_api(&riot, |api| async move {
         let party_id = current_party_id(&api).await?;
@@ -683,7 +694,7 @@ pub(crate) async fn create_party_invite_code(app: &AppHandle) -> Result<String, 
 
 /// Turns off the current party's invite code and party link.
 pub(crate) async fn disable_party_invite_code(app: &AppHandle) -> Result<(), RiotError> {
-    ensure_game_running()?;
+    ensure_game_running().await?;
     let riot = riot_state(app)?;
     crate::riot::api::with_api(&riot, |api| async move {
         let party_id = current_party_id(&api).await?;
@@ -701,7 +712,7 @@ pub(crate) async fn join_party_by_code(app: &AppHandle, code: &str) -> Result<St
     else {
         return Err(RiotError::InvalidCommand("Enter a party code.".into()));
     };
-    ensure_game_running()?;
+    ensure_game_running().await?;
     let riot = riot_state(app)?;
     crate::riot::api::with_api(&riot, |api| {
         let code = code.clone();
@@ -929,7 +940,7 @@ async fn prepare_ai_command(
     let (explicit, prompt) = chat_command::parse_ai_command(line)?;
     let Some(channel) = explicit else {
         return Err(RiotError::InvalidCommand(
-            "Name a channel to post: .ai {party|team|all} <prompt>.".into(),
+            "Name a channel to post: /ai {party|team|all} <prompt>.".into(),
         ));
     };
     let text = ai_chat_line(crate::ai::prompts::BOT_LINE, &prompt, 200).await?;
@@ -1370,18 +1381,14 @@ async fn deliver_translated_line(
     body: &str,
     app: Option<&AppHandle>,
 ) -> Result<(), RiotError> {
-    let sent = if crate::presence_proxy::send_group_through_game(channel, live_cid, body) {
-        true
-    } else if client.send_to_cid(rest_cid, body).await.is_ok() {
-        true
-    } else {
+    // Game relay first, then the REST chat API, then the app's own XMPP socket.
+    if !crate::presence_proxy::send_group_through_game(channel, live_cid, body)
+        && client.send_to_cid(rest_cid, body).await.is_err()
+    {
         send_via_xmpp(app, channel, body).await?;
-        true
-    };
-    if sent {
-        if let Some(app) = app {
-            emit_sent_chat_message(app, live_cid, body, channel);
-        }
+    }
+    if let Some(app) = app {
+        emit_sent_chat_message(app, live_cid, body, channel);
     }
     Ok(())
 }
@@ -1686,7 +1693,10 @@ async fn poll_once(
         let phase = match transition {
             LifecycleTransition::PregameStarted { .. } => "pregame",
             LifecycleTransition::MatchStarted { .. } => "coregame",
-            LifecycleTransition::MatchEnded { .. } => "ended",
+            LifecycleTransition::MatchEnded { .. } => {
+                super::career::note_match_ended();
+                "ended"
+            }
         };
         let _ = app.emit("live-game:phase", phase);
     }
@@ -1988,6 +1998,10 @@ async fn dispatch(app: &AppHandle, message: &ChatMessage, memory: &mut PollMemor
     emit_polled_chat_message(app, message, false);
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "internal helper over independent message fields; a parameter struct would only rename them"
+)]
 fn frontend_chat_message_json(
     conversation_id: &str,
     id: &str,
@@ -2562,7 +2576,7 @@ mod tests {
         };
 
         assert_eq!(
-            classify_composer_command(".scout", &[command.clone()]),
+            classify_composer_command(".scout", std::slice::from_ref(&command)),
             ComposerCommand::Custom(command)
         );
     }

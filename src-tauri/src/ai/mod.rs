@@ -142,27 +142,31 @@ pub async fn complete_with_config(cfg: &AiConfig, req: AiRequest<'_>) -> Result<
     let (url, body) = providers::build_request(cfg, &req)?;
     let body = request_json(
         cfg,
-        http_client().post(url).timeout(req.timeout).json(&body),
+        http_client()?.post(url).timeout(req.timeout).json(&body),
     )
     .await?;
-    providers::extract_text(cfg.provider.unwrap(), &body)
+    providers::extract_text(cfg.provider.ok_or(AiError::NotConfigured)?, &body)
 }
 
-fn http_client() -> &'static reqwest::Client {
+/// The shared AI client, built on first use. A build failure (the TLS backend
+/// failing to load) is reported to the caller rather than crashing the app.
+fn http_client() -> Result<&'static reqwest::Client, AiError> {
     static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
-    CLIENT.get_or_init(|| {
-        reqwest::Client::builder()
-            .redirect(reqwest::redirect::Policy::none())
-            .build()
-            .expect("AI HTTP client")
-    })
+    if let Some(client) = CLIENT.get() {
+        return Ok(client);
+    }
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|error| AiError::Unavailable(format!("could not create the HTTP client: {error}")))?;
+    Ok(CLIENT.get_or_init(|| client))
 }
 
 async fn request_json(
     cfg: &AiConfig,
     mut request: reqwest::RequestBuilder,
 ) -> Result<Value, AiError> {
-    match cfg.provider.unwrap() {
+    match cfg.provider.ok_or(AiError::NotConfigured)? {
         AiProviderKind::Anthropic => {
             request = request
                 .header("x-api-key", &cfg.api_key)
@@ -204,8 +208,8 @@ pub async fn list_models(cfg: &AiConfig) -> Result<Vec<providers::AiModel>, AiEr
         loop {
             let url = providers::model_list_url(cfg, cursor.as_deref())?;
             let body =
-                request_json(cfg, http_client().get(url).timeout(Duration::from_secs(20))).await?;
-            let (page, next) = providers::parse_models_page(cfg.provider.unwrap(), &body)?;
+                request_json(cfg, http_client()?.get(url).timeout(Duration::from_secs(20))).await?;
+            let (page, next) = providers::parse_models_page(cfg.provider.ok_or(AiError::NotConfigured)?, &body)?;
             models.extend(page);
             let Some(next) = next else {
                 break;

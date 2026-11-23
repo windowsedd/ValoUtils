@@ -715,13 +715,10 @@ mod tests {
             game_xmpp_jid("9f2e-blue@ares-pregame.ap"),
             "9f2e-blue@ares-pregame.ap"
         );
-        assert_eq!(
-            same_side_room(
-                "9f2e-blue@ares-pregame.eu1.pvp.net",
-                "9f2e-blue@ares-pregame.eu"
-            ),
-            true
-        );
+        assert!(same_side_room(
+            "9f2e-blue@ares-pregame.eu1.pvp.net",
+            "9f2e-blue@ares-pregame.eu"
+        ));
     }
 
     #[test]

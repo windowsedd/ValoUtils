@@ -367,7 +367,7 @@ const applyConfig = (message: any) => {
 					<p className="font-mono text-[12px] text-(--accent-selected)">{t("dummyBot.dodgeSyntax")}</p>
 					<p className="mt-1 text-[11px] leading-5 text-(--text-secondary)">{t("dummyBot.dodgeDesc")}</p>
 				</div>
-				{["partyJoin", "partyLeave", "codeCreate"].map((command) => (
+				{["who", "rr", "last", "met", "help", "partyJoin", "partyLeave", "codeCreate"].map((command) => (
 					<div key={command} className="border-t border-(--line) px-2.5 py-2">
 						<p className="font-mono text-[12px] text-(--accent-selected)">{t(`dummyBot.${command}Syntax`)}</p>
 						<p className="mt-1 text-[11px] leading-5 text-(--text-secondary)">{t(`dummyBot.${command}Desc`)}</p>
@@ -604,6 +604,7 @@ const RESERVED = new Set([
 	".ascii",
 	".party",
 	".code",
+	".help",
 	".ai",
 	".ask",
 	"$online",

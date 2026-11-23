@@ -28,8 +28,12 @@ pub async fn fake_player_send(args: Vec<Value>, app: AppHandle) -> Result<Value,
         return Ok(json!({ "success": false, "error": "Message is empty." }));
     }
     crate::fake_player::record_message(&body, true);
-    let reply = if crate::riot::chat_command::has_command_prefix(&body) {
-        match super::riot_chat::run_composer_command(&body, &app, true).await {
+    // Like a whisper, the prefix is optional here: "who" runs as "/who".
+    let line = crate::riot::chat_command::dm_command_line(&body);
+    let reply = if let Some(topic) = crate::riot::chat_command::parse_help_command(&line) {
+        crate::riot::chat_command::help_lines(topic.as_deref()).join("\n")
+    } else if crate::riot::chat_command::has_command_prefix(&line) {
+        match super::riot_chat::run_composer_command(&line, &app, true).await {
             Ok(reply) => reply,
             Err(error) => error,
         }

@@ -444,7 +444,7 @@ fn text_result(value: &Value, is_error: bool) -> Value {
     result
 }
 
-pub(super) fn party_failure(error: &crate::riot::error::RiotError) -> String {
+pub(crate) fn party_failure(error: &crate::riot::error::RiotError) -> String {
     if error.is_login_required() {
         LOGIN_MESSAGE.to_string()
     } else {
@@ -495,7 +495,7 @@ pub async fn call_tool(app: &AppHandle, name: &str, arguments: &Value) -> Option
     let riot = || app.state::<RiotState>();
     Some(match name {
         "get_player_overview" => {
-            let reply = super::career::career_get(riot()).await.unwrap_or(Value::Null);
+            let reply = super::career::career_get(riot(), app.state::<CacheStore>()).await.unwrap_or(Value::Null);
             // Tokens are cached by now, so this is local only.
             let region = crate::riot::api::create_api(&riot()).await.ok().map(|api| api.region);
             command_result(reply, |career| player_overview(career, region.as_deref()))
@@ -835,10 +835,10 @@ pub async fn call_tool(app: &AppHandle, name: &str, arguments: &Value) -> Option
                 })
             })
         }
-        "open_valorant" if super::riot_launch::valorant_running() => {
-            text_result(&json!("Valorant is already running."), false)
-        }
         "open_valorant" => {
+            if super::riot_launch::valorant_running_async().await {
+                return Some(text_result(&json!("Valorant is already running."), false));
+            }
             let target = vec![json!("valorant"), json!("live")];
             let normal = arguments.get("mode").and_then(Value::as_str) == Some("normal");
             let reply = if normal {
@@ -1082,7 +1082,7 @@ pub(super) async fn recent_encounters(app: &AppHandle, exclude: Option<&str>) ->
 const ENCOUNTER_TIMEOUT: Duration = Duration::from_secs(20);
 
 /// One line of match history: the signed-in player's own game.
-fn own_match_summary(
+pub(super) fn own_match_summary(
     reduced: &Value,
     agents: &HashMap<String, String>,
     maps: &HashMap<String, String>,
@@ -1603,7 +1603,7 @@ async fn current_party(api: &crate::riot::api::RiotApiClient) -> Result<(String,
     Ok((party_id, party))
 }
 
-async fn party_snapshot(app: &AppHandle) -> Result<Value, crate::riot::error::RiotError> {
+pub(crate) async fn party_snapshot(app: &AppHandle) -> Result<Value, crate::riot::error::RiotError> {
     let riot = app.state::<RiotState>();
     crate::riot::api::with_api(&riot, |api| async move {
         let (party_id, party) = current_party(&api).await?;
@@ -1621,7 +1621,7 @@ async fn party_snapshot(app: &AppHandle) -> Result<Value, crate::riot::error::Ri
 }
 
 /// Leave the party, or start, stop or change its queue.
-async fn party_action(app: &AppHandle, action: &str, queue: &str) -> Result<String, crate::riot::error::RiotError> {
+pub(crate) async fn party_action(app: &AppHandle, action: &str, queue: &str) -> Result<String, crate::riot::error::RiotError> {
     let riot = app.state::<RiotState>();
     let (action, queue) = (action.to_string(), queue.trim().to_ascii_lowercase());
     crate::riot::api::with_api(&riot, |api| {
@@ -1724,7 +1724,7 @@ async fn chat_messages(app: &AppHandle, channel: &str, friend: &str, limit: usiz
 }
 
 /// Sends `message` as the player to a room, or as a whisper to a friend.
-async fn send_chat(app: &AppHandle, channel: &str, friend: &str, message: &str) -> Result<String, String> {
+pub(crate) async fn send_chat(app: &AppHandle, channel: &str, friend: &str, message: &str) -> Result<String, String> {
     let message = message.trim();
     if message.is_empty() {
         return Err("The message is empty.".into());
@@ -1937,7 +1937,7 @@ fn tier_entry(tier: Option<u64>) -> Value {
 
 /// Career without the raw MMR document (every season of every queue) and
 /// with tier numbers named, so it stays small enough to be useful to a model.
-fn player_overview(career: Value, region: Option<&str>) -> Value {
+pub(super) fn player_overview(career: Value, region: Option<&str>) -> Value {
     let latest = career.pointer("/mmr/LatestCompetitiveUpdate");
     let field = |value: Option<&Value>, key: &str| value.and_then(|v| v.get(key)).and_then(Value::as_u64);
     let recent: Vec<Value> = career
@@ -2345,8 +2345,8 @@ mod tests {
         let mut rows = json!([{ "rrEarned": 26 }, { "rrEarned": -15 }, { "rrEarned": null }]);
         mark_rr(&mut rows);
         assert_eq!(rows, json!([{ "rr": "🟢 +26" }, { "rr": "🔴 -15" }, { "rr": null }]));
-        assert_eq!(rank_move(Some(20), Some(19)).as_deref(), Some("⬇ Ascendant 1".replace("Ascendant 1", &rank_label(19)).as_str()));
-        assert_eq!(rank_move(Some(21), Some(21)).as_deref(), Some(rank_label(21)).as_deref());
+        assert_eq!(rank_move(Some(20), Some(19)).as_deref(), Some(format!("⬇ {}", rank_label(19)).as_str()));
+        assert_eq!(rank_move(Some(21), Some(21)).as_deref(), Some(rank_label(21)));
         let marks = party_marks(["a", "", "b", "a", "c", "b"].into_iter());
         assert_eq!(marks, [Some("🔵 Party 1".into()), None, Some("🟠 Party 2".into()), Some("🔵 Party 1".into()), None, Some("🟠 Party 2".into())]);
     }

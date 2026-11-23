@@ -14,11 +14,13 @@ mod crosshair_code;
 mod fake_player;
 mod friend_watch;
 mod presence_proxy;
+mod remote;
 mod riot;
 mod settings_decoder;
 mod share;
 mod store;
 mod translate;
+mod tray;
 mod updater;
 mod util_time;
 mod xmpp;
@@ -33,12 +35,16 @@ pub(crate) fn focus_main_window(app: &tauri::AppHandle) {
     let Some(window) = app.get_webview_window("main") else {
         return;
     };
-    let result = window
-        .unminimize()
-        .and_then(|_| window.show())
-        .and_then(|_| window.set_focus());
-    if let Err(error) = result {
-        log::warn!("Could not focus the running window: {error}");
+    // Each step on its own, show first: a window hidden to the tray may refuse
+    // to unminimize, and that must not stop it from showing.
+    for (step, result) in [
+        ("show", window.show()),
+        ("unminimize", window.unminimize()),
+        ("focus", window.set_focus()),
+    ] {
+        if let Err(error) = result {
+            log::warn!("Could not {step} the running window: {error}");
+        }
     }
 }
 
@@ -95,7 +101,7 @@ pub fn run() {
             config_defaults.insert("openDevTools".into(), json!(false));
             config_defaults.insert("startupMonitor".into(), json!(""));
             config_defaults.insert("presenceEnabled".into(), json!(true));
-            config_defaults.insert("presenceMode".into(), json!("offline"));
+            config_defaults.insert("presenceMode".into(), json!("online"));
             config_defaults.insert("presenceStartup".into(), json!("last"));
             config_defaults.insert("presenceMucEnabled".into(), json!(true));
             config_defaults.insert("presenceCert".into(), json!("deceive"));
@@ -103,6 +109,7 @@ pub fn run() {
             config_defaults.insert("saveMatchChatHistory".into(), json!(false));
             config_defaults.insert("showPregameEnemies".into(), json!(true));
             config_defaults.insert("mcpEnabled".into(), json!(false));
+            config_defaults.insert("remoteEnabled".into(), json!(false));
             config_defaults.insert("riotLaunchArgs".into(), json!(""));
             config_defaults.insert("translatorProvider".into(), json!("google"));
             config_defaults.insert("translatorSourceLanguage".into(), json!("auto"));
@@ -124,7 +131,7 @@ pub fn run() {
             let saved_presence_mode = config_store
                 .get("presenceMode")
                 .and_then(|value| value.as_str().and_then(presence_proxy::PresenceMode::parse))
-                .unwrap_or(presence_proxy::PresenceMode::Offline);
+                .unwrap_or(presence_proxy::PresenceMode::Online);
             let presence_mode = config_store
                 .get("presenceStartup")
                 .and_then(|value| value.as_str().and_then(presence_proxy::PresenceMode::parse))
@@ -150,6 +157,11 @@ pub fn run() {
                 presence_cert,
             )
             .expect("presence controller initialized once");
+            // A Riot Client still pointed at the relay from before a restart
+            // reconnects on its own but never re-reads its config.
+            if let Some(saved) = config_store.get("relayUpstream") {
+                presence_proxy::restore_upstream(&saved);
+            }
 
             let open_dev_tools =
                 matches!(config_store.get("openDevTools"), Some(v) if v == json!(true));
@@ -219,8 +231,12 @@ pub fn run() {
             }
             tauri::async_runtime::spawn(commands::riot_launch::autostart());
             tauri::async_runtime::spawn(mcp::start_if_enabled(app.handle().clone()));
+            tauri::async_runtime::spawn(remote::start_if_enabled(app.handle().clone()));
             commands::chat::ensure_chat_forwarders(app.handle());
             friend_watch::start(app.handle().clone());
+            if let Err(error) = tray::setup(app.handle()) {
+                log::warn!("Could not create the tray icon: {error}");
+            }
             {
                 let handle = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
@@ -244,6 +260,7 @@ pub fn run() {
             }
             Ok(())
         })
+        .on_window_event(tray::on_window_event)
         .invoke_handler(tauri::generate_handler![
             commands::app::open_url,
             commands::deep_link::deep_link_take,
@@ -254,6 +271,9 @@ pub fn run() {
             commands::mcp::mcp_tools,
             commands::mcp::mcp_set_enabled,
             commands::mcp::mcp_regenerate_token,
+            commands::remote::remote_status,
+            commands::remote::remote_set_enabled,
+            commands::remote::remote_regenerate_token,
             commands::app::version,
             commands::app::clipboard_get,
             commands::app::clipboard_set,
@@ -291,6 +311,7 @@ pub fn run() {
             commands::profiles::settings_profile_share,
             commands::profiles::share_get_data,
             commands::career::career_get,
+            commands::career::career_cached,
             commands::career::career_account_status,
             commands::battlepass::battlepass_get,
             commands::bloomline::bloomline_get,
@@ -325,6 +346,7 @@ pub fn run() {
             commands::matches::match_timeline,
             commands::chat::chat_get,
             match_chat_history::chat_saved_history_clear,
+            match_chat_history::chat_saved_history_remove,
             match_chat_history::chat_saved_history_accounts,
             match_chat_history::chat_saved_history_get,
             match_chat_history::chat_saved_match_details,
@@ -351,7 +373,15 @@ pub fn run() {
         .run(|app_handle, event| {
             if let tauri::RunEvent::Exit = event {
                 let state = app_handle.state::<commands::riot_chat::RiotChatState>();
-                tauri::async_runtime::block_on(state.stop_polling());
+                // Bounded: this blocks the UI thread, and a poll stuck mid-tick
+                // must not keep a quitting app alive.
+                let stopped = tauri::async_runtime::block_on(tokio::time::timeout(
+                    std::time::Duration::from_secs(3),
+                    state.stop_polling(),
+                ));
+                if stopped.is_err() {
+                    log::warn!("Chat poller did not stop within 3 s; exiting anyway");
+                }
             }
         });
 }
