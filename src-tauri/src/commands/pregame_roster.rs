@@ -311,7 +311,7 @@ fn merge_pregame_chat(
             for id in ids {
                 let lower = id.to_lowercase();
                 if !ally_ids.contains(&lower) {
-                    enemy_cid_ids.insert(lower.clone());
+                    enemy_cid_ids.insert(lower);
                     upsert(
                         player_map,
                         sources,

@@ -152,7 +152,7 @@ pub fn start(app: AppHandle) {
                         .cloned()
                         .unwrap_or_default();
                     let mode = crate::commands::bot_template::mode_label_public(&shown.queue);
-                    let mut named = shown.clone();
+                    let mut named = shown;
                     if named.name.is_empty() {
                         named.name = current.name.clone();
                     }
