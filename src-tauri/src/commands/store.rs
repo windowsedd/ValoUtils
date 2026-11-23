@@ -390,7 +390,7 @@ fn cache_key(puuid: &str) -> String {
     format!("storefront:{}", puuid.to_ascii_lowercase())
 }
 
-fn now_ms() -> u64 {
+pub(super) fn now_ms() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|elapsed| elapsed.as_millis() as u64)
@@ -399,7 +399,7 @@ fn now_ms() -> u64 {
 
 /// What `cache.json` holds for one account: the parsed reply and when it was
 /// fetched, so the countdowns can be wound forward on the next launch.
-fn cache_entry(payload: &Value, fetched_at: u64) -> Value {
+pub(super) fn cache_entry(payload: &Value, fetched_at: u64) -> Value {
     let mut payload = payload.clone();
     if let Some(object) = payload.as_object_mut() {
         object.remove("success");
@@ -408,7 +408,7 @@ fn cache_entry(payload: &Value, fetched_at: u64) -> Value {
 }
 
 /// The reply for a cached entry, or `None` when it is missing or malformed.
-fn cached_reply(entry: Option<Value>) -> Option<Value> {
+pub(super) fn cached_reply(entry: Option<Value>) -> Option<Value> {
     let entry = entry?;
     let fetched_at = entry.get("fetchedAt")?.as_u64()?;
     let mut reply = entry.get("payload")?.as_object()?.clone();
@@ -416,6 +416,15 @@ fn cached_reply(entry: Option<Value>) -> Option<Value> {
     reply.insert("cached".into(), Value::Bool(true));
     reply.insert("fetchedAt".into(), json!(fetched_at));
     Some(Value::Object(reply))
+}
+
+/// The signed-in account's PUUID, asking only the local Riot Client.
+pub(super) async fn signed_in_puuid(riot: &RiotState) -> Option<String> {
+    client::get_tokens(riot, false)
+        .await
+        .ok()
+        .and_then(|tokens| tokens.get("subject").and_then(Value::as_str).map(str::to_string))
+        .filter(|puuid| !puuid.is_empty())
 }
 
 /// The last storefront fetched for the signed-in account, from `cache.json`.
@@ -428,11 +437,7 @@ pub async fn store_cached(
     riot: State<'_, RiotState>,
     cache: State<'_, CacheStore>,
 ) -> Result<Value, ()> {
-    let puuid = client::get_tokens(&riot, false)
-        .await
-        .ok()
-        .and_then(|tokens| tokens.get("subject").and_then(Value::as_str).map(str::to_string))
-        .filter(|puuid| !puuid.is_empty());
+    let puuid = signed_in_puuid(&riot).await;
     let reply = puuid.and_then(|puuid| cached_reply(cache.get(&cache_key(&puuid))));
     Ok(reply.unwrap_or_else(|| json!({ "success": false, "code": "empty" })))
 }

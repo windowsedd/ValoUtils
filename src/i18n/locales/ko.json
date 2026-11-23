@@ -372,7 +372,9 @@
     "demoted": "강등",
     "rrToNext": "{{rr}} / 100 RR (다음 단계까지)",
     "accountLevel": "계정 레벨",
-    "accountXp": "다음 레벨까지 {{xp}} / {{total}} XP"
+    "accountXp": "다음 레벨까지 {{xp}} / {{total}} XP",
+    "updating": "업데이트 중…",
+    "refresh": "커리어 새로고침"
   },
   "liveGame": {
     "title": "라이브 게임",

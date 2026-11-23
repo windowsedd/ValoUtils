@@ -372,7 +372,9 @@
 		"demoted": "降級",
 		"rrToNext": "{{rr}} / 100 RR（距下一段位）",
 		"accountLevel": "帳號等級",
-		"accountXp": "{{xp}} / {{total}} XP（距下一等級）"
+		"accountXp": "{{xp}} / {{total}} XP（距下一等級）",
+		"updating": "更新中…",
+		"refresh": "重新整理生涯"
 	},
 	"liveGame": {
 		"title": "即時對戰",

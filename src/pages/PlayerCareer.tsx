@@ -10,10 +10,10 @@ import type { CompetitiveSeason } from "@/types/live-game";
 import { rateLimitedSeconds } from "@/util/rate-limit";
 import { getSeasonAssets, getTiers, type SeasonAsset, type TierAsset } from "@/util/valorant-assets";
 import { tierColor, tierName } from "@/util/valorant-ranks";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { LuTrophy } from "react-icons/lu";
+import { LuRotateCw, LuTrophy } from "react-icons/lu";
 import { normalizeCareerMatches } from "./player-career-history";
 
 type CareerData = {
@@ -63,6 +63,12 @@ const PlayerCareer = () => {
 	const [error, setError] = useState<string | null>(null);
 	const [loginRequired, setLoginRequired] = useState(false);
 	const [loading, setLoading] = useState(true);
+	// True while a newer career loads over a shown one.
+	const [refreshing, setRefreshing] = useState(false);
+	const [refreshError, setRefreshError] = useState<string | null>(null);
+	// Set by the Refresh button: skip the saved career and ask Riot.
+	const forceLiveRef = useRef(false);
+	const shownRef = useRef(false);
 	const { t } = useTranslation();
 
 	useEffect(() => {
@@ -78,28 +84,15 @@ const PlayerCareer = () => {
 	}, []);
 
 	useEffect(() => {
-const onResponse = (message: any) => {
+		let active = true;
 
-			const response = message;
-			if (!response.success) {
-				if (response.code === "loginRequired") {
-					setLoginRequired(true);
-					setLoading(false);
-					return;
-				}
-				const throttled = rateLimitedSeconds(response);
-				setError(
-					throttled === null
-						? response.error ?? t("career.failedToLoad")
-						: t("common.rateLimited", { seconds: throttled }),
-				);
-				setLoading(false);
-				return;
-			}
+		const show = (response: any) => {
 			// A retry got through — drop the signed-out state so the panel makes way
 			// for the content instead of hiding a successful load behind it.
 			setLoginRequired(false);
 			setError(null);
+			setRefreshError(null);
+			shownRef.current = true;
 			setData({
 				puuid: response.puuid,
 				riotId: response.riotId ?? null,
@@ -114,12 +107,59 @@ const onResponse = (message: any) => {
 			setLoading(false);
 		};
 
-		let active = true;
+		const onResponse = (response: any) => {
+			setRefreshing(false);
+			if (response.success) {
+				show(response);
+				return;
+			}
+			if (response.code === "loginRequired") {
+				setLoginRequired(true);
+				setLoading(false);
+				return;
+			}
+			const throttled = rateLimitedSeconds(response);
+			const message =
+				throttled === null
+					? response.error ?? t("career.failedToLoad")
+					: t("common.rateLimited", { seconds: throttled });
+			// Keep a shown career on screen; only say the update failed.
+			if (shownRef.current) setRefreshError(message);
+			else setError(message);
+			setLoading(false);
+		};
 
-		invoke<any>("career_get").then(reply => { if (active) onResponse(reply); }).catch(error => { if (active) onResponse({ success: false, error: String(error) }); });
+		const fetchLive = () => {
+			if (shownRef.current) setRefreshing(true);
+			invoke<any>("career_get")
+				.then((reply) => { if (active) onResponse(reply); })
+				.catch((error) => { if (active) onResponse({ success: false, error: String(error) }); });
+		};
+
+		if (forceLiveRef.current) {
+			forceLiveRef.current = false;
+			fetchLive();
+			return () => { active = false; };
+		}
+
+		// Rank and history only change after a match, so this account's saved
+		// career is shown without asking Riot. An old one (or one saved before the
+		// last match ended) is shown at once while the new one loads.
+		invoke<any>("career_cached")
+			.then((reply) => {
+				if (!active) return;
+				if (reply?.success) show(reply);
+				if (!reply?.success || !reply.fresh) fetchLive();
+			})
+			.catch(() => { if (active) fetchLive(); });
 
 		return () => { active = false; };
-}, [t, reloadKey]);
+	}, [t, reloadKey]);
+
+	const refresh = () => {
+		forceLiveRef.current = true;
+		setReloadKey((key) => key + 1);
+	};
 
 	const competitiveMatches: any[] = data?.competitiveUpdates?.Matches ?? [];
 	const matches = useMemo(
@@ -146,8 +186,25 @@ const onResponse = (message: any) => {
 			<PageHeader
 				icon={<LuTrophy className="text-lg" />}
 				title={t("career.title")}
-				subtitle={ready ? data.riotId ?? t("career.subtitle") : undefined}
-			/>
+				subtitle={
+					!ready
+						? undefined
+						: refreshing
+							? t("career.updating")
+							: refreshError ?? data.riotId ?? t("career.subtitle")
+				}
+			>
+				<button
+					type="button"
+					onClick={refresh}
+					disabled={refreshing || loading}
+					aria-label={t("career.refresh")}
+					title={t("career.refresh")}
+					className="press-tile grid h-8 w-8 shrink-0 place-items-center rounded-[8px] border border-(--border) text-(--text-secondary) transition-colors hover:bg-(--surface-hover) hover:text-(--text-primary) disabled:opacity-40 focus-visible:outline-none focus-visible:shadow-[0_0_0_2px_var(--accent-soft)]"
+				>
+					<LuRotateCw className={`h-3.5 w-3.5 ${refreshing ? "animate-spin motion-reduce:animate-none" : ""}`} />
+				</button>
+			</PageHeader>
 
 			{!ready && (
 				<div className={pageBodyClass}>

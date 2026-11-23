@@ -2,8 +2,56 @@ use crate::commands::live::{extract_competitive_seasons, extract_rank};
 use crate::commands::rank_shields::remaining_rank_shields;
 use crate::riot::api::{self};
 use crate::riot::client::RiotState;
+use crate::store::CacheStore;
 use serde_json::{json, Value};
+use std::sync::atomic::{AtomicU64, Ordering};
 use tauri::State;
+
+use super::store::{cache_entry, cached_reply, now_ms, signed_in_puuid};
+
+/// How long a saved career counts as current. Rank and history only change
+/// after a match, and a match ending while ValoUtils runs ends it sooner.
+const CAREER_FRESH_MS: u64 = 10 * 60 * 1000;
+/// Riot needs a moment to add a finished match to history, so a career fetched
+/// this soon after a match ended may still miss it.
+const MATCH_SETTLE_MS: u64 = 2 * 60 * 1000;
+
+/// When ValoUtils last saw a match end (Unix ms, 0 = not this session).
+static LAST_MATCH_ENDED_MS: AtomicU64 = AtomicU64::new(0);
+
+/// Called by the chat poller when a match ends, so the saved career is refetched.
+pub fn note_match_ended() {
+    LAST_MATCH_ENDED_MS.store(now_ms(), Ordering::Relaxed);
+}
+
+fn career_cache_key(puuid: &str) -> String {
+    format!("career:{}", puuid.to_ascii_lowercase())
+}
+
+fn career_is_fresh(fetched_at: u64, now: u64, match_ended_at: u64) -> bool {
+    now.saturating_sub(fetched_at) < CAREER_FRESH_MS
+        && (match_ended_at == 0 || fetched_at >= match_ended_at + MATCH_SETTLE_MS)
+}
+
+/// The last career fetched for the signed-in account, from `cache.json`, with
+/// `fresh` saying whether it can be shown without asking Riot again. Only the
+/// local Riot Client is asked who is signed in; no PD request is made.
+#[tauri::command]
+pub async fn career_cached(
+    riot: State<'_, RiotState>,
+    cache: State<'_, CacheStore>,
+) -> Result<Value, ()> {
+    let reply = signed_in_puuid(&riot)
+        .await
+        .and_then(|puuid| cached_reply(cache.get(&career_cache_key(&puuid))));
+    let Some(mut reply) = reply else {
+        return Ok(json!({ "success": false, "code": "empty" }));
+    };
+    let fetched_at = reply.get("fetchedAt").and_then(Value::as_u64).unwrap_or(0);
+    let fresh = career_is_fresh(fetched_at, now_ms(), LAST_MATCH_ENDED_MS.load(Ordering::Relaxed));
+    reply["fresh"] = json!(fresh);
+    Ok(reply)
+}
 
 fn account_status_result(
     result: Result<(String, Value), crate::riot::error::RiotError>,
@@ -110,7 +158,10 @@ fn career_rank_shields(mmr: &Value, competitive_updates: &Value) -> Option<u8> {
 }
 
 #[tauri::command]
-pub async fn career_get(riot: State<'_, RiotState>) -> Result<Value, ()> {
+pub async fn career_get(
+    riot: State<'_, RiotState>,
+    cache: State<'_, CacheStore>,
+) -> Result<Value, ()> {
     // `with_api` retries once with fresh tokens if the cached one has been
     // invalidated (expired, or the player switched accounts).
     let result = api::with_api(&riot, |api| async move {
@@ -139,8 +190,10 @@ pub async fn career_get(riot: State<'_, RiotState>) -> Result<Value, ()> {
             let (current_season_id, competitive_seasons) = career_act_rank(&mmr);
             let rank_shields = career_rank_shields(&mmr, &competitive_updates);
             let account_level = account_xp.as_ref().and_then(career_account_level);
-            json!({
+            let fetched_at = now_ms();
+            let reply = json!({
                 "success": true,
+                "fetchedAt": fetched_at,
                 "puuid": puuid,
                 "riotId": riot_id,
                 "mmr": mmr,
@@ -150,7 +203,9 @@ pub async fn career_get(riot: State<'_, RiotState>) -> Result<Value, ()> {
                 "competitiveSeasons": competitive_seasons,
                 "rankShields": rank_shields,
                 "accountLevel": account_level,
-            })
+            });
+            cache.set(&career_cache_key(&puuid), cache_entry(&reply, fetched_at));
+            reply
         }
         Err(e) if e.is_login_required() => {
             json!({ "success": false, "code": "loginRequired" })
@@ -190,6 +245,18 @@ mod tests {
             "Penalties",
         );
         assert_eq!(failure["success"], false);
+    }
+
+    #[test]
+    fn saved_career_goes_stale_with_age_or_a_finished_match() {
+        let minute = 60 * 1000;
+        let now = 100 * minute;
+        assert!(career_is_fresh(now - 9 * minute, now, 0));
+        assert!(!career_is_fresh(now - 11 * minute, now, 0));
+        // Saved before the match ended, or before Riot had time to add it.
+        assert!(!career_is_fresh(now - 5 * minute, now, now - 4 * minute));
+        assert!(!career_is_fresh(now - minute, now, now - 2 * minute));
+        assert!(career_is_fresh(now - minute, now, now - 4 * minute));
     }
 
     #[test]

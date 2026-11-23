@@ -156,6 +156,12 @@ const applyFriends = (message: any) => {
 			if (!res.success) {
 				setLive(false);
 				setLoginRequired(res.code === "loginRequired");
+				// Signed out (or switching accounts): the last list belongs to a
+				// session that is gone, so don't leave it under the sign-in panel.
+				if (res.code === "loginRequired") {
+					setFriends([]);
+					setRequests([]);
+				}
 				setError(res.error ?? t("friends.failedToLoad"));
 				return;
 			}

@@ -1686,7 +1686,10 @@ async fn poll_once(
         let phase = match transition {
             LifecycleTransition::PregameStarted { .. } => "pregame",
             LifecycleTransition::MatchStarted { .. } => "coregame",
-            LifecycleTransition::MatchEnded { .. } => "ended",
+            LifecycleTransition::MatchEnded { .. } => {
+                super::career::note_match_ended();
+                "ended"
+            }
         };
         let _ = app.emit("live-game:phase", phase);
     }
