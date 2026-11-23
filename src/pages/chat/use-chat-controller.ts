@@ -40,7 +40,8 @@ import {
 const POLL_MS = 5000;
 type PlayerCardResponse = { success: boolean; cardId?: string | null; code?: string };
 const cardCacheKey = (puuid: string) => puuid.split("@")[0].toLocaleLowerCase();
-const PLAYER_CARD_CACHE_KEY = "chat:playerCards";
+/** Player card ids by bare lowercase PUUID; shared with the Friends page. */
+export const PLAYER_CARD_CACHE_KEY = "chat:playerCards";
 
 type ChatSummary = Extract<ChatResponse, { success: true }>;
 type FriendAction = "invite" | "join";

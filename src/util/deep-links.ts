@@ -46,6 +46,12 @@ const slot = <T>() => {
 
 const crosshairs = slot<SharedCrosshair>();
 const players = slot<string>();
+/** A friend's PUUID whose whisper the Chat page should open (Friends → Whisper). */
+const whispers = slot<string>();
+
+export const shareWhisper = whispers.put;
+export const takeWhisper = whispers.take;
+export const onWhisper = whispers.listen;
 
 export const shareCrosshair = crosshairs.put;
 export const hasSharedCrosshair = crosshairs.has;

@@ -35,6 +35,7 @@ import { useSavedHistoryAccounts } from "./chat/use-saved-history-accounts";
 import { PartyCodePanel } from "./chat/party-code-panel";
 import { SavedMatchPicker } from "./chat/saved-match-picker";
 import { useSavedMatchDetails } from "./chat/use-saved-match-details";
+import { onWhisper, takeWhisper } from "@/util/deep-links";
 import { useDynamicModal } from "@/components/dynamic-modal";
 import { Button } from "@/components/ui/button";
 import { gooeyToast as toast } from "goey-toast";
@@ -74,6 +75,24 @@ const Chat = () => {
 	const channel = controller.selectedChannel;
 	// History tab: saved match chat, read one room (Team or All) at a time.
 	const [historyOpen, setHistoryOpen] = useState(false);
+	// Friends → Whisper parks a PUUID; open that friend's chat once the list has them.
+	const [whisperPuuid, setWhisperPuuid] = useState<string | null>(() => takeWhisper());
+	useEffect(() => onWhisper(() => setWhisperPuuid(takeWhisper())), []);
+	useEffect(() => {
+		if (!whisperPuuid) return;
+		const friend = controller.friends.find((item) => item.puuid.split("@")[0].toLowerCase() === whisperPuuid);
+		if (!friend) {
+			// A search typed earlier could hide them; the full list loads with the next poll.
+			if (controller.friendSearch) controller.setFriendSearch("");
+			return;
+		}
+		setWhisperPuuid(null);
+		setHistoryOpen(false);
+		setBotOpen(false);
+		controller.selectChannel("friends");
+		// With no conversation yet, select them so the friend menu offers Message.
+		if (!controller.openFriendChat(friend)) setSelectedFriendPuuid(friend.puuid);
+	}, [whisperPuuid, controller]);
 	const [historyRoom, setHistoryRoom] = useState<"team" | "all">("team");
 	const [savedSelection, setSavedSelection] = useState<{ owner: string; matchUuid: string } | null>(null);
 	const savedMatches = useSavedMatchDetails(
