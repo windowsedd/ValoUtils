@@ -525,6 +525,17 @@ and labels that movement as estimated rather than a recorded trajectory.
 It stops at the final recorded event and resets when the round changes.
 Before the first snapshot, no player positions are shown.
 
+### Scoreboard duels
+
+Reduced scoreboards include `duels` (`matches.rs::aggregate_duels`): per directed
+pair of lowercase PUUIDs the kills and damage one dealt the other, plus each
+round's opening kill. Left click on any scoreboard row focuses that player in the
+panel above the table (their line, accuracy and `MatchPlayerDuels`: kills:deaths,
+damage dealt:taken and openings won:lost against each opponent; everyone in
+deathmatch). Profiles moved to that panel's View profile button and the row's
+right-click menu (with Copy Riot ID / Copy PUUID), where the page passes
+`onPlayerSelect`. Scoreboards cached before `duels` existed say to reopen the match.
+
 ### Add a new profile action button
 
 - Follow the pattern in `src/pages/SettingsProfiles.tsx`

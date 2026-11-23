@@ -62,7 +62,15 @@ export type MatchDetails = {
   rounds: number;
   teams: MatchTeam[];
   players: MatchPlayer[];
+  /** Head-to-head data; absent on scoreboards reduced before it existed. */
+  duels?: MatchDuels;
 };
+
+/** Lowercase PUUIDs. `kills`/`damage` are what `from` dealt to `to`. */
+export type MatchDuelPair = { from: string; to: string; kills: number; damage: number };
+/** Each round's first kill. */
+export type MatchOpening = { killer: string; victim: string };
+export type MatchDuels = { pairs: MatchDuelPair[]; openings: MatchOpening[] };
 
 /** `retryInSeconds` is what the local request budget knows of its own hold. */
 export type RateLimitedFailure = {
