@@ -415,8 +415,9 @@ pub fn is_builtin_command(body: &str) -> bool {
         || crate::riot::ascii_art::is_ascii_command(body)
 }
 
-/// Read-only answers about you and the match, always private: `.who` (the
-/// lobby), `.rr` (rank and recent RR) and `.last` (your last match).
+/// Read-only answers about you and the match, always private: `/who` (the
+/// lobby), `/rr` (rank and recent RR), `/last` (your last match) and `/met`
+/// (who in the lobby you have played with or against recently).
 ///
 /// Not reserved: players saved custom triggers with these names (a `.last`
 /// that runs `.tran team 3` is common) before they existed, so a saved trigger
@@ -426,10 +427,16 @@ pub enum QuickCommand {
     Who,
     Rr,
     Last,
+    Met,
 }
 
 pub fn parse_quick_command(input: &str) -> Option<QuickCommand> {
-    [("who", QuickCommand::Who), ("rr", QuickCommand::Rr), ("last", QuickCommand::Last)]
+    [
+        ("who", QuickCommand::Who),
+        ("rr", QuickCommand::Rr),
+        ("last", QuickCommand::Last),
+        ("met", QuickCommand::Met),
+    ]
         .into_iter()
         .find(|(name, _)| command_rest(input, name).is_some())
         .map(|(_, command)| command)
@@ -1248,6 +1255,7 @@ mod tests {
         assert_eq!(parse_quick_command(".who"), Some(QuickCommand::Who));
         assert_eq!(parse_quick_command("/RR"), Some(QuickCommand::Rr));
         assert_eq!(parse_quick_command(".last"), Some(QuickCommand::Last));
+        assert_eq!(parse_quick_command("/met"), Some(QuickCommand::Met));
         assert!(is_builtin_command("/who"));
         // Saved triggers named like them keep working.
         assert!(!is_reserved_custom_trigger("last"));
@@ -1255,7 +1263,7 @@ mod tests {
 
     #[test]
     fn quick_commands_need_the_whole_word() {
-        for body in [".whoami", ".rrr", ".lastmatch", "who", "rr"] {
+        for body in [".whoami", ".rrr", ".lastmatch", "/meta", "who", "rr"] {
             assert_eq!(parse_quick_command(body), None, "{body}");
         }
     }

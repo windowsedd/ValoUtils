@@ -26,6 +26,7 @@ pub(crate) async fn reply_lines(command: QuickCommand, app: Option<&AppHandle>) 
         QuickCommand::Who => super::bot_template::who_lines(app).await,
         QuickCommand::Rr => rr_lines(app).await,
         QuickCommand::Last => last_lines(app).await,
+        QuickCommand::Met => super::bot_template::met_lines(app).await,
     };
     lines.iter().map(|line| clip_line(line, WHISPER_LINE_LIMIT)).collect()
 }
@@ -153,7 +154,7 @@ async fn last_lines(app: &AppHandle) -> Vec<String> {
     format_last(&summary, rr, super::store::now_ms())
 }
 
-fn ago(started_ms: u64, now_ms: u64) -> Option<String> {
+pub(super) fn ago(started_ms: u64, now_ms: u64) -> Option<String> {
     let minutes = now_ms.checked_sub(started_ms)? / 60_000;
     Some(match minutes {
         0..=59 => format!("{minutes} min ago"),

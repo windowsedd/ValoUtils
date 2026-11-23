@@ -1079,16 +1079,7 @@ fn format_who(context: &Value, snapshot: &TemplateSnapshot) -> Vec<String> {
     let rows = context.get("players").and_then(Value::as_array).map(Vec::as_slice).unwrap_or_default();
     // ask_context lists players in snapshot order, so the two zip together.
     for (row, player) in rows.iter().zip(&snapshot.players) {
-        let mut line = text(row, "player").unwrap_or_else(|| "?".into());
-        let hidden = player.incognito && !player.in_my_party && !player.is_self;
-        if !player.is_self && !hidden && !player.game_name.trim().is_empty() {
-            line.push(' ');
-            line.push_str(player.game_name.trim());
-            if !player.tag_line.trim().is_empty() {
-                line.push('#');
-                line.push_str(player.tag_line.trim());
-            }
-        }
+        let mut line = player_label(row, player);
         line.push(':');
         if let Some(agent) = text(row, "agent") {
             line.push_str(&format!(" {agent},"));
@@ -1118,6 +1109,72 @@ fn format_who(context: &Value, snapshot: &TemplateSnapshot) -> Vec<String> {
         }
         lines.push(clip_line(&line, WHISPER_LINE_LIMIT));
     }
+    lines
+}
+
+/// "You", or "Ally 1 Duo#TW" / "Enemy 2": the `.ask` label plus the Riot ID,
+/// left out for players who hid theirs outside your party.
+fn player_label(row: &Value, player: &TemplatePlayer) -> String {
+    let mut label = row.get("player").and_then(Value::as_str).unwrap_or("?").to_string();
+    let hidden = player.incognito && !player.in_my_party && !player.is_self;
+    if !player.is_self && !hidden && !player.game_name.trim().is_empty() {
+        label.push(' ');
+        label.push_str(player.game_name.trim());
+        if !player.tag_line.trim().is_empty() {
+            label.push('#');
+            label.push_str(player.tag_line.trim());
+        }
+    }
+    label
+}
+
+/// `/met`: players in agent select or the match who were in your last 10
+/// matches, with how often they were with or against you. Uses the cached
+/// "Played before" tally (Matches cache scoreboards).
+pub(crate) async fn met_lines(app: &AppHandle) -> Vec<String> {
+    let deadline = tokio::time::Instant::now() + ASK_CONTEXT_TIMEOUT;
+    let Some(snapshot) = live_template_snapshot(app, deadline).await else {
+        return vec!["Not in agent select or a match right now.".into()];
+    };
+    let Some(context) = ask_context(&snapshot, &ContentLabels::default(), |_| None) else {
+        return vec!["The roster isn't loaded yet. Try again in a few seconds.".into()];
+    };
+    let met = super::mcp::recent_encounters(app, None).await;
+    format_met(&context, &snapshot, |puuid| met.get(puuid).cloned(), super::store::now_ms())
+}
+
+fn format_met(
+    context: &Value,
+    snapshot: &TemplateSnapshot,
+    met: impl Fn(&str) -> Option<super::encounters::Encounter>,
+    now_ms: u64,
+) -> Vec<String> {
+    let rows = context.get("players").and_then(Value::as_array).map(Vec::as_slice).unwrap_or_default();
+    let mut lines = Vec::new();
+    // ask_context lists players in snapshot order, so the two zip together.
+    for (row, player) in rows.iter().zip(&snapshot.players) {
+        if player.is_self {
+            continue;
+        }
+        let Some(seen) = met(&player.puuid).filter(|seen| seen.with + seen.against > 0) else {
+            continue;
+        };
+        let mut parts = Vec::new();
+        if seen.with > 0 {
+            parts.push(format!("with you {}x", seen.with));
+        }
+        if seen.against > 0 {
+            parts.push(format!("against you {}x", seen.against));
+        }
+        if let Some(when) = super::quick_stats::ago(seen.last_start_millis, now_ms) {
+            parts.push(format!("last {when}"));
+        }
+        lines.push(clip_line(&format!("{}: {}", player_label(row, player), parts.join(", ")), WHISPER_LINE_LIMIT));
+    }
+    if lines.is_empty() {
+        return vec!["Nobody here was in your last 10 matches.".into()];
+    }
+    lines.insert(0, "Played before (your last 10 matches):".into());
     lines
 }
 
@@ -1171,6 +1228,43 @@ mod tests {
         let lines = format_who(&context, &snapshot);
         assert!(lines[4].starts_with("Enemy 2:"), "{}", lines[4]);
         assert!(!lines.iter().any(|line| line.contains("Hidden#EU")));
+    }
+
+    #[test]
+    fn met_lists_only_players_you_played_with_or_against() {
+        let snapshot = snapshot();
+        let context = ask_context(&snapshot, &ContentLabels::default(), |_| None).unwrap();
+        let hour = 3_600_000;
+        let lines = format_met(
+            &context,
+            &snapshot,
+            |puuid| match puuid {
+                "ally" => Some(super::super::encounters::Encounter { with: 2, against: 0, last_match_id: "m1".into(), last_start_millis: 0 }),
+                "hidden" => Some(super::super::encounters::Encounter { with: 0, against: 1, last_match_id: "m2".into(), last_start_millis: 0 }),
+                // Your own row never counts.
+                "me" => Some(super::super::encounters::Encounter { with: 9, against: 0, last_match_id: "m3".into(), last_start_millis: 0 }),
+                _ => None,
+            },
+            5 * hour,
+        );
+        assert_eq!(
+            lines,
+            [
+                "Played before (your last 10 matches):",
+                "Ally 1 Duo#TW: with you 2x, last 5 h ago",
+                "Enemy 2: against you 1x, last 5 h ago",
+            ]
+        );
+    }
+
+    #[test]
+    fn met_says_when_nobody_was_met() {
+        let snapshot = snapshot();
+        let context = ask_context(&snapshot, &ContentLabels::default(), |_| None).unwrap();
+        assert_eq!(
+            format_met(&context, &snapshot, |_| None, 0),
+            ["Nobody here was in your last 10 matches."]
+        );
     }
 
     #[test]
