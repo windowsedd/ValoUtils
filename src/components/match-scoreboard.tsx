@@ -16,7 +16,15 @@ import { tierName } from "@/util/valorant-ranks";
 import { useAgentAssets } from "@/util/use-agent-assets";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { LuCheck, LuCopy } from "react-icons/lu";
+import { LuCheck, LuCopy, LuFingerprint } from "react-icons/lu";
+import { gooeyToast as toast } from "goey-toast";
+import {
+	ContextMenu,
+	ContextMenuContent,
+	ContextMenuItem,
+	ContextMenuLabel,
+	ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import { MatchAccuracy } from "./match-accuracy-panel";
 import { formatDpr } from "./match-dpr";
 import { isMatchPlayerHighlighted } from "./match-player-highlight";
@@ -200,8 +208,12 @@ const CopyPuuidButton = ({ puuid, label, copiedLabel }: { puuid: string; label: 
 	);
 };
 
-const ScoreboardRow = ({ player, assets, highlighted, onPlayerSelect, coachLabel, copy, party, partyLabel, encounters }: {
+/** Labels for the row's right-click menu. */
+type RowMenuLabels = { copyRiotId: string; riotIdCopied: (riotId: string) => string; copyPuuid: string; puuidCopied: string };
+
+const ScoreboardRow = ({ player, assets, highlighted, onPlayerSelect, coachLabel, copy, menu, party, partyLabel, encounters }: {
 	player: MatchPlayer;
+	menu: RowMenuLabels;
 	/** Party number when this player queued with others in this match. */
 	party?: number;
 	partyLabel?: string;
@@ -262,6 +274,38 @@ const ScoreboardRow = ({ player, assets, highlighted, onPlayerSelect, coachLabel
 		highlighted ? "bg-(--accent-soft)" : "hover:bg-(--surface-hover)"
 	}`;
 
+	const riotId = player.gameName ? (player.tagLine ? `${player.gameName}#${player.tagLine}` : player.gameName) : "";
+	const copyValue = (value: string, done: string, event: string) => {
+		invoke("clipboard_set", { args: [value] })
+			.then(() => toast.success(done))
+			.catch(reportIpcError);
+		invoke("analytics_track", { args: [event] }).catch(reportIpcError);
+	};
+	/** Right click (or the context-menu key) copies the Riot ID or PUUID. */
+	const withMenu = (unit: React.ReactElement) =>
+		!riotId && !player.subject ? (
+			unit
+		) : (
+			<ContextMenu>
+				<ContextMenuTrigger asChild>{unit}</ContextMenuTrigger>
+				<ContextMenuContent>
+					<ContextMenuLabel>{riotId || player.subject}</ContextMenuLabel>
+					{riotId && (
+						<ContextMenuItem onSelect={() => copyValue(riotId, menu.riotIdCopied(riotId), "scoreboard:copy-riot-id")}>
+							<LuCopy aria-hidden="true" />
+							{menu.copyRiotId}
+						</ContextMenuItem>
+					)}
+					{player.subject && (
+						<ContextMenuItem onSelect={() => copyValue(player.subject, menu.puuidCopied, "scoreboard:copy-puuid")}>
+							<LuFingerprint aria-hidden="true" />
+							{menu.copyPuuid}
+						</ContextMenuItem>
+					)}
+				</ContextMenuContent>
+			</ContextMenu>
+		);
+
 	const row = interaction.selectable ? (
 		<button
 			type="button"
@@ -274,13 +318,13 @@ const ScoreboardRow = ({ player, assets, highlighted, onPlayerSelect, coachLabel
 	) : (
 		<div className={className}>{content}</div>
 	);
-	if (!copy || !player.subject) return row;
+	if (!copy || !player.subject) return withMenu(row);
 	// The copy button sits beside the row, never inside a row that is itself a button.
-	return (
+	return withMenu(
 		<div className="group flex items-center gap-1">
 			<div className="min-w-0 flex-1">{row}</div>
 			<CopyPuuidButton puuid={player.subject} label={copy.label} copiedLabel={copy.copiedLabel} />
-		</div>
+		</div>,
 	);
 };
 
@@ -368,6 +412,12 @@ export const MatchScoreboard = ({
 						onPlayerSelect={onPlayerSelect}
 						coachLabel={t("matches.coach")}
 						copy={copyPuuid ? { label: t("matches.copyPuuid"), copiedLabel: t("matches.puuidCopied") } : undefined}
+						menu={{
+							copyRiotId: t("matches.copyRiotId"),
+							riotIdCopied: (riotId) => t("matches.riotIdCopied", { riotId }),
+							copyPuuid: t("matches.copyPuuid"),
+							puuidCopied: t("matches.puuidCopied"),
+						}}
 						party={parties.get(player.subject)}
 						partyLabel={parties.has(player.subject) ? t("matches.party", { number: parties.get(player.subject) }) : undefined}
 						encounters={encounters}

@@ -1085,6 +1085,8 @@
       "ability": "Ability",
       "noMinimap": "No minimap for this map."
     },
+    "copyRiotId": "Copy Riot ID",
+    "riotIdCopied": "Copied {{riotId}}",
     "copyPuuid": "Copy PUUID",
     "puuidCopied": "PUUID copied"
   },

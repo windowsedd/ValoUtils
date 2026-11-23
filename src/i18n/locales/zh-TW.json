@@ -1073,6 +1073,8 @@
 			"ability": "技能",
 			"noMinimap": "此地圖沒有小地圖。"
 		},
+		"copyRiotId": "複製 Riot ID",
+		"riotIdCopied": "已複製 {{riotId}}",
 		"copyPuuid": "複製 PUUID",
 		"puuidCopied": "已複製 PUUID"
 	},

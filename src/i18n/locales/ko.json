@@ -1073,6 +1073,8 @@
       "ability": "스킬",
       "noMinimap": "이 맵의 미니맵이 없습니다."
     },
+    "copyRiotId": "Riot ID 복사",
+    "riotIdCopied": "{{riotId}} 복사함",
     "copyPuuid": "PUUID 복사",
     "puuidCopied": "PUUID를 복사했습니다"
   },

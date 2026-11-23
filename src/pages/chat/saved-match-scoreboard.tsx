@@ -5,6 +5,7 @@ import { LuCheck, LuChevronDown, LuLink, LuRotateCw, LuTable2 } from "react-icon
 import { Button } from "@/components/ui/button";
 import { matchLink } from "@/util/deep-links";
 import { MatchScoreboard, useMatchAssets, useMatchDetails } from "@/components/match-scoreboard";
+import { useMatchPlayerProfileModal } from "@/components/match-player-profile-modal";
 import { reportIpcError } from "@/util/ipc";
 
 const COLLAPSED_KEY = "valoutils-history-scoreboard-collapsed";
@@ -44,6 +45,8 @@ export const SavedMatchScoreboard = ({ matchUuid, ownerPuuid }: { matchUuid: str
 	const match = details[matchUuid];
 	const loaded = useMemo(() => (match ? [match] : []), [match]);
 	const assets = useMatchAssets(loaded);
+	// Left click opens a player's profile, as on Matches; right click copies.
+	const openPlayerProfile = useMatchPlayerProfileModal(assets);
 
 	useEffect(() => {
 		if (open) ensure(matchUuid);
@@ -90,6 +93,7 @@ export const SavedMatchScoreboard = ({ matchUuid, ownerPuuid }: { matchUuid: str
 						loading={!match && !errors[matchUuid]}
 						error={errors[matchUuid]}
 						highlightPuuid={ownerPuuid ?? undefined}
+						onPlayerSelect={openPlayerProfile}
 						copyPuuid
 					/>
 					{errors[matchUuid] && (
