@@ -20,6 +20,22 @@ import { LuStar, LuUsers } from "react-icons/lu";
 import { reportIpcError } from "@/util/ipc";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { playerCardSmallArt } from "./chat/player-card-avatar";
+
+/**
+ * Each friend's last seen player card by lowercase PUUID, on this device only.
+ * Presence carries the card only while a friend is in VALORANT, so offline and
+ * Riot-Client-only friends keep the one they last showed.
+ */
+const CARD_MEMORY_KEY = "valoutils-friend-cards";
+const readCardMemory = (): Record<string, string> => {
+	try {
+		const parsed: unknown = JSON.parse(localStorage.getItem(CARD_MEMORY_KEY) ?? "{}");
+		return parsed && typeof parsed === "object" ? (parsed as Record<string, string>) : {};
+	} catch {
+		return {};
+	}
+};
 
 const POLL_MS = 10000;
 
@@ -58,16 +74,36 @@ const presenceOf = (friend: Friend, t: (k: string) => string): Presence => {
 };
 
 /** Player card with the competitive tier badge tucked into the corner. */
-const Avatar = ({ friend, cards, tiers }: { friend: Friend; cards: Map<string, CardAsset>; tiers: Map<number, TierAsset> }) => {
-	const cardId = friend.valorant?.playerCardId;
-	const icon = cardId ? cards.get(cardId.toLowerCase())?.icon : undefined;
+const Avatar = ({
+	friend,
+	cardId,
+	cards,
+	tiers,
+}: {
+	friend: Friend;
+	/** From presence, or the card this friend last showed. */
+	cardId?: string;
+	cards: Map<string, CardAsset>;
+	tiers: Map<number, TierAsset>;
+}) => {
+	const id = cardId?.toLowerCase();
+	// The resolved asset when loaded, otherwise the card's fixed CDN art.
+	const src = id ? (cards.get(id)?.icon ?? playerCardSmallArt(id)) : null;
+	const [failedSrc, setFailedSrc] = useState<string | null>(null);
+	const icon = src && failedSrc !== src ? src : undefined;
 	const tier = friend.valorant?.competitiveTier ?? 0;
 	const tierIcon = tier > 0 ? tiers.get(tier)?.icon : undefined;
 
 	return (
 		<div className="relative w-10 h-10 shrink-0">
 			{icon ? (
-				<img src={icon} alt="" className="w-10 h-10 rounded-md object-cover" />
+				<img
+					src={icon}
+					alt=""
+					loading="lazy"
+					onError={() => setFailedSrc(icon)}
+					className="w-10 h-10 rounded-md bg-white/5 object-cover"
+				/>
 			) : (
 				<div className="w-10 h-10 rounded-md bg-white/5 flex items-center justify-center text-xs font-bold text-gray-600">
 					{friend.gameName.slice(0, 2).toUpperCase() || "?"}
@@ -90,6 +126,7 @@ const Friends = () => {
 	const [friends, setFriends] = useState<Friend[]>([]);
 	const [requests, setRequests] = useState<FriendRequest[]>([]);
 	const [cards, setCards] = useState<Map<string, CardAsset>>(new Map());
+	const [cardMemory, setCardMemory] = useState<Record<string, string>>(readCardMemory);
 	const [tiers, setTiers] = useState<Map<number, TierAsset>>(new Map());
 	const [maps, setMaps] = useState<Map<string, MapAsset>>(new Map());
 	const [search, setSearch] = useState("");
@@ -125,6 +162,23 @@ const Friends = () => {
 	const listScrollRef = useRef<HTMLDivElement>(null);
 	const savedScrollTopRef = useRef(0);
 	const visibleFriends = useMemo(() => friends.filter(isVisibleFriend), [friends]);
+	const cardFor = (friend: Friend) =>
+		friend.valorant?.playerCardId || cardMemory[friend.puuid.toLowerCase()] || undefined;
+
+	// Remember cards seen in presence, so they stay once the friend leaves VALORANT.
+	useEffect(() => {
+		const seen = friends
+			.map((friend) => [friend.puuid.toLowerCase(), friend.valorant?.playerCardId?.toLowerCase()] as const)
+			.filter((entry): entry is readonly [string, string] => !!entry[0] && !!entry[1]);
+		if (seen.every(([puuid, card]) => cardMemory[puuid] === card)) return;
+		const next = { ...cardMemory, ...Object.fromEntries(seen) };
+		setCardMemory(next);
+		try {
+			localStorage.setItem(CARD_MEMORY_KEY, JSON.stringify(next));
+		} catch {
+			// Storage may be unavailable; the cards still show for this session.
+		}
+	}, [friends, cardMemory]);
 
 	const openFriend = (friend: Friend) => {
 		savedScrollTopRef.current = listScrollRef.current?.scrollTop ?? 0;
@@ -281,7 +335,7 @@ const applyFriends = (message: any) => {
 				onClick={() => openFriend(friend)}
 				className={`flex min-w-0 flex-1 items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:shadow-[0_0_0_2px_var(--accent-soft)] ${inParty ? "hover:bg-white/4" : "bg-white/2 hover:bg-white/6"}`}
 			>
-				<Avatar friend={friend} cards={cards} tiers={tiers} />
+				<Avatar friend={friend} cardId={cardFor(friend)} cards={cards} tiers={tiers} />
 				<div className="min-w-0 flex-1">
 					<p className="min-w-0 text-sm font-semibold">
 						<FriendIdentity person={friend} showNote />

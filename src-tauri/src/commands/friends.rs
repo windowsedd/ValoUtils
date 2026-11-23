@@ -92,9 +92,17 @@ fn valorant_presence(presence: &Value) -> Option<Value> {
         "partySize": blob.get("partySize").and_then(|v| v.as_i64()),
         "maxPartySize": blob.get("maxPartySize").and_then(|v| v.as_i64()),
         "isIdle": blob.get("isIdle").and_then(|v| v.as_bool()).unwrap_or(false),
-        "playerCardId": first_str([player.get("playerCardId")]),
-        "competitiveTier": player.get("competitiveTier").and_then(|v| v.as_i64()),
-        "accountLevel": player.get("accountLevel").and_then(|v| v.as_i64()),
+        // Current clients nest these under playerPresenceData; older ones put
+        // them at the blob root (as the Chat friend list also reads them).
+        "playerCardId": first_str([player.get("playerCardId"), blob.get("playerCardId")]),
+        "competitiveTier": player
+            .get("competitiveTier")
+            .or_else(|| blob.get("competitiveTier"))
+            .and_then(|v| v.as_i64()),
+        "accountLevel": player
+            .get("accountLevel")
+            .or_else(|| blob.get("accountLevel"))
+            .and_then(|v| v.as_i64()),
     }))
 }
 
