@@ -31,6 +31,8 @@ const PRESENCE_IDS: [(&str, PresenceMode, &str); 3] = [
 /// How often the status line and presence checks are brought up to date. Only
 /// in-memory relay state is read, so this costs nothing outside the process.
 const REFRESH_EVERY: Duration = Duration::from_secs(3);
+/// How long Quit waits for a clean shutdown before ending the process.
+const QUIT_DEADLINE: Duration = Duration::from_secs(5);
 
 /// Menu items whose text or check state follows the relay.
 struct TrayItems {
@@ -68,12 +70,20 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| on_menu(app, event.id().as_ref()))
         .on_tray_icon_event(|tray, event| {
-            if let TrayIconEvent::Click {
-                button: MouseButton::Left,
-                button_state: MouseButtonState::Up,
-                ..
-            } = event
-            {
+            // A single left click opens the window, and so does a double click
+            // (Windows reports that as its own event).
+            let open = matches!(
+                event,
+                TrayIconEvent::Click {
+                    button: MouseButton::Left,
+                    button_state: MouseButtonState::Up,
+                    ..
+                } | TrayIconEvent::DoubleClick {
+                    button: MouseButton::Left,
+                    ..
+                }
+            );
+            if open {
                 crate::focus_main_window(tray.app_handle());
             }
         });
@@ -98,7 +108,16 @@ fn on_menu(app: &AppHandle, id: &str) {
     match id {
         OPEN_ID => crate::focus_main_window(app),
         LAUNCH_ID => launch_valorant(app),
-        QUIT_ID => app.exit(0),
+        QUIT_ID => {
+            app.exit(0);
+            // The player asked to quit: if shutdown stalls, don't leave a
+            // windowless process (and its relay) running behind the tray.
+            std::thread::spawn(|| {
+                std::thread::sleep(QUIT_DEADLINE);
+                log::warn!("Shutdown took over {} s; ending the process", QUIT_DEADLINE.as_secs());
+                std::process::exit(0);
+            });
+        }
         _ => {
             if let Some((_, mode, _)) = PRESENCE_IDS.iter().find(|(item, _, _)| *item == id) {
                 presence_proxy::change_mode(*mode);

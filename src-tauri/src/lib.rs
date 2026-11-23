@@ -35,12 +35,16 @@ pub(crate) fn focus_main_window(app: &tauri::AppHandle) {
     let Some(window) = app.get_webview_window("main") else {
         return;
     };
-    let result = window
-        .unminimize()
-        .and_then(|_| window.show())
-        .and_then(|_| window.set_focus());
-    if let Err(error) = result {
-        log::warn!("Could not focus the running window: {error}");
+    // Each step on its own, show first: a window hidden to the tray may refuse
+    // to unminimize, and that must not stop it from showing.
+    for (step, result) in [
+        ("show", window.show()),
+        ("unminimize", window.unminimize()),
+        ("focus", window.set_focus()),
+    ] {
+        if let Err(error) = result {
+            log::warn!("Could not {step} the running window: {error}");
+        }
     }
 }
 
@@ -369,7 +373,15 @@ pub fn run() {
         .run(|app_handle, event| {
             if let tauri::RunEvent::Exit = event {
                 let state = app_handle.state::<commands::riot_chat::RiotChatState>();
-                tauri::async_runtime::block_on(state.stop_polling());
+                // Bounded: this blocks the UI thread, and a poll stuck mid-tick
+                // must not keep a quitting app alive.
+                let stopped = tauri::async_runtime::block_on(tokio::time::timeout(
+                    std::time::Duration::from_secs(3),
+                    state.stop_polling(),
+                ));
+                if stopped.is_err() {
+                    log::warn!("Chat poller did not stop within 3 s; exiting anyway");
+                }
             }
         });
 }
