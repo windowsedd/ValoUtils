@@ -116,31 +116,42 @@ const Chat = () => {
 		: undefined;
 	const viewingSaved = !!savedMatch;
 	const { showModal, closeModal } = useDynamicModal();
-	/** Asks, then deletes one saved match chat; the view moves to the newest. */
-	const removeSavedMatch = (matchUuid: string) => {
-		const remove = () => {
+	/** Asks once, then deletes saved match chats one by one; the view moves to the newest. */
+	const removeSavedMatches = (matchUuids: string[]) => {
+		const count = matchUuids.length;
+		if (count === 0) return;
+		const remove = async () => {
 			closeModal();
-			invoke("analytics_track", { args: ["chat:history-remove"] }).catch(reportIpcError);
-			history
-				.remove(matchUuid)
-				.then((reply) => {
-					if (!reply.success) {
-						toast.error(reply.error || t("chat.removeSavedFailed"));
-						return;
-					}
-					if (selectedSaved === matchUuid) setSavedSelection(null);
-					toast.success(t("chat.removeSavedDone"));
-				})
-				.catch(reportIpcError);
+			invoke("analytics_track", { args: ["chat:history-remove", JSON.stringify({ count })] }).catch(reportIpcError);
+			let removed = 0;
+			let failure = "";
+			for (const matchUuid of matchUuids) {
+				try {
+					const reply = await history.remove(matchUuid);
+					if (reply.success) {
+						removed += 1;
+						if (selectedSaved === matchUuid) setSavedSelection(null);
+					} else failure ||= reply.error || "";
+				} catch (error) {
+					reportIpcError(error);
+					failure ||= String(error);
+				}
+			}
+			if (removed < count) toast.error(failure || t("chat.removeSavedFailed"));
+			if (removed > 0) toast.success(count === 1 ? t("chat.removeSavedDone") : t("chat.removeSavedManyDone", { count: removed }));
 		};
 		showModal({
-			title: t("chat.removeSavedTitle"),
-			body: <p className="text-[12px] leading-5 text-(--text-secondary)">{t("chat.removeSavedBody")}</p>,
+			title: count === 1 ? t("chat.removeSavedTitle") : t("chat.removeSavedManyTitle", { count }),
+			body: (
+				<p className="text-[12px] leading-5 text-(--text-secondary)">
+					{count === 1 ? t("chat.removeSavedBody") : t("chat.removeSavedManyBody")}
+				</p>
+			),
 			footer: [
 				<Button key="cancel" variant="secondary" onClick={closeModal}>
 					{t("common.cancel")}
 				</Button>,
-				<Button key="remove" variant="destructive" onClick={remove}>
+				<Button key="remove" variant="destructive" onClick={() => void remove()}>
 					{t("chat.removeSaved")}
 				</Button>,
 			],
@@ -392,7 +403,7 @@ const Chat = () => {
 						onSelect={(matchUuid) => setSavedSelection(matchUuid ? { owner: history.owner, matchUuid } : null)}
 						showCurrent={false}
 						fill
-						onRemove={removeSavedMatch}
+						onRemove={removeSavedMatches}
 						labels={{
 							title: t("chat.savedMatchHistory"),
 							current: t("chat.currentChat"),
@@ -407,6 +418,10 @@ const Chat = () => {
 							noMessages: t("chat.savedMatchNoMessages"),
 							outcome: { win: t("chat.outcomeWin"), loss: t("chat.outcomeLoss"), draw: t("chat.outcomeDraw") },
 							remove: t("chat.removeSaved"),
+							select: t("chat.selectSaved"),
+							cancel: t("common.cancel"),
+							selectAll: t("chat.selectAllSaved"),
+							removeSelected: (count) => t("chat.removeSelected", { count }),
 						}}
 					/>
 				</ChatHistoryPanel>

@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { MatchDetails, MatchPlayer } from "@/types/matches";
 import { localize } from "@/util/valorant-assets";
@@ -55,10 +56,13 @@ export const MatchPlayerDuels = ({
 	details,
 	player,
 	assets,
+	action,
 }: {
 	details: MatchDetails;
 	player: MatchPlayer;
 	assets: MatchAssets;
+	/** Shown beside the heading (e.g. View profile). */
+	action?: ReactNode;
 }) => {
 	const { t, i18n } = useTranslation();
 	const lines = matchDuels(details, player);
@@ -66,7 +70,10 @@ export const MatchPlayerDuels = ({
 
 	return (
 		<section aria-label={t("matches.duels")} className="flex flex-col gap-1">
-			<h4 className="px-1 text-[11px] font-semibold text-(--text-secondary)">{t("matches.duels")}</h4>
+			<div className="flex min-h-6 items-center gap-2 px-1">
+				<h4 className="flex-1 text-[11px] font-semibold text-(--text-secondary)">{t("matches.duels")}</h4>
+				{action}
+			</div>
 			{!lines ? (
 				<p className="px-1 text-[11px] text-(--text-muted)">{t("matches.duelsUnavailable")}</p>
 			) : lines.length === 0 ? (

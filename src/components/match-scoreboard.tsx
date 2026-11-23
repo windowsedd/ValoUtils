@@ -14,7 +14,7 @@ import {
 } from "@/util/valorant-assets";
 import { tierName } from "@/util/valorant-ranks";
 import { useAgentAssets } from "@/util/use-agent-assets";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { LuCheck, LuCopy, LuFingerprint, LuIdCard } from "react-icons/lu";
 import { MatchPlayerDuels } from "./match-player-duels";
@@ -218,8 +218,10 @@ type RowMenuLabels = {
 	viewProfile: string;
 };
 
-const ScoreboardRow = ({ player, assets, highlighted, onPlayerSelect, onProfile, coachLabel, copy, menu, party, partyLabel, encounters }: {
+const ScoreboardRow = ({ player, assets, highlighted, expanded = false, onPlayerSelect, onProfile, coachLabel, copy, menu, party, partyLabel, encounters }: {
 	player: MatchPlayer;
+	/** Its duels are open below it. */
+	expanded?: boolean;
 	menu: RowMenuLabels;
 	/** Opens the player's profile (right-click menu), where the page offers one. */
 	onProfile?: (player: MatchPlayer) => void;
@@ -280,7 +282,7 @@ const ScoreboardRow = ({ player, assets, highlighted, onPlayerSelect, onProfile,
 		</>
 	);
 	const className = `flex w-full items-center gap-3 rounded-lg px-2 py-1.5 text-left transition-colors ${
-		highlighted ? "bg-(--accent-soft)" : "hover:bg-(--surface-hover)"
+		highlighted ? "bg-(--accent-soft)" : expanded ? "bg-(--surface-hover)" : "hover:bg-(--surface-hover)"
 	}`;
 
 	const riotId = player.gameName ? (player.tagLine ? `${player.gameName}#${player.tagLine}` : player.gameName) : "";
@@ -326,7 +328,7 @@ const ScoreboardRow = ({ player, assets, highlighted, onPlayerSelect, onProfile,
 			type="button"
 			onClick={interaction.activate}
 			aria-label={interaction.label}
-			aria-pressed={highlighted}
+			aria-expanded={expanded}
 			className={`${className} cursor-pointer hover:bg-(--surface-hover) focus-visible:outline-none focus-visible:shadow-[inset_0_0_0_2px_var(--accent-soft)]`}
 		>
 			{content}
@@ -370,19 +372,19 @@ export const MatchScoreboard = ({
 	// Hooks run before the early returns below.
 	const encounters = useEncounters(details?.matchId, Boolean(details));
 	const parties = useMemo(() => matchPartyNumbers(details?.players ?? []), [details]);
-	// Left click puts a player in the panel above the table (their line and
-	// duels). Scoped to the match, so another match starts on its own player.
-	const [focus, setFocus] = useState<{ matchId: string; puuid: string } | null>(null);
+	// Left click opens a player's duels right under their row (click again to
+	// close). Scoped to the match, so another match starts closed.
+	const [open, setOpen] = useState<{ matchId: string; puuid: string } | null>(null);
 	if (loading) return <p className="px-2 py-3 text-[11px] text-(--text-muted)">{t("matches.loadingDetails")}</p>;
 	if (error) return <p className="px-2 py-3 text-[11px] text-(--signal-neg)">{error}</p>;
 	if (!details) return null;
 
-	const focusedPuuid = focus?.matchId === details.matchId ? focus.puuid : null;
-	const self =
-		(focusedPuuid && details.players.find((player) => player.subject.toLowerCase() === focusedPuuid)) ||
-		details.players.find((player) => isMatchPlayerHighlighted(player, highlightPuuid));
-	const focusPlayer = (player: MatchPlayer) => setFocus({ matchId: details.matchId, puuid: player.subject.toLowerCase() });
-	const selfRiotId = self?.gameName ? `${self.gameName}${self.tagLine ? `#${self.tagLine}` : ""}` : "";
+	const openPuuid = open?.matchId === details.matchId ? open.puuid : null;
+	const self = details.players.find((player) => isMatchPlayerHighlighted(player, highlightPuuid));
+	const togglePlayer = (player: MatchPlayer) => {
+		const puuid = player.subject.toLowerCase();
+		setOpen(openPuuid === puuid ? null : { matchId: details.matchId, puuid });
+	};
 	// Deathmatch gives each player their own "team", so a Red/Blue scoreline
 	// would be meaningless there.
 	const scoreTeams = details.teams.filter((team) => team.teamId === "Red" || team.teamId === "Blue");
@@ -393,24 +395,6 @@ export const MatchScoreboard = ({
 	return (
 		<div className="flex flex-col gap-3">
 			{self && (
-				<div className="flex flex-col gap-2 rounded-[10px] border border-(--line) p-2">
-				{/* Whose line this is, once it can be anyone's. */}
-				<div className="flex min-w-0 items-center gap-2 px-1">
-					<p className="min-w-0 flex-1 truncate text-[12px] font-semibold text-(--text-primary)">
-						{selfRiotId || t("matches.player")}
-						{self.isSelf && <span className="ml-1.5 font-normal text-(--text-muted)">{t("matches.you")}</span>}
-					</p>
-					{onPlayerSelect && (
-						<button
-							type="button"
-							onClick={() => onPlayerSelect(self)}
-							className="flex h-7 shrink-0 items-center gap-1.5 rounded-[6px] border border-(--border) bg-(--control) px-2.5 text-[11px] font-medium text-(--text-secondary) outline-none transition-colors hover:bg-(--surface-hover) hover:text-(--text-primary) focus-visible:shadow-[0_0_0_2px_var(--accent-soft)]"
-						>
-							<LuIdCard className="size-3.5" aria-hidden="true" />
-							{t("matches.viewProfile")}
-						</button>
-					)}
-				</div>
 				<div className="flex flex-wrap items-stretch gap-2">
 					<div className="flex min-w-0 flex-1 flex-wrap items-center gap-4 rounded-[8px] border border-(--line) bg-(--surface) px-3 py-2.5">
 						{assets.agents.get(self.characterId.toLowerCase())?.icon && (
@@ -430,8 +414,6 @@ export const MatchScoreboard = ({
 					</div>
 					<MatchAccuracy player={self} />
 				</div>
-				<MatchPlayerDuels details={details} player={self} assets={assets} />
-				</div>
 			)}
 
 			<div className="flex flex-col gap-0.5">
@@ -447,13 +429,16 @@ export const MatchScoreboard = ({
 					<span className="w-12 text-right shrink-0">{t("matches.hs")}</span>
 					{copyPuuid && <span className="w-6 shrink-0" aria-hidden="true" />}
 				</div>
-				{details.players.map((player) => (
+				{details.players.map((player) => {
+					const expanded = openPuuid === player.subject.toLowerCase();
+					return (
+					<Fragment key={player.subject}>
 					<ScoreboardRow
-						key={player.subject}
 						player={player}
 						assets={assets}
-						highlighted={player === self}
-						onPlayerSelect={focusPlayer}
+						highlighted={isMatchPlayerHighlighted(player, highlightPuuid)}
+						expanded={expanded}
+						onPlayerSelect={togglePlayer}
 						onProfile={onPlayerSelect}
 						coachLabel={t("matches.coach")}
 						copy={copyPuuid ? { label: t("matches.copyPuuid"), copiedLabel: t("matches.puuidCopied") } : undefined}
@@ -468,7 +453,30 @@ export const MatchScoreboard = ({
 						partyLabel={parties.has(player.subject) ? t("matches.party", { number: parties.get(player.subject) }) : undefined}
 						encounters={encounters}
 					/>
-				))}
+					{expanded && (
+						<div className="mb-1 ml-5 mt-0.5 rounded-lg bg-(--surface) px-2 py-2">
+							<MatchPlayerDuels
+								details={details}
+								player={player}
+								assets={assets}
+								action={
+									onPlayerSelect && (
+										<button
+											type="button"
+											onClick={() => onPlayerSelect(player)}
+											className="flex h-6 shrink-0 items-center gap-1.5 rounded-[6px] border border-(--border) bg-(--control) px-2 text-[11px] font-medium text-(--text-secondary) outline-none transition-colors hover:bg-(--surface-hover) hover:text-(--text-primary) focus-visible:shadow-[0_0_0_2px_var(--accent-soft)]"
+										>
+											<LuIdCard className="size-3.5" aria-hidden="true" />
+											{t("matches.viewProfile")}
+										</button>
+									)
+								}
+							/>
+						</div>
+					)}
+					</Fragment>
+					);
+				})}
 			</div>
 
 			{details.rounds > 0 && (

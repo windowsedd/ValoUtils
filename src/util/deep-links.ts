@@ -83,3 +83,20 @@ export const navigateTo = (routeId: string) =>
 /** Asks the Tools page to open one of its tools. */
 export const openTool = (tool: string) =>
 	window.dispatchEvent(new CustomEvent("valoutils:tools-open", { detail: { tool } }));
+
+export type PlayerPageTarget = { subject: string; gameName?: string; tagLine?: string };
+
+/** Opens a player's profile as a page over the current one (`PlayerPageOverlay`), with Back. */
+export const openPlayerPage = (player: PlayerPageTarget) => {
+	if (!player.subject) return;
+	window.dispatchEvent(new CustomEvent<PlayerPageTarget>("valoutils:player-page", { detail: player }));
+};
+
+export const onPlayerPage = (listener: (player: PlayerPageTarget) => void) => {
+	const handler = (event: Event) => {
+		const detail = (event as CustomEvent<PlayerPageTarget>).detail;
+		if (detail?.subject) listener(detail);
+	};
+	window.addEventListener("valoutils:player-page", handler);
+	return () => window.removeEventListener("valoutils:player-page", handler);
+};

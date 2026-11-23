@@ -367,8 +367,9 @@ Capture also names speakers on the spot: each saved match's `speakers`
 match), and the Riot ID is added to `names`. No extra requests; incognito
 players keep their agent but not their name. The frontend merges these with
 `details.speakers` (`savedMatchSpeakers`), match-details values winning.
-Each History card has a Remove (trash) button at its bottom right: after a
-confirmation, `chat_saved_history_remove` (`args: [owner, matchUuid]`) deletes that
+Each History card has a Remove (trash) button at its bottom right, and the list's
+Select mode turns cards into checkboxes with Select all and Remove (N): after one
+confirmation (removed one by one), `chat_saved_history_remove` (`args: [owner, matchUuid]`) deletes that
 match and records `owner:matchUuid` in the file's `removed` set, which capture skips,
 so Riot's chat backlog cannot save it again while saving stays on. The picker hides
 it at once and the view falls back to the newest match.
@@ -529,12 +530,16 @@ Before the first snapshot, no player positions are shown.
 
 Reduced scoreboards include `duels` (`matches.rs::aggregate_duels`): per directed
 pair of lowercase PUUIDs the kills and damage one dealt the other, plus each
-round's opening kill. Left click on any scoreboard row focuses that player in the
-panel above the table (their line, accuracy and `MatchPlayerDuels`: kills:deaths,
-damage dealt:taken and openings won:lost against each opponent; everyone in
-deathmatch). Profiles moved to that panel's View profile button and the row's
-right-click menu (with Copy Riot ID / Copy PUUID), where the page passes
-`onPlayerSelect`. Scoreboards cached before `duels` existed say to reopen the match.
+round's opening kill. Left click on any scoreboard row toggles that player's
+duels right under the row (`MatchPlayerDuels`: kills:deaths, damage dealt:taken and
+openings won:lost against each opponent; everyone in deathmatch); the panel above the
+table stays your own line. The drawer's View profile button and the row's right-click
+menu (with Copy Riot ID / Copy PUUID) call `openPlayerPage` (`util/deep-links.ts`)
+where the page passes `onPlayerSelect`: `PlayerPageOverlay` (mounted in the router,
+keyed by route) lays the player's `FriendProfile` page over the current page with a
+Back arrow (also Esc); the page underneath stays mounted, profiles opened from inside
+one stack, and switching pages closes them. There is no profile popup any more.
+Scoreboards cached before `duels` existed say to reopen the match.
 
 ### Add a new profile action button
 

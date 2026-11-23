@@ -8,7 +8,7 @@ import {
 	useMatchDetails,
 	type MatchAssets,
 } from "@/components/match-scoreboard";
-import { useMatchPlayerProfileModal } from "@/components/match-player-profile-modal";
+import { openPlayerPage } from "@/util/deep-links";
 import { LoginRequiredPanel } from "@/components/login-required-panel";
 import { PageHeader, SectionCard, pageBodyClass } from "@/components/section-card";
 import { rateLimitedSeconds } from "@/util/rate-limit";
@@ -217,7 +217,6 @@ const Matches = () => {
 	const [aiPending, setAiPending] = useState(new Set<string>());
 	const { details, errors, pending, ensure, prefetch } = useMatchDetails();
 	const assets = useMatchAssets(Object.values(details));
-	const openMatchPlayerProfile = useMatchPlayerProfileModal(assets);
 
 	useEffect(() => {
 const applyResponse = (message: any) => {
@@ -310,7 +309,7 @@ const applyResponse = (message: any) => {
 									expanded={expanded.has(entry.matchId)}
 									onToggle={() => toggle(entry.matchId)}
 									assets={assets}
-									onPlayerSelect={openMatchPlayerProfile}
+									onPlayerSelect={openPlayerPage}
                                     aiText={aiResults[entry.matchId]}
                                     aiPending={aiPending.has(entry.matchId)}
                                     onAiStart={() => {
