@@ -306,16 +306,24 @@ async fn client_to_remote(
                         continue;
                     };
                     crate::presence_proxy::record_live_chat(stanza);
-                    // Commands typed in a group room never reach it. Only `.tran`
-                    // runs from there (it reads chat and answers privately);
-                    // everything else only works when whispered to the Dummy Bot.
+                    // Commands typed in a group room never reach it. The read-only
+                    // ones with private answers (.tran, .who, .rr, .last) run from
+                    // there; everything else only works when whispered to the bot.
                     if let Some(body) = outgoing_group_command(stanza) {
                         let tran = crate::presence_proxy::xml::group_muc_target(stanza).and_then(|(room, _, _)| {
                             crate::riot::chat_command::history_translate_for_room(&body, room)
                         });
-                        match tran {
-                            Some(command) => run_room_translation(command),
-                            None => {
+                        // A saved custom trigger with the same name wins.
+                        let quick = crate::riot::chat_command::parse_quick_command(&body).filter(|_| {
+                            !crate::commands::riot_chat::is_prefixed_custom_trigger(
+                                &body,
+                                crate::presence_proxy::app_handle(),
+                            )
+                        });
+                        match (tran, quick) {
+                            (Some(command), _) => run_room_translation(command),
+                            (None, Some(quick)) => run_room_quick(quick),
+                            (None, None) => {
                                 let hint = crate::riot::chat_command::group_command_hint(&body);
                                 if let Err(error) = crate::presence_proxy::send_bot_direct(&hint) {
                                     log::warn!("Group command hint could not be delivered: {error:?}");
@@ -330,6 +338,32 @@ async fn client_to_remote(
                                 reply_sequence += 1;
                                 let body = bot_message_body(stanza).unwrap_or_default();
                                 crate::fake_player::record_message(&body, true);
+                                if let BotCommand::Quick(quick) = command {
+                                    // Valorant collapses newlines in a whisper, so
+                                    // each line goes out as its own message.
+                                    let lines = crate::commands::quick_stats::reply_lines(
+                                        quick,
+                                        crate::presence_proxy::app_handle(),
+                                    )
+                                    .await;
+                                    let version = bot_version.lock().await.clone();
+                                    for (index, line) in lines.iter().enumerate() {
+                                        if index > 0 {
+                                            reply_sequence += 1;
+                                        }
+                                        crate::fake_player::record_message(line, false);
+                                        for client_frame in bot_command_frames(
+                                            account_domain,
+                                            version.as_deref(),
+                                            &bot_jid,
+                                            line,
+                                            reply_sequence,
+                                        ) {
+                                            write_frame(&local_write, client_frame.as_bytes()).await?;
+                                        }
+                                    }
+                                    continue;
+                                }
                                 let reply = if command == BotCommand::Translate {
                                     translate_bot_command_on_connection(&body, &remote_write).await
                                 } else if command == BotCommand::TranslateHistory {
@@ -707,6 +741,21 @@ fn run_room_translation(command: String) {
         .unwrap_or_else(|error| error.to_string());
         if let Err(error) = crate::presence_proxy::send_bot_direct(&reply) {
             log::warn!("Room .tran reply could not be delivered: {error:?}");
+        }
+    });
+}
+
+/// Runs `.who`, `.rr` or `.last` typed in a group room and whispers each line
+/// from the Dummy Bot. Spawned so it never holds up the relay loop.
+fn run_room_quick(command: crate::riot::chat_command::QuickCommand) {
+    tauri::async_runtime::spawn(async move {
+        let lines =
+            crate::commands::quick_stats::reply_lines(command, crate::presence_proxy::app_handle()).await;
+        for line in lines {
+            if let Err(error) = crate::presence_proxy::send_bot_direct(&line) {
+                log::warn!("Room {command:?} reply could not be delivered: {error:?}");
+                break;
+            }
         }
     });
 }

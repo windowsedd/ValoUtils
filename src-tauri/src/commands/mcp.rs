@@ -1082,7 +1082,7 @@ pub(super) async fn recent_encounters(app: &AppHandle, exclude: Option<&str>) ->
 const ENCOUNTER_TIMEOUT: Duration = Duration::from_secs(20);
 
 /// One line of match history: the signed-in player's own game.
-fn own_match_summary(
+pub(super) fn own_match_summary(
     reduced: &Value,
     agents: &HashMap<String, String>,
     maps: &HashMap<String, String>,
@@ -1937,7 +1937,7 @@ fn tier_entry(tier: Option<u64>) -> Value {
 
 /// Career without the raw MMR document (every season of every queue) and
 /// with tier numbers named, so it stays small enough to be useful to a model.
-fn player_overview(career: Value, region: Option<&str>) -> Value {
+pub(super) fn player_overview(career: Value, region: Option<&str>) -> Value {
     let latest = career.pointer("/mmr/LatestCompetitiveUpdate");
     let field = |value: Option<&Value>, key: &str| value.and_then(|v| v.get(key)).and_then(Value::as_u64);
     let recent: Vec<Value> = career

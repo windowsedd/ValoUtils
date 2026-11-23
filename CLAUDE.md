@@ -412,7 +412,16 @@ custom triggers typed in party/pregame/team/all chat never run: the relay swallo
 the line and the bot whispers a reminder. The one exception is `.tran`/`.translate`
 (read-only, private reply): the relay still swallows it, runs it for the room it
 was typed in unless it names one (`chat_command::history_translate_for_room`), and
-the Dummy Bot whispers the translation. The REST poller ignores the player's own
+the Dummy Bot whispers the translation.
+`.who`, `.rr` and `.last` (`chat_command::QuickCommand`, `commands/quick_stats.rs`)
+are read-only and private too, so they also run from rooms (swallowed, answered by
+the bot), from bot whispers and from the composer. `.who` is
+`bot_template::who_lines` over the Live Game roster (no requests; Riot IDs except
+players hidden outside your party); `.rr` reads the saved career, fetching only when
+it is stale; `.last` reads the newest match through the Matches cache plus RR from
+the saved career. Replies are short plain lines (no emoji, max 80 chars) and are
+whispered one message per line, since Valorant collapses whisper newlines. They are
+not reserved names: a saved custom trigger called `.who`/`.rr`/`.last` wins. The REST poller ignores the player's own
 lines, so without the relay such a line is posted as ordinary chat.
 In agent select or a live match, `.ask` also sends a fenced `<live_game>` block
 (`bot_template::ask_game_context`): map, mode, phase, and per player agent, rank,

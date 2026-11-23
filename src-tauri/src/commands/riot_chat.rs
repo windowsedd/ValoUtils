@@ -443,6 +443,8 @@ pub enum ComposerCommand {
     Ask(String),
     /// Join/leave a party or create its invite code; replies stay private.
     Party(String),
+    /// `.who`, `.rr` or `.last` — read-only answers shown only to the player.
+    Quick(chat_command::QuickCommand),
     Unknown,
 }
 
@@ -486,6 +488,8 @@ pub fn classify_composer_command(
         ComposerCommand::Ai(expanded)
     } else if chat_command::is_ask_command(&expanded) {
         ComposerCommand::Ask(expanded)
+    } else if let Some(quick) = chat_command::parse_quick_command(&expanded) {
+        ComposerCommand::Quick(quick)
     } else {
         ComposerCommand::Unknown
     }
@@ -566,6 +570,7 @@ pub(crate) async fn run_composer_command(
         }
         // Private by default: the answer is shown only under the composer.
         ComposerCommand::Ai(line) | ComposerCommand::Ask(line) => ai_command_reply(&line).await,
+        ComposerCommand::Quick(quick) => Ok(super::quick_stats::reply_lines(quick, Some(&app)).await.join("\n")),
         ComposerCommand::Unknown => return Err(format!("Unknown command '{}'.", input.trim())),
     };
     outcome.map_err(|error| error.to_string())

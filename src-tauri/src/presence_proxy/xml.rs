@@ -19,6 +19,8 @@ pub enum BotCommand {
     Ai,
     Ask,
     Party,
+    /// `.who`, `.rr` or `.last`: answered in several short whispers.
+    Quick(crate::riot::chat_command::QuickCommand),
     Unknown,
     Consume,
 }
@@ -241,6 +243,11 @@ pub fn parse_bot_message(stanza: &str) -> Result<Option<(String, BotCommand)>, S
         BotCommand::Ask
     } else if crate::riot::chat_command::is_party_command(&body) {
         BotCommand::Party
+    } else if let Some(quick) = crate::riot::chat_command::parse_quick_command(&body).filter(|_| {
+        // A saved custom trigger with the same name wins.
+        !crate::commands::riot_chat::is_prefixed_custom_trigger(&body, crate::presence_proxy::app_handle())
+    }) {
+        BotCommand::Quick(quick)
     } else {
         parse_bot_command(&body).unwrap_or(BotCommand::Unknown)
     };

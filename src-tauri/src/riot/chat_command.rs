@@ -411,13 +411,34 @@ pub fn is_builtin_command(body: &str) -> bool {
         || is_ai_command(body)
         || is_ask_command(body)
         || is_party_command(body)
+        || parse_quick_command(body).is_some()
         || crate::riot::ascii_art::is_ascii_command(body)
+}
+
+/// Read-only answers about you and the match, always private: `.who` (the
+/// lobby), `.rr` (rank and recent RR) and `.last` (your last match).
+///
+/// Not reserved: players saved custom triggers with these names (a `.last`
+/// that runs `.tran team 3` is common) before they existed, so a saved trigger
+/// wins wherever both match.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QuickCommand {
+    Who,
+    Rr,
+    Last,
+}
+
+pub fn parse_quick_command(input: &str) -> Option<QuickCommand> {
+    [("who", QuickCommand::Who), ("rr", QuickCommand::Rr), ("last", QuickCommand::Last)]
+        .into_iter()
+        .find(|(name, _)| command_rest(input, name).is_some())
+        .map(|(_, command)| command)
 }
 
 /// Bot DM sent when a command is typed in a group room instead of whispered.
 pub fn group_command_hint(body: &str) -> String {
     format!(
-        "Commands only run when you whisper them to me, not in party, pregame, team or all chat (only .tran works there). Not sent: {}",
+        "Commands only run when you whisper them to me, not in party, pregame, team or all chat (.tran .who .rr .last do). Not sent: {}",
         body.trim()
     )
 }
@@ -1220,6 +1241,23 @@ mod tests {
             Some(command)
         );
         assert!(find_custom_command(".send", &[]).is_none());
+    }
+
+    #[test]
+    fn quick_commands_parse_with_either_prefix() {
+        assert_eq!(parse_quick_command(".who"), Some(QuickCommand::Who));
+        assert_eq!(parse_quick_command("/RR"), Some(QuickCommand::Rr));
+        assert_eq!(parse_quick_command(".last"), Some(QuickCommand::Last));
+        assert!(is_builtin_command("/who"));
+        // Saved triggers named like them keep working.
+        assert!(!is_reserved_custom_trigger("last"));
+    }
+
+    #[test]
+    fn quick_commands_need_the_whole_word() {
+        for body in [".whoami", ".rrr", ".lastmatch", "who", "rr"] {
+            assert_eq!(parse_quick_command(body), None, "{body}");
+        }
     }
 
     #[test]
