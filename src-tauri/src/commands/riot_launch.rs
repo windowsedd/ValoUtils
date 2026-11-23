@@ -293,12 +293,14 @@ pub async fn client_config_status() -> Result<Value, ()> {
     let presence = presence_proxy::controller().snapshot();
     let images = running_images_async().await;
     let riot_client_running = image_listed(&images, RIOT_CLIENT_IMAGE);
+    // Only a signed-in client has a chat connection to lose, so the sign-in
+    // check (cached tokens) runs last and only when the rest already match.
     let relay_client_lost = presence_proxy::relay_client_lost(
         riot_client_running,
         presence.active_connections,
         crate::riot::lockfile::read().ok().map(|lockfile| lockfile.pid),
         presence_proxy::relay_client_pid(),
-    );
+    ) && riot_client_signed_in().await;
     Ok(json!({
         "success": true,
         "running": running,
@@ -318,6 +320,16 @@ pub async fn client_config_status() -> Result<Value, ()> {
         "certHost": presence.cert_host,
         "lastWarning": presence.last_warning,
     }))
+}
+
+/// Whether the Riot Client is signed in. At its sign-in screen there is no
+/// chat connection at all, so no relay connection is expected then.
+async fn riot_client_signed_in() -> bool {
+    use tauri::Manager;
+    let Some(riot) = presence_proxy::app_handle().and_then(|app| app.try_state::<RiotState>()) else {
+        return false;
+    };
+    crate::riot::client::get_tokens(&riot, false).await.is_ok()
 }
 
 async fn start_config_and_relay() -> Result<u16, String> {
