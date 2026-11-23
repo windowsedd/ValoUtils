@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { LuHistory, LuMessageSquare, LuSearch } from "react-icons/lu";
+import { LuHistory, LuMessageSquare, LuSearch, LuTrash2 } from "react-icons/lu";
 import type { SavedChatMatch } from "@/types/chat";
 import { useAgentAssets } from "@/util/use-agent-assets";
 import { getMaps, localize, type MapAsset } from "@/util/valorant-assets";
@@ -19,6 +19,8 @@ export type SavedMatchPickerLabels = {
 	speakers: (count: number) => string;
 	noMessages: string;
 	outcome: Record<MatchOutcome, string>;
+	/** Label of the per-card Remove button; only used with `onRemove`. */
+	remove?: string;
 };
 
 const OUTCOME_CLASS: Record<MatchOutcome, string> = {
@@ -61,6 +63,7 @@ export const SavedMatchPicker = ({
 	showCurrent = true,
 	fill = false,
 	names,
+	onRemove,
 }: {
 	matches: readonly SavedChatMatch[];
 	channel: "team" | "all";
@@ -73,6 +76,8 @@ export const SavedMatchPicker = ({
 	fill?: boolean;
 	/** Riot IDs by lowercase PUUID, for speakers match details don't name. */
 	names?: Readonly<Record<string, string>>;
+	/** Shows a Remove button on each card (bottom right). */
+	onRemove?: (matchUuid: string) => void;
 }) => {
 	const [query, setQuery] = useState("");
 	const list = useMemo(() => savedMatchList(matches, channel, query), [matches, channel, query]);
@@ -140,8 +145,9 @@ export const SavedMatchPicker = ({
 							const heading = [mapName, mode].filter(Boolean).join(" · ");
 							const art = map?.listViewIcon;
 							return (
+								// The card and its Remove button are siblings: a button can't hold a button.
+								<div key={summary.matchUuid} className="group relative shrink-0">
 								<button
-									key={summary.matchUuid}
 									type="button"
 									data-saved-match={summary.matchUuid}
 									aria-current={isSelected || undefined}
@@ -202,8 +208,23 @@ export const SavedMatchPicker = ({
 											labels.noMessages
 										)}
 									</span>
-									<span className="relative text-[10px] tabular-nums text-(--text-muted)">{labels.counts(summary.team, summary.all)}</span>
+									<span className={`relative text-[10px] tabular-nums text-(--text-muted) ${onRemove ? "pr-7" : ""}`}>
+										{labels.counts(summary.team, summary.all)}
+									</span>
 								</button>
+								{onRemove && (
+									<button
+										type="button"
+										data-remove-saved-match={summary.matchUuid}
+										aria-label={labels.remove}
+										title={labels.remove}
+										onClick={() => onRemove(summary.matchUuid)}
+										className="absolute bottom-1.5 right-1.5 grid size-6 place-items-center rounded-[6px] text-(--text-muted) opacity-40 outline-none transition-[opacity,color,background-color] duration-150 hover:bg-(--surface-hover) hover:text-(--signal-neg) hover:opacity-100 focus-visible:opacity-100 focus-visible:shadow-[0_0_0_2px_var(--accent-soft)] group-hover:opacity-100"
+									>
+										<LuTrash2 className="size-3.5" />
+									</button>
+								)}
+								</div>
 							);
 						})}
 					</div>

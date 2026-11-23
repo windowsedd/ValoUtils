@@ -35,6 +35,9 @@ import { useSavedHistoryAccounts } from "./chat/use-saved-history-accounts";
 import { PartyCodePanel } from "./chat/party-code-panel";
 import { SavedMatchPicker } from "./chat/saved-match-picker";
 import { useSavedMatchDetails } from "./chat/use-saved-match-details";
+import { useDynamicModal } from "@/components/dynamic-modal";
+import { Button } from "@/components/ui/button";
+import { gooeyToast as toast } from "goey-toast";
 
 /** Stable empty list, so the details hook doesn't see a new array on every render. */
 const EMPTY_SAVED: SavedChatMatch[] = [];
@@ -93,6 +96,37 @@ const Chat = () => {
 		? historyMatches.find(match => match.matchUuid === selectedSaved)
 		: undefined;
 	const viewingSaved = !!savedMatch;
+	const { showModal, closeModal } = useDynamicModal();
+	/** Asks, then deletes one saved match chat; the view moves to the newest. */
+	const removeSavedMatch = (matchUuid: string) => {
+		const remove = () => {
+			closeModal();
+			invoke("analytics_track", { args: ["chat:history-remove"] }).catch(reportIpcError);
+			history
+				.remove(matchUuid)
+				.then((reply) => {
+					if (!reply.success) {
+						toast.error(reply.error || t("chat.removeSavedFailed"));
+						return;
+					}
+					if (selectedSaved === matchUuid) setSavedSelection(null);
+					toast.success(t("chat.removeSavedDone"));
+				})
+				.catch(reportIpcError);
+		};
+		showModal({
+			title: t("chat.removeSavedTitle"),
+			body: <p className="text-[12px] leading-5 text-(--text-secondary)">{t("chat.removeSavedBody")}</p>,
+			footer: [
+				<Button key="cancel" variant="secondary" onClick={closeModal}>
+					{t("common.cancel")}
+				</Button>,
+				<Button key="remove" variant="destructive" onClick={remove}>
+					{t("chat.removeSaved")}
+				</Button>,
+			],
+		});
+	};
 	// Riot ID of the account whose saved history is shown. Read once from the
 	// local Riot Client and kept only if it is the same account as the history.
 	const ownerPuuid = controller.summary.ownerPuuid ?? "";
@@ -339,6 +373,7 @@ const Chat = () => {
 						onSelect={(matchUuid) => setSavedSelection(matchUuid ? { owner: history.owner, matchUuid } : null)}
 						showCurrent={false}
 						fill
+						onRemove={removeSavedMatch}
 						labels={{
 							title: t("chat.savedMatchHistory"),
 							current: t("chat.currentChat"),
@@ -352,6 +387,7 @@ const Chat = () => {
 							speakers: (count) => t("chat.savedMatchSpeakers", { count }),
 							noMessages: t("chat.savedMatchNoMessages"),
 							outcome: { win: t("chat.outcomeWin"), loss: t("chat.outcomeLoss"), draw: t("chat.outcomeDraw") },
+							remove: t("chat.removeSaved"),
 						}}
 					/>
 				</ChatHistoryPanel>

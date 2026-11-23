@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::Path;
 use std::sync::Mutex;
 
@@ -13,6 +13,14 @@ struct Archive {
     /// history stays readable while signed out or on another account.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     names: BTreeMap<String, String>,
+    /// Matches the player removed, as `owner:matchUuid`, so capture never saves
+    /// them again from Riot's chat backlog while saving stays on.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    removed: BTreeSet<String>,
+}
+
+fn removed_key(owner: &str, match_uuid: &str) -> String {
+    format!("{}:{}", owner.to_ascii_lowercase(), match_uuid.to_ascii_lowercase())
 }
 
 fn looks_like_puuid(value: &str) -> bool {
@@ -20,6 +28,24 @@ fn looks_like_puuid(value: &str) -> bool {
 }
 
 impl Archive {
+    /// Deletes one saved match and remembers it so capture skips it. Returns
+    /// whether it was saved. An account left with no matches is dropped.
+    fn remove_match(&mut self, owner: &str, match_uuid: &str) -> bool {
+        let uuid = match_uuid.to_ascii_lowercase();
+        let found = match self.accounts.get_mut(owner) {
+            Some(matches) => {
+                let found = matches.remove(&uuid).is_some();
+                if matches.is_empty() {
+                    self.accounts.remove(owner);
+                }
+                found
+            }
+            None => false,
+        };
+        self.removed.insert(removed_key(owner, &uuid));
+        found
+    }
+
     /// Owners and speakers whose Riot ID isn't known yet.
     fn unnamed(&self) -> Vec<String> {
         let mut ids: Vec<String> = Vec::new();
@@ -344,6 +370,9 @@ impl Archive {
             else {
                 continue;
             };
+            if self.removed.contains(&removed_key(owner, &uuid)) {
+                continue;
+            }
             let saved = self
                 .accounts
                 .entry(owner.to_string())
@@ -683,6 +712,29 @@ pub fn chat_saved_history_get(args: Vec<Value>) -> Value {
     }
 }
 
+/// `args: [owner, matchUuid]`: deletes one saved match chat on this PC. It is
+/// not saved again later, even while saving stays on.
+#[tauri::command]
+pub fn chat_saved_history_remove(args: Vec<Value>) -> Value {
+    let text = |index: usize| args.get(index).and_then(Value::as_str).unwrap_or_default().trim().to_string();
+    let (owner, uuid) = (text(0), text(1).to_ascii_lowercase());
+    if owner.is_empty() || !is_match_uuid(&uuid) {
+        return serde_json::json!({ "success": false, "error": "No saved match given." });
+    }
+    match remove_saved(&history_path(), &owner, &uuid) {
+        Ok(removed) => serde_json::json!({ "success": true, "removed": removed }),
+        Err(error) => serde_json::json!({ "success": false, "error": error }),
+    }
+}
+
+fn remove_saved(path: &Path, owner: &str, uuid: &str) -> Result<bool, String> {
+    let _guard = FILE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let mut archive = read(path)?;
+    let removed = archive.remove_match(owner, uuid);
+    write(path, &archive)?;
+    Ok(removed)
+}
+
 #[tauri::command]
 pub fn chat_saved_history_clear(config: tauri::State<'_, crate::store::ConfigStore>) -> Value {
     let _guard = FILE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
@@ -820,6 +872,45 @@ mod tests {
             archive.accounts["me"][MATCH].messages[0]["senderName"],
             "Name#TAG"
         );
+    }
+
+    #[test]
+    fn removing_a_match_keeps_the_others() {
+        let mut archive = Archive::default();
+        let other = "99999999-2222-3333-4444-555555555555";
+        let mut elsewhere = line("all", "x");
+        elsewhere["conversationId"] = json!(format!("{other}-all@ares-coregame.ap.pvp.net"));
+        archive.capture("me", &[line("blue", "a"), elsewhere], None);
+        assert!(archive.remove_match("me", &MATCH.to_ascii_uppercase()));
+        assert!(!archive.accounts["me"].contains_key(MATCH));
+        assert!(archive.accounts["me"].contains_key(other));
+    }
+
+    #[test]
+    fn a_removed_match_is_not_saved_again() {
+        let mut archive = Archive::default();
+        archive.capture("me", &[line("blue", "a")], None);
+        archive.remove_match("me", MATCH);
+        assert!(!archive.capture("me", &[line("blue", "a"), line("all", "b")], None));
+        assert!(!archive.accounts.contains_key("me"));
+    }
+
+    #[test]
+    fn removal_only_applies_to_its_own_account() {
+        let mut archive = Archive::default();
+        archive.remove_match("me", MATCH);
+        archive.capture("other", &[line("blue", "a")], None);
+        assert!(archive.accounts["other"].contains_key(MATCH));
+    }
+
+    #[test]
+    fn removal_survives_a_restart() {
+        let dir = std::env::temp_dir().join(format!("valoutils-chat-remove-{}", std::process::id()));
+        let path = dir.join("history.json");
+        update(&path, "me", &[line("blue", "a")], None, || true).unwrap();
+        assert!(remove_saved(&path, "me", MATCH).unwrap());
+        assert!(update(&path, "me", &[line("blue", "a")], None, || true).unwrap().is_empty());
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]

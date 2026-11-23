@@ -342,6 +342,7 @@ pub fn run() {
             commands::matches::match_timeline,
             commands::chat::chat_get,
             match_chat_history::chat_saved_history_clear,
+            match_chat_history::chat_saved_history_remove,
             match_chat_history::chat_saved_history_accounts,
             match_chat_history::chat_saved_history_get,
             match_chat_history::chat_saved_match_details,

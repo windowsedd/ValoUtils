@@ -367,6 +367,11 @@ Capture also names speakers on the spot: each saved match's `speakers`
 match), and the Riot ID is added to `names`. No extra requests; incognito
 players keep their agent but not their name. The frontend merges these with
 `details.speakers` (`savedMatchSpeakers`), match-details values winning.
+Each History card has a Remove (trash) button at its bottom right: after a
+confirmation, `chat_saved_history_remove` (`args: [owner, matchUuid]`) deletes that
+match and records `owner:matchUuid` in the file's `removed` set, which capture skips,
+so Riot's chat backlog cannot save it again while saving stays on. The picker hides
+it at once and the view falls back to the newest match.
 Disabling saves keeps existing history. Clear match
 chat history deletes all accounts' saved chats on this device and disables saving
 so polling cannot restore its backlog. No cloud sync or new dependencies.
