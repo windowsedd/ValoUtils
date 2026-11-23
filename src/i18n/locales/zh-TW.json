@@ -81,6 +81,14 @@
 		"openRiotClient": "開啟 Riot Client",
 		"openRiotClientHint": "只透過 XMPP 中繼開啟 Riot Client，不啟動特戰英豪。"
 	},
+	"relayBanner": {
+		"title": "Riot 聊天與 ValoUtils 的連線已中斷",
+		"body": "好友會看到你離線，聊天指令也無法使用。通常會自動重新連線；若沒有，請透過 ValoUtils 重新啟動 Riot Client。",
+		"wake": "啟動中繼",
+		"woken": "中繼已啟動，Riot Client 應會在一分鐘內重新連線。",
+		"wakeFailed": "無法啟動中繼。",
+		"dismiss": "關閉"
+	},
 	"riotClient": {
 		"section": "Riot Client",
 		"restart": "透過中繼重新啟動",
@@ -617,6 +625,8 @@
 		"requestPacing_safe": "保守",
 		"recentMatchCount": "每位玩家的近期對戰數",
 		"recentMatchCountDesc": "玩家數據要平均的近期對戰場數，最多 {{max}} 場。場數越多越準確，但請求也越多。",
+		"closeToTray": "關閉時在系統匣中繼續執行",
+		"closeToTrayDesc": "關閉按鈕會將 ValoUtils 隱藏到系統匣，讓聊天、中繼、指令和遠端聊天持續運作。請從系統匣圖示結束程式。關閉此選項後，關閉 ValoUtils 會中斷 Riot 聊天，直到再次開啟。",
 		"showPregameEnemies": "英雄選擇時顯示敵方隊伍",
 		"showPregameEnemiesDesc": "在英雄選擇期間，若 Riot 有提供，於即時對戰顯示敵方的名稱、牌位與數據。關閉後也不會送出相關請求。",
 		"hideTab": "隱藏 {{tab}} 分頁",
@@ -1116,6 +1126,26 @@
 		"error": "無法變更 MCP 伺服器。",
 		"privacy": "代理只有在呼叫工具時才會取得資料。這台電腦上持有權杖的人都能使用；若外洩請建立新權杖。",
 		"docs": "文件"
+	},
+	"remote": {
+		"section": "遠端聊天",
+		"enable": "用手機聊天",
+		"enableDesc": "在同一個 Wi-Fi 或 Tailscale 網路中的手機上閱讀並回覆隊伍、團隊、全體和好友聊天，並管理隊伍與排隊。",
+		"running": "正在連接埠 {{port}} 執行",
+		"tailscale": "Tailscale",
+		"lan": "區域網路",
+		"scanHint": "用手機相機掃描，或在手機瀏覽器中開啟連結。",
+		"showQr": "顯示 QR 碼",
+		"hideQr": "隱藏",
+		"copyLink": "複製連結",
+		"regenerate": "解除所有手機配對",
+		"regenerated": "已配對的手機已登出，請掃描新的 QR 碼。",
+		"noAddress": "找不到網路位址。請連上 Wi-Fi 或開啟 Tailscale 後重新整理。",
+		"refresh": "重新整理",
+		"firewall": "如果手機無法連線，請在 Windows 詢問時允許 ValoUtils 通過 Windows 防火牆。",
+		"notRunning": "伺服器未在執行。請關閉後再重新開啟。",
+		"error": "無法變更遠端聊天設定。",
+		"privacy": "只有區域網路或 tailnet 中、且持有連結密鑰的裝置可以連線。Tailscale 流量經過加密；在公用 Wi-Fi 上建議使用 Tailscale。QR 碼包含密鑰，請勿在直播畫面中顯示。"
 	},
 	"mcpDocs": {
 		"title": "MCP 文件",

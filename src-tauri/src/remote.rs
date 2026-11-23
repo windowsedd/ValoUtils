@@ -21,7 +21,7 @@ use axum::routing::{get, post};
 use axum::Router;
 use serde_json::{json, Value};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Manager};
 
@@ -37,6 +37,8 @@ const CHAT_CACHE_TTL: Duration = Duration::from_millis(2500);
 const PARTY_CACHE_TTL: Duration = Duration::from_secs(4);
 const ROOM_LINES: usize = 100;
 const DM_LINES: usize = 50;
+/// Lines of whisper history sent when a conversation is open on the phone.
+const DM_HISTORY_LINES: usize = 100;
 const MAX_MESSAGE_CHARS: usize = 1000;
 const MAX_BODY_BYTES: usize = 8 * 1024;
 
@@ -55,8 +57,13 @@ static SERVER: Mutex<Server> = Mutex::new(Server {
 static CHAT_CACHE: tokio::sync::Mutex<Option<(Instant, Value)>> = tokio::sync::Mutex::const_new(None);
 static PARTY_CACHE: tokio::sync::Mutex<Option<(Instant, Value)>> = tokio::sync::Mutex::const_new(None);
 
+/// The server slot; a poisoned lock still holds valid data (a port and a task).
+fn server() -> MutexGuard<'static, Server> {
+    SERVER.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
 pub fn running_port() -> Option<u16> {
-    SERVER.lock().unwrap().port
+    server().port
 }
 
 /// The saved token, creating and saving one the first time.
@@ -106,6 +113,7 @@ pub async fn start(app: &AppHandle) -> Result<u16, String> {
         .route("/api/state", get(chat_state))
         .route("/api/party", get(party_state).post(party_command))
         .route("/api/send", post(send))
+        .route("/api/whisper", post(whisper_history))
         .with_state(app.clone());
     let task = tauri::async_runtime::spawn(async move {
         let service = router.into_make_service_with_connect_info::<SocketAddr>();
@@ -113,7 +121,7 @@ pub async fn start(app: &AppHandle) -> Result<u16, String> {
             log::error!("Remote chat server stopped: {error}");
         }
     });
-    let mut server = SERVER.lock().unwrap();
+    let mut server = server();
     if let Some(running) = server.port {
         task.abort();
         return Ok(running);
@@ -127,7 +135,7 @@ pub async fn start(app: &AppHandle) -> Result<u16, String> {
 }
 
 pub fn stop() {
-    let mut server = SERVER.lock().unwrap();
+    let mut server = server();
     if let Some(task) = server.task.take() {
         task.abort();
         log::info!("Remote chat stopped");
@@ -352,7 +360,9 @@ async fn send(
         return fail(format!("Messages are limited to {MAX_MESSAGE_CHARS} characters."));
     }
     let result = match channel.as_str() {
-        "party" | "team" | "all" => crate::commands::mcp::send_chat(&app, &channel, "", &message).await,
+        "party" | "team" | "all" => crate::commands::mcp::send_chat(&app, &channel, "", &message)
+            .await
+            .map(|_| ()),
         "friend" => whisper(&app, &text("puuid"), &message).await,
         _ => Err("Unknown chat.".to_string()),
     };
@@ -366,17 +376,18 @@ async fn send(
     }
 }
 
-/// Whispers a friend by PUUID; only people on the friends list can be messaged.
-async fn whisper(app: &AppHandle, puuid: &str, message: &str) -> Result<String, String> {
+/// The whisper conversation id (the friend's `pid`, `puuid@region.pvp.net`)
+/// for a PUUID. Only people on the friends list are accepted, so the phone
+/// can't read or message arbitrary conversations.
+async fn friend_pid(app: &AppHandle, puuid: &str) -> Result<String, String> {
     let wanted = id_root(puuid);
     if wanted.is_empty() {
         return Err("Pick a friend first.".into());
     }
-    let riot = app.state::<RiotState>();
-    let friends = crate::riot::client::get_friends(&riot)
+    let friends = crate::riot::client::get_friends(&app.state::<RiotState>())
         .await
         .map_err(|error| crate::commands::mcp::party_failure(&error))?;
-    let pid = friends
+    friends
         .iter()
         .find(|friend| {
             ["puuid", "pid"]
@@ -385,12 +396,81 @@ async fn whisper(app: &AppHandle, puuid: &str, message: &str) -> Result<String, 
                 .any(|id| id_root(id) == wanted)
         })
         .and_then(|friend| friend.get("pid").and_then(Value::as_str))
-        .ok_or("That player isn't on your friends list.")?
-        .to_string();
-    crate::riot::client::send_chat_message(&riot, &pid, message, "chat")
+        .map(str::to_owned)
+        .ok_or_else(|| "That player isn't on your friends list.".to_string())
+}
+
+async fn whisper(app: &AppHandle, puuid: &str, message: &str) -> Result<(), String> {
+    let pid = friend_pid(app, puuid).await?;
+    crate::riot::client::send_chat_message(&app.state::<RiotState>(), &pid, message, "chat")
         .await
         .map_err(|error| crate::commands::mcp::party_failure(&error))?;
-    Ok("sent".into())
+    Ok(())
+}
+
+/// `POST /api/whisper {puuid, read}`: the whisper's full history, which the
+/// `chat_get` summary only partly carries, and with `read` the conversation is
+/// marked read in Riot (so the unread count also clears on the PC).
+async fn whisper_history(
+    State(app): State<AppHandle>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    if let Some(response) = guard(&app, peer, &headers) {
+        return response;
+    }
+    let Some(request) = body_json(&body) else {
+        return fail("Bad request.");
+    };
+    let puuid = request.get("puuid").and_then(Value::as_str).unwrap_or_default();
+    let pid = match friend_pid(&app, puuid).await {
+        Ok(pid) => pid,
+        Err(error) => return fail(error),
+    };
+    let reply = crate::commands::chat::chat_history(vec![json!(""), json!(pid)], app.state::<RiotState>())
+        .await
+        .unwrap_or(Value::Null);
+    if reply.get("success") != Some(&json!(true)) {
+        let error = reply.get("error").and_then(Value::as_str).unwrap_or("Whisper history isn't available right now.");
+        return fail(error);
+    }
+    let lines = whisper_lines(&reply);
+    if request.get("read") == Some(&json!(true)) {
+        let read = crate::commands::chat::chat_mark_read(vec![json!(pid), json!(""), json!("chat")], app.state::<RiotState>())
+            .await
+            .unwrap_or(Value::Null);
+        if read.get("success") == Some(&json!(true)) {
+            // The cached summary still carries the old unread count.
+            forget_chat().await;
+        } else {
+            log::debug!("Remote chat could not mark a whisper read: {}", read.get("error").unwrap_or(&Value::Null));
+        }
+    }
+    json_response(StatusCode::OK, json!({ "success": true, "messages": lines }))
+}
+
+/// The last [`DM_HISTORY_LINES`] lines of a `chat_history` reply, oldest first.
+fn whisper_lines(reply: &Value) -> Vec<Value> {
+    let mut lines: Vec<Value> = reply
+        .get("messages")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .map(message_line)
+        .collect();
+    lines.sort_by_key(line_time);
+    let start = lines.len().saturating_sub(DM_HISTORY_LINES);
+    lines.split_off(start)
+}
+
+/// A line's timestamp in Unix ms; Riot sends it as a number or a numeric string.
+fn line_time(line: &Value) -> u64 {
+    match line.get("time") {
+        Some(Value::String(text)) => text.parse().unwrap_or(0),
+        Some(value) => value.as_u64().unwrap_or(0),
+        None => 0,
+    }
 }
 
 async fn party_command(
@@ -448,6 +528,17 @@ fn track(app: &AppHandle, event: &str, props: Value) {
 // ---------------------------------------------------------------------------
 // Chat view
 
+/// One normalized chat message as the page draws it.
+fn message_line(message: &Value) -> Value {
+    json!({
+        "id": message.get("id"),
+        "from": message.get("senderName"),
+        "you": message.get("isSelf").and_then(Value::as_bool).unwrap_or(false),
+        "text": message.get("body"),
+        "time": message.get("timestamp"),
+    })
+}
+
 fn id_root(id: &str) -> String {
     id.split('@').next().unwrap_or_default().trim().to_ascii_lowercase()
 }
@@ -465,20 +556,11 @@ pub(crate) fn chat_view(reply: &Value) -> Value {
     let messages: Vec<&Value> = reply.get("messages").and_then(Value::as_array).into_iter().flatten().collect();
     let conversations: Vec<&Value> =
         reply.get("conversations").and_then(Value::as_array).into_iter().flatten().collect();
-    let line = |message: &Value| {
-        json!({
-            "id": message.get("id"),
-            "from": message.get("senderName"),
-            "you": message.get("isSelf").and_then(Value::as_bool).unwrap_or(false),
-            "text": message.get("body"),
-            "time": message.get("timestamp"),
-        })
-    };
     let lines_for = |root: &str, limit: usize| -> Vec<Value> {
         let all: Vec<Value> = messages
             .iter()
             .filter(|m| m.get("conversationId").and_then(Value::as_str).is_some_and(|cid| id_root(cid) == root))
-            .map(|m| line(m))
+            .map(|m| message_line(m))
             .collect();
         let start = all.len().saturating_sub(limit);
         all[start..].to_vec()
@@ -606,6 +688,25 @@ mod tests {
         let view = chat_view(&json!({ "success": false, "code": "loginRequired", "error": "Sign in" }));
         assert_eq!(view["success"], false);
         assert_eq!(view["code"], "loginRequired");
+    }
+
+    #[test]
+    fn whisper_lines_are_sorted_oldest_first_and_capped() {
+        let messages: Vec<Value> = (0..DM_HISTORY_LINES + 5)
+            .rev()
+            .map(|i| json!({ "id": i.to_string(), "body": "hi", "timestamp": i.to_string(), "isSelf": i % 2 == 0 }))
+            .collect();
+        let lines = whisper_lines(&json!({ "success": true, "messages": messages }));
+        assert_eq!(lines.len(), DM_HISTORY_LINES);
+        assert_eq!(lines[0]["time"], "5");
+        assert_eq!(lines[DM_HISTORY_LINES - 1]["time"], (DM_HISTORY_LINES + 4).to_string());
+    }
+
+    #[test]
+    fn line_time_reads_numbers_and_numeric_strings() {
+        assert_eq!(line_time(&json!({ "time": "1700000000000" })), 1_700_000_000_000);
+        assert_eq!(line_time(&json!({ "time": 42 })), 42);
+        assert_eq!(line_time(&json!({ "time": "soon" })), 0);
     }
 
     #[test]

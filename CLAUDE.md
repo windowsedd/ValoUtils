@@ -170,6 +170,12 @@ cargo test --lib     # (in src-tauri/) Rust unit tests
 
 `bun run lint` runs Oxlint against the React and TypeScript frontend in `src/`.
 
+For Rust work in `src-tauri/`, load the project skill `rust-best-practices`
+(`.claude/skills/rust-best-practices`, Apollo's Rust handbook): no
+`unwrap()`/`expect()` outside tests (poisoned locks use
+`unwrap_or_else(PoisonError::into_inner)`), borrow over clone, `?` for errors,
+and keep `cargo clippy --all-targets` clean for new code.
+
 ## Build / Release
 
 - CI: GitHub Actions (`.github/workflows/build.yml`) builds on every push; tagged commits (`v*`) trigger `tauri-apps/tauri-action`, which builds, signs, and publishes a **draft** GitHub Release with the NSIS installer + `latest.json` update manifest
@@ -464,6 +470,13 @@ The client also never re-reads its config, so the real Riot chat server it named
 is saved as `relayUpstream` (`presence_proxy::remember_upstream`, only
 `*.riotgames.com` hosts are restored) and restored at startup; otherwise the
 reconnecting client hits "Riot chat target is not ready" forever.
+Each local TLS handshake saves the Riot Client's lockfile pid as `relayClientPid`.
+`client_config_status` reports `relayClientLost` when that same pid is running
+with no relay connection (`presence_proxy::relay_client_lost`); a client opened
+without ValoUtils has another pid and never counts. `RelayBanner`
+(`src/components/relay-banner.tsx`, above the router) polls every 10 s, shows after
+two lost polls in a row, offers Start relay (when the relay is down) and Restart
+through relay (`useRiotClientActions`), and reappears after a later loss if dismissed.
 A failed accept is logged and skipped rather than ending the relay, and `start`
 replaces a relay task that has finished, so Wake recovers a dead relay.
 
@@ -588,10 +601,10 @@ instructions ask agents to lead with the answer and never paste JSON.
 
 Settings → Remote chat (`remoteEnabled`, default false) starts `src-tauri/src/remote.rs`:
 an axum server on `0.0.0.0`, port 47824 first (saved as `remotePort`). It serves a
-self-contained phone page (`src-tauri/src/remote_page.html`, no CDN, DOM built with
+self-contained phone page (`src-tauri/src/remote_page.html`, chats sidebar: a fixed column from 760px, a ☰ drawer below; no CDN, DOM built with
 `textContent`) at `/` and a JSON API: `GET /api/state` (Party/Team/All rooms with
 their last 100 lines, `ended` rooms read-only, friends with unread counts and the
-last 50 whisper lines), `POST /api/send` (`channel` party|team|all through
+last 50 whisper lines), `POST /api/whisper` (`puuid`, `read`: friend-only `chat_history` + `chat_mark_read`, merged with the summary lines), `POST /api/send` (`channel` party|team|all through
 `mcp::send_chat`, or `friend` + `puuid`, sent only to a friends-list `pid`),
 `GET/POST /api/party` (`mcp::party_snapshot`; start/stop/change queue, leave,
 create/disable/join party code through the existing MCP/riot_chat helpers).
@@ -753,7 +766,7 @@ Tools player lookup, History scoreboard.
 
 - **Windows only** — relies on `%LOCALAPPDATA%`, WebView2, and the Riot Client lockfile
 - **Single instance** — `tauri-plugin-single-instance` (first plugin in `lib.rs`) makes a second launch focus the running window and exit, so the relay, config server and window are never duplicated
-- **Tray** — `src-tauri/src/tray.rs` (tauri `tray-icon` feature): left-click or Open shows the window, Quit exits. The close button hides the main window to the tray unless `closeToTray` is false (Settings → Application), because the relay, config server, MCP and remote chat live in this process and quitting drops Riot chat. The first hide shows a one-time Windows notification (`trayHintShown`)
+- **Tray** — `src-tauri/src/tray.rs` (tauri `tray-icon` feature): left-click or Open shows the window, Quit exits. The menu shows chat status ("Chat connected · Online", also the tooltip, refreshed every 3 s from in-memory relay state), Launch VALORANT (relay launch, result as a Windows notification) and a Presence submenu (`presence_proxy::change_mode`). Presence defaults to `online` for new configs. The close button hides the main window to the tray unless `closeToTray` is false (Settings → Application), because the relay, config server, MCP and remote chat live in this process and quitting drops Riot chat. The first hide shows a one-time Windows notification (`trayHintShown`)
 - **Riot Client must be running** to save/load profiles (lockfile must exist)
 - **Valorant must be closed** when loading a profile (Riot Client applies settings on next launch)
 - No cloud sync — profiles are local JSON in `%APPDATA%\ValoUtils`

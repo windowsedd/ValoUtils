@@ -81,6 +81,14 @@
     "openRiotClient": "Riot Client 열기",
     "openRiotClientHint": "발로란트는 실행하지 않고 XMPP 릴레이를 거쳐 Riot Client만 엽니다."
   },
+  "relayBanner": {
+    "title": "Riot 채팅과 ValoUtils의 연결이 끊어졌습니다",
+    "body": "친구에게 오프라인으로 보이고 채팅 명령어가 작동하지 않습니다. 보통 자동으로 다시 연결되지만, 그렇지 않으면 ValoUtils를 통해 Riot Client를 다시 시작하세요.",
+    "wake": "릴레이 시작",
+    "woken": "릴레이를 시작했습니다. 1분 안에 Riot Client가 다시 연결됩니다.",
+    "wakeFailed": "릴레이를 시작할 수 없습니다.",
+    "dismiss": "닫기"
+  },
   "riotClient": {
     "section": "Riot Client",
     "restart": "릴레이로 다시 시작",
@@ -617,6 +625,8 @@
     "requestPacing_safe": "안전하게",
     "recentMatchCount": "플레이어당 최근 매치 수",
     "recentMatchCountDesc": "플레이어 전적을 평균 낼 최근 매치 수입니다(최대 {{max}}). 많을수록 정확하지만 요청도 늘어납니다.",
+    "closeToTray": "닫을 때 트레이에서 계속 실행",
+    "closeToTrayDesc": "닫기 버튼을 누르면 ValoUtils가 시스템 트레이로 숨겨져 채팅, 릴레이, 명령어, 원격 채팅이 계속 작동합니다. 트레이 아이콘에서 종료하세요. 끄면 ValoUtils를 닫을 때 다시 열 때까지 Riot 채팅 연결이 끊깁니다.",
     "showPregameEnemies": "요원 선택 중 적 팀 표시",
     "showPregameEnemiesDesc": "Riot이 제공하는 경우, 요원 선택 중 실시간 게임에 적 팀의 이름, 랭크, 전적을 표시합니다. 끄면 해당 요청도 보내지 않습니다.",
     "hideTab": "{{tab}} 탭 숨기기",
@@ -1116,6 +1126,26 @@
     "error": "MCP 서버 설정을 변경하지 못했습니다.",
     "privacy": "에이전트는 도구를 호출할 때만 데이터를 받습니다. 이 PC에서 토큰을 가진 누구나 사용할 수 있으니, 유출되면 새 토큰을 만드세요.",
     "docs": "문서"
+  },
+  "remote": {
+    "section": "원격 채팅",
+    "enable": "휴대폰에서 채팅",
+    "enableDesc": "같은 Wi-Fi나 Tailscale 네트워크의 휴대폰에서 파티, 팀, 전체, 친구 채팅을 읽고 답장하며 파티와 대기열을 관리합니다.",
+    "running": "포트 {{port}}에서 실행 중",
+    "tailscale": "Tailscale",
+    "lan": "로컬 네트워크",
+    "scanHint": "휴대폰 카메라로 스캔하거나 휴대폰 브라우저에서 링크를 여세요.",
+    "showQr": "QR 코드 보기",
+    "hideQr": "숨기기",
+    "copyLink": "링크 복사",
+    "regenerate": "모든 휴대폰 연결 해제",
+    "regenerated": "연결된 휴대폰이 로그아웃되었습니다. 새 코드를 스캔하세요.",
+    "noAddress": "네트워크 주소를 찾을 수 없습니다. Wi-Fi에 연결하거나 Tailscale을 켠 뒤 새로고침하세요.",
+    "refresh": "새로고침",
+    "firewall": "휴대폰이 연결되지 않으면 Windows가 물어볼 때 Windows 방화벽에서 ValoUtils를 허용하세요.",
+    "notRunning": "서버가 실행되고 있지 않습니다. 껐다가 다시 켜세요.",
+    "error": "원격 채팅을 변경할 수 없습니다.",
+    "privacy": "로컬 네트워크나 tailnet의 기기만, 링크의 비밀 키가 있을 때만 접속할 수 있습니다. Tailscale 트래픽은 암호화되며, 공용 Wi-Fi에서는 Tailscale을 권장합니다. QR 코드에 비밀 키가 들어 있으니 방송 화면에 노출하지 마세요."
   },
   "mcpDocs": {
     "title": "MCP 문서",

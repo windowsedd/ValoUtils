@@ -81,6 +81,14 @@
     "openRiotClient": "Open Riot Client",
     "openRiotClientHint": "Starts only the Riot Client, through the XMPP relay, without launching Valorant."
   },
+  "relayBanner": {
+    "title": "Riot chat lost its connection to ValoUtils",
+    "body": "You appear offline to friends and chat commands won't work. It usually reconnects on its own; if not, restart the Riot Client through ValoUtils.",
+    "wake": "Start relay",
+    "woken": "Relay started. The Riot Client should reconnect within a minute.",
+    "wakeFailed": "Could not start the relay.",
+    "dismiss": "Dismiss"
+  },
   "riotClient": {
     "section": "Riot Client",
     "restart": "Restart through relay",

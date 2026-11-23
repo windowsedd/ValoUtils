@@ -154,7 +154,7 @@ const Settings = () => {
 		saveMatchChatHistory: false,
 		openDevTools: false,
 		presenceEnabled: true,
-		presenceMode: "offline",
+		presenceMode: "online",
 		presenceStartup: "last",
 		presenceMucEnabled: true,
 		presenceCert: "deceive",

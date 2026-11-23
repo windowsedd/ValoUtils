@@ -540,6 +540,47 @@ pub fn remember_upstream(target: UpstreamTarget) {
     controller().set_upstream(target);
 }
 
+/// Records the Riot Client that just connected to the relay by its lockfile
+/// pid (`relayClientPid`). Saved, not kept in memory: after ValoUtils restarts,
+/// the same pid still running with no relay connection means that client lost
+/// its chat, while a client opened without ValoUtils has another pid.
+pub fn remember_relay_client() {
+    let Ok(lockfile) = crate::riot::lockfile::read() else {
+        return;
+    };
+    if let Some(app) = app_handle() {
+        use tauri::Manager;
+        let config = app.state::<crate::store::ConfigStore>();
+        if config.get("relayClientPid").and_then(|v| v.as_i64()) != Some(lockfile.pid) {
+            config.set("relayClientPid", serde_json::json!(lockfile.pid));
+        }
+    }
+}
+
+/// The pid saved by [`remember_relay_client`].
+pub fn relay_client_pid() -> Option<i64> {
+    use tauri::Manager;
+    app_handle()?
+        .state::<crate::store::ConfigStore>()
+        .get("relayClientPid")?
+        .as_i64()
+}
+
+/// Whether the Riot Client running now (by lockfile pid) is one that used the
+/// relay before but has no relay connection: it shows offline and chat
+/// commands don't work until it reconnects or restarts through ValoUtils.
+pub fn relay_client_lost(
+    riot_client_running: bool,
+    active_connections: usize,
+    running_pid: Option<i64>,
+    relay_pid: Option<i64>,
+) -> bool {
+    riot_client_running
+        && active_connections == 0
+        && running_pid.is_some()
+        && running_pid == relay_pid
+}
+
 /// Restores the saved target at startup, unless a fresh client config
 /// already set one.
 pub fn restore_upstream(saved: &serde_json::Value) {
@@ -548,7 +589,10 @@ pub fn restore_upstream(saved: &serde_json::Value) {
     };
     let controller = controller();
     if controller.upstream().is_none() {
-        log::info!("XMPP relay: forwarding to saved Riot chat server {}", target.host);
+        log::info!(
+            "XMPP relay: forwarding to saved Riot chat server {}",
+            target.host
+        );
         controller.set_upstream(target);
     }
 }
@@ -561,12 +605,19 @@ fn upstream_json(target: &UpstreamTarget) -> serde_json::Value {
 fn upstream_from_json(saved: &serde_json::Value) -> Option<UpstreamTarget> {
     let host = saved.get("host")?.as_str()?.trim().to_ascii_lowercase();
     let riot_host = host.ends_with(".riotgames.com")
-        && host.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-');
-    let port = u16::try_from(saved.get("port")?.as_u64()?).ok().filter(|port| *port != 0)?;
+        && host
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-');
+    let port = u16::try_from(saved.get("port")?.as_u64()?)
+        .ok()
+        .filter(|port| *port != 0)?;
     riot_host.then(|| UpstreamTarget {
         host,
         port,
-        affinity: saved.get("affinity").and_then(|v| v.as_str()).map(str::to_owned),
+        affinity: saved
+            .get("affinity")
+            .and_then(|v| v.as_str())
+            .map(str::to_owned),
     })
 }
 
@@ -801,28 +852,52 @@ mod tests {
         );
         assert!(!controller.snapshot().enabled);
     }
-}
 
-#[cfg(test)]
-mod upstream_tests {
-    use super::*;
+    mod upstream_tests {
+        use super::*;
 
-    #[test]
-    fn saved_upstream_round_trips_and_rejects_non_riot_hosts() {
-        let target = UpstreamTarget {
-            host: "na2.chat.si.riotgames.com".into(),
-            port: 5223,
-            affinity: Some("na1".into()),
-        };
-        assert_eq!(upstream_from_json(&upstream_json(&target)), Some(target));
-        for bad in [
-            serde_json::json!({ "host": "evil.example", "port": 5223 }),
-            serde_json::json!({ "host": "x.riotgames.com.evil.example", "port": 5223 }),
-            serde_json::json!({ "host": "na2.chat.si.riotgames.com", "port": 0 }),
-            serde_json::json!({ "host": "na2.chat.si.riotgames.com" }),
-            serde_json::json!(null),
-        ] {
-            assert_eq!(upstream_from_json(&bad), None, "{bad}");
+        #[test]
+        fn saved_upstream_round_trips_and_rejects_non_riot_hosts() {
+            let target = UpstreamTarget {
+                host: "na2.chat.si.riotgames.com".into(),
+                port: 5223,
+                affinity: Some("na1".into()),
+            };
+            assert_eq!(upstream_from_json(&upstream_json(&target)), Some(target));
+            for bad in [
+                serde_json::json!({ "host": "evil.example", "port": 5223 }),
+                serde_json::json!({ "host": "x.riotgames.com.evil.example", "port": 5223 }),
+                serde_json::json!({ "host": "na2.chat.si.riotgames.com", "port": 0 }),
+                serde_json::json!({ "host": "na2.chat.si.riotgames.com" }),
+                serde_json::json!(null),
+            ] {
+                assert_eq!(upstream_from_json(&bad), None, "{bad}");
+            }
+        }
+    }
+
+    mod relay_client_tests {
+        use super::super::relay_client_lost;
+
+        #[test]
+        fn same_client_without_a_relay_connection_is_lost() {
+            assert!(relay_client_lost(true, 0, Some(42), Some(42)));
+        }
+
+        #[test]
+        fn connected_client_is_not_lost() {
+            assert!(!relay_client_lost(true, 1, Some(42), Some(42)));
+        }
+
+        #[test]
+        fn client_opened_without_valoutils_is_not_lost() {
+            assert!(!relay_client_lost(true, 0, Some(7), Some(42)));
+        }
+
+        #[test]
+        fn closed_or_unknown_client_is_not_lost() {
+            assert!(!relay_client_lost(false, 0, Some(42), Some(42)));
+            assert!(!relay_client_lost(true, 0, None, None));
         }
     }
 }

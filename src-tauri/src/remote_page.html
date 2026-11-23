@@ -137,21 +137,77 @@ form.composer {
 }
 .toast.show { opacity: 1; transform: none; }
 .toast.bad { background: var(--neg); color: #fff; }
+/* Sidebar: a drawer on phones, a fixed column from 760px. */
+.layout { flex: 1; min-height: 0; display: flex; }
+.content { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+aside {
+  position: fixed; top: 0; bottom: 0; left: 0; z-index: 12; width: min(300px, 84vw);
+  display: flex; flex-direction: column; background: var(--surface); border-right: 1px solid var(--line);
+  padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
+  transform: translateX(-100%); transition: transform .22s cubic-bezier(.2,.8,.2,1); visibility: hidden;
+}
+body.drawer aside { transform: none; visibility: visible; }
+.drawer-bg { display: none; position: fixed; inset: 0; z-index: 11; background: rgba(0,0,0,.5); }
+body.drawer .drawer-bg { display: block; }
+.side-head { display: flex; align-items: center; gap: 8px; padding: 12px 14px 6px; }
+.side-head strong { flex: 1; font-size: 15px; }
+.side-list { flex: 1; overflow-y: auto; padding: 0 8px 8px; overscroll-behavior: contain; }
+.side-label { font-size: 11px; font-weight: 650; color: var(--muted); padding: 14px 8px 6px; letter-spacing: .02em; }
+.side-item {
+  display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px; border: 0; border-radius: 8px;
+  background: transparent; text-align: left; min-height: 48px;
+}
+.side-item:hover { background: var(--hover); }
+.side-item[aria-current="true"] { background: var(--accent-soft); }
+.side-item[aria-current="true"] .side-name { color: var(--accent); }
+.side-item .who { flex: 1; min-width: 0; }
+.side-name { font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.side-prev { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.side-item.off { opacity: .5; }
+.room-icon {
+  width: 32px; height: 32px; border-radius: 8px; flex: none; display: grid; place-items: center;
+  background: var(--control); color: var(--text-2); font-size: 12px; font-weight: 700;
+}
+.side-item[aria-current="true"] .room-icon { background: var(--accent); color: var(--accent-text); }
+.side-foot { border-top: 1px solid var(--line); padding: 10px 12px; }
+.side-foot button { width: 100%; }
+#menuBtn { padding: 0 10px; display: grid; place-items: center; }
+@media (min-width: 760px) {
+  aside { position: static; transform: none; visibility: visible; width: 280px; padding: 0; z-index: auto; transition: none; }
+  .drawer-bg, body.drawer .drawer-bg { display: none; }
+  #menuBtn, nav, #sideClose { display: none; }
+}
 </style>
 </head>
 <body>
 <header>
+  <button class="icon-btn" id="menuBtn" type="button" aria-label="Chats" aria-controls="side" aria-expanded="false">
+    <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+  </button>
   <span class="dot" id="dot" aria-hidden="true"></span>
   <h1>ValoUtils<small id="sub">Remote chat</small></h1>
   <button class="icon-btn" id="partyBtn" type="button">Party</button>
 </header>
-<nav id="tabs" role="tablist">
-  <button role="tab" data-tab="party" aria-selected="true">Party</button>
-  <button role="tab" data-tab="team">Team</button>
-  <button role="tab" data-tab="all">All</button>
-  <button role="tab" data-tab="friends">Friends</button>
-</nav>
-<main id="main"></main>
+<div class="layout">
+  <div class="drawer-bg" id="drawerBg"></div>
+  <aside id="side" aria-label="Chats">
+    <div class="side-head">
+      <strong>Chats</strong>
+      <button class="icon-btn" id="sideClose" type="button" aria-label="Close">✕</button>
+    </div>
+    <div class="side-list" id="sideList"></div>
+    <div class="side-foot"><button class="secondary" id="sideParty" type="button">Party &amp; queue</button></div>
+  </aside>
+  <div class="content">
+    <nav id="tabs" role="tablist">
+      <button role="tab" data-tab="party" aria-selected="true">Party</button>
+      <button role="tab" data-tab="team">Team</button>
+      <button role="tab" data-tab="all">All</button>
+      <button role="tab" data-tab="friends">Friends</button>
+    </nav>
+    <main id="main"></main>
+  </div>
+</div>
 <div id="sheetWrap">
   <div class="sheet-bg" id="sheetBg"></div>
   <div class="sheet" id="sheet" role="dialog" aria-label="Party"></div>
@@ -172,7 +228,7 @@ const store = {
 })();
 let token = store.get();
 
-const state = { tab: "party", friend: null, chat: null, party: null, partyError: "", error: "", code: null, search: "", drafts: {}, seen: {} };
+const state = { tab: "party", friend: null, history: {}, chat: null, party: null, partyError: "", error: "", code: null, search: "", drafts: {}, seen: {} };
 const $ = (id) => document.getElementById(id);
 function el(tag, props, ...kids) {
   const node = document.createElement(tag);
@@ -211,7 +267,11 @@ function ms(t) {
 }
 function clock(t) {
   const d = new Date(ms(t)); if (!ms(t)) return "";
-  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  // Whisper history reaches back days; older lines carry their date.
+  return d.toDateString() === new Date().toDateString()
+    ? time
+    : d.toLocaleDateString([], { month: "short", day: "numeric" }) + " " + time;
 }
 
 // ---- polling
@@ -222,7 +282,14 @@ async function pollChat() {
   try {
     const reply = await api("/api/state");
     online = true;
-    if (reply.success) { state.chat = reply; state.error = ""; }
+    if (reply.success) {
+      state.chat = reply; state.error = "";
+      if (state.tab === "friends" && state.friend && (++whisperTick % 2 === 0)) {
+        const f = (reply.friends || []).find((x) => x.puuid === state.friend);
+        loadWhisper(state.friend, (f?.unread || 0) > 0);
+      }
+      for (const [tab, room] of Object.entries(reply.rooms || {})) if (room && state.seen[tab] === undefined) markSeen(tab, room.messages);
+    }
     else { state.error = reply.code === "loginRequired" ? "Riot Client isn't signed in on the PC." : (reply.error || "Chat isn't available right now."); }
   } catch (e) { if (e.message !== "unpaired") { online = false; state.error = "Can't reach ValoUtils. Is the PC on and the app open?"; } }
   render();
@@ -253,19 +320,132 @@ function renderHeader() {
     const label = tab[0].toUpperCase() + tab.slice(1);
     b.textContent = label;
     if (tab === "friends") {
-      const unread = (state.chat?.friends || []).reduce((n, f) => n + (f.unread || 0), 0);
+      const unread = (state.chat?.friends || []).reduce((n, f) => n + friendUnread(f), 0);
       if (unread) b.append(el("span", { class: "badge" }, unread > 99 ? "99+" : unread));
     } else if (state.chat && !rooms[tab]) {
       b.style.opacity = ".5";
       continue;
     } else {
-      const room = rooms[tab]; const count = room?.messages?.length || 0;
-      const seen = state.seen[tab] ?? count;
-      if (tab !== state.tab && count > seen) b.append(el("span", { class: "badge" }, count - seen));
+      const unread = roomUnread(tab);
+      if (unread) b.append(el("span", { class: "badge" }, unread));
     }
     b.style.opacity = "";
   }
+  renderSidebar();
 }
+
+/* Unread = other people's lines newer than the last line seen in that chat.
+   By time, not count: the server sends only the last 100 room lines (50 per
+   whisper), so counts stop moving in a busy room. */
+const lastTime = (messages) => messages?.length ? ms(messages[messages.length - 1].time) : 0;
+function markSeen(key, messages) { state.seen[key] = Math.max(state.seen[key] || 0, lastTime(messages)); }
+function unreadSince(key, messages, fallback) {
+  const seen = state.seen[key];
+  if (seen === undefined) return fallback;
+  return (messages || []).filter((m) => !m.you && ms(m.time) > seen).length;
+}
+/** New lines in a room since it was last open (history from before the page loaded counts as read). */
+function roomUnread(tab) {
+  if (tab === state.tab) return 0;
+  return unreadSince(tab, state.chat?.rooms?.[tab]?.messages, 0);
+}
+/** Riot's unread count until the whisper is opened here, then lines since. */
+function friendUnread(f) {
+  if (state.tab === "friends" && state.friend === f.puuid) return 0;
+  return unreadSince("dm:" + f.puuid, f.messages, f.unread || 0);
+}
+
+function preview(messages) {
+  const m = messages?.[messages.length - 1];
+  return m ? (m.you ? "You: " : (m.from ? m.from.split("#")[0] + ": " : "")) + (m.text || "") : "";
+}
+
+// ---- sidebar
+const ROOMS = [
+  ["party", "Party", "P", "Open VALORANT on the PC"],
+  ["team", "Team", "T", "During agent select or a match"],
+  ["all", "All", "A", "During a match"],
+];
+let whisperTick = 0;
+/** Full whisper history (the summary carries only recent lines); `read` also marks it read in Riot. */
+async function loadWhisper(puuid, read) {
+  try {
+    const reply = await api("/api/whisper", { puuid, read: !!read });
+    if (!reply.success) return;
+    state.history[puuid] = reply.messages || [];
+    if (state.tab === "friends" && state.friend === puuid) render();
+  } catch {}
+}
+/** History plus the summary's newest lines, without duplicates, oldest first. */
+function dmMessages(f) {
+  const seen = new Set();
+  const out = [];
+  for (const m of [...(state.history[f.puuid] || []), ...(f.messages || [])]) {
+    const key = m.id || ms(m.time) + "|" + m.text;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(m);
+  }
+  return out.sort((a, b) => ms(a.time) - ms(b.time));
+}
+function select(tab, friend) {
+  if (friend && friend !== state.friend) loadWhisper(friend, true);
+  state.tab = tab; state.friend = friend || null;
+  openDrawer(false);
+  render();
+}
+function renderSidebar() {
+  const list = $("sideList");
+  const top = list.scrollTop;
+  const rooms = state.chat?.rooms || {};
+  const items = [el("div", { class: "side-label" }, "ROOMS")];
+  for (const [tab, name, icon, hint] of ROOMS) {
+    const room = rooms[tab];
+    const unread = roomUnread(tab);
+    items.push(el("button", {
+      class: "side-item" + (room ? "" : " off"), type: "button",
+      "aria-current": String(state.tab === tab), onclick: () => select(tab),
+    },
+      el("span", { class: "room-icon", "aria-hidden": "true" }, icon),
+      el("span", { class: "who" },
+        el("div", { class: "side-name" }, name + (room?.ended ? " · ended" : "")),
+        el("div", { class: "side-prev" }, room ? (preview(room.messages) || "No messages yet") : hint)),
+      unread ? el("span", { class: "badge" }, unread) : null));
+  }
+  const last = (f) => f.messages?.length ? ms(f.messages[f.messages.length - 1].time) : 0;
+  const friends = (state.chat?.friends || [])
+    .filter((f) => f.online || friendUnread(f) || f.messages?.length)
+    .sort((a, b) => (friendUnread(b) - friendUnread(a)) || (last(b) - last(a)) || (b.online - a.online) || String(a.name).localeCompare(String(b.name)));
+  const onlineCount = (state.chat?.friends || []).filter((f) => f.online).length;
+  items.push(el("div", { class: "side-label" }, "FRIENDS · " + onlineCount + " ONLINE"));
+  if (!friends.length) items.push(el("div", { class: "side-prev", style: "padding: 4px 8px" }, state.chat ? "No friends online." : "Loading…"));
+  for (const f of friends) {
+    items.push(el("button", {
+      class: "side-item", type: "button",
+      "aria-current": String(state.tab === "friends" && state.friend === f.puuid),
+      onclick: () => select("friends", f.puuid),
+    },
+      el("span", { class: "dot" + (f.online ? " ok" : "") }),
+      el("span", { class: "who" },
+        el("div", { class: "side-name" }, f.name || "Friend"),
+        el("div", { class: "side-prev" }, preview(f.messages) || (f.online ? "Online" : "Offline"))),
+      friendUnread(f) ? el("span", { class: "badge" }, friendUnread(f)) : null));
+  }
+  items.push(el("button", { class: "side-item", type: "button", onclick: () => select("friends") },
+    el("span", { class: "room-icon", "aria-hidden": "true" }, "…"),
+    el("span", { class: "who" }, el("div", { class: "side-name" }, "All friends"))));
+  list.replaceChildren(...items);
+  list.scrollTop = top;
+}
+function openDrawer(open) {
+  document.body.classList.toggle("drawer", open);
+  $("menuBtn").setAttribute("aria-expanded", String(open));
+}
+$("menuBtn").onclick = () => openDrawer(!document.body.classList.contains("drawer"));
+$("drawerBg").onclick = () => openDrawer(false);
+$("sideClose").onclick = () => openDrawer(false);
+$("sideParty").onclick = () => { openDrawer(false); openSheet(true); };
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") { openDrawer(false); openSheet(false); } });
 
 let lastThreadKey = "";
 function thread(messages) {
@@ -297,7 +477,10 @@ function composer(target, disabledReason) {
       btn.disabled = true;
       try {
         const reply = await api("/api/send", Object.assign({ message: text }, target.body));
-        if (reply.success) { state.drafts[target.key] = ""; input.value = ""; pollChat(); }
+        if (reply.success) {
+          state.drafts[target.key] = ""; input.value = ""; pollChat();
+          if (target.body.channel === "friend") loadWhisper(target.body.puuid, false);
+        }
         else toast(reply.error || "Not sent.", true);
       } catch (err) { if (err.message !== "unpaired") toast("Not sent: can't reach ValoUtils.", true); }
       finally { btn.disabled = false; input.focus(); }
@@ -343,11 +526,12 @@ function render() {
     const f = (state.chat.friends || []).find((x) => x.puuid === state.friend);
     if (!f) { state.friend = null; return render(); }
     key = "dm:" + f.puuid;
+    markSeen(key, f.messages);
     main.append(el("div", { class: "back" },
       el("button", { class: "icon-btn", type: "button", onclick: () => { state.friend = null; render(); } }, "‹ Back"),
       el("span", { class: "dot" + (f.online ? " ok" : "") }),
       el("strong", {}, f.name || "Friend")));
-    main.append(thread(f.messages || [], key));
+    main.append(thread(dmMessages(f), key));
     main.append(composer({ key, body: { channel: "friend", puuid: f.puuid } }));
   } else {
     const room = state.chat.rooms?.[state.tab];
@@ -356,7 +540,7 @@ function render() {
       main.append(el("div", { class: "empty" }, el("strong", {}, "No " + names[state.tab] + " chat"),
         state.tab === "party" ? "Open VALORANT on the PC to join party chat." : "This room exists during agent select or a match."));
     } else {
-      state.seen[state.tab] = room.messages.length;
+      markSeen(state.tab, room.messages);
       main.append(thread(room.messages, key));
       main.append(composer({ key, body: { channel: state.tab } }, room.ended ? "Match ended — read only" : ""));
     }
@@ -379,10 +563,11 @@ function patch(old, nearBottom, prevTop) {
   if (state.tab === "friends") {
     const f = (state.chat.friends || []).find((x) => x.puuid === state.friend);
     if (!f) return false;
-    messages = f.messages || [];
+    messages = dmMessages(f);
+    markSeen("dm:" + f.puuid, messages);
   } else {
     const room = state.chat.rooms?.[state.tab];
-    state.seen[state.tab] = room.messages.length;
+    markSeen(state.tab, room.messages);
     messages = room.messages;
   }
   old.replaceChildren(...thread(messages).childNodes);
@@ -403,17 +588,17 @@ function friendRows() {
   const last = (f) => f.messages?.length ? ms(f.messages[f.messages.length - 1].time) : 0;
   const list = (state.chat.friends || [])
     .filter((f) => !q || (f.name || "").toLowerCase().includes(q))
-    .sort((a, b) => (b.unread - a.unread) || (last(b) - last(a)) || (b.online - a.online) || String(a.name).localeCompare(String(b.name)));
+    .sort((a, b) => (friendUnread(b) - friendUnread(a)) || (last(b) - last(a)) || (b.online - a.online) || String(a.name).localeCompare(String(b.name)));
   const box = el("div", { class: "list", id: "friendList" });
   if (!list.length) box.append(el("div", { class: "empty" }, q ? "No friends match." : "No friends to show."));
   for (const f of list) {
     const lm = f.messages?.[f.messages.length - 1];
-    box.append(el("button", { class: "friend", type: "button", onclick: () => { state.friend = f.puuid; render(); } },
+    box.append(el("button", { class: "friend", type: "button", onclick: () => select("friends", f.puuid) },
       el("span", { class: "dot" + (f.online ? " ok" : "") }),
       el("span", { class: "who" },
         el("div", { class: "name" }, f.name || "Friend"),
         el("div", { class: "last" }, lm ? (lm.you ? "You: " : "") + (lm.text || "") : (f.online ? "Online" : "Offline"))),
-      f.unread ? el("span", { class: "badge" }, f.unread) : null));
+      friendUnread(f) ? el("span", { class: "badge" }, friendUnread(f)) : null));
   }
   return box;
 }

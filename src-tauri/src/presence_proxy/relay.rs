@@ -90,7 +90,10 @@ pub async fn start() -> Result<u16, String> {
             Some(relay) if !relay.handle.inner().is_finished() => return Ok(relay.port),
             // The accept task ended: forget it so this start brings it back.
             Some(relay) => {
-                log::warn!("XMPP relay on port {} had stopped; restarting it", relay.port);
+                log::warn!(
+                    "XMPP relay on port {} had stopped; restarting it",
+                    relay.port
+                );
                 *active = None;
             }
             None => {}
@@ -168,6 +171,9 @@ async fn handle_socket(socket: TcpStream, acceptor: TlsAcceptor) -> Result<(), S
         .accept(socket)
         .await
         .map_err(|error| format!("Local XMPP TLS failed: {error}"))?;
+    // A completed local handshake means this Riot Client is pointed at the
+    // relay, even if forwarding fails below.
+    crate::presence_proxy::remember_relay_client();
     let target = crate::presence_proxy::controller()
         .upstream()
         .ok_or_else(|| {

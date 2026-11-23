@@ -279,12 +279,20 @@ pub async fn client_config_status() -> Result<Value, ()> {
     let running = client_config::is_running() && client_config::verify_ready(port).await.is_ok();
     let presence = presence_proxy::controller().snapshot();
     let images = running_images();
+    let riot_client_running = image_listed(&images, RIOT_CLIENT_IMAGE);
+    let relay_client_lost = presence_proxy::relay_client_lost(
+        riot_client_running,
+        presence.active_connections,
+        crate::riot::lockfile::read().ok().map(|lockfile| lockfile.pid),
+        presence_proxy::relay_client_pid(),
+    );
     Ok(json!({
         "success": true,
         "running": running,
         "port": port,
         "url": format!("http://127.0.0.1:{port}"),
-        "riotClientRunning": image_listed(&images, RIOT_CLIENT_IMAGE),
+        "riotClientRunning": riot_client_running,
+        "relayClientLost": relay_client_lost,
         "valorantRunning": image_listed(&images, VALORANT_IMAGE),
         "relayRunning": presence.relay_running,
         "relayPort": presence.relay_port,

@@ -97,7 +97,7 @@ pub fn run() {
             config_defaults.insert("openDevTools".into(), json!(false));
             config_defaults.insert("startupMonitor".into(), json!(""));
             config_defaults.insert("presenceEnabled".into(), json!(true));
-            config_defaults.insert("presenceMode".into(), json!("offline"));
+            config_defaults.insert("presenceMode".into(), json!("online"));
             config_defaults.insert("presenceStartup".into(), json!("last"));
             config_defaults.insert("presenceMucEnabled".into(), json!(true));
             config_defaults.insert("presenceCert".into(), json!("deceive"));
@@ -127,7 +127,7 @@ pub fn run() {
             let saved_presence_mode = config_store
                 .get("presenceMode")
                 .and_then(|value| value.as_str().and_then(presence_proxy::PresenceMode::parse))
-                .unwrap_or(presence_proxy::PresenceMode::Offline);
+                .unwrap_or(presence_proxy::PresenceMode::Online);
             let presence_mode = config_store
                 .get("presenceStartup")
                 .and_then(|value| value.as_str().and_then(presence_proxy::PresenceMode::parse))
