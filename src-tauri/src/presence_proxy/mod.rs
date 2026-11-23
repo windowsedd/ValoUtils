@@ -524,6 +524,52 @@ pub fn app_handle() -> Option<&'static AppHandle> {
     APP_HANDLE.get()
 }
 
+/// Uses the Riot chat server the Riot Client's config named and saves it as
+/// `relayUpstream`. The client reads its config once, at launch, so after
+/// ValoUtils restarts the saved target is all the relay has to forward a
+/// reconnecting client to.
+pub fn remember_upstream(target: UpstreamTarget) {
+    if let Some(app) = app_handle() {
+        use tauri::Manager;
+        let saved = upstream_json(&target);
+        let config = app.state::<crate::store::ConfigStore>();
+        if config.get("relayUpstream").as_ref() != Some(&saved) {
+            config.set("relayUpstream", saved);
+        }
+    }
+    controller().set_upstream(target);
+}
+
+/// Restores the saved target at startup, unless a fresh client config
+/// already set one.
+pub fn restore_upstream(saved: &serde_json::Value) {
+    let Some(target) = upstream_from_json(saved) else {
+        return;
+    };
+    let controller = controller();
+    if controller.upstream().is_none() {
+        log::info!("XMPP relay: forwarding to saved Riot chat server {}", target.host);
+        controller.set_upstream(target);
+    }
+}
+
+fn upstream_json(target: &UpstreamTarget) -> serde_json::Value {
+    serde_json::json!({ "host": target.host, "port": target.port, "affinity": target.affinity })
+}
+
+/// Only Riot's own chat servers are accepted back from the config file.
+fn upstream_from_json(saved: &serde_json::Value) -> Option<UpstreamTarget> {
+    let host = saved.get("host")?.as_str()?.trim().to_ascii_lowercase();
+    let riot_host = host.ends_with(".riotgames.com")
+        && host.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-');
+    let port = u16::try_from(saved.get("port")?.as_u64()?).ok().filter(|port| *port != 0)?;
+    riot_host.then(|| UpstreamTarget {
+        host,
+        port,
+        affinity: saved.get("affinity").and_then(|v| v.as_str()).map(str::to_owned),
+    })
+}
+
 pub fn change_mode(mode: PresenceMode) {
     controller().set_mode_and_enable(mode);
     persist_and_emit();
@@ -754,5 +800,29 @@ mod tests {
             "Presence masking is now disabled."
         );
         assert!(!controller.snapshot().enabled);
+    }
+}
+
+#[cfg(test)]
+mod upstream_tests {
+    use super::*;
+
+    #[test]
+    fn saved_upstream_round_trips_and_rejects_non_riot_hosts() {
+        let target = UpstreamTarget {
+            host: "na2.chat.si.riotgames.com".into(),
+            port: 5223,
+            affinity: Some("na1".into()),
+        };
+        assert_eq!(upstream_from_json(&upstream_json(&target)), Some(target));
+        for bad in [
+            serde_json::json!({ "host": "evil.example", "port": 5223 }),
+            serde_json::json!({ "host": "x.riotgames.com.evil.example", "port": 5223 }),
+            serde_json::json!({ "host": "na2.chat.si.riotgames.com", "port": 0 }),
+            serde_json::json!({ "host": "na2.chat.si.riotgames.com" }),
+            serde_json::json!(null),
+        ] {
+            assert_eq!(upstream_from_json(&bad), None, "{bad}");
+        }
     }
 }

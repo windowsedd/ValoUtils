@@ -48,6 +48,7 @@ pub mod logs;
 pub(crate) mod live_party;
 pub mod matches;
 pub mod mcp;
+pub mod remote;
 mod mcp_cosmetics;
 mod pregame_roster;
 pub mod presence;

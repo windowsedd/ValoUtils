@@ -1,5 +1,8 @@
 use std::net::Ipv4Addr;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
+use tauri::Manager;
+
+use crate::store::ConfigStore;
 use std::sync::{Arc, Mutex, OnceLock};
 use tokio::io::{AsyncReadExt, AsyncWriteExt, ReadHalf, WriteHalf};
 use tokio::net::TcpStream;
@@ -35,25 +38,86 @@ fn start_lock() -> &'static AsyncMutex<()> {
     START_LOCK.get_or_init(|| AsyncMutex::new(()))
 }
 
+/// The relay port of this session, so a restarted relay comes back where the
+/// running Riot Client expects it.
+static LAST_PORT: AtomicU16 = AtomicU16::new(0);
+
+/// The Riot Client reads `chat.port` once, at launch. A relay that came back on
+/// another port would leave that client reconnecting to a dead port (offline,
+/// no commands) until it restarts, so reuse the last port: this session's, or
+/// the one saved as `relayPort` for a client that outlived the previous app.
+fn preferred_port() -> u16 {
+    match LAST_PORT.load(Ordering::Relaxed) {
+        0 => crate::presence_proxy::app_handle()
+            .and_then(|app| app.state::<ConfigStore>().get("relayPort"))
+            .and_then(|value| value.as_u64())
+            .and_then(|port| u16::try_from(port).ok())
+            .unwrap_or(0),
+        port => port,
+    }
+}
+
+fn remember_port(port: u16) {
+    LAST_PORT.store(port, Ordering::Relaxed);
+    if let Some(app) = crate::presence_proxy::app_handle() {
+        let config = app.state::<ConfigStore>();
+        if config.get("relayPort").and_then(|value| value.as_u64()) != Some(u64::from(port)) {
+            config.set("relayPort", serde_json::json!(port));
+        }
+    }
+}
+
+async fn bind_listener() -> Result<tokio::net::TcpListener, String> {
+    let preferred = preferred_port();
+    if preferred != 0 {
+        match tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, preferred)).await {
+            Ok(listener) => return Ok(listener),
+            Err(error) => log::warn!(
+                "XMPP relay port {preferred} is taken ({error}); a Riot Client opened earlier must restart through ValoUtils to reconnect"
+            ),
+        }
+    }
+    tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+        .await
+        .map_err(|error| format!("Could not bind the XMPP relay: {error}"))
+}
+
 pub async fn start() -> Result<u16, String> {
     let _start_guard = start_lock().lock().await;
-    if let Some(active) = runtime().lock().unwrap().as_ref() {
-        return Ok(active.port);
+    {
+        let mut active = runtime().lock().unwrap();
+        match active.as_ref() {
+            Some(relay) if !relay.handle.inner().is_finished() => return Ok(relay.port),
+            // The accept task ended: forget it so this start brings it back.
+            Some(relay) => {
+                log::warn!("XMPP relay on port {} had stopped; restarting it", relay.port);
+                *active = None;
+            }
+            None => {}
+        }
     }
     let acceptor = local_acceptor().await?;
-    let listener = tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
-        .await
-        .map_err(|error| format!("Could not bind the XMPP relay: {error}"))?;
+    let listener = bind_listener().await?;
     let port = listener
         .local_addr()
         .map_err(|error| error.to_string())?
         .port();
+    remember_port(port);
     let handle = tauri::async_runtime::spawn(async move {
         let mut connections = tokio::task::JoinSet::new();
         loop {
             tokio::select! {
                 accepted = listener.accept() => {
-                    let Ok((socket, _)) = accepted else { break };
+                    // One failed accept (a client that reset mid-handshake, a
+                    // momentary resource limit) must not take the relay down.
+                    let (socket, _) = match accepted {
+                        Ok(pair) => pair,
+                        Err(error) => {
+                            log::warn!("XMPP relay accept failed: {error}");
+                            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+                            continue;
+                        }
+                    };
                     let acceptor = acceptor.clone();
                     connections.spawn(async move {
                         if let Err(error) = handle_socket(socket, acceptor).await {

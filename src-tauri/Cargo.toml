@@ -22,7 +22,7 @@ tauri-build = { version = "2.6.3", features = [] }
 serde_json = { version = "1.0", features = ["arbitrary_precision"] }
 serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
-tauri = { version = "2.11.3", features = ["devtools"] }
+tauri = { version = "2.11.3", features = ["devtools", "tray-icon"] }
 tauri-plugin-log = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-clipboard-manager = "2"
@@ -47,6 +47,7 @@ tokio-native-tls = "0.3"
 x509-parser = "0.18"
 windowsedd-valorant-api = "0.2"
 ring = "0.17"
+qrcode = { version = "0.14", default-features = false, features = ["svg"] }
 
 [target.'cfg(windows)'.dependencies]
 schannel = "0.1"

@@ -375,7 +375,9 @@
     "demoted": "Demoted",
     "rrToNext": "{{rr}} / 100 RR to next tier",
     "accountLevel": "Account Level",
-    "accountXp": "{{xp}} / {{total}} XP to next level"
+    "accountXp": "{{xp}} / {{total}} XP to next level",
+    "updating": "Updating…",
+    "refresh": "Refresh career"
   },
   "liveGame": {
     "title": "Live Game",
@@ -620,6 +622,8 @@
     "requestPacing_safe": "Safe",
     "recentMatchCount": "Recent matches per player",
     "recentMatchCountDesc": "How many recent matches player stats are averaged over, up to {{max}}. A higher number is more accurate but sends more requests.",
+    "closeToTray": "Keep running in the tray when closed",
+    "closeToTrayDesc": "The close button hides ValoUtils to the system tray so chat, the relay, commands and remote chat keep working. Quit from the tray icon. Turned off, closing ValoUtils disconnects Riot chat until you open it again.",
     "showPregameEnemies": "Show enemy team in agent select",
     "showPregameEnemiesDesc": "Show the enemy team's names, ranks and stats in Live Game during agent select, when Riot provides them. Turning this off also skips their requests.",
     "hideTab": "Hide {{tab}} tab",
@@ -1127,6 +1131,26 @@
     "error": "Could not change the MCP server.",
     "privacy": "Agents only get data when they call a tool. Anyone with the token on this PC can use it; make a new token if it leaks.",
     "docs": "Docs"
+  },
+  "remote": {
+    "section": "Remote chat",
+    "enable": "Chat from your phone",
+    "enableDesc": "Read and reply to Party, Team, All and friend chat, and manage your party and queue, from a phone on the same Wi-Fi or your Tailscale network.",
+    "running": "Running on port {{port}}",
+    "tailscale": "Tailscale",
+    "lan": "Local network",
+    "scanHint": "Scan with your phone's camera, or open the link in its browser.",
+    "showQr": "Show QR code",
+    "hideQr": "Hide",
+    "copyLink": "Copy link",
+    "regenerate": "Unpair all phones",
+    "regenerated": "Paired phones were signed out. Scan the new code.",
+    "noAddress": "No network address found. Connect to Wi-Fi or turn on Tailscale, then refresh.",
+    "refresh": "Refresh",
+    "firewall": "If the phone can't connect, allow ValoUtils through Windows Firewall when Windows asks.",
+    "notRunning": "The server isn't running. Turn it off and on again.",
+    "error": "Could not change remote chat.",
+    "privacy": "Only devices on your local network or tailnet can reach it, and only with the link's secret. Tailscale traffic is encrypted; on shared Wi-Fi, prefer Tailscale. The QR code holds the secret, so keep it off stream."
   },
   "mcpDocs": {
     "title": "MCP docs",

@@ -14,11 +14,13 @@ mod crosshair_code;
 mod fake_player;
 mod friend_watch;
 mod presence_proxy;
+mod remote;
 mod riot;
 mod settings_decoder;
 mod share;
 mod store;
 mod translate;
+mod tray;
 mod updater;
 mod util_time;
 mod xmpp;
@@ -103,6 +105,7 @@ pub fn run() {
             config_defaults.insert("saveMatchChatHistory".into(), json!(false));
             config_defaults.insert("showPregameEnemies".into(), json!(true));
             config_defaults.insert("mcpEnabled".into(), json!(false));
+            config_defaults.insert("remoteEnabled".into(), json!(false));
             config_defaults.insert("riotLaunchArgs".into(), json!(""));
             config_defaults.insert("translatorProvider".into(), json!("google"));
             config_defaults.insert("translatorSourceLanguage".into(), json!("auto"));
@@ -150,6 +153,11 @@ pub fn run() {
                 presence_cert,
             )
             .expect("presence controller initialized once");
+            // A Riot Client still pointed at the relay from before a restart
+            // reconnects on its own but never re-reads its config.
+            if let Some(saved) = config_store.get("relayUpstream") {
+                presence_proxy::restore_upstream(&saved);
+            }
 
             let open_dev_tools =
                 matches!(config_store.get("openDevTools"), Some(v) if v == json!(true));
@@ -219,8 +227,12 @@ pub fn run() {
             }
             tauri::async_runtime::spawn(commands::riot_launch::autostart());
             tauri::async_runtime::spawn(mcp::start_if_enabled(app.handle().clone()));
+            tauri::async_runtime::spawn(remote::start_if_enabled(app.handle().clone()));
             commands::chat::ensure_chat_forwarders(app.handle());
             friend_watch::start(app.handle().clone());
+            if let Err(error) = tray::setup(app.handle()) {
+                log::warn!("Could not create the tray icon: {error}");
+            }
             {
                 let handle = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
@@ -244,6 +256,7 @@ pub fn run() {
             }
             Ok(())
         })
+        .on_window_event(tray::on_window_event)
         .invoke_handler(tauri::generate_handler![
             commands::app::open_url,
             commands::deep_link::deep_link_take,
@@ -254,6 +267,9 @@ pub fn run() {
             commands::mcp::mcp_tools,
             commands::mcp::mcp_set_enabled,
             commands::mcp::mcp_regenerate_token,
+            commands::remote::remote_status,
+            commands::remote::remote_set_enabled,
+            commands::remote::remote_regenerate_token,
             commands::app::version,
             commands::app::clipboard_get,
             commands::app::clipboard_set,
@@ -291,6 +307,7 @@ pub fn run() {
             commands::profiles::settings_profile_share,
             commands::profiles::share_get_data,
             commands::career::career_get,
+            commands::career::career_cached,
             commands::career::career_account_status,
             commands::battlepass::battlepass_get,
             commands::bloomline::bloomline_get,

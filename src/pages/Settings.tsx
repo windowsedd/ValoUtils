@@ -6,10 +6,11 @@ import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { gooeyToast as toast } from "goey-toast";
 import { useTranslation } from "react-i18next";
-import { FaGlobe, FaRocket, FaCode, FaChartBar, FaLanguage, FaKey, FaArrowUpRightFromSquare, FaCopy, FaCheck, FaEye, FaEyeSlash, FaBook, FaComments, FaGaugeHigh, FaListOl, FaUserSecret, FaTerminal } from "react-icons/fa6";
+import { FaGlobe, FaRocket, FaCode, FaChartBar, FaLanguage, FaKey, FaArrowUpRightFromSquare, FaCopy, FaCheck, FaEye, FaEyeSlash, FaBook, FaComments, FaGaugeHigh, FaListOl, FaUserSecret, FaTerminal, FaWindowMinimize } from "react-icons/fa6";
 import { LuBot, LuMonitor, LuScrollText, LuSettings } from "react-icons/lu";
 import { DisplaySetting } from "@/components/display-setting";
 import { McpSettings } from "@/components/mcp-settings";
+import { RemoteSettings } from "@/components/remote-settings";
 import { Switch } from "@/components/ui/switch";
 import { PageHeader, PageTabs, SectionCard, pageBodyClass } from "@/components/section-card";
 import { useConfiguredRoutes } from "@/components/router";
@@ -28,6 +29,7 @@ const SETTINGS_SECTIONS = [
 	["general", "settings.sectionGeneral"],
 	["translation", "settings.sectionTranslation"],
 	["ai", "ai.section"],
+	["remote", "remote.section"],
 	["app", "settings.sectionApp"],
 	["riot-api", "settings.sectionRiotApi"],
 	["navigation", "settings.sectionNavigation"],
@@ -69,6 +71,7 @@ type AppConfig = AiSettings & {
 	riotRequestPacing: RiotRequestPacing;
 	recentMatchCount: number;
 	showPregameEnemies: boolean;
+	closeToTray: boolean;
 	riotLaunchArgs: string;
 };
 
@@ -164,6 +167,7 @@ const Settings = () => {
 		riotRequestPacing: "balanced",
 		recentMatchCount: 5,
 		showPregameEnemies: true,
+		closeToTray: true,
 		riotLaunchArgs: "",
 	});
 	const [analytics, setAnalytics] = useState(() => localStorage.getItem("valoutils-analytics") !== "false");
@@ -521,6 +525,8 @@ const applyClientInfo = (msg: any) => {
 
 				<McpSettings onOpenDocs={() => setView("mcp-docs")} />
 
+				<RemoteSettings />
+
                 <SectionCard id="settings-app" title={t("settings.sectionApp")} accent="#a78bfa">
 					<div className="flex flex-col px-1">
 				<SettingRow icon={<FaComments />} label={t("settings.saveMatchChatHistory")} description={t("settings.saveMatchChatHistoryDesc")}
@@ -546,6 +552,12 @@ const applyClientInfo = (msg: any) => {
 						invoke("analytics_track", {args: ["chat:history-clear"]}).catch(reportIpcError);
 						toast.success(t("settings.matchChatHistoryCleared"));
 					}}>{t("settings.clearMatchChatHistory")}</CustomButton>} />
+				<SettingRow icon={<FaWindowMinimize />} label={t("settings.closeToTray")} description={t("settings.closeToTrayDesc")}
+					right={<Toggle label={t("settings.closeToTray")} checked={appConfig.closeToTray !== false}
+						onChange={enabled => {
+							setConfig("closeToTray", enabled);
+							invoke("analytics_track", {args: ["app:close-to-tray", JSON.stringify({enabled})]}).catch(reportIpcError);
+						}} />} />
 				<SettingRow
 					icon={<LuMonitor />}
 					label={t("settings.openOnDisplay")}

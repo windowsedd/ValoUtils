@@ -116,7 +116,8 @@ Rust command conventions:
 | `settings:profile:share` | `settings_profile_share` | Upload profile, get share code |
 | `tokens:get` / `tokens:refresh` | `tokens_get/refresh` | Riot auth tokens |
 | `client_info:get` / `userinfo:get` | `client_info_get` / `userinfo_get` | Lockfile info / account info |
-| `career:get` | `career_get` | MMR + competitive history |
+| `career:get` | `career_get` | MMR + competitive history; also saved per account in `cache.json` |
+| `career:cached` | `career_cached` | Last saved career for the signed-in account (no PD request) with `fresh`: under 10 min old and not saved before (or within 2 min after) a match ended. Career shows it without a request when fresh, otherwise shows it while `career_get` loads; Refresh always fetches |
 | `tools:player:resolve` | `tools_player_resolve` | Resolve `GameName#Tag` or PUUID to a canonical Riot ID |
 | `friend:profile:get` | `friend_profile_get` | Player profile used by Friends and Tools (rank + matches) |
 | `store:get` | `store_get` | Storefront (daily, every featured bundle in `featuredBundles` — Riot often runs two — Night Market, accessories) + wallet; also saved per account in `cache.json` |
@@ -138,6 +139,7 @@ Rust command conventions:
 | `update:check` | `update_check` | Trigger update check |
 | `display:get` / `display:set` | `display_get/set` | List connected displays and save the display used on the next launch |
 | `open_url` | `open_url` | Open URL in system browser |
+| `remote:status` / `remote:set-enabled` / `remote:regenerate-token` | `remote_status` / `remote_set_enabled` / `remote_regenerate_token` | Remote chat server state, addresses (Tailscale/LAN) with QR SVGs; see Remote chat |
 | `alert:info` | *(event only)* | Push: show toast in frontend |
 
 Chat GUI exposes Friends, Party, Team and All channels. Game relay incoming group messages use the existing `chat:message` stream and buffered transcript in `chat_get`; outgoing bot commands are excluded. GUI group replies use a single native relay connection with server-confirmed membership and wait up to 10 seconds for the matching server echo or rejection. Independent XMPP writes cannot report GUI send success. Routes are removed on leave, kick, disconnect or relay reset; pregame and coregame rooms remain distinct. Room aliases and optimistic echoes are reconciled; relay shutdown clears captured chat session state. After a match ends, `chat_get` keeps that match's Team/All rooms and up to 200 lines (marked `ended`, composer read-only) until the next match, an account change, or `chat_disconnect`.
@@ -454,6 +456,16 @@ Certificate failures and other bind failures remain errors; only a healthy
 server reports success. An already-running Riot Client cannot be repointed to
 a different config URL; close it completely and launch through ValoUtils when
 the selected port changes.
+The XMPP relay port is sticky too: the Riot Client reads `chat.port` once at
+launch, so `relay::start` rebinds this session's last port, else the saved
+`relayPort`, before falling back to a free one (logged: that client must
+restart). Reopening ValoUtils or Wake then lets a running client reconnect.
+The client also never re-reads its config, so the real Riot chat server it named
+is saved as `relayUpstream` (`presence_proxy::remember_upstream`, only
+`*.riotgames.com` hosts are restored) and restored at startup; otherwise the
+reconnecting client hits "Riot chat target is not ready" forever.
+A failed accept is logged and skipped rather than ending the relay, and `start`
+replaces a relay task that has finished, so Wake recovers a dead relay.
 
 The local chat relay's TLS identity is selectable (config key `presenceCert`, default `deceive`). Built-in identities live in `src-tauri/src/chat_certs.rs`; each has a host, a PFX download URL, and its own cache file `%APPDATA%\ValoUtils\<host>.pfx` (legacy `localhostCert.pfx` is migrated into the deceive slot). `presence:status-set "cert" <id>` switches and restarts the relay; `presence_cert_import` opens a native picker and installs a PFX for an identity. The selected host drives the `chat.host`/`chat.affinities` rewrite in `client_config.rs` and the SAN/loopback validation — the host must resolve only to `127.0.0.1` (DNS-only A record, no AAAA), so a hostname serving the PFX publicly (e.g. behind Cloudflare) cannot also be the chat host.
 
@@ -571,6 +583,30 @@ Tool results are Markdown from `src-tauri/src/mcp_format.rs` (labelled lines,
 tables for lists, identifying columns first, ranks by name, yes/no, tidy numbers,
 scores as "7–5"), with the raw object in `structuredContent`; the server
 instructions ask agents to lead with the answer and never paste JSON.
+
+### Remote chat (phone, LAN / Tailscale)
+
+Settings → Remote chat (`remoteEnabled`, default false) starts `src-tauri/src/remote.rs`:
+an axum server on `0.0.0.0`, port 47824 first (saved as `remotePort`). It serves a
+self-contained phone page (`src-tauri/src/remote_page.html`, no CDN, DOM built with
+`textContent`) at `/` and a JSON API: `GET /api/state` (Party/Team/All rooms with
+their last 100 lines, `ended` rooms read-only, friends with unread counts and the
+last 50 whisper lines), `POST /api/send` (`channel` party|team|all through
+`mcp::send_chat`, or `friend` + `puuid`, sent only to a friends-list `pid`),
+`GET/POST /api/party` (`mcp::party_snapshot`; start/stop/change queue, leave,
+create/disable/join party code through the existing MCP/riot_chat helpers).
+Only loopback, private LAN, link-local and Tailscale `100.64.0.0/10` (plus IPv6
+ULA/link-local) peers are answered; foreign `Origin`s are refused; every API call
+needs `Authorization: Bearer <remoteToken>`. The QR URL is
+`http://<ip>:<port>/#t=<token>`: the fragment never reaches the server, the page
+moves it to the phone's localStorage and strips it from the address bar. A 401
+unpairs the page. `chat_get` is cached 2.5 s and the party 4 s, so phones add
+little Riot traffic; the page polls every 3 s (15 s hidden) and only patches the
+message list so the phone keyboard stays open. Addresses come from UDP route
+lookups (no packets sent): Tailscale via `100.100.100.100`, LAN via the default
+route; listed Tailscale first, each with a `qrcode`-crate SVG. Settings blurs the QR
+until clicked (it holds the secret; streamers). "Unpair all phones" regenerates
+the token. Plain HTTP: Tailscale is WireGuard-encrypted, LAN is not.
 
 ### Watched friends
 
@@ -717,6 +753,7 @@ Tools player lookup, History scoreboard.
 
 - **Windows only** — relies on `%LOCALAPPDATA%`, WebView2, and the Riot Client lockfile
 - **Single instance** — `tauri-plugin-single-instance` (first plugin in `lib.rs`) makes a second launch focus the running window and exit, so the relay, config server and window are never duplicated
+- **Tray** — `src-tauri/src/tray.rs` (tauri `tray-icon` feature): left-click or Open shows the window, Quit exits. The close button hides the main window to the tray unless `closeToTray` is false (Settings → Application), because the relay, config server, MCP and remote chat live in this process and quitting drops Riot chat. The first hide shows a one-time Windows notification (`trayHintShown`)
 - **Riot Client must be running** to save/load profiles (lockfile must exist)
 - **Valorant must be closed** when loading a profile (Riot Client applies settings on next launch)
 - No cloud sync — profiles are local JSON in `%APPDATA%\ValoUtils`

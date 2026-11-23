@@ -352,7 +352,7 @@ async fn patch_response(
         return body;
     };
     if let Some(upstream) = patched.upstream {
-        crate::presence_proxy::controller().set_upstream(upstream);
+        crate::presence_proxy::remember_upstream(upstream);
     }
     serde_json::to_vec(&patched.json).unwrap_or(body)
 }
