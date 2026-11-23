@@ -417,9 +417,26 @@ pub fn is_builtin_command(body: &str) -> bool {
 /// Bot DM sent when a command is typed in a group room instead of whispered.
 pub fn group_command_hint(body: &str) -> String {
     format!(
-        "Commands only run when you whisper them to me, not in party, pregame, team or all chat. Not sent: {}",
+        "Commands only run when you whisper them to me, not in party, pregame, team or all chat (only .tran works there). Not sent: {}",
         body.trim()
     )
+}
+
+/// A `.tran`/`.translate` typed into a group room, as the command to run.
+///
+/// Only history translation runs from a room: it reads chat and answers in a
+/// private whisper, so unlike `.dodge` or `.send` a stray line can't act on the
+/// match. Without a room of its own it translates the room it was typed in.
+/// Returns `None` for every other line.
+pub fn history_translate_for_room(body: &str, room: ChatChannel) -> Option<String> {
+    let rest = history_translate_rest(body)?;
+    let names_room = rest.split_whitespace().any(|word| ChatChannel::parse(word).is_some());
+    let command = if names_room {
+        format!(".tran {rest}")
+    } else {
+        format!(".tran {} {rest}", room.as_str())
+    };
+    Some(command.trim_end().to_string())
 }
 
 pub fn is_skippable_history_line(body: &str) -> bool {
@@ -1203,6 +1220,33 @@ mod tests {
             Some(command)
         );
         assert!(find_custom_command(".send", &[]).is_none());
+    }
+
+    #[test]
+    fn tran_typed_in_a_room_translates_that_room() {
+        assert_eq!(
+            history_translate_for_room(".tran 3", ChatChannel::Pregame).as_deref(),
+            Some(".tran pregame 3")
+        );
+        assert_eq!(
+            history_translate_for_room("/translate", ChatChannel::Team).as_deref(),
+            Some(".tran team")
+        );
+    }
+
+    #[test]
+    fn tran_that_names_a_room_keeps_it() {
+        assert_eq!(
+            history_translate_for_room(".tran party 2 ko", ChatChannel::Pregame).as_deref(),
+            Some(".tran party 2 ko")
+        );
+    }
+
+    #[test]
+    fn other_commands_typed_in_a_room_do_not_run() {
+        for body in [".dodge", ".send team none hi", ".ai gl", ".tranx", "hello"] {
+            assert_eq!(history_translate_for_room(body, ChatChannel::Pregame), None, "{body}");
+        }
     }
 
     #[test]

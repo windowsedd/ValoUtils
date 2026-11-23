@@ -306,12 +306,21 @@ async fn client_to_remote(
                         continue;
                     };
                     crate::presence_proxy::record_live_chat(stanza);
-                    // Commands typed in a group room never reach it and never
-                    // run: they only work when whispered to the Dummy Bot.
+                    // Commands typed in a group room never reach it. Only `.tran`
+                    // runs from there (it reads chat and answers privately);
+                    // everything else only works when whispered to the Dummy Bot.
                     if let Some(body) = outgoing_group_command(stanza) {
-                        let hint = crate::riot::chat_command::group_command_hint(&body);
-                        if let Err(error) = crate::presence_proxy::send_bot_direct(&hint) {
-                            log::warn!("Group command hint could not be delivered: {error:?}");
+                        let tran = crate::presence_proxy::xml::group_muc_target(stanza).and_then(|(room, _, _)| {
+                            crate::riot::chat_command::history_translate_for_room(&body, room)
+                        });
+                        match tran {
+                            Some(command) => run_room_translation(command),
+                            None => {
+                                let hint = crate::riot::chat_command::group_command_hint(&body);
+                                if let Err(error) = crate::presence_proxy::send_bot_direct(&hint) {
+                                    log::warn!("Group command hint could not be delivered: {error:?}");
+                                }
+                            }
                         }
                         continue;
                     }
@@ -684,6 +693,22 @@ fn outgoing_live_groupchat(stanza: &str) -> Option<String> {
         return None;
     }
     Some(crate::presence_proxy::xml::parse_groupchat_line(stanza)?.body)
+}
+
+/// Runs a `.tran` typed in a group room and whispers the result from the
+/// Dummy Bot. Spawned so slow translation never holds up the relay loop.
+fn run_room_translation(command: String) {
+    tauri::async_runtime::spawn(async move {
+        let reply = crate::commands::riot_chat::execute_history_translation(
+            &command,
+            crate::presence_proxy::app_handle(),
+        )
+        .await
+        .unwrap_or_else(|error| error.to_string());
+        if let Err(error) = crate::presence_proxy::send_bot_direct(&reply) {
+            log::warn!("Room .tran reply could not be delivered: {error:?}");
+        }
+    });
 }
 
 /// A command line typed into a party, pregame, team or all room: a built-in

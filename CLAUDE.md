@@ -409,7 +409,10 @@ retry, and report Riot errors. Party/code commands are reserved custom triggers
 and, like other built-ins, are swallowed in in-game group chat without running.
 Built-in commands (`.send`, `.tran`, `.dodge`, `.ai`, `.ask`, `.ascii`) and dotted
 custom triggers typed in party/pregame/team/all chat never run: the relay swallows
-the line and the bot whispers a reminder. The REST poller ignores the player's own
+the line and the bot whispers a reminder. The one exception is `.tran`/`.translate`
+(read-only, private reply): the relay still swallows it, runs it for the room it
+was typed in unless it names one (`chat_command::history_translate_for_room`), and
+the Dummy Bot whispers the translation. The REST poller ignores the player's own
 lines, so without the relay such a line is posted as ordinary chat.
 In agent select or a live match, `.ask` also sends a fenced `<live_game>` block
 (`bot_template::ask_game_context`): map, mode, phase, and per player agent, rank,
