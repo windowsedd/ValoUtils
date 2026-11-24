@@ -6,7 +6,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { gooeyToast as toast } from "goey-toast";
 import { useTranslation } from "react-i18next";
-import { FaGlobe, FaRocket, FaCode, FaChartBar, FaLanguage, FaKey, FaArrowUpRightFromSquare, FaCopy, FaCheck, FaEye, FaEyeSlash, FaBook, FaComments, FaGaugeHigh, FaListOl, FaUserSecret, FaTerminal, FaWindowMinimize } from "react-icons/fa6";
+import { FaGlobe, FaRocket, FaCode, FaChartBar, FaLanguage, FaKey, FaArrowUpRightFromSquare, FaCopy, FaCheck, FaEye, FaEyeSlash, FaBook, FaComments, FaGaugeHigh, FaListOl, FaUserSecret, FaTerminal, FaWindowMinimize, FaFlask } from "react-icons/fa6";
 import { LuBot, LuMonitor, LuScrollText, LuSettings } from "react-icons/lu";
 import { DisplaySetting } from "@/components/display-setting";
 import { McpSettings } from "@/components/mcp-settings";
@@ -55,6 +55,7 @@ const CERT_OPTIONS: { id: AppConfig["presenceCert"]; host: string }[] = [
 
 type AppConfig = AiSettings & {
 	autoUpdate: boolean;
+	betaUpdates: boolean;
 	saveMatchChatHistory: boolean;
 	openDevTools: boolean;
 	presenceEnabled: boolean;
@@ -151,6 +152,7 @@ const Settings = () => {
 		aiProvider: "none",
         aiProviders: {},
 		autoUpdate: true,
+		betaUpdates: false,
 		saveMatchChatHistory: false,
 		openDevTools: false,
 		presenceEnabled: true,
@@ -590,6 +592,18 @@ const applyClientInfo = (msg: any) => {
 						<Toggle
 							checked={appConfig.autoUpdate}
 							onChange={(v) => setConfig("autoUpdate", v)}
+						/>
+					}
+				/>
+
+				<SettingRow
+					icon={<FaFlask />}
+					label={t("settings.betaUpdates")}
+					description={t("settings.betaUpdatesDesc")}
+					right={
+						<Toggle
+							checked={appConfig.betaUpdates}
+							onChange={(v) => setConfig("betaUpdates", v)}
 						/>
 					}
 				/>

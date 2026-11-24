@@ -3,6 +3,19 @@ import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 
 const VERSION = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
+const BETA_VERSION = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)-beta\.(0|[1-9]\d*)$/;
+
+/**
+ * The beta version that follows `stable`: the next patch with a `-beta.N`
+ * suffix, so 1.0.17 → 1.0.18-beta.N. Semver ranks it above 1.0.17 and below
+ * 1.0.18, so a beta install still updates to the next stable release.
+ */
+export function betaVersion(stable: string, build: string) {
+  const match = VERSION.exec(stable);
+  if (!match) throw new Error(`Current version ${stable} is not MAJOR.MINOR.PATCH`);
+  if (!/^(0|[1-9]\d*)$/.test(build)) throw new Error(`Beta build number ${build} is not a whole number`);
+  return `${match[1]}.${match[2]}.${Number(match[3]) + 1}-beta.${build}`;
+}
 const VERSION_PATHS = [
   "package.json",
   "src-tauri/tauri.conf.json",
@@ -15,6 +28,10 @@ type VersionPath = (typeof VERSION_PATHS)[number];
 export type VersionState = Record<VersionPath, string>;
 
 export function parseInvocation(args: string[]) {
+  if (args[0] === "--beta") {
+    if (args.length !== 2) throw new Error("Usage: bun run version --beta BUILD_NUMBER");
+    return { mode: "beta", version: args[1] } as const;
+  }
   const mode = args[0] === "--check" ? "check" : "release";
   const values = mode === "check" ? args.slice(1) : args;
   if (values.length !== 1 || !VERSION.test(values[0])) {
@@ -110,8 +127,8 @@ export function assertVersions(versions: VersionState, expected: string) {
 }
 
 export function updateVersionFiles(root: string, version: string) {
-  if (!VERSION.test(version)) {
-    throw new Error("Version must use MAJOR.MINOR.PATCH format");
+  if (!VERSION.test(version) && !BETA_VERSION.test(version)) {
+    throw new Error("Version must use MAJOR.MINOR.PATCH or MAJOR.MINOR.PATCH-beta.N format");
   }
   readVersions(root);
   for (const path of ["package.json", "src-tauri/tauri.conf.json"] as const) {
@@ -178,6 +195,16 @@ function createRelease(root: string, version: string) {
 function main() {
   const { mode, version } = parseInvocation(Bun.argv.slice(2));
   const root = process.cwd();
+  if (mode === "beta") {
+    // CI only: stamps the version files in the checkout, no commit or tag.
+    const current = readVersions(root);
+    assertVersions(current, current["package.json"]);
+    const beta = betaVersion(current["package.json"], version);
+    updateVersionFiles(root, beta);
+    assertVersions(readVersions(root), beta);
+    console.log(beta);
+    return;
+  }
   if (mode === "check") {
     assertVersions(readVersions(root), version);
     console.log(`Version metadata matches ${version}`);

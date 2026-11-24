@@ -11,6 +11,7 @@ use crate::{client_config, presence_proxy};
 use serde_json::{json, Value};
 use std::path::PathBuf;
 use std::process::Command;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Manager};
@@ -169,16 +170,32 @@ const LAUNCH_POLL: Duration = Duration::from_secs(3);
 /// After sign-in, how long the Riot Client gets to start the game by itself.
 const SELF_START_GRACE: Duration = Duration::from_secs(8);
 
+/// Bumped by every new watch and by [`cancel_game_watch`]; a watch whose
+/// generation is no longer current stops without starting anything.
+static WATCH_GENERATION: AtomicU64 = AtomicU64::new(0);
+
+/// Stops any pending [`watch_game_start`], so a game launch asked for earlier
+/// can't fire into a client that was since closed or opened on its own.
+fn cancel_game_watch() {
+    WATCH_GENERATION.fetch_add(1, Ordering::SeqCst);
+}
+
 /// The Riot Client only sometimes acts on `--launch-product`; after a sign-in
 /// it often stops on the game's Play page. Once the client is signed in and
 /// has had a moment to start the game itself, ask its local API to launch it
 /// (what the Play button does). Stops as soon as the game process appears.
 fn watch_game_start(app: AppHandle, product: String, patchline: String) {
+    let generation = WATCH_GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
+    let current = move || WATCH_GENERATION.load(Ordering::SeqCst) == generation;
     tauri::async_runtime::spawn(async move {
         let started = Instant::now();
         let mut signed_in_at: Option<Instant> = None;
         while started.elapsed() < LAUNCH_WATCH {
             tokio::time::sleep(LAUNCH_POLL).await;
+            if !current() {
+                log::info!("launch: dropped the pending {product} start");
+                return;
+            }
             if valorant_running_async().await {
                 log::info!("launch: {product} is running");
                 return;
@@ -191,7 +208,7 @@ fn watch_game_start(app: AppHandle, product: String, patchline: String) {
                 }
                 continue;
             };
-            if signed_in.elapsed() < SELF_START_GRACE {
+            if signed_in.elapsed() < SELF_START_GRACE || !current() {
                 continue;
             }
             let path = format!("/product-launcher/v1/products/{product}/patchlines/{patchline}");
@@ -457,6 +474,7 @@ pub async fn riot_open_client_with_config(
 /// Opens the client alone through the relay, for callers holding the launch lock.
 async fn open_client_relay(extra: Vec<String>) -> Result<Value, String> {
     {
+        cancel_game_watch();
         if riot_client_running() {
             return Err("The Riot Client is already running. Close it completely (including the tray icon), then open it again.".into());
         }
@@ -577,6 +595,7 @@ async fn close_riot(close_game: bool, riot: &RiotState) -> Result<CloseOutcome, 
     if game && !close_game {
         return Ok(CloseOutcome::GameRunning);
     }
+    cancel_game_watch();
     if game {
         close_processes(GAME_IMAGES, "VALORANT").await?;
     }

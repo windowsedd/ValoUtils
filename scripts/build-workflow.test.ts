@@ -35,6 +35,22 @@ test("tag builds refuse to publish an unsigned release", () => {
 	expect(updaterAssets).toBeGreaterThan(publish);
 });
 
+const beta = readFileSync(resolve(import.meta.dir, "..", ".github", "workflows", "beta.yml"), "utf8");
+
+test("beta builds publish a signed rolling pre-release from the beta branch", () => {
+	expect(beta).toMatch(/push:\s*\n\s+branches: \[beta\]/);
+	expect(beta).toContain("tagName: beta");
+	expect(beta).toContain("prerelease: true");
+	expect(beta).toContain("releaseDraft: false");
+	expect(beta).toContain("release-version.ts --beta");
+	const signingKey = beta.indexOf("- name: Verify signing key");
+	const publish = beta.indexOf("- name: Build & Publish");
+	const updaterAssets = beta.indexOf("- name: Verify updater assets");
+	expect(signingKey).toBeGreaterThan(-1);
+	expect(publish).toBeGreaterThan(signingKey);
+	expect(updaterAssets).toBeGreaterThan(publish);
+});
+
 test("updater assets check looks for latest.json and the installer signature", () => {
 	expect(workflow).toContain("'latest.json'");
 	expect(workflow).toContain("*-setup.exe.sig");

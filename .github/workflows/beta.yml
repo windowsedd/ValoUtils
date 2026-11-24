@@ -1,0 +1,108 @@
+name: Beta build
+
+# Every push to the `beta` branch replaces the rolling `beta` pre-release.
+# Installs with Settings → Beta updates on read its latest.json
+# (releases/download/beta/latest.json); stable installs read
+# releases/latest/download/latest.json, which never points at a pre-release.
+on:
+  push:
+    branches: [beta]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# Two pushes in a row must not delete each other's release halfway through.
+concurrency:
+  group: beta-release
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Verify signing key
+        shell: pwsh
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:TAURI_SIGNING_PRIVATE_KEY)) {
+            Write-Host "::error::TAURI_SIGNING_PRIVATE_KEY is empty or unset. Beta builds are signed like releases, or the in-app updater cannot install them."
+            exit 1
+          }
+
+      # 1.0.17 on the branch → 1.0.18-beta.<run>: above the current stable,
+      # below the next one, so beta installs still move on to 1.0.18.
+      - name: Stamp beta version
+        id: version
+        shell: pwsh
+        run: |
+          $version = bun scripts/release-version.ts --beta ${{ github.run_number }}
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Write-Host "Beta version: $version"
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Remove the previous beta release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete beta --repo "${{ github.repository }}" --cleanup-tag --yes 2>$null
+          git push origin --delete refs/tags/beta 2>$null
+          exit 0
+
+      - name: Build & Publish
+        id: publish
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: beta
+          releaseName: 'ValoUtils ${{ steps.version.outputs.version }} (beta)'
+          releaseBody: 'Beta build from ${{ github.sha }}. Turn on Settings → Application → Beta updates to receive these automatically.'
+          releaseCommitish: ${{ github.sha }}
+          # Published, not a draft: a draft's latest.json 404s for the updater.
+          releaseDraft: false
+          prerelease: true
+
+      - name: Verify updater assets
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $releaseId = '${{ steps.publish.outputs.releaseId }}'
+          if ([string]::IsNullOrWhiteSpace($releaseId)) {
+            Write-Host "::error::tauri-action did not report a releaseId, so the release assets cannot be verified."
+            exit 1
+          }
+          $assets = @(gh api "repos/${{ github.repository }}/releases/$releaseId/assets" --paginate --jq '.[].name')
+          Write-Host ("Release assets:`n" + ($assets -join "`n"))
+          $missing = @()
+          if ($assets -notcontains 'latest.json') { $missing += 'latest.json' }
+          if (-not ($assets | Where-Object { $_ -like '*-setup.exe.sig' })) { $missing += '*-setup.exe.sig' }
+          if ($missing.Count -gt 0) {
+            Write-Host "::error::The beta release is missing $($missing -join ', '), so beta installs cannot update to it."
+            exit 1
+          }

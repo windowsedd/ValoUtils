@@ -691,6 +691,8 @@
     "openAtStartupDesc": "Open ValoUtils when you sign in to Windows",
     "openAtStartupError": "Could not read or change the Windows startup setting. Try opening Settings again.",
     "autoUpdateDesc": "Automatically check for updates on launch and every hour",
+    "betaUpdates": "Beta updates",
+    "betaUpdatesDesc": "Get beta builds before they're released. They may have bugs. Turning this off keeps the beta until the next stable release.",
     "devTools": "Developer tools",
     "devToolsDesc": "Open DevTools on launch (requires restart)",
     "dummyBot": "Bot",

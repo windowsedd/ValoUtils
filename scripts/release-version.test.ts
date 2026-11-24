@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { chmodSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { readVersions, updateVersionFiles } from "./release-version";
+import { betaVersion, readVersions, updateVersionFiles } from "./release-version";
 
 const roots: string[] = [];
 const script = resolve(import.meta.dir, "release-version.ts");
@@ -137,6 +137,34 @@ describe("version updates", () => {
 
     expect(() => updateVersionFiles(root, "v2.0.0")).toThrow("MAJOR.MINOR.PATCH");
     expect(readVersions(root)).toEqual(before);
+  });
+});
+
+describe("beta mode", () => {
+  test("beta versions sit between the current and the next stable release", () => {
+    expect(betaVersion("1.0.17", "42")).toBe("1.0.18-beta.42");
+    expect(() => betaVersion("1.0.17-beta.1", "2")).toThrow("MAJOR.MINOR.PATCH");
+    expect(() => betaVersion("1.0.17", "x")).toThrow("whole number");
+  });
+
+  test("stamps all four files without committing", () => {
+    const root = fixture("1.2.3");
+
+    const result = run(root, "--beta", "7");
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout.toString().trim()).toBe("1.2.4-beta.7");
+    expect(new Set(Object.values(readVersions(root)))).toEqual(new Set(["1.2.4-beta.7"]));
+  });
+
+  test("refuses mismatched version files", () => {
+    const root = fixture("1.2.3");
+    writeFileSync(
+      join(root, "src-tauri", "Cargo.toml"),
+      `[package]\nname = "valoutils"\nversion = "9.9.9"\n`,
+    );
+
+    expect(run(root, "--beta", "7").exitCode).not.toBe(0);
   });
 });
 
