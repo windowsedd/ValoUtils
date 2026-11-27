@@ -1236,10 +1236,17 @@ async fn prepare_translation_command(
     let (rest_cid, live_cid) = if let Some(cid) = pinned_live_cid {
         (cid.to_string(), cid.to_string())
     } else {
-        let rest_cid = resolve_send_cid(client, channel, app).await?;
-        let live_cid = live_room_for_send(channel, &rest_cid, use_observed_room)
-            .ok_or(RiotError::ChannelUnavailable { channel })?;
-        (rest_cid, live_cid)
+        match resolve_send_cid(client, channel, app).await {
+            Ok(rest_cid) => {
+                let live_cid = live_room_for_send(channel, &rest_cid, use_observed_room)
+                    .ok_or(RiotError::ChannelUnavailable { channel })?;
+                (rest_cid, live_cid)
+            }
+            Err(error) => {
+                let room = game_observed_room(channel).ok_or(error)?;
+                (room.clone(), room)
+            }
+        }
     };
     let (body, target_language) = if let Some(body) = no_translation_body(parsed) {
         (body.to_string(), "none".to_string())
@@ -1304,6 +1311,41 @@ fn agent_select_room_for(
         .then_some(observed_pregame)
         .flatten()
         .filter(|room| ChatChannel::Pregame.matches_cid(room))
+}
+
+/// The room the game itself joined for `channel`, as the relay saw it.
+///
+/// Fallback for when the Riot Client's own chat session drops ("not connected
+/// to chat"): its REST conversations then 503 while VALORANT keeps chatting
+/// through the relay, so `.send`/`.ascii`/`.ai` reported every room
+/// unavailable. Observed rooms are cleared when the relay has no connection;
+/// Team and All also need the game's INGAME presence, since they outlive the
+/// match. Agent select is covered by [`agent_select_room`].
+fn game_observed_room(channel: ChatChannel) -> Option<String> {
+    game_observed_room_for(
+        channel,
+        crate::presence_proxy::presence_match_state()
+            .session_loop_state
+            .as_deref(),
+        crate::presence_proxy::last_group_muc_jid(channel),
+    )
+}
+
+fn game_observed_room_for(
+    channel: ChatChannel,
+    session_loop_state: Option<&str>,
+    observed: Option<String>,
+) -> Option<String> {
+    let in_game = session_loop_state.is_some_and(|state| state.eq_ignore_ascii_case("INGAME"));
+    observed.filter(|room| match channel {
+        ChatChannel::Party => channel.matches_cid(room),
+        ChatChannel::Team | ChatChannel::All => {
+            in_game
+                && channel.matches_cid(room)
+                && room.to_ascii_lowercase().contains("@ares-coregame")
+        }
+        ChatChannel::Pregame => false,
+    })
 }
 
 fn effective_send_channel(channel: ChatChannel) -> ChatChannel {
@@ -2538,6 +2580,53 @@ mod tests {
             None
         );
         assert!(ChatChannel::Team.matches_cid(room.as_deref().unwrap()));
+    }
+
+    #[test]
+    fn rooms_the_game_joined_stand_in_when_riot_client_chat_is_down() {
+        let party = Some("p-1@ares-parties.jp1.pvp.net".to_string());
+        let team = Some("m1-blue@ares-coregame.jp1.pvp.net".to_string());
+        let all = Some("m1-all@ares-coregame.jp1.pvp.net".to_string());
+        let pregame = Some("m1-blue@ares-pregame.jp1.pvp.net".to_string());
+
+        assert_eq!(
+            game_observed_room_for(ChatChannel::Party, Some("MENUS"), party.clone()),
+            party
+        );
+        assert_eq!(
+            game_observed_room_for(ChatChannel::Party, None, party.clone()),
+            party
+        );
+        assert_eq!(
+            game_observed_room_for(ChatChannel::Team, Some("INGAME"), team.clone()),
+            team
+        );
+        assert_eq!(
+            game_observed_room_for(ChatChannel::All, Some("INGAME"), all.clone()),
+            all
+        );
+        // A finished match's rooms stay observed; they must not be reused.
+        assert_eq!(
+            game_observed_room_for(ChatChannel::Team, Some("MENUS"), team),
+            None
+        );
+        assert_eq!(
+            game_observed_room_for(ChatChannel::All, None, all),
+            None
+        );
+        // Agent select has its own path; a pregame room is never an in-game team.
+        assert_eq!(
+            game_observed_room_for(ChatChannel::Team, Some("INGAME"), pregame.clone()),
+            None
+        );
+        assert_eq!(
+            game_observed_room_for(ChatChannel::Pregame, Some("PREGAME"), pregame),
+            None
+        );
+        assert_eq!(
+            game_observed_room_for(ChatChannel::Party, Some("INGAME"), None),
+            None
+        );
     }
 
     #[test]
